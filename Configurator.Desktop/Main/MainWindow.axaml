@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:rxui="http://reactiveui.net"
+        xmlns:vm="clr-namespace:Configurator.Desktop.Main"
+        xmlns:dialogs="clr-namespace:Configurator.Desktop.Dialogs"
+        xmlns:dialogHost="clr-namespace:DialogHostAvalonia;assembly=DialogHost.Avalonia"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        x:Class="Configurator.Desktop.Main.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="MainWindow"
+        Icon="avares://Configurator.Desktop/Assets/avalonia-logo.ico">
+    <dialogHost:DialogHost Identifier="{x:Static dialogs:DialogHostIds.Root}" IsMultipleDialogsEnabled="True">
+        <dialogHost:DialogHost.DialogContent>
+            <!-- Диалоги будут отображаться здесь -->
+        </dialogHost:DialogHost.DialogContent>
+        <Grid RowDefinitions="Auto, Auto, *">
+            <!--<TextBlock Grid.Row="0" Text="{Binding Label}"/>
+            <Svg Grid.Row="1" Path="/Assets/icons/outline/user.svg" 
+                 Width="30" Height="30"/>-->
+            <rxui:RoutedViewHost Grid.Row="2" Router="{Binding Router}"/>
+        </Grid>
+    </dialogHost:DialogHost>
+</Window>

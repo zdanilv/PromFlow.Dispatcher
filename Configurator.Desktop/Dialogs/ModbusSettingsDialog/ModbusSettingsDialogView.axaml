@@ -1,0 +1,177 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dialog="clr-namespace:Configurator.Desktop.Dialogs.ModbusSettingsDialog"
+             x:Class="Configurator.Desktop.Dialogs.ModbusSettingsDialog.ModbusSettingsDialogView"
+             x:DataType="dialog:ModbusSettingsDialogViewModel">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.title">
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="#526173"/>
+        </Style>
+        <Style Selector="TextBox.compact">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="MinWidth" Value="96"/>
+        </Style>
+        <Style Selector="ComboBox.compact">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="MinWidth" Value="132"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Border Padding="18"
+            CornerRadius="8"
+            Background="White"
+            Width="860"
+            MaxHeight="720">
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="14">
+            <StackPanel Spacing="3">
+                <TextBlock Classes="title" Text="{Binding Title}"/>
+                <TextBlock Classes="label" Text="{Binding SectionName, StringFormat='JSON секция: {0}'}"/>
+            </StackPanel>
+
+            <TabControl Grid.Row="1" MinHeight="430">
+                <TabItem Header="Общие">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <Grid Margin="0,12,0,0"
+                              ColumnDefinitions="260,*"
+                              RowDefinitions="Auto,Auto,Auto"
+                              RowSpacing="10"
+                              ColumnSpacing="12">
+                            <CheckBox Grid.ColumnSpan="2"
+                                      Content="AutostartOnWorkspaceOpen"
+                                      IsChecked="{Binding AutostartOnWorkspaceOpen}"/>
+
+                            <TextBlock Grid.Row="1" Classes="label" Text="StartupMode" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="1"
+                                      Grid.Column="1"
+                                      Classes="compact"
+                                      ItemsSource="{Binding StartupModes}"
+                                      SelectedItem="{Binding StartupMode, Mode=TwoWay}"/>
+
+                            <TextBlock Grid.Row="2" Classes="label" Text="WriteConfirmationTimeoutMs" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="2"
+                                     Grid.Column="1"
+                                     Classes="compact"
+                                     HorizontalAlignment="Left"
+                                     Text="{Binding WriteConfirmationTimeoutMs, Mode=TwoWay}"/>
+                        </Grid>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="Клиент">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <Grid Margin="0,12,0,0"
+                              ColumnDefinitions="260,*"
+                              RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                              RowSpacing="9"
+                              ColumnSpacing="12">
+                            <CheckBox Grid.ColumnSpan="2" Content="Enabled" IsChecked="{Binding ClientEnabled}"/>
+                            <TextBlock Grid.Row="1" Classes="label" Text="Host" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Classes="compact" Text="{Binding ClientHost, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="2" Classes="label" Text="Port" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" Classes="compact" Text="{Binding ClientPort, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="3" Classes="label" Text="UnitId" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="3" Grid.Column="1" Classes="compact" Text="{Binding ClientUnitId, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="4" Classes="label" Text="PollIntervalMs" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="4" Grid.Column="1" Classes="compact" Text="{Binding ClientPollIntervalMs, Mode=TwoWay}"/>
+                            <CheckBox Grid.Row="5" Grid.ColumnSpan="2" Content="CoilsEnabled" IsChecked="{Binding ClientCoilsEnabled}"/>
+                            <CheckBox Grid.Row="6" Grid.ColumnSpan="2" Content="HoldingRegistersEnabled" IsChecked="{Binding ClientHoldingRegistersEnabled}"/>
+                            <TextBlock Grid.Row="7" Classes="label" Text="CoilStartAddress" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="7" Grid.Column="1" Classes="compact" Text="{Binding ClientCoilStartAddress, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="8" Classes="label" Text="HoldingRegisterStartAddress" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="8" Grid.Column="1" Classes="compact" Text="{Binding ClientHoldingRegisterStartAddress, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="9" Classes="label" Text="CoilCount" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="9" Grid.Column="1" Classes="compact" Text="{Binding ClientCoilCount, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="10" Classes="label" Text="RegisterCount" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="10" Grid.Column="1" Classes="compact" Text="{Binding ClientRegisterCount, Mode=TwoWay}"/>
+                        </Grid>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="Сервер">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <Grid Margin="0,12,0,0"
+                              ColumnDefinitions="260,*"
+                              RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                              RowSpacing="9"
+                              ColumnSpacing="12">
+                            <CheckBox Grid.ColumnSpan="2" Content="Enabled" IsChecked="{Binding ServerEnabled}"/>
+                            <TextBlock Grid.Row="1" Classes="label" Text="BindAddress" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Classes="compact" Text="{Binding ServerBindAddress, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="2" Classes="label" Text="Port" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" Classes="compact" Text="{Binding ServerPort, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="3" Classes="label" Text="UnitId" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="3" Grid.Column="1" Classes="compact" Text="{Binding ServerUnitId, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="4" Classes="label" Text="PollIntervalMs" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="4" Grid.Column="1" Classes="compact" Text="{Binding ServerPollIntervalMs, Mode=TwoWay}"/>
+                            <CheckBox Grid.Row="5" Grid.ColumnSpan="2" Content="CoilsEnabled" IsChecked="{Binding ServerCoilsEnabled}"/>
+                            <CheckBox Grid.Row="6" Grid.ColumnSpan="2" Content="HoldingRegistersEnabled" IsChecked="{Binding ServerHoldingRegistersEnabled}"/>
+                            <TextBlock Grid.Row="7" Classes="label" Text="CoilStartAddress" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="7" Grid.Column="1" Classes="compact" Text="{Binding ServerCoilStartAddress, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="8" Classes="label" Text="HoldingRegisterStartAddress" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="8" Grid.Column="1" Classes="compact" Text="{Binding ServerHoldingRegisterStartAddress, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="9" Classes="label" Text="CoilCount" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="9" Grid.Column="1" Classes="compact" Text="{Binding ServerCoilCount, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="10" Classes="label" Text="RegisterCount" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="10" Grid.Column="1" Classes="compact" Text="{Binding ServerRegisterCount, Mode=TwoWay}"/>
+                        </Grid>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="Карта данных">
+                    <Grid Margin="0,12,0,0" RowDefinitions="Auto,*" RowSpacing="10">
+                        <Button Content="Добавить точку"
+                                Width="140"
+                                HorizontalAlignment="Left"
+                                Command="{Binding AddDataPointCommand}"/>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding DataPoints}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="dialog:ModbusDataPointEditorRow">
+                                        <Border BorderBrush="#EDF1F5" BorderThickness="0,0,0,1" Padding="4">
+                                            <Grid ColumnDefinitions="150,150,80,80,150,150,90" ColumnSpacing="8">
+                                                <TextBox Classes="compact" PlaceholderText="Name" Text="{Binding Name, Mode=TwoWay}"/>
+                                                <ComboBox Grid.Column="1"
+                                                          Classes="compact"
+                                                          ItemsSource="{Binding DataAreas}"
+                                                          SelectedItem="{Binding Area, Mode=TwoWay}"/>
+                                                <TextBox Grid.Column="2" Classes="compact" Text="{Binding Address, Mode=TwoWay}"/>
+                                                <TextBox Grid.Column="3" Classes="compact" Text="{Binding Length, Mode=TwoWay}"/>
+                                                <ComboBox Grid.Column="4"
+                                                          Classes="compact"
+                                                          ItemsSource="{Binding DataAccessModes}"
+                                                          SelectedItem="{Binding Access, Mode=TwoWay}"/>
+                                                <ComboBox Grid.Column="5"
+                                                          Classes="compact"
+                                                          ItemsSource="{Binding ValueTypes}"
+                                                          SelectedItem="{Binding Type, Mode=TwoWay}"/>
+                                                <Button Grid.Column="6"
+                                                        Content="Удалить"
+                                                        Command="{Binding RemoveCommand}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+
+            <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <TextBlock Text="{Binding ErrorText}"
+                           Foreground="#B42318"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <Button Content="Закрыть настройки" Width="140" Command="{Binding CloseCommand}"/>
+                    <Button Content="Сохранить" Width="110" Command="{Binding SaveCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

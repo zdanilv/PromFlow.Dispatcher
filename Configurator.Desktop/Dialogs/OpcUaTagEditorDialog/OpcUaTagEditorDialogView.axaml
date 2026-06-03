@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Dialogs.OpcUaTagEditorDialog"
+             x:Class="Configurator.Desktop.Dialogs.OpcUaTagEditorDialog.OpcUaTagEditorDialogView"
+             x:DataType="vm:OpcUaTagEditorDialogViewModel">
+    <Border Padding="18" CornerRadius="8" Background="White" Width="440">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="14">
+            <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold"/>
+
+            <Grid Grid.Row="1" ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
+                <TextBlock Text="Name" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding Name, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Row="1" Text="Namespace URI" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding NamespaceUri, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Row="2" Text="Identifier" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Identifier, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Row="3" Text="Data type" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="3" Grid.Column="1"
+                          ItemsSource="{Binding DataTypes}"
+                          SelectedItem="{Binding DataType, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Row="4" Text="Access" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="4" Grid.Column="1"
+                          ItemsSource="{Binding AccessModes}"
+                          SelectedItem="{Binding Access, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Row="5" Text="Initial value" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding InitialValue, Mode=TwoWay}"/>
+            </Grid>
+
+            <StackPanel Grid.Row="2" Spacing="6">
+                <TextBlock Text="Comment"/>
+                <TextBox Text="{Binding Comment, Mode=TwoWay}" AcceptsReturn="True" MinHeight="58"/>
+                <TextBlock Text="{Binding ErrorText}" Foreground="#B42318" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="Cancel" Width="92" Command="{Binding CancelCommand}"/>
+                <Button Content="OK" Width="92" Command="{Binding OkCommand}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

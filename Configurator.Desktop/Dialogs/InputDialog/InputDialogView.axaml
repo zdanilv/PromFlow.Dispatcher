@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Dialogs.InputDialog"
+             x:Class="Configurator.Desktop.Dialogs.InputDialog.InputDialogView"
+             x:DataType="vm:InputDialogViewModel">
+    <Border Padding="24" CornerRadius="8" Background="#FFF" MinWidth="320" MinHeight="160">
+        <Grid RowDefinitions="Auto,Auto,Auto">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <!-- Close button -->
+            <Button Grid.Column="1" Content="✕" Command="{Binding CancelCommand}" Width="28" Height="28" HorizontalAlignment="Right" VerticalAlignment="Top" Background="Transparent" BorderBrush="Transparent"/>
+            <!-- Message -->
+            <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="{Binding Message}" HorizontalAlignment="Center" FontSize="18" Margin="0,0,0,16" TextAlignment="Center"/>
+            <!-- Password input -->
+            <TextBox Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Password, Mode=TwoWay}" PasswordChar="*" HorizontalAlignment="Stretch" Margin="0,0,0,16"/>
+            <!-- OK button -->
+            <Button Grid.Row="2" Grid.ColumnSpan="2" Content="ОК" Command="{Binding OkCommand}" Width="80" HorizontalAlignment="Center"/>
+        </Grid>
+    </Border>
+</UserControl>

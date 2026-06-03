@@ -1,0 +1,23 @@
+<Solution>
+  <Folder Name="/Boot/">
+    <Project Path="Configurator.Boot/Configurator.Boot.csproj" />
+  </Folder>
+  <Folder Name="/Application/">
+    <Project Path="Configurator.Application/Configurator.Application.csproj" Id="038d57b2-0973-4a94-83c5-0bee6d8da978" />
+  </Folder>
+  <Folder Name="/Core/">
+    <Project Path="Configurator.Domain/Configurator.Domain.csproj" Id="a23dee00-e6ff-433b-b34d-57b62c3d9b0b" />
+  </Folder>
+  <Folder Name="/Infrastructure/">
+    <Project Path="Configurator.Infrastructure/Configurator.Infrastructure.csproj" Id="44379fe4-1490-4b20-ad4f-f4d0bc99ef41" />
+    <Project Path="Configurator.Infrastructure.Modbus/Configurator.Infrastructure.Modbus.csproj" Id="2cb7d861-29c2-47a0-99e9-08e26afdcad0" />
+    <Project Path="Configurator.Infrastructure.OpcUa/Configurator.Infrastructure.OpcUa.csproj" Id="7f7be3a6-5b6f-4f4e-bf3e-1fc3e0a54231" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Configurator.Infrastructure.Modbus.Tests/Configurator.Infrastructure.Modbus.Tests.csproj" Id="51918abf-41be-45a7-b74f-a7dedcae9eff" />
+    <Project Path="Configurator.Infrastructure.OpcUa.Tests/Configurator.Infrastructure.OpcUa.Tests.csproj" Id="d49f159e-f37d-4c47-9f6e-c516eeb8853c" />
+  </Folder>
+  <Folder Name="/Presentation/">
+    <Project Path="Configurator.Desktop/Configurator.Desktop.csproj" />
+  </Folder>
+</Solution>

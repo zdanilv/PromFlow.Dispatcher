@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Dialogs.OpcUaTagImportDialog"
+             x:Class="Configurator.Desktop.Dialogs.OpcUaTagImportDialog.OpcUaTagImportDialogView"
+             x:DataType="vm:OpcUaTagImportDialogViewModel">
+    <Border Padding="12" CornerRadius="8" Background="White" Width="820" Height="560">
+        <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="8">
+            <TextBlock Text="Import OPC UA tags" FontSize="18" FontWeight="SemiBold"/>
+
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,240,*,Auto,Auto,Auto" ColumnSpacing="8">
+                <TextBlock Text="Server" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{Binding EndpointOptions}"
+                          SelectedItem="{Binding SelectedEndpoint, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:OpcUaEndpointOption">
+                            <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBox Grid.Column="2" Text="{Binding EndpointUrl, Mode=TwoWay}"/>
+                <Button Grid.Column="3" Content="Add" Width="72" Command="{Binding AddEndpointCommand}"/>
+                <Button Grid.Column="4" Content="Refresh" Width="92" Command="{Binding DiscoverCommand}"/>
+                <Button Grid.Column="5" Content="Connect" Width="110" Command="{Binding ConnectCommand}"/>
+            </Grid>
+
+            <Border Grid.Row="2" BorderBrush="#D7DEE8" BorderThickness="1">
+                <Grid RowDefinitions="Auto,*">
+                    <Grid Background="#F4F7FA" ColumnDefinitions="330,100,110,80,*" Height="28">
+                        <TextBlock Margin="8,0" VerticalAlignment="Center" Text="OPC UA tag"/>
+                        <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="Data type"/>
+                        <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Access"/>
+                        <TextBlock Grid.Column="3" VerticalAlignment="Center" Text="HDA"/>
+                        <TextBlock Grid.Column="4" VerticalAlignment="Center" Text="Comment"/>
+                    </Grid>
+
+                    <TreeView Grid.Row="1" ItemsSource="{Binding Nodes}">
+                        <TreeView.ItemTemplate>
+                            <TreeDataTemplate ItemsSource="{Binding Children}">
+                                <Grid ColumnDefinitions="300,100,110,80,*" MinHeight="24">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                  IsEnabled="{Binding IsSelectable}"
+                                                  ToolTip.Tip="{Binding UnsupportedReason}"
+                                                  VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding DataType}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Access}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="3" Text="-" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding Comment}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                </Grid>
+                            </TreeDataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
+                </Grid>
+            </Border>
+
+            <TextBlock Grid.Row="3" Text="{Binding StatusText}" FontSize="12" Foreground="#526173"/>
+
+            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="Cancel" Width="92" Command="{Binding CancelCommand}"/>
+                <Button Content="Done" Width="92" IsEnabled="{Binding CanSubmit}" Command="{Binding OkCommand}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

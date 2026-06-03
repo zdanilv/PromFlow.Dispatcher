@@ -1,0 +1,14 @@
+
+<UserControl xmlns="https://github.com/avaloniaui"
+			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:vm="clr-namespace:Configurator.Desktop.Dialogs.ConfirmDialog"
+			 x:Class="Configurator.Desktop.Dialogs.ConfirmDialog.ConfirmDialogView"
+			 x:DataType="vm:ConfirmDialogViewModel">
+	<StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16" Margin="24">
+		<TextBlock Text="{Binding Message}" HorizontalAlignment="Center" FontSize="18" TextAlignment="Center"/>
+		<StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
+			<Button Content="ОК" Command="{Binding OkCommand}" Width="80"/>
+			<Button Content="Закрыть" Command="{Binding CancelCommand}" Width="80"/>
+		</StackPanel>
+	</StackPanel>
+</UserControl>

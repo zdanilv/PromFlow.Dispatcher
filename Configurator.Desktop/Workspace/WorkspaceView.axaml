@@ -1,0 +1,47 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Workspace;assembly=Configurator.Desktop"
+             xmlns:modbus="using:Configurator.Desktop.Workspace.Modbus"
+             xmlns:modbusDemo="using:Configurator.Desktop.Workspace.ModbusDemo"
+             xmlns:opcua="using:Configurator.Desktop.Workspace.OpcUa"
+             mc:Ignorable="d"
+             d:DesignWidth="1200"
+             d:DesignHeight="760"
+             x:Class="Configurator.Desktop.Workspace.WorkspaceView"
+             x:DataType="vm:WorkspaceViewModel">
+    <Grid RowDefinitions="Auto,*">
+        <Menu Grid.Row="0" Padding="2" IsVisible="False">
+            <MenuItem Header="_Файл">
+                <MenuItem Header="_Создать"/>
+                <Separator/>
+                <MenuItem Header="_Открыть"/>
+                <MenuItem Header="_Закрыть"/>
+                <Separator/>
+                <MenuItem Header="_Сохранить"/>
+                <MenuItem Header="_Сохранить как"/>
+            </MenuItem>
+            <MenuItem Header="_Правка">
+                <MenuItem Header="_Отменить"/>
+                <MenuItem Header="_Вернуть"/>
+                <Separator/>
+                <MenuItem Header="_Вырезать"/>
+                <MenuItem Header="_Копировать"/>
+                <MenuItem Header="_Вставить"/>
+            </MenuItem>
+        </Menu>
+
+        <TabControl Grid.Row="1" Padding="2">
+            <TabItem Header="Modbus TCP">
+                <modbus:ModbusView DataContext="{Binding Modbus}"/>
+            </TabItem>
+            <TabItem Header="Modbus Demo">
+                <modbusDemo:ModbusDemoView DataContext="{Binding ModbusDemo}"/>
+            </TabItem>
+            <TabItem Header="OPC UA">
+                <opcua:OpcUaView DataContext="{Binding OpcUa}"/>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</UserControl>

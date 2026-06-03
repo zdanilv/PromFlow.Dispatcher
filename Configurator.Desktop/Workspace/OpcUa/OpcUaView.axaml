@@ -1,0 +1,304 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:opcua="clr-namespace:Configurator.Desktop.Workspace.OpcUa"
+             mc:Ignorable="d"
+             d:DesignWidth="1280"
+             d:DesignHeight="820"
+             x:Class="Configurator.Desktop.Workspace.OpcUa.OpcUaView"
+             x:DataType="opcua:OpcUaViewModel">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.h1">
+            <Setter Property="FontSize" Value="22"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="TextBlock.h2">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="#526173"/>
+        </Style>
+        <Style Selector="TextBox.compact">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="MinWidth" Value="92"/>
+        </Style>
+        <Style Selector="Button.command">
+            <Setter Property="MinWidth" Value="82"/>
+            <Setter Property="Height" Value="34"/>
+        </Style>
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#D7DEE8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="12"/>
+        </Style>
+        <Style Selector="TextBlock.error">
+            <Setter Property="Foreground" Value="#B42318"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style Selector="ListBox.tagList">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid Background="#F4F7FA" RowDefinitions="Auto,*">
+        <Border Grid.Row="0"
+                Background="White"
+                BorderBrush="#D7DEE8"
+                BorderThickness="0,0,0,1"
+                Padding="16,12">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="18">
+                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Classes="h1" Text="OPC UA" HorizontalAlignment="Center"/>
+                    <TextBlock Classes="label" Text="{Binding LastUpdated, StringFormat='Updated: {0}'}" HorizontalAlignment="Center"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Border Classes="panel" Padding="10,8" MinWidth="260">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="label" Text="Client"/>
+                            <TextBlock FontWeight="SemiBold" Text="{Binding ClientState}"/>
+                            <TextBlock Classes="label" Text="{Binding ClientMessage}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="panel" Padding="10,8" MinWidth="260">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="label" Text="Server"/>
+                            <TextBlock FontWeight="SemiBold" Text="{Binding ServerState}"/>
+                            <TextBlock Classes="label" Text="{Binding ServerMessage}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="panel" Padding="10,8" MinWidth="260">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="label" Text="Last error"/>
+                            <TextBlock FontWeight="SemiBold" Text="{Binding LastError}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button Classes="command" Content="Start Both" Command="{Binding StartBothCommand}"/>
+                    <Button Classes="command" Content="Stop Both" Command="{Binding StopBothCommand}"/>
+                    <Button Classes="command" Content="Restart Both" Command="{Binding RestartBothCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="16" RowDefinitions="*,180" RowSpacing="8">
+            <TabControl Grid.Row="0" Padding="2">
+                <TabItem Header="Client">
+                    <Grid ColumnDefinitions="360,*,*" ColumnSpacing="14" Margin="0,12,0,0">
+                        <Border Grid.Column="0" Classes="panel">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Classes="h2" Text="Client settings"/>
+                                    <CheckBox Content="Enable in Both" IsChecked="{Binding ClientEnabled}"/>
+                                    <TextBlock Classes="label" Text="Endpoint"/>
+                                    <TextBox Classes="compact" Text="{Binding ClientEndpointUrl, Mode=TwoWay}"/>
+                                    <TextBlock Classes="h2" Text="Security"/>
+                                    <Grid ColumnDefinitions="*,140" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="label" Text="Mode"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SecurityMode}"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="label" Text="Authentication"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding AuthenticationMode}"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="label" Text="Certificates"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding CertificatesEnabled}"/>
+                                    </Grid>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Classes="command" Content="Start" Command="{Binding StartClientCommand}"/>
+                                        <Button Classes="command" Content="Stop" Command="{Binding StopClientCommand}"/>
+                                        <Button Classes="command" Content="Restart" Command="{Binding RestartClientCommand}"/>
+                                    </StackPanel>
+                                    <TextBlock Classes="h2" Text="Namespace for manual tags"/>
+                                    <TextBox Classes="compact" Text="{Binding NamespaceUri, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+
+                        <Border Grid.Column="1" Classes="panel">
+                            <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBlock Classes="h2" Text="Telemetry tags"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                        <Button Classes="command" Content="Add" Command="{Binding AddClientTelemetryCommand}"/>
+                                        <Button Classes="command" Content="Remove" Command="{Binding RemoveClientTelemetryCommand}"/>
+                                        <Button Classes="command" Content="Import" Command="{Binding ImportClientTelemetryCommand}"/>
+                                    </StackPanel>
+                                </Grid>
+                                <ListBox Grid.Row="1"
+                                         Classes="tagList"
+                                         ItemsSource="{Binding ClientTelemetryRows}"
+                                         SelectedItem="{Binding SelectedClientTelemetryRow, Mode=TwoWay}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="opcua:OpcUaTagRow">
+                                            <Border BorderBrush="#EDF1F5" BorderThickness="0,0,0,1" Padding="6" Background="{Binding RowBackground}" ToolTip.Tip="{Binding ErrorText}">
+                                                <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
+                                                    <Grid ColumnDefinitions="130,80,*,70" ColumnSpacing="10">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DataType}" Classes="label" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding ValueText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="3" Text="{Binding TimestampText}" Classes="label" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                    <TextBlock Grid.Row="1" Text="{Binding Identifier}" Classes="label" TextTrimming="CharacterEllipsis"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="2" Classes="panel">
+                            <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBlock Classes="h2" Text="Command tags"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                        <Button Classes="command" Content="Add" Command="{Binding AddClientCommandTagCommand}"/>
+                                        <Button Classes="command" Content="Remove" Command="{Binding RemoveClientCommandTagCommand}"/>
+                                        <Button Classes="command" Content="Import" Command="{Binding ImportClientCommandTagsCommand}"/>
+                                    </StackPanel>
+                                </Grid>
+                                <ListBox Grid.Row="1"
+                                         Classes="tagList"
+                                         ItemsSource="{Binding ClientCommandRows}"
+                                         SelectedItem="{Binding SelectedClientCommandRow, Mode=TwoWay}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="opcua:OpcUaTagRow">
+                                            <Border BorderBrush="#EDF1F5" BorderThickness="0,0,0,1" Padding="6" Background="{Binding RowBackground}" ToolTip.Tip="{Binding ErrorText}">
+                                                <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
+                                                    <Grid ColumnDefinitions="130,80,*" ColumnSpacing="10">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DataType}" Classes="label" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding ValueText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                    <TextBlock Grid.Row="1" Text="{Binding Identifier}" Classes="label" TextTrimming="CharacterEllipsis"/>
+                                                    <Grid Grid.Row="2" ColumnDefinitions="*,86" ColumnSpacing="8">
+                                                        <TextBox Classes="compact" Text="{Binding InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanWrite}"/>
+                                                        <Button Grid.Column="1" Classes="command" Content="Write" Command="{Binding WriteCommand}"/>
+                                                    </Grid>
+                                                    <TextBlock Grid.Row="3" Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Server">
+                    <Grid ColumnDefinitions="360,*,*" ColumnSpacing="14" Margin="0,12,0,0">
+                        <Border Grid.Column="0" Classes="panel">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Classes="h2" Text="Server settings"/>
+                                    <CheckBox Content="Enable in Both" IsChecked="{Binding ServerEnabled}"/>
+                                    <CheckBox Content="Demo telemetry" IsChecked="{Binding ServerDemoTelemetryEnabled}"/>
+                                    <TextBlock Classes="label" Text="Endpoint"/>
+                                    <TextBox Classes="compact" Text="{Binding ServerEndpointUrl, Mode=TwoWay}"/>
+                                    <TextBlock Classes="label" Text="Telemetry interval, ms"/>
+                                    <TextBox Classes="compact" Text="{Binding ServerTelemetryUpdateIntervalMs, Mode=TwoWay}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Classes="command" Content="Start" Command="{Binding StartServerCommand}"/>
+                                        <Button Classes="command" Content="Stop" Command="{Binding StopServerCommand}"/>
+                                        <Button Classes="command" Content="Restart" Command="{Binding RestartServerCommand}"/>
+                                    </StackPanel>
+                                    <TextBlock Classes="h2" Text="Namespace for manual tags"/>
+                                    <TextBox Classes="compact" Text="{Binding NamespaceUri, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+
+                        <Border Grid.Column="1" Classes="panel">
+                            <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBlock Classes="h2" Text="Server telemetry"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                        <Button Classes="command" Content="Add" Command="{Binding AddServerTelemetryCommand}"/>
+                                        <Button Classes="command" Content="Remove" Command="{Binding RemoveServerTelemetryCommand}"/>
+                                        <Button Classes="command" Content="Import" Command="{Binding ImportServerTelemetryCommand}"/>
+                                    </StackPanel>
+                                </Grid>
+                                <ListBox Grid.Row="1"
+                                         Classes="tagList"
+                                         ItemsSource="{Binding ServerTelemetryRows}"
+                                         SelectedItem="{Binding SelectedServerTelemetryRow, Mode=TwoWay}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="opcua:OpcUaTagRow">
+                                            <Border BorderBrush="#EDF1F5" BorderThickness="0,0,0,1" Padding="6" Background="{Binding RowBackground}" ToolTip.Tip="{Binding ErrorText}">
+                                                <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
+                                                    <Grid ColumnDefinitions="130,80,*" ColumnSpacing="10">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DataType}" Classes="label" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding ValueText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                    <TextBlock Grid.Row="1" Text="{Binding Identifier}" Classes="label" TextTrimming="CharacterEllipsis"/>
+                                                    <Grid Grid.Row="2" ColumnDefinitions="*,86" ColumnSpacing="8">
+                                                        <TextBox Classes="compact" Text="{Binding InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanWrite}"/>
+                                                        <Button Grid.Column="1" Classes="command" Content="Update" Command="{Binding WriteCommand}"/>
+                                                    </Grid>
+                                                    <TextBlock Grid.Row="3" Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="2" Classes="panel">
+                            <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                                <TextBlock Classes="h2" Text="Received commands"/>
+                                <ListBox Grid.Row="1" Classes="tagList" ItemsSource="{Binding ServerCommandRows}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="opcua:OpcUaTagRow">
+                                            <Border BorderBrush="#EDF1F5" BorderThickness="0,0,0,1" Padding="6" Background="{Binding RowBackground}" ToolTip.Tip="{Binding ErrorText}">
+                                                <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
+                                                    <Grid ColumnDefinitions="130,80,*,70" ColumnSpacing="10">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DataType}" Classes="label" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding ValueText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="3" Text="{Binding TimestampText}" Classes="label" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                    <TextBlock Grid.Row="1" Text="{Binding Identifier}" Classes="label" TextTrimming="CharacterEllipsis"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+
+            <Border Grid.Row="1" Classes="panel">
+                <Grid RowDefinitions="Auto,*" RowSpacing="8">
+                    <TextBlock Classes="h2" Text="Events"/>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Events}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="opcua:OpcUaEventRow">
+                                    <Border Height="22" ToolTip.Tip="{Binding Details}">
+                                        <Grid ColumnDefinitions="70,120,70,*" ColumnSpacing="8">
+                                            <TextBlock FontFamily="Consolas" FontSize="12" Text="{Binding TimeText}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" FontFamily="Consolas" FontSize="12" Text="{Binding Source}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="2" FontFamily="Consolas" FontSize="12" Text="{Binding Level}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="3" FontFamily="Consolas" FontSize="12" Text="{Binding Message}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

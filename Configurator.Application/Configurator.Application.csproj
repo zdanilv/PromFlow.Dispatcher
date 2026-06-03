@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.92.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Configurator.Domain\Configurator.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Services\Modbus\Configuration\" />
+    <Folder Include="Services\Modbus\Contracts\" />
+    <Folder Include="Services\Modbus\Data\" />
+    <Folder Include="Services\Modbus\Encoding\" />
+    <Folder Include="Services\Modbus\Runtime\" />
+    <Folder Include="Services\Modbus\Validation\" />
+    <Folder Include="Services\OpcUa\Browsing\" />
+    <Folder Include="Services\OpcUa\Common\" />
+    <Folder Include="Services\OpcUa\Configuration\" />
+    <Folder Include="Services\OpcUa\Contracts\" />
+    <Folder Include="Services\OpcUa\Discovery\" />
+    <Folder Include="Services\OpcUa\Runtime\" />
+    <Folder Include="Services\OpcUa\Security\" />
+    <Folder Include="Services\OpcUa\Tags\" />
+    <Folder Include="Services\OpcUa\Validation\" />
+  </ItemGroup>
+
+</Project>
