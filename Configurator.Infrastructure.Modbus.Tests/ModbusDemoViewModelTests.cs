@@ -87,18 +87,18 @@ public sealed class ModbusDemoViewModelTests
     }
 
     [Fact]
-    public async Task RadioButtonPulseCommandWritesOneThenZero()
+    public async Task RadioButtonToggleCommandWritesHeldState()
     {
         var service = new FakeModbusTcpService();
         using var viewModel = CreateViewModel(service);
         var command = FindCommand(viewModel, "Commands_1", 0);
 
-        await command.PressAsync();
-        Assert.True(command.IsPulseActive);
-        await command.ReleaseAsync();
+        command.IsChecked = true;
+        Assert.True(await WaitForAsync(() => service.SetCalls.Count == 1));
+        command.IsChecked = false;
+        Assert.True(await WaitForAsync(() => service.SetCalls.Count == 2));
 
-        Assert.Equal(ModbusCommandControlKind.RadioButtonPulse, command.ControlKind);
-        Assert.False(command.IsPulseActive);
+        Assert.Equal(ModbusCommandControlKind.RadioButtonToggle, command.ControlKind);
         Assert.Equal(("Commands_1", (ushort)1), service.SetCalls[0]);
         Assert.Equal(("Commands_1", (ushort)0), service.SetCalls[1]);
     }
@@ -153,6 +153,32 @@ public sealed class ModbusDemoViewModelTests
         Assert.True(released);
         Assert.Equal(("Commands_4", (ushort)1), service.SetCalls[0]);
         Assert.Equal(("Commands_4", (ushort)0), service.SetCalls[1]);
+    }
+
+    [Fact]
+    public async Task RadioButtonToggleBehaviorClearsAlreadyCheckedRadio()
+    {
+        var service = new FakeModbusTcpService();
+        using var viewModel = CreateViewModel(service);
+        var command = FindCommand(viewModel, "Commands_1", 0);
+        var behavior = new ModbusDemoRadioButtonToggleBehavior();
+        var radioButton = new RadioButton
+        {
+            DataContext = command,
+            IsChecked = true
+        };
+
+        command.IsChecked = true;
+        Assert.True(await WaitForAsync(() => service.SetCalls.Count == 1));
+        service.SetCalls.Clear();
+
+        Assert.True(behavior.CaptureIfChecked(radioButton));
+        Assert.True(behavior.ToggleOffIfCaptured(radioButton));
+
+        Assert.False(command.IsChecked);
+        Assert.False(radioButton.IsChecked);
+        Assert.True(await WaitForAsync(() => service.SetCalls.Count == 1));
+        Assert.Equal(("Commands_1", (ushort)0), service.SetCalls[0]);
     }
 
     [Fact]

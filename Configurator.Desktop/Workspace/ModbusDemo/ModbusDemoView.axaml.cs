@@ -11,11 +11,14 @@ namespace Configurator.Desktop.Workspace.ModbusDemo;
 public partial class ModbusDemoView : ReactiveUserControl<ModbusDemoViewModel>
 {
     private readonly ModbusDemoMomentaryCommandBehavior _momentaryCommandBehavior = new();
+    private readonly ModbusDemoRadioButtonToggleBehavior _radioButtonToggleBehavior = new();
 
     public ModbusDemoView()
     {
         InitializeComponent();
 
+        // MomentaryButton пишет 1 при нажатии и 0 при любом сценарии отпускания, включая потерю
+        // pointer capture. Глобальная регистрация нужна, чтобы сработали и вложенные части контрола.
         AddHandler(
             InputElement.PointerPressedEvent,
             MomentaryCommand_PointerPressed,
@@ -74,6 +77,27 @@ public partial class ModbusDemoView : ReactiveUserControl<ModbusDemoViewModel>
     private async void MomentaryCommand_LostFocus(object? sender, RoutedEventArgs e)
     {
         await _momentaryCommandBehavior.ReleaseIfSourceAsync(e.Source);
+    }
+
+    private void RadioButtonToggle_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        _radioButtonToggleBehavior.CaptureIfChecked(e.Source);
+    }
+
+    private void RadioButtonToggle_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.Space or Key.Enter)
+        {
+            _radioButtonToggleBehavior.CaptureIfChecked(e.Source);
+        }
+    }
+
+    private void RadioButtonToggle_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_radioButtonToggleBehavior.ToggleOffIfCaptured(e.Source))
+        {
+            e.Handled = true;
+        }
     }
 }
 
@@ -135,6 +159,64 @@ internal sealed class ModbusDemoMomentaryCommandBehavior
             return true;
         }
 
+        row = null!;
+        return false;
+    }
+}
+
+internal sealed class ModbusDemoRadioButtonToggleBehavior
+{
+    private ModbusCommandBitRow? _checkedRowBeforeActivation;
+
+    public bool CaptureIfChecked(object? source)
+    {
+        _checkedRowBeforeActivation = null;
+
+        if (!TryGetRadioButtonToggle(source, out _, out var row) || !row.IsChecked)
+        {
+            return false;
+        }
+
+        _checkedRowBeforeActivation = row;
+        return true;
+    }
+
+    public bool ToggleOffIfCaptured(object? source)
+    {
+        var capturedRow = _checkedRowBeforeActivation;
+        _checkedRowBeforeActivation = null;
+
+        if (capturedRow is null
+            || !TryGetRadioButtonToggle(source, out var radioButton, out var sourceRow)
+            || !ReferenceEquals(capturedRow, sourceRow))
+        {
+            return false;
+        }
+
+        // Avalonia RadioButton не снимает выбор при повторной активации. Q1 намеренно остается
+        // radio-визуалом, но пишет удерживаемый бит, поэтому чистим и UI, и состояние ViewModel.
+        sourceRow.IsChecked = false;
+        radioButton.IsChecked = false;
+        return true;
+    }
+
+    private static bool TryGetRadioButtonToggle(
+        object? source,
+        out RadioButton radioButton,
+        out ModbusCommandBitRow row)
+    {
+        for (var control = source as Control; control is not null; control = control.Parent as Control)
+        {
+            if (control is RadioButton { DataContext: ModbusCommandBitRow commandRow } button
+                && commandRow.IsRadioButtonToggle)
+            {
+                radioButton = button;
+                row = commandRow;
+                return true;
+            }
+        }
+
+        radioButton = null!;
         row = null!;
         return false;
     }

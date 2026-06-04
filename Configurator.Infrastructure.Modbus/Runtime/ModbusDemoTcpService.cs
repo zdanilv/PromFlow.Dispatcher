@@ -10,6 +10,10 @@ namespace Configurator.Infrastructure.Modbus.Runtime;
 /// <summary>
 /// Делегирующий фасад, владеющий отдельным Modbus-стеком демо-экрана.
 /// </summary>
+/// <remarks>
+/// Основная логика запуска, чтения, записи и подтверждения остается в <see cref="IModbusTcpService"/>.
+/// Этот класс нужен как владелец demo-runtime и точка DisposeAsync для всех его компонентов.
+/// </remarks>
 internal sealed class ModbusDemoTcpService(
     IModbusTcpService facade,
     IModbusRuntimeService runtime,
@@ -19,7 +23,7 @@ internal sealed class ModbusDemoTcpService(
     private int _disposed;
 
     /// <summary>
-    /// Текущее состояние независимого демо-сервиса Modbus.
+    /// Текущее состояние независимого demo-фасада Modbus.
     /// </summary>
     public ModbusServiceState State => facade.State;
 
@@ -33,13 +37,13 @@ internal sealed class ModbusDemoTcpService(
     }
 
     /// <summary>
-    /// Запускает только клиентскую роль runtime.
+    /// Запускает клиентскую роль demo-runtime с настройками секции ModbusDemo.
     /// </summary>
     public Task<ModbusOperationResult> StartClientAsync(ModbusOptions? options = null, CancellationToken ct = default)
         => facade.StartClientAsync(options, ct);
 
     /// <summary>
-    /// Запускает только серверную роль runtime.
+    /// Запускает серверную роль demo-runtime с настройками секции ModbusDemo.
     /// </summary>
     public Task<ModbusOperationResult> StartServerAsync(ModbusOptions? options = null, CancellationToken ct = default)
         => facade.StartServerAsync(options, ct);
@@ -69,7 +73,7 @@ internal sealed class ModbusDemoTcpService(
         => facade.Subscribe(name, onChanged);
 
     /// <summary>
-    /// Отписывается от событий, останавливает runtime и освобождает синхронизационные ресурсы.
+    /// Останавливает demo-runtime и освобождает компоненты, созданные вручную в DI.
     /// </summary>
     public async ValueTask DisposeAsync()
     {

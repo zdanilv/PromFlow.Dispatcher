@@ -9,13 +9,13 @@ using Microsoft.Extensions.Options;
 namespace Configurator.Infrastructure.Modbus.Configuration;
 
 /// <summary>
-/// Читает настройки демо-экрана из именованной секции ModbusDemo.
+/// Читает настройки демо-экрана из named-секции <c>ModbusDemo</c>.
 /// </summary>
 internal sealed class ModbusDemoOptionsProvider(
     IOptionsMonitor<ModbusOptions> optionsMonitor) : IModbusDemoOptionsProvider
 {
     /// <summary>
-    /// Возвращает копию текущих настроек демо-секции Modbus.
+    /// Возвращает clone, чтобы ViewModel могла открыть диалог настроек без изменения live-options.
     /// </summary>
     public ModbusOptions CurrentValue => optionsMonitor.Get(ModbusOptions.DemoSectionName).Clone();
 }

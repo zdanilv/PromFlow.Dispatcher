@@ -8,12 +8,12 @@ using Configurator.Application.Services.Modbus.Validation;
 namespace Configurator.Application.Services.Modbus.Contracts;
 
 /// <summary>
-/// Предоставляет настройки независимого Modbus TCP демо-экрана.
+/// Предоставляет снимок настроек named-секции <c>ModbusDemo</c>.
 /// </summary>
 public interface IModbusDemoOptionsProvider
 {
     /// <summary>
-    /// Текущие настройки секции ModbusDemo.
+    /// Копия текущих настроек demo-стека; вызывающий код может безопасно менять ее перед запуском.
     /// </summary>
     ModbusOptions CurrentValue { get; }
 }

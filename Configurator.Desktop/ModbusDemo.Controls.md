@@ -39,7 +39,7 @@ new("Commands_1", "C_ПУСК", 2, ModbusCommandControlKind.MomentaryButton, Wri
 Доступные типы:
 
 - `MomentaryButton`: пишет `1` при нажатии и `0` при отпускании.
-- `RadioButtonPulse`: выглядит как `RadioButton`, но тоже работает импульсом `1 -> 0`.
+- `RadioButtonToggle`: выглядит как `RadioButton`, но удерживает состояние; повторная активация снимает выбор и пишет `0`.
 - `CheckBox`: удерживает состояние, пишет `1` при включении и `0` при выключении.
 - `ToggleButton`: удерживает состояние как переключатель.
 

@@ -41,11 +41,14 @@ public static class DependencyInjection
         return services;
     }
 
+    /// <summary>
+    /// Собирает отдельный Modbus стек для вкладки Modbus Demo.
+    /// </summary>
     private static IModbusDemoTcpService CreateDemoTcpService(IServiceProvider serviceProvider)
     {
         var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
-        // Демо-экран не должен переиспользовать основной runtime: у него отдельная
-        // секция настроек, клиент, сервер и facade, чтобы сценарии не мешали друг другу.
+        // Демо-экран не переиспользует основной runtime: у него отдельная named-секция,
+        // клиент, сервер и facade, чтобы вкладки Modbus TCP и Modbus Demo не меняли состояние друг друга.
         var optionsMonitor = new NamedOptionsMonitor<ModbusOptions>(
             serviceProvider.GetRequiredService<IOptionsMonitor<ModbusOptions>>(),
             ModbusOptions.DemoSectionName);

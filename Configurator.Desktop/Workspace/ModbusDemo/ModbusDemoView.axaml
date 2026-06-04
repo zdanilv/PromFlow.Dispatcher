@@ -89,6 +89,7 @@
               Margin="16"
               ColumnDefinitions="1.05*,0.95*,1.25*"
               ColumnSpacing="14">
+            <!-- Телеметрия: read-only Holding Registers разворачиваются в битовые строки. -->
             <Border Grid.Column="0" Classes="panel">
                 <Grid RowDefinitions="Auto,*" RowSpacing="10">
                     <TextBlock Classes="h2" Text="Телеметрия"/>
@@ -144,6 +145,7 @@
                 </Grid>
             </Border>
 
+            <!-- Команды: каждый контрол меняет один бит в своем 16-битном командном регистре. -->
             <Border Grid.Column="1" Classes="panel">
                 <Grid RowDefinitions="Auto,*" RowSpacing="10">
                     <TextBlock Classes="h2" Text="Команды"/>
@@ -173,7 +175,12 @@
                                                             <Button Grid.Column="1"
                                                                     Classes="pulse"
                                                                     IsVisible="{Binding IsMomentaryButton}"
-                                                                    Content="{Binding Name}"/>
+                                                                    Content="{Binding Name}"
+                                                                    PointerPressed="MomentaryCommand_PointerPressed"
+                                                                    PointerReleased="MomentaryCommand_PointerReleased"
+                                                                    PointerCaptureLost="MomentaryCommand_PointerCaptureLost"
+                                                                    PointerExited="MomentaryCommand_PointerExited"
+                                                                    LostFocus="MomentaryCommand_LostFocus"/>
                                                             <ToggleButton Grid.Column="1"
                                                                           Classes="commandToggle"
                                                                           IsVisible="{Binding IsToggleButton}"
@@ -181,9 +188,13 @@
                                                                           IsChecked="{Binding IsChecked, Mode=TwoWay}"/>
                                                             <RadioButton Grid.Column="1"
                                                                          Classes="commandToggle"
-                                                                         IsVisible="{Binding IsRadioButtonPulse}"
+                                                                         IsVisible="{Binding IsRadioButtonToggle}"
                                                                          Content="{Binding Name}"
-                                                                         IsChecked="{Binding IsPulseActive, Mode=OneWay}"/>
+                                                                         GroupName="{Binding RadioGroupName}"
+                                                                         IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                                                         PointerPressed="RadioButtonToggle_PointerPressed"
+                                                                         KeyDown="RadioButtonToggle_KeyDown"
+                                                                         Click="RadioButtonToggle_Click"/>
                                                             <CheckBox Grid.Column="1"
                                                                       IsVisible="{Binding IsCheckBox}"
                                                                       Content="{Binding Name}"
@@ -202,6 +213,7 @@
                 </Grid>
             </Border>
 
+            <!-- Параметры: polling обновляет LastReadValue, а редактирование отправляется только командой записи. -->
             <Border Grid.Column="2" Classes="panel">
                 <Grid RowDefinitions="Auto,*" RowSpacing="10">
                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">

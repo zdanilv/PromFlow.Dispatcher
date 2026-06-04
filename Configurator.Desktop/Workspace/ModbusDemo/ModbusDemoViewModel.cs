@@ -31,6 +31,8 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     private readonly Action<Action> _dispatchToUi;
     private readonly Dictionary<string, ModbusTelemetryRegisterGroup> _telemetryByPoint = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ModbusParameterRow> _parametersByPoint = new(StringComparer.OrdinalIgnoreCase);
+    // Команды ModbusDemo отправляются целыми Holding Register, поэтому UI хранит последнее слово
+    // каждого командного регистра и меняет в нем только выбранный бит.
     private readonly Dictionary<string, ushort> _commandWords = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<IDisposable> _dataSubscriptions = [];
     private readonly object _lifecycleSync = new();
@@ -275,8 +277,8 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
                 : (ushort)0;
             var mask = checked((ushort)(1 << row.BitIndex));
 
-            // Устройство принимает команды целым Holding Register, поэтому каждый бит упаковывается
-            // обратно в локально сохраненное 16-битное слово командного регистра.
+            // SetAsync принимает значение всего регистра. При ошибке ниже откатываем локальное слово,
+            // чтобы следующее переключение не унаследовало бит, который фактически не ушел в Modbus.
             nextWord = value
                 ? (ushort)(previousWord | mask)
                 : (ushort)(previousWord & ~mask);
@@ -312,6 +314,8 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     {
         var missingCount = 0;
 
+        // Polling обновляет только LastReadValueText. В поля редактирования значения попадают
+        // по явной команде, чтобы пользовательский ввод не затирался очередным snapshot.
         foreach (var parameter in ParameterRows)
         {
             if (!parameter.CopyLatestToEdit())
@@ -627,9 +631,11 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     private ObservableCollection<ModbusCommandRegisterGroup> CreateCommandGroups()
         =>
         [
+            // Commands_* соответствуют write-only Holding Registers. Q1 визуально остается RadioButton,
+            // но работает как удерживаемый переключатель, а не как импульс по нажатию/отпусканию.
             new("Commands_1", 16388,
             [
-                new("Commands_1", "C_СБРОС", 0, ModbusCommandControlKind.RadioButtonPulse, WriteCommandBitAsync),
+                new("Commands_1", "C_СБРОС", 0, ModbusCommandControlKind.RadioButtonToggle, WriteCommandBitAsync),
                 new("Commands_1", "C_ОТМЕНА", 1, ModbusCommandControlKind.CheckBox, WriteCommandBitAsync),
                 new("Commands_1", "C_ПУСК-ВРАЩЕНИЕ", 2, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync),
                 new("Commands_1", "C_ПУСК-З_ВЫГРУЗКА", 3, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync),
@@ -856,17 +862,22 @@ public sealed class ModbusCommandBitRow : ViewModelBase
 
     public ModbusCommandControlKind ControlKind { get; }
 
+    public string RadioGroupName => $"{PointName}_Q{BitIndex + 1}";
+
     public bool IsMomentaryButton => ControlKind == ModbusCommandControlKind.MomentaryButton;
 
     public bool IsToggleButton => ControlKind == ModbusCommandControlKind.ToggleButton;
 
-    public bool IsRadioButtonPulse => ControlKind == ModbusCommandControlKind.RadioButtonPulse;
+    public bool IsRadioButtonToggle => ControlKind == ModbusCommandControlKind.RadioButtonToggle;
 
     public bool IsCheckBox => ControlKind == ModbusCommandControlKind.CheckBox;
 
-    public bool IsPulseControl => ControlKind is ModbusCommandControlKind.MomentaryButton or ModbusCommandControlKind.RadioButtonPulse;
+    public bool IsPulseControl => ControlKind == ModbusCommandControlKind.MomentaryButton;
 
-    public bool IsHoldControl => ControlKind is ModbusCommandControlKind.ToggleButton or ModbusCommandControlKind.CheckBox;
+    public bool IsHoldControl => ControlKind is
+        ModbusCommandControlKind.ToggleButton
+        or ModbusCommandControlKind.RadioButtonToggle
+        or ModbusCommandControlKind.CheckBox;
 
     public bool IsWriting
     {
@@ -887,6 +898,8 @@ public sealed class ModbusCommandBitRow : ViewModelBase
             var previous = _isChecked;
             this.RaiseAndSetIfChanged(ref _isChecked, value);
 
+            // Удерживаемые контролы пишут новое состояние сразу при изменении IsChecked.
+            // Импульсные кнопки используют PressAsync/ReleaseAsync и сюда не попадают.
             if (IsHoldControl)
             {
                 _ = WriteHoldAsync(previous, value);
@@ -946,7 +959,7 @@ public enum ModbusCommandControlKind
 {
     MomentaryButton,
     ToggleButton,
-    RadioButtonPulse,
+    RadioButtonToggle,
     CheckBox
 }
 
