@@ -52,8 +52,10 @@
 	  <Folder Include="Workspace\Modbus\" />
 	  <Folder Include="Workspace\OpcUa\" />
 	  <Folder Include="Workspace\Startspace\" />
+	  <Folder Include="Properties\" />
 	</ItemGroup>
 	<ItemGroup>
+	  <None Update="ModbusDemo.Controls.md" />
 	  <None Update="Workspace\Modbus\ModbusView.axaml">
 	    <SubType>Designer</SubType>
 	  </None>

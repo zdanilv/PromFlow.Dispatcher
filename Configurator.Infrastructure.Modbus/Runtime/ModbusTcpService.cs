@@ -305,6 +305,7 @@ internal sealed class ModbusTcpService : IModbusTcpService
         ModbusOptions? options,
         CancellationToken ct)
     {
+        _logger.LogInformation("Modbus facade {Role} start requested", role);
         await _gate.WaitAsync(ct);
 
         try
@@ -320,20 +321,26 @@ internal sealed class ModbusTcpService : IModbusTcpService
                 return validation;
             }
 
+            _logger.LogInformation("Modbus facade {Role} validation passed", role);
             _currentOptions = nextOptions;
             ApplyDataMap(_currentOptions);
 
             if (role == ModbusRunMode.Client)
             {
+                _logger.LogInformation("Modbus facade Client start: stopping server role");
                 await _runtimeService.StopServerAsync(ct);
+                _logger.LogInformation("Modbus facade Client start: starting client role");
                 await _runtimeService.StartClientAsync(_currentOptions, ct);
             }
             else
             {
+                _logger.LogInformation("Modbus facade Server start: stopping client role");
                 await _runtimeService.StopClientAsync(ct);
+                _logger.LogInformation("Modbus facade Server start: starting server role");
                 await _runtimeService.StartServerAsync(_currentOptions, ct);
             }
 
+            _logger.LogInformation("Modbus facade {Role} start completed", role);
             return ModbusOperationResult.Success();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

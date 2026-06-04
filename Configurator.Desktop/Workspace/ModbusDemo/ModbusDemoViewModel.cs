@@ -1,87 +1,146 @@
-using Configurator.Application.Services.Dialogs;
+using Avalonia.Threading;
 using Configurator.Application.Services;
+using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
-using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
-using Configurator.Application.Services.Modbus.Validation;
 using ReactiveUI;
 using System;
+using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Configurator.Desktop.Workspace.ModbusDemo;
 
 /// <summary>
-/// Демонстрирует простые UI-привязки через высокоуровневый Modbus TCP фасад.
+/// Экран проекта ModbusDemo: связывает элементы управления с Holding Registers удаленного устройства.
 /// </summary>
 public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
 {
-    private const string DemoButtonName = "DemoButton";
-    private const string DemoInputName = "DemoInput";
-    private const string DemoImageVisibleName = "DemoImageVisible";
+    private const int HoldingRegisterBaseAddress = 16384;
 
     private readonly IModbusDemoTcpService _modbusTcpService;
     private readonly IModbusDemoOptionsProvider _optionsProvider;
     private readonly IDialogService _dialogService;
     private readonly IAppConfigService _appConfigService;
-    private readonly IDisposable _buttonSubscription;
-    private readonly IDisposable _inputSubscription;
-    private readonly IDisposable _imageSubscription;
-    private bool _demoButton;
+    private readonly Action<Action> _dispatchToUi;
+    private readonly Dictionary<string, ModbusTelemetryRegisterGroup> _telemetryByPoint = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ModbusParameterRow> _parametersByPoint = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ushort> _commandWords = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<IDisposable> _dataSubscriptions = [];
+    private readonly object _lifecycleSync = new();
+    private readonly SemaphoreSlim _commandWriteGate = new(1, 1);
+    private CancellationTokenSource? _lifecycleCancellation;
+    private int _activeLifecycleOperationCount;
     private bool _isCommandRunning;
-    private bool _isDemoImageVisible;
+    private bool _isLifecycleOperationActive;
     private bool _isWaitingForConnection;
-    private bool _suppressButtonWrite;
     private ModbusConnectionState _clientState = ModbusConnectionState.Stopped;
     private ModbusConnectionState _serverState = ModbusConnectionState.Stopped;
     private ModbusOptions _currentOptions;
-    private string _demoInputText = "0";
     private string _lastError = string.Empty;
     private string _statusText = "Modbus stopped.";
 
     /// <summary>
-    /// Создает демо-модель представления и подписывается на точки данных фасада.
+    /// Создает модель экрана и подписывается на readable-точки карты ModbusDemo.
     /// </summary>
     public ModbusDemoViewModel(
         IModbusDemoTcpService modbusTcpService,
         IModbusDemoOptionsProvider optionsProvider,
         IDialogService dialogService,
         IAppConfigService appConfigService)
+        : this(modbusTcpService, optionsProvider, dialogService, appConfigService, DispatchToUi)
+    {
+    }
+
+    internal ModbusDemoViewModel(
+        IModbusDemoTcpService modbusTcpService,
+        IModbusDemoOptionsProvider optionsProvider,
+        IDialogService dialogService,
+        IAppConfigService appConfigService,
+        Action<Action> dispatchToUi)
     {
         _modbusTcpService = modbusTcpService;
         _optionsProvider = optionsProvider;
         _dialogService = dialogService;
         _appConfigService = appConfigService;
+        ArgumentNullException.ThrowIfNull(dispatchToUi);
+        _dispatchToUi = dispatchToUi;
         _currentOptions = _optionsProvider.CurrentValue.Clone();
+
+        TelemetryGroups = CreateTelemetryGroups();
+        CommandGroups = CreateCommandGroups();
+        ParameterRows = CreateParameterRows();
+
+        foreach (var group in TelemetryGroups)
+        {
+            _telemetryByPoint[group.PointName] = group;
+        }
+
+        foreach (var group in CommandGroups)
+        {
+            _commandWords[group.PointName] = 0;
+        }
+
+        foreach (var parameter in ParameterRows)
+        {
+            _parametersByPoint[parameter.PointName] = parameter;
+        }
 
         var canStartServer = this.WhenAnyValue(x => x.CanStartServer);
         var canStartClient = this.WhenAnyValue(x => x.CanStartClient);
         var canStop = this.WhenAnyValue(x => x.CanStop);
         var canOpenSettings = this.WhenAnyValue(x => x.CanOpenSettings);
         var canRunCommand = this.WhenAnyValue(x => x.IsCommandRunning).Select(isRunning => !isRunning);
-        StartServerCommand = ReactiveCommand.CreateFromTask(
-            () => RunCommandAsync(() => _modbusTcpService.StartServerAsync(BuildOptions())),
+        StartServerCommand = ReactiveCommand.Create(
+            () => StartModbusLifecycleOperation(
+                "StartServer",
+                (options, ct) => _modbusTcpService.StartServerAsync(options, ct)),
             canStartServer);
-        StartClientCommand = ReactiveCommand.CreateFromTask(
-            () => RunCommandAsync(() => _modbusTcpService.StartClientAsync(BuildOptions())),
+        StartClientCommand = ReactiveCommand.Create(
+            () => StartModbusLifecycleOperation(
+                "StartClient",
+                (options, ct) => _modbusTcpService.StartClientAsync(options, ct)),
             canStartClient);
-        StopCommand = ReactiveCommand.CreateFromTask(
-            () => RunCommandAsync(() => _modbusTcpService.StopAsync()),
+        StopCommand = ReactiveCommand.Create(
+            StopModbusLifecycleOperation,
             canStop);
         OpenSettingsCommand = ReactiveCommand.CreateFromTask(OpenSettingsAsync, canOpenSettings);
-        SaveInputCommand = ReactiveCommand.CreateFromTask(SaveInputAsync, canRunCommand);
+        ReadParametersCommand = ReactiveCommand.CreateFromTask(
+            () => RunUiCommandAsync(ReadParametersCoreAsync),
+            canRunCommand);
+        WriteParametersCommand = ReactiveCommand.CreateFromTask(
+            () => RunUiCommandAsync(WriteParametersCoreAsync),
+            canRunCommand);
 
         _modbusTcpService.StateChanged += OnStateChanged;
         ApplyState(_modbusTcpService.State);
 
-        _buttonSubscription = _modbusTcpService.Subscribe(DemoButtonName, ApplyDataValue);
-        _inputSubscription = _modbusTcpService.Subscribe(DemoInputName, ApplyDataValue);
-        _imageSubscription = _modbusTcpService.Subscribe(DemoImageVisibleName, ApplyDataValue);
+        foreach (var pointName in _telemetryByPoint.Keys.Concat(_parametersByPoint.Keys))
+        {
+            _dataSubscriptions.Add(_modbusTcpService.Subscribe(pointName, OnDataValueChanged));
+        }
     }
+
+    /// <summary>
+    /// Группы телеметрических регистров и их подписанные биты.
+    /// </summary>
+    public ObservableCollection<ModbusTelemetryRegisterGroup> TelemetryGroups { get; }
+
+    /// <summary>
+    /// Группы командных регистров, которые UI пишет как целые UInt16-слова.
+    /// </summary>
+    public ObservableCollection<ModbusCommandRegisterGroup> CommandGroups { get; }
+
+    /// <summary>
+    /// Изменяемые числовые параметры устройства.
+    /// </summary>
+    public ObservableCollection<ModbusParameterRow> ParameterRows { get; }
 
     /// <summary>
     /// Запускает серверную роль Modbus для демо-стека.
@@ -104,67 +163,17 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
 
     /// <summary>
-    /// Записывает значение textbox в настроенный демо Holding Register.
+    /// Копирует последние прочитанные значения параметров в поля редактирования.
     /// </summary>
-    public ReactiveCommand<Unit, Unit> SaveInputCommand { get; }
+    public ReactiveCommand<Unit, Unit> ReadParametersCommand { get; }
 
     /// <summary>
-    /// Значение toggle, которое пишет DemoButton при изменении пользователем.
+    /// Записывает отредактированные значения параметров в Holding Registers.
     /// </summary>
-    public bool DemoButton
-    {
-        get => _demoButton;
-        set
-        {
-            if (_demoButton == value)
-            {
-                return;
-            }
-
-            this.RaiseAndSetIfChanged(ref _demoButton, value);
-            this.RaisePropertyChanged(nameof(DemoButtonText));
-
-            if (!_suppressButtonWrite)
-            {
-                _ = WriteDemoButtonAsync(value);
-            }
-        }
-    }
+    public ReactiveCommand<Unit, Unit> WriteParametersCommand { get; }
 
     /// <summary>
-    /// Текст на toggle для Coil.
-    /// </summary>
-    public string DemoButtonText => DemoButton ? "Coil 0 = True" : "Coil 0 = False";
-
-    /// <summary>
-    /// Значение textbox для записи демо Holding Register.
-    /// </summary>
-    public string DemoInputText
-    {
-        get => _demoInputText;
-        set => this.RaiseAndSetIfChanged(ref _demoInputText, value);
-    }
-
-    /// <summary>
-    /// Показывает демо-картинку, когда DemoImageVisible равен 1.
-    /// </summary>
-    public bool IsDemoImageVisible
-    {
-        get => _isDemoImageVisible;
-        private set => this.RaiseAndSetIfChanged(ref _isDemoImageVisible, value);
-    }
-
-    /// <summary>
-    /// Показывает, что фасад запускается или переподключается.
-    /// </summary>
-    public bool IsWaitingForConnection
-    {
-        get => _isWaitingForConnection;
-        private set => this.RaiseAndSetIfChanged(ref _isWaitingForConnection, value);
-    }
-
-    /// <summary>
-    /// Не дает запускать несколько UI-команд одновременно.
+    /// Показывает, что фасад запускается, останавливается или выполняет UI-запись.
     /// </summary>
     public bool IsCommandRunning
     {
@@ -172,6 +181,19 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         private set
         {
             this.RaiseAndSetIfChanged(ref _isCommandRunning, value);
+            RaiseCommandStateChanged();
+        }
+    }
+
+    /// <summary>
+    /// Показывает, что Start/Stop выполняется в фоне и UI-команда уже отпущена.
+    /// </summary>
+    public bool IsLifecycleOperationActive
+    {
+        get => _isLifecycleOperationActive;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isLifecycleOperationActive, value);
             RaiseCommandStateChanged();
         }
     }
@@ -195,6 +217,15 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// Показывает, что клиентская роль ожидает подключения.
+    /// </summary>
+    public bool IsWaitingForConnection
+    {
+        get => _isWaitingForConnection;
+        private set => this.RaiseAndSetIfChanged(ref _isWaitingForConnection, value);
+    }
+
+    /// <summary>
     /// Можно ли запускать демо-клиент.
     /// </summary>
     public bool CanStartClient => !IsCommandRunning && IsStartable(_clientState);
@@ -207,7 +238,7 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Можно ли останавливать демо-стек.
     /// </summary>
-    public bool CanStop => !IsCommandRunning && (IsStoppable(_clientState) || IsStoppable(_serverState));
+    public bool CanStop => IsLifecycleOperationActive || (!IsCommandRunning && (IsStoppable(_clientState) || IsStoppable(_serverState)));
 
     /// <summary>
     /// Можно ли открыть настройки demo-стека без изменения активного подключения.
@@ -215,60 +246,238 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     public bool CanOpenSettings => !IsCommandRunning && IsConfigurable(_clientState) && IsConfigurable(_serverState);
 
     /// <summary>
-    /// Освобождает подписки фасада.
+    /// Освобождает подписки фасада и синхронизационные ресурсы.
     /// </summary>
     public void Dispose()
     {
+        CancelActiveLifecycleOperation();
         _modbusTcpService.StateChanged -= OnStateChanged;
-        _buttonSubscription.Dispose();
-        _inputSubscription.Dispose();
-        _imageSubscription.Dispose();
+
+        foreach (var subscription in _dataSubscriptions)
+        {
+            subscription.Dispose();
+        }
+
+        _commandWriteGate.Dispose();
     }
 
-    /// <summary>
-    /// Проверяет и записывает значение textbox в настроенный Holding Register.
-    /// </summary>
-    private async Task SaveInputAsync()
+    internal async Task<bool> WriteCommandBitAsync(ModbusCommandBitRow row, bool value)
     {
-        if (!ushort.TryParse(DemoInputText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+        await _commandWriteGate.WaitAsync();
+
+        ushort previousWord;
+        ushort nextWord;
+
+        try
         {
-            await ShowErrorAsync("Input must be a number from 0 to 65535.");
-            return;
+            previousWord = _commandWords.TryGetValue(row.PointName, out var currentWord)
+                ? currentWord
+                : (ushort)0;
+            var mask = checked((ushort)(1 << row.BitIndex));
+
+            // Устройство принимает команды целым Holding Register, поэтому каждый бит упаковывается
+            // обратно в локально сохраненное 16-битное слово командного регистра.
+            nextWord = value
+                ? (ushort)(previousWord | mask)
+                : (ushort)(previousWord & ~mask);
+            _commandWords[row.PointName] = nextWord;
+        }
+        finally
+        {
+            _commandWriteGate.Release();
         }
 
-        var result = await _modbusTcpService.SetAsync(DemoInputName, value);
-        if (!result.Succeeded)
+        var result = await _modbusTcpService.SetAsync(row.PointName, nextWord);
+        if (result.Succeeded)
         {
-            await ShowErrorAsync(OperationMessage(result));
+            return true;
         }
+
+        await _commandWriteGate.WaitAsync();
+
+        try
+        {
+            _commandWords[row.PointName] = previousWord;
+        }
+        finally
+        {
+            _commandWriteGate.Release();
+        }
+
+        await ShowErrorAsync(OperationMessage(result));
+        return false;
     }
 
-    /// <summary>
-    /// Записывает состояние toggle в настроенный Coil.
-    /// </summary>
-    private async Task WriteDemoButtonAsync(bool value)
+    private Task ReadParametersCoreAsync()
     {
-        var result = await _modbusTcpService.SetAsync(DemoButtonName, value);
-        if (!result.Succeeded)
+        var missingCount = 0;
+
+        foreach (var parameter in ParameterRows)
         {
-            await ShowErrorAsync(OperationMessage(result));
+            if (!parameter.CopyLatestToEdit())
+            {
+                missingCount++;
+            }
+        }
+
+        LastError = missingCount == 0
+            ? string.Empty
+            : $"Нет прочитанных значений для параметров: {missingCount}.";
+
+        return Task.CompletedTask;
+    }
+
+    private async Task WriteParametersCoreAsync()
+    {
+        foreach (var parameter in ParameterRows)
+        {
+            if (!parameter.TryGetEditValue(out _))
+            {
+                await ShowErrorAsync("Параметры должны быть числами от 0 до 65535.");
+                return;
+            }
+        }
+
+        foreach (var parameter in ParameterRows)
+        {
+            parameter.TryGetEditValue(out var value);
+            var result = await _modbusTcpService.SetAsync(parameter.PointName, value);
+            if (!result.Succeeded)
+            {
+                await ShowErrorAsync(OperationMessage(result));
+                return;
+            }
+        }
+
+        LastError = string.Empty;
+    }
+
+    private void StartModbusLifecycleOperation(
+        string operationName,
+        Func<ModbusOptions, CancellationToken, Task<ModbusOperationResult>> action)
+    {
+        var options = BuildOptions();
+        var cts = new CancellationTokenSource();
+        SetActiveLifecycleCancellation(cts);
+        BeginLifecycleOperation();
+        System.Diagnostics.Debug.WriteLine($"ModbusDemo {operationName} requested.");
+
+        // Lifecycle-фасад может синхронно валидировать карту, останавливать встречную роль
+        // и начинать TCP-подключение; UI-команда только запускает фон и сразу отпускает экран.
+        _ = Task.Run(() => RunModbusLifecycleOperationAsync(
+            operationName,
+            ct => action(options, ct),
+            cts));
+    }
+
+    private void StopModbusLifecycleOperation()
+    {
+        // Stop должен быть доступен даже во время Starting/Reconnecting: он отменяет
+        // текущий lifecycle и отдельно просит фасад освободить роли Modbus.
+        CancelActiveLifecycleOperation();
+        var cts = new CancellationTokenSource();
+        SetActiveLifecycleCancellation(cts);
+        BeginLifecycleOperation();
+        System.Diagnostics.Debug.WriteLine("ModbusDemo Stop requested.");
+
+        _ = Task.Run(() => RunModbusLifecycleOperationAsync(
+            "Stop",
+            ct => _modbusTcpService.StopAsync(ct),
+            cts));
+    }
+
+    private async Task RunModbusLifecycleOperationAsync(
+        string operationName,
+        Func<CancellationToken, Task<ModbusOperationResult>> action,
+        CancellationTokenSource cts)
+    {
+        var ct = cts.Token;
+        System.Diagnostics.Debug.WriteLine($"ModbusDemo {operationName} background started.");
+
+        try
+        {
+            var result = await action(ct);
+            if (!result.Succeeded && !ct.IsCancellationRequested)
+            {
+                DispatchError(OperationMessage(result));
+            }
+
+            System.Diagnostics.Debug.WriteLine($"ModbusDemo {operationName} completed.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            System.Diagnostics.Debug.WriteLine($"ModbusDemo {operationName} canceled.");
+        }
+        catch (Exception ex)
+        {
+            DispatchError($"Операция ModbusDemo {operationName} не выполнена. {ex.Message}");
+        }
+        finally
+        {
+            ClearActiveLifecycleCancellation(cts);
+            _dispatchToUi(EndLifecycleOperation);
         }
     }
 
-    /// <summary>
-    /// Выполняет команду фасада и отправляет ошибки в общий сервис диалогов.
-    /// </summary>
-    private async Task RunCommandAsync(Func<Task<ModbusOperationResult>> action)
+    private void BeginLifecycleOperation()
+    {
+        _activeLifecycleOperationCount++;
+        IsLifecycleOperationActive = true;
+        IsCommandRunning = true;
+    }
+
+    private void EndLifecycleOperation()
+    {
+        _activeLifecycleOperationCount = Math.Max(0, _activeLifecycleOperationCount - 1);
+        IsLifecycleOperationActive = _activeLifecycleOperationCount > 0;
+        IsCommandRunning = IsLifecycleOperationActive;
+    }
+
+    private void SetActiveLifecycleCancellation(CancellationTokenSource cts)
+    {
+        lock (_lifecycleSync)
+        {
+            _lifecycleCancellation = cts;
+        }
+    }
+
+    private void CancelActiveLifecycleOperation()
+    {
+        lock (_lifecycleSync)
+        {
+            _lifecycleCancellation?.Cancel();
+        }
+    }
+
+    private void ClearActiveLifecycleCancellation(CancellationTokenSource cts)
+    {
+        lock (_lifecycleSync)
+        {
+            if (ReferenceEquals(_lifecycleCancellation, cts))
+            {
+                _lifecycleCancellation = null;
+            }
+        }
+
+        cts.Dispose();
+    }
+
+    private void DispatchError(string message)
+    {
+        _dispatchToUi(() => _ = ShowErrorAsync(message));
+    }
+
+    private async Task RunUiCommandAsync(Func<Task> action)
     {
         IsCommandRunning = true;
 
         try
         {
-            var result = await action();
-            if (!result.Succeeded)
-            {
-                await ShowErrorAsync(OperationMessage(result));
-            }
+            await action();
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync($"Операция ModbusDemo не выполнена. {ex.Message}");
         }
         finally
         {
@@ -276,12 +485,6 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>
-    /// Клонирует текущие настройки, чтобы демо-команды не меняли общий объект конфигурации.
-    /// </summary>
-    /// <summary>
-    /// Открывает редактор секции ModbusDemo и обновляет локальный кеш после сохранения.
-    /// </summary>
     private async Task OpenSettingsAsync()
     {
         IsCommandRunning = true;
@@ -312,17 +515,20 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     private ModbusOptions BuildOptions()
         => _currentOptions.Clone();
 
-    /// <summary>
-    /// Получает изменения состояния фасада и переносит их в UI-свойства.
-    /// </summary>
     private void OnStateChanged(object? sender, ModbusServiceState state)
     {
-        ApplyState(state);
+        // Клиентский polling работает в фоновой задаче. Все изменения bound-свойств
+        // ModbusDemo должны возвращаться на UI-поток Avalonia, иначе экран может зависнуть.
+        _dispatchToUi(() => ApplyState(state));
     }
 
-    /// <summary>
-    /// Преобразует состояние фасада в статус, флаг ожидания и текст последней ошибки.
-    /// </summary>
+    private void OnDataValueChanged(ModbusDataValue value)
+    {
+        // Snapshot-ы клиента тоже приходят с фонового потока; коллекции и строки UI
+        // обновляем только через dispatcher, как в основном Modbus-экране.
+        _dispatchToUi(() => ApplyDataValue(value));
+    }
+
     private void ApplyState(ModbusServiceState state)
     {
         _clientState = state.ClientState;
@@ -333,47 +539,36 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         RaiseCommandStateChanged();
     }
 
-    /// <summary>
-    /// Применяет значения подписок без обратной записи в Modbus.
-    /// </summary>
     private void ApplyDataValue(ModbusDataValue value)
     {
-        switch (value.Name)
+        if (!TryReadUInt16(value.Value, out var registerValue))
         {
-            case DemoButtonName:
-                _suppressButtonWrite = true;
-                DemoButton = Convert.ToBoolean(value.Value, CultureInfo.InvariantCulture);
-                _suppressButtonWrite = false;
-                break;
-            case DemoInputName:
-                DemoInputText = Convert.ToString(value.Value, CultureInfo.InvariantCulture) ?? "0";
-                break;
-            case DemoImageVisibleName:
-                IsDemoImageVisible = Convert.ToUInt16(value.Value, CultureInfo.InvariantCulture) == 1;
-                break;
+            return;
+        }
+
+        if (_telemetryByPoint.TryGetValue(value.Name, out var telemetry))
+        {
+            telemetry.ApplyRegisterValue(registerValue);
+            return;
+        }
+
+        if (_parametersByPoint.TryGetValue(value.Name, out var parameter))
+        {
+            parameter.ApplyReadValue(registerValue);
         }
     }
 
-    /// <summary>
-    /// Показывает модальную ошибку и сохраняет ее на демо-экране.
-    /// </summary>
     private async Task ShowErrorAsync(string message)
     {
         LastError = message;
         await _dialogService.ShowErrorAsync("Modbus TCP", message);
     }
 
-    /// <summary>
-    /// Собирает UI-текст из результата операции фасада.
-    /// </summary>
     private static string OperationMessage(ModbusOperationResult result)
         => result.ErrorDetails is { Length: > 0 } details
             ? $"{result.ErrorMessage ?? "Modbus operation failed."} {details}"
             : result.ErrorMessage ?? "Modbus operation failed.";
 
-    /// <summary>
-    /// Обновляет состояние доступности команд демо-экрана.
-    /// </summary>
     private void RaiseCommandStateChanged()
     {
         this.RaisePropertyChanged(nameof(CanStartClient));
@@ -382,21 +577,498 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(CanOpenSettings));
     }
 
-    /// <summary>
-    /// Проверяет, можно ли запускать роль из текущего состояния.
-    /// </summary>
+    private static ObservableCollection<ModbusTelemetryRegisterGroup> CreateTelemetryGroups()
+        =>
+        [
+            new("Telemetry_1", 16384,
+            [
+                "Д_КЮБЕЛЬ_ОТКРЫТ",
+                "Д_КЮБЕЛЬ_ЗАКРЫТ",
+                "КЮБЕЛЬ_ВПЕРЕД",
+                "КЮБЕЛЬ_НАЗАД",
+                "КЮБЕЛЬ_ОТКРЫТИЕ",
+                "КЮБЕЛЬ_ЗАКРЫТИЕ",
+                "Д_ПОЗИЦИЯ_1",
+                "Д_ПОЗИЦИЯ_2",
+                "Д_ПОЗИЦИЯ_3",
+                "Д_ПОЗИЦИЯ_4",
+                "РУЧНОЕ_УПРАВЛЕНИЕ",
+                "Д_БЛОК_ВПЕРЕД",
+                "Д_БЛОК_НАЗАД",
+                "АВАРИЯ_m",
+                "АВАРИЯ_ТОРМОЗА",
+                "АВАРИЯ_1М"
+            ],
+            redIndicatorBitIndex: 0),
+            new("Telemetry_2", 16385,
+            [
+                "B_ВПЕРЕД",
+                "B_НАЗАД",
+                "B_СКОРОСТЬ_1",
+                "B_СКОРОСТЬ_2",
+                "B_КЮБЕЛЬ_ОТКРЫТЬ",
+                "B_КЮБЕЛЬ_ЗАКРЫТЬ",
+                "B_ПУСК_СБРОС",
+                "B_СВЕТЗВУК"
+            ]),
+            new("Telemetry_3", 16386,
+            [
+                "T_Д_ТРИГ",
+                "T_АВАРИЯ",
+                "T_АВАРИЯ-ПОЗ_УПРАВ",
+                "T_АВАРИЯ-ВРАЩЕНИЕ",
+                "T_АВАРИЯ-З_ВЫГРУЗКА",
+                "T_АВАРИЯ-З_ЗАГРУЗКА",
+                "ОБРЫВ"
+            ]),
+            new("Telemetry_4", 16387, [])
+        ];
+
+    private ObservableCollection<ModbusCommandRegisterGroup> CreateCommandGroups()
+        =>
+        [
+            new("Commands_1", 16388,
+            [
+                new("Commands_1", "C_СБРОС", 0, ModbusCommandControlKind.RadioButtonPulse, WriteCommandBitAsync),
+                new("Commands_1", "C_ОТМЕНА", 1, ModbusCommandControlKind.CheckBox, WriteCommandBitAsync),
+                new("Commands_1", "C_ПУСК-ВРАЩЕНИЕ", 2, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync),
+                new("Commands_1", "C_ПУСК-З_ВЫГРУЗКА", 3, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync),
+                new("Commands_1", "C_ВКЛ-З_ЗАГРУЗКА", 4, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync),
+                new("Commands_1", "C_ПУСК-З_ЗАГРУЗКА", 5, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync)
+            ]),
+            new("Commands_2", 16389, []),
+            new("Commands_3", 16390,
+            [
+                new("Commands_3", "СЕТЬ", 0, ModbusCommandControlKind.ToggleButton, WriteCommandBitAsync)
+            ]),
+            new("Commands_4", 16391,
+            [
+                new("Commands_4", "ПУСК", 0, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync),
+                new("Commands_4", "СТОП", 1, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync)
+            ])
+        ];
+
+    private static ObservableCollection<ModbusParameterRow> CreateParameterRows()
+        =>
+        [
+            CreateParameter("MB_ТЕКУЩАЯ_ПОЗИЦИЯ", 16400, ModbusParameterEditorKind.Slider),
+            CreateParameter("MB_N_АВАРИЯ-ПОЗ_УПРАВ", 16401),
+            CreateParameter("MB_N_АВАРИЯ-ВРАЩЕНИЕ", 16402),
+            CreateParameter("MB_СТАТУС-ВРАЩЕНИЕ", 16403),
+            CreateParameter("MB_Hz", 16404),
+            CreateParameter("MB_ЦЕЛЬ_ПОЗИЦИЯ", 16411),
+            CreateParameter("MB_ВОЗВРАТ_ПОЗИЦИЯ", 16412),
+            CreateParameter("MB_ТОП_СБРОС-ПОЗ_УПРАВ", 16413),
+            CreateParameter("MB_ТОП_ФИЛЬТР-ПОЗ_УПРАВ", 16414),
+            CreateParameter("MB_ТОП_АВАРИЯ-ПОЗ_УПРАВ", 16415),
+            CreateParameter("MB_ТОП_ПАУЗА-ВРАЩЕНИЕ", 16416),
+            CreateParameter("MB_ТОП_АВАРИЯ-ВРАЩЕНИЕ", 16417),
+            CreateParameter("MB_ТОП_СБРОС-З_ВЫГРУЗКА", 16418),
+            CreateParameter("MB_ТОП_СБРОС-З_ЗАГРУЗКА", 16419)
+        ];
+
+    private static ModbusParameterRow CreateParameter(
+        string name,
+        int absoluteAddress,
+        ModbusParameterEditorKind editorKind = ModbusParameterEditorKind.TextBox)
+        => new(name, name, absoluteAddress, editorKind);
+
+    internal static int ToRegisterOffset(int absoluteAddress)
+        => absoluteAddress - HoldingRegisterBaseAddress;
+
+    private static bool TryReadUInt16(object? value, out ushort result)
+    {
+        try
+        {
+            result = Convert.ToUInt16(value, CultureInfo.InvariantCulture);
+            return true;
+        }
+        catch
+        {
+            result = 0;
+            return false;
+        }
+    }
+
     private static bool IsStartable(ModbusConnectionState state)
         => state is ModbusConnectionState.Stopped or ModbusConnectionState.Faulted;
 
-    /// <summary>
-    /// Проверяет, что роль не активна и ее параметры можно менять.
-    /// </summary>
     private static bool IsConfigurable(ModbusConnectionState state)
         => state is ModbusConnectionState.Stopped or ModbusConnectionState.Faulted;
 
-    /// <summary>
-    /// Проверяет, можно ли останавливать роль из текущего состояния.
-    /// </summary>
     private static bool IsStoppable(ModbusConnectionState state)
         => state is ModbusConnectionState.Starting or ModbusConnectionState.Reconnecting or ModbusConnectionState.Running;
+
+    private static void DispatchToUi(Action action)
+    {
+        Dispatcher.UIThread.Post(action);
+    }
+}
+
+public sealed class ModbusTelemetryRegisterGroup : ViewModelBase
+{
+    private string _rawValueText = "0";
+
+    public ModbusTelemetryRegisterGroup(
+        string pointName,
+        int absoluteAddress,
+        IEnumerable<string> bitNames,
+        int? redIndicatorBitIndex = null)
+    {
+        PointName = pointName;
+        AbsoluteAddress = absoluteAddress;
+        AddressText = absoluteAddress.ToString(CultureInfo.InvariantCulture);
+        Bits = new ObservableCollection<ModbusTelemetryBitRow>(
+            bitNames.Select((name, bitIndex) => new ModbusTelemetryBitRow(
+                name,
+                bitIndex,
+                redIndicatorBitIndex == bitIndex)));
+    }
+
+    public string PointName { get; }
+
+    public int AbsoluteAddress { get; }
+
+    public string AddressText { get; }
+
+    public bool HasBits => Bits.Count > 0;
+
+    public ObservableCollection<ModbusTelemetryBitRow> Bits { get; }
+
+    public string RawValueText
+    {
+        get => _rawValueText;
+        private set => this.RaiseAndSetIfChanged(ref _rawValueText, value);
+    }
+
+    public void ApplyRegisterValue(ushort value)
+    {
+        RawValueText = value.ToString(CultureInfo.InvariantCulture);
+
+        foreach (var bit in Bits)
+        {
+            bit.ApplyValue((value & (1 << bit.BitIndex)) != 0);
+        }
+    }
+}
+
+public sealed class ModbusTelemetryBitRow : ViewModelBase
+{
+    private bool _value;
+    private bool _isRedIndicatorVisible;
+    private string _valueText = "0";
+
+    public ModbusTelemetryBitRow(string name, int bitIndex, bool hasRedIndicator = false)
+    {
+        Name = name;
+        BitIndex = bitIndex;
+        BitText = $"I{bitIndex + 1}";
+        HasRedIndicator = hasRedIndicator;
+    }
+
+    public string Name { get; }
+
+    public int BitIndex { get; }
+
+    public string BitText { get; }
+
+    public bool HasRedIndicator { get; }
+
+    public bool Value
+    {
+        get => _value;
+        private set => this.RaiseAndSetIfChanged(ref _value, value);
+    }
+
+    public string ValueText
+    {
+        get => _valueText;
+        private set => this.RaiseAndSetIfChanged(ref _valueText, value);
+    }
+
+    public bool IsRedIndicatorVisible
+    {
+        get => _isRedIndicatorVisible;
+        private set => this.RaiseAndSetIfChanged(ref _isRedIndicatorVisible, value);
+    }
+
+    public void ApplyValue(bool value)
+    {
+        Value = value;
+        ValueText = value ? "1" : "0";
+        IsRedIndicatorVisible = HasRedIndicator && value;
+    }
+}
+
+public sealed class ModbusCommandRegisterGroup
+{
+    public ModbusCommandRegisterGroup(
+        string pointName,
+        int absoluteAddress,
+        IEnumerable<ModbusCommandBitRow> rows)
+    {
+        PointName = pointName;
+        AbsoluteAddress = absoluteAddress;
+        AddressText = absoluteAddress.ToString(CultureInfo.InvariantCulture);
+        Rows = new ObservableCollection<ModbusCommandBitRow>(rows);
+    }
+
+    public string PointName { get; }
+
+    public int AbsoluteAddress { get; }
+
+    public string AddressText { get; }
+
+    public bool HasRows => Rows.Count > 0;
+
+    public ObservableCollection<ModbusCommandBitRow> Rows { get; }
+}
+
+public sealed class ModbusCommandBitRow : ViewModelBase
+{
+    private readonly Func<ModbusCommandBitRow, bool, Task<bool>> _writeBitAsync;
+    private bool _isChecked;
+    private bool _isPulseActive;
+    private bool _isWriting;
+
+    public ModbusCommandBitRow(
+        string pointName,
+        string name,
+        int bitIndex,
+        ModbusCommandControlKind controlKind,
+        Func<ModbusCommandBitRow, bool, Task<bool>> writeBitAsync)
+    {
+        PointName = pointName;
+        Name = name;
+        BitIndex = bitIndex;
+        ControlKind = controlKind;
+        BitText = $"Q{bitIndex + 1}";
+        _writeBitAsync = writeBitAsync;
+    }
+
+    public string PointName { get; }
+
+    public string Name { get; }
+
+    public int BitIndex { get; }
+
+    public string BitText { get; }
+
+    public ModbusCommandControlKind ControlKind { get; }
+
+    public bool IsMomentaryButton => ControlKind == ModbusCommandControlKind.MomentaryButton;
+
+    public bool IsToggleButton => ControlKind == ModbusCommandControlKind.ToggleButton;
+
+    public bool IsRadioButtonPulse => ControlKind == ModbusCommandControlKind.RadioButtonPulse;
+
+    public bool IsCheckBox => ControlKind == ModbusCommandControlKind.CheckBox;
+
+    public bool IsPulseControl => ControlKind is ModbusCommandControlKind.MomentaryButton or ModbusCommandControlKind.RadioButtonPulse;
+
+    public bool IsHoldControl => ControlKind is ModbusCommandControlKind.ToggleButton or ModbusCommandControlKind.CheckBox;
+
+    public bool IsWriting
+    {
+        get => _isWriting;
+        private set => this.RaiseAndSetIfChanged(ref _isWriting, value);
+    }
+
+    public bool IsChecked
+    {
+        get => _isChecked;
+        set
+        {
+            if (_isChecked == value)
+            {
+                return;
+            }
+
+            var previous = _isChecked;
+            this.RaiseAndSetIfChanged(ref _isChecked, value);
+
+            if (IsHoldControl)
+            {
+                _ = WriteHoldAsync(previous, value);
+            }
+        }
+    }
+
+    public bool IsPulseActive
+    {
+        get => _isPulseActive;
+        private set => this.RaiseAndSetIfChanged(ref _isPulseActive, value);
+    }
+
+    public Task PressAsync()
+        => IsPulseControl ? WritePulseAsync(true) : Task.CompletedTask;
+
+    public Task ReleaseAsync()
+        => IsPulseControl ? WritePulseAsync(false) : Task.CompletedTask;
+
+    private async Task WriteHoldAsync(bool previous, bool value)
+    {
+        if (!await WriteAsync(value))
+        {
+            this.RaiseAndSetIfChanged(ref _isChecked, previous, nameof(IsChecked));
+        }
+    }
+
+    private async Task<bool> WritePulseAsync(bool value)
+    {
+        IsPulseActive = value;
+
+        var succeeded = await WriteAsync(value);
+        if (!succeeded || !value)
+        {
+            IsPulseActive = false;
+        }
+
+        return succeeded;
+    }
+
+    private async Task<bool> WriteAsync(bool value)
+    {
+        IsWriting = true;
+
+        try
+        {
+            return await _writeBitAsync(this, value);
+        }
+        finally
+        {
+            IsWriting = false;
+        }
+    }
+}
+
+public enum ModbusCommandControlKind
+{
+    MomentaryButton,
+    ToggleButton,
+    RadioButtonPulse,
+    CheckBox
+}
+
+public sealed class ModbusParameterRow : ViewModelBase
+{
+    private string _editValueText = "0";
+    private string _errorText = string.Empty;
+    private bool _hasReadValue;
+    private ushort _lastReadValue;
+    private string _lastReadValueText = "—";
+    private double _sliderValue;
+
+    public ModbusParameterRow(
+        string pointName,
+        string name,
+        int absoluteAddress,
+        ModbusParameterEditorKind editorKind = ModbusParameterEditorKind.TextBox)
+    {
+        PointName = pointName;
+        Name = name;
+        AbsoluteAddress = absoluteAddress;
+        AddressText = absoluteAddress.ToString(CultureInfo.InvariantCulture);
+        EditorKind = editorKind;
+    }
+
+    public string PointName { get; }
+
+    public string Name { get; }
+
+    public int AbsoluteAddress { get; }
+
+    public string AddressText { get; }
+
+    public ModbusParameterEditorKind EditorKind { get; }
+
+    public bool IsTextBox => EditorKind == ModbusParameterEditorKind.TextBox;
+
+    public bool IsSlider => EditorKind == ModbusParameterEditorKind.Slider;
+
+    public double SliderMinimum => 0;
+
+    public double SliderMaximum => ushort.MaxValue;
+
+    public string LastReadValueText
+    {
+        get => _lastReadValueText;
+        private set => this.RaiseAndSetIfChanged(ref _lastReadValueText, value);
+    }
+
+    public string EditValueText
+    {
+        get => _editValueText;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _editValueText, value);
+
+            if (IsSlider && ushort.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                this.RaiseAndSetIfChanged(ref _sliderValue, parsed, nameof(SliderValue));
+            }
+        }
+    }
+
+    public double SliderValue
+    {
+        get => _sliderValue;
+        set
+        {
+            var rounded = Math.Clamp(Math.Round(value), SliderMinimum, SliderMaximum);
+            this.RaiseAndSetIfChanged(ref _sliderValue, rounded);
+
+            if (IsSlider)
+            {
+                EditValueText = ((ushort)rounded).ToString(CultureInfo.InvariantCulture);
+            }
+        }
+    }
+
+    public string ErrorText
+    {
+        get => _errorText;
+        private set => this.RaiseAndSetIfChanged(ref _errorText, value);
+    }
+
+    public void ApplyReadValue(ushort value)
+    {
+        _lastReadValue = value;
+        _hasReadValue = true;
+        LastReadValueText = value.ToString(CultureInfo.InvariantCulture);
+        ErrorText = string.Empty;
+        // Поле EditValueText намеренно не обновляется polling-ом: пользователь может редактировать
+        // значение на ходу, а отправка должна происходить только по кнопке "Записать значения".
+    }
+
+    public bool CopyLatestToEdit()
+    {
+        if (!_hasReadValue)
+        {
+            ErrorText = "Нет данных";
+            return false;
+        }
+
+        EditValueText = _lastReadValue.ToString(CultureInfo.InvariantCulture);
+        ErrorText = string.Empty;
+        return true;
+    }
+
+    public bool TryGetEditValue(out ushort value)
+    {
+        if (ushort.TryParse(EditValueText, NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
+        {
+            ErrorText = string.Empty;
+            return true;
+        }
+
+        ErrorText = "0..65535";
+        return false;
+    }
+}
+
+public enum ModbusParameterEditorKind
+{
+    TextBox,
+    Slider
 }

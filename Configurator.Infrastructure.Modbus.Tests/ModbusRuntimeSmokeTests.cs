@@ -349,6 +349,55 @@ public sealed class ModbusRuntimeSmokeTests
     }
 
     [Fact]
+    public async Task Client_ConnectTimeoutMovesToReconnectingWhenConnectDelegateHangs()
+    {
+        var connectStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connectCanceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var client = new ModbusClientService(
+            NullLogger<ModbusClientService>.Instance,
+            async (_, ct) =>
+            {
+                connectStarted.TrySetResult();
+
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    connectCanceled.TrySetResult();
+                    throw;
+                }
+
+                throw new InvalidOperationException("Unreachable fake connect path.");
+            },
+            TimeSpan.FromMilliseconds(100));
+
+        var options = new ModbusEndpointOptions
+        {
+            Enabled = true,
+            Host = "192.0.2.1",
+            Port = 502,
+            UnitId = 1,
+            PollIntervalMs = 100,
+            CoilCount = 10,
+            RegisterCount = 20
+        };
+
+        var stopwatch = Stopwatch.StartNew();
+        await client.StartAsync(options);
+        stopwatch.Stop();
+
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromMilliseconds(150));
+        Assert.True(await WaitForAsync(() => connectStarted.Task.IsCompleted));
+        Assert.True(await WaitForAsync(() => connectCanceled.Task.IsCompleted));
+        Assert.True(await WaitForAsync(() => client.State == ModbusConnectionState.Reconnecting));
+
+        await client.StopAsync();
+        Assert.Equal(ModbusConnectionState.Stopped, client.State);
+    }
+
+    [Fact]
     public async Task Runtime_StartsSelectedModes()
     {
         var client = new FakeClientService();

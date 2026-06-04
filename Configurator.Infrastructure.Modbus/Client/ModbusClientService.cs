@@ -8,6 +8,7 @@ using CP.IO.Ports;
 using Microsoft.Extensions.Logging;
 using ModbusRx;
 using ModbusRx.Device;
+using System.Net.Sockets;
 using System.Runtime.ExceptionServices;
 
 namespace Configurator.Infrastructure.Modbus.Client;
@@ -18,6 +19,8 @@ namespace Configurator.Infrastructure.Modbus.Client;
 internal sealed class ModbusClientService : IModbusClientService
 {
     private readonly ILogger<ModbusClientService> _logger;
+    private readonly Func<ModbusEndpointOptions, CancellationToken, Task<TcpClient>> _connectTcpClientAsync;
+    private readonly TimeSpan? _connectTimeoutOverride;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly SemaphoreSlim _ioGate = new(1, 1);
     private CancellationTokenSource? _loopCancellation;
@@ -33,8 +36,18 @@ internal sealed class ModbusClientService : IModbusClientService
     /// Создает клиентский сервис.
     /// </summary>
     public ModbusClientService(ILogger<ModbusClientService> logger)
+        : this(logger, ConnectTcpClientAsync)
+    {
+    }
+
+    internal ModbusClientService(
+        ILogger<ModbusClientService> logger,
+        Func<ModbusEndpointOptions, CancellationToken, Task<TcpClient>> connectTcpClientAsync,
+        TimeSpan? connectTimeoutOverride = null)
     {
         _logger = logger;
+        _connectTcpClientAsync = connectTcpClientAsync;
+        _connectTimeoutOverride = connectTimeoutOverride;
     }
 
     /// <summary>
@@ -72,6 +85,11 @@ internal sealed class ModbusClientService : IModbusClientService
             }
 
             _options = NormalizeOptions(options);
+            _logger.LogInformation(
+                "Modbus client start requested for {Host}:{Port}, UnitId={UnitId}",
+                _options.Host,
+                _options.Port,
+                _options.UnitId);
             PublishStatus(ModbusConnectionState.Starting, "Клиент подключается");
 
             _loopCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -212,6 +230,9 @@ internal sealed class ModbusClientService : IModbusClientService
                 _logger.LogWarning(ex, "Не удалось подключиться к Modbus серверу");
                 PublishStatus(ModbusConnectionState.Reconnecting, "Сервер недоступен, клиент ожидает подключения", ex.Message);
                 await ResetConnectionAsync(CancellationToken.None);
+                _logger.LogInformation(
+                    "Modbus client retry scheduled in {DelayMs} ms",
+                    GetRetryDelayMs());
                 await DelayBeforeRetryAsync(cancellationToken);
             }
         }
@@ -221,12 +242,23 @@ internal sealed class ModbusClientService : IModbusClientService
     {
         await _ioGate.WaitAsync(cancellationToken);
 
+        TcpClient? socket = null;
+        TcpClientRx? tcpClient = null;
+
         try
         {
             DisposeConnectionCore();
 
-            var tcpClient = new TcpClientRx(_options.Host, _options.Port);
+            _logger.LogInformation(
+                "Modbus client connect attempt started for {Host}:{Port}",
+                _options.Host,
+                _options.Port);
+
+            socket = await ConnectTcpClientWithTimeoutAsync(cancellationToken);
+            tcpClient = new TcpClientRx(socket);
+            socket = null;
             _master = ModbusIpMaster.CreateIp(tcpClient);
+            tcpClient = null;
 
             if (_master.Transport is not null)
             {
@@ -246,6 +278,30 @@ internal sealed class ModbusClientService : IModbusClientService
             PublishStatus(
                 ModbusConnectionState.Running,
                 $"Клиент подключен к {_options.Host}:{_options.Port}, UnitId={_options.UnitId}");
+            _logger.LogInformation(
+                "Modbus client connected to {Host}:{Port}, UnitId={UnitId}",
+                _options.Host,
+                _options.Port,
+                _options.UnitId);
+        }
+        catch (OperationCanceledException)
+        {
+            tcpClient?.Dispose();
+            socket?.Dispose();
+            DisposeConnectionCore();
+            throw;
+        }
+        catch (Exception ex)
+        {
+            tcpClient?.Dispose();
+            socket?.Dispose();
+            DisposeConnectionCore();
+            _logger.LogWarning(
+                ex,
+                "Modbus client connect attempt failed for {Host}:{Port}",
+                _options.Host,
+                _options.Port);
+            throw;
         }
         finally
         {
@@ -512,7 +568,93 @@ internal sealed class ModbusClientService : IModbusClientService
 
     private async Task DelayBeforeRetryAsync(CancellationToken cancellationToken)
     {
-        await Task.Delay(Math.Max(250, _options.PollIntervalMs), cancellationToken);
+        await Task.Delay(GetRetryDelayMs(), cancellationToken);
+    }
+
+    private async Task<TcpClient> ConnectTcpClientWithTimeoutAsync(CancellationToken cancellationToken)
+    {
+        var timeout = GetConnectTimeout();
+        using var connectCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var connectTask = _connectTcpClientAsync(_options, connectCancellation.Token);
+
+        try
+        {
+            // TcpClientRx(host, port) подключается синхронно и может зависнуть на недоступном устройстве.
+            // Сначала подключаем обычный TcpClient с отменой/тайм-аутом, затем отдаем socket в ModbusRx.
+            return await connectTask.WaitAsync(timeout, cancellationToken);
+        }
+        catch (TimeoutException ex)
+        {
+            connectCancellation.Cancel();
+            ObserveAndDisposeLateTcpClient(connectTask);
+            throw new TimeoutException(
+                $"TCP connect to {_options.Host}:{_options.Port} timed out after {timeout.TotalMilliseconds:0} ms.",
+                ex);
+        }
+        catch
+        {
+            connectCancellation.Cancel();
+            ObserveAndDisposeLateTcpClient(connectTask);
+            throw;
+        }
+    }
+
+    private TimeSpan GetConnectTimeout()
+        => _connectTimeoutOverride
+            ?? TimeSpan.FromMilliseconds(Math.Clamp(_options.PollIntervalMs * 4, 2000, 5000));
+
+    private int GetRetryDelayMs()
+        => Math.Max(250, _options.PollIntervalMs);
+
+    private static async Task<TcpClient> ConnectTcpClientAsync(
+        ModbusEndpointOptions options,
+        CancellationToken cancellationToken)
+    {
+        var tcpClient = new TcpClient();
+
+        try
+        {
+            await tcpClient.ConnectAsync(options.Host, options.Port, cancellationToken);
+            return tcpClient;
+        }
+        catch
+        {
+            tcpClient.Dispose();
+            throw;
+        }
+    }
+
+    private static void ObserveAndDisposeLateTcpClient(Task<TcpClient> connectTask)
+    {
+        if (connectTask.IsCompleted)
+        {
+            if (connectTask.IsCompletedSuccessfully)
+            {
+                connectTask.Result.Dispose();
+            }
+            else
+            {
+                _ = connectTask.Exception;
+            }
+
+            return;
+        }
+
+        _ = connectTask.ContinueWith(
+            task =>
+            {
+                if (task.IsCompletedSuccessfully)
+                {
+                    task.Result.Dispose();
+                }
+                else
+                {
+                    _ = task.Exception;
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private static ModbusEndpointOptions NormalizeOptions(ModbusEndpointOptions options)

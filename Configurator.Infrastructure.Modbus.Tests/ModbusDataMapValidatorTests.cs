@@ -21,6 +21,31 @@ public sealed class ModbusDataMapValidatorTests
     }
 
     [Fact]
+    public void Validate_AcceptsModbusDemoHoldingRegisterOffsets()
+    {
+        var options = new ModbusOptions
+        {
+            Client = CreateDemoEndpoint(),
+            Server = CreateDemoEndpoint(),
+            DataMap =
+            [
+                CreateDemoPoint("Telemetry_1", 0, ModbusDataAccess.Read),
+                CreateDemoPoint("Telemetry_4", 3, ModbusDataAccess.Read),
+                CreateDemoPoint("Commands_1", 4, ModbusDataAccess.Write),
+                CreateDemoPoint("Commands_4", 7, ModbusDataAccess.Write),
+                CreateDemoPoint("MB_ТЕКУЩАЯ_ПОЗИЦИЯ", 16, ModbusDataAccess.ReadWrite),
+                CreateDemoPoint("MB_ТОП_СБРОС-З_ЗАГРУЗКА", 35, ModbusDataAccess.ReadWrite)
+            ]
+        };
+
+        var clientResult = _validator.Validate(options, ModbusRunMode.Client);
+        var serverResult = _validator.Validate(options, ModbusRunMode.Server);
+
+        Assert.True(clientResult.Succeeded, clientResult.ErrorMessage);
+        Assert.True(serverResult.Succeeded, serverResult.ErrorMessage);
+    }
+
+    [Fact]
     public void Validate_RejectsDuplicateNames()
     {
         var options = CreateOptions();
@@ -109,5 +134,30 @@ public sealed class ModbusDataMapValidatorTests
                     Access = ModbusDataAccess.ReadWrite
                 }
             ]
+        };
+
+    private static ModbusEndpointOptions CreateDemoEndpoint()
+        => new()
+        {
+            CoilsEnabled = false,
+            HoldingRegistersEnabled = true,
+            CoilStartAddress = 0,
+            HoldingRegisterStartAddress = 16384,
+            CoilCount = 0,
+            RegisterCount = 36
+        };
+
+    private static ModbusDataPointOptions CreateDemoPoint(
+        string name,
+        int address,
+        ModbusDataAccess access)
+        => new()
+        {
+            Name = name,
+            Area = ModbusDataArea.HoldingRegister,
+            Address = address,
+            Length = 1,
+            Access = access,
+            Type = ModbusValueType.UInt16
         };
 }
