@@ -40,11 +40,6 @@
             <Setter Property="MinWidth" Value="112"/>
             <Setter Property="Height" Value="34"/>
         </Style>
-        <Style Selector="Button.pulse">
-            <Setter Property="MinHeight" Value="34"/>
-            <Setter Property="HorizontalAlignment" Value="Stretch"/>
-            <Setter Property="HorizontalContentAlignment" Value="Center"/>
-        </Style>
         <Style Selector="ToggleButton.commandToggle">
             <Setter Property="MinHeight" Value="34"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
@@ -172,15 +167,6 @@
                                                             <TextBlock Classes="label"
                                                                        Text="{Binding BitText}"
                                                                        VerticalAlignment="Center"/>
-                                                            <Button Grid.Column="1"
-                                                                    Classes="pulse"
-                                                                    IsVisible="{Binding IsMomentaryButton}"
-                                                                    Content="{Binding Name}"
-                                                                    PointerPressed="MomentaryCommand_PointerPressed"
-                                                                    PointerReleased="MomentaryCommand_PointerReleased"
-                                                                    PointerCaptureLost="MomentaryCommand_PointerCaptureLost"
-                                                                    PointerExited="MomentaryCommand_PointerExited"
-                                                                    LostFocus="MomentaryCommand_LostFocus"/>
                                                             <ToggleButton Grid.Column="1"
                                                                           Classes="commandToggle"
                                                                           IsVisible="{Binding IsToggleButton}"
@@ -191,10 +177,7 @@
                                                                          IsVisible="{Binding IsRadioButtonToggle}"
                                                                          Content="{Binding Name}"
                                                                          GroupName="{Binding RadioGroupName}"
-                                                                         IsChecked="{Binding IsChecked, Mode=TwoWay}"
-                                                                         PointerPressed="RadioButtonToggle_PointerPressed"
-                                                                         KeyDown="RadioButtonToggle_KeyDown"
-                                                                         Click="RadioButtonToggle_Click"/>
+                                                                         IsChecked="{Binding IsChecked, Mode=TwoWay}"/>
                                                             <CheckBox Grid.Column="1"
                                                                       IsVisible="{Binding IsCheckBox}"
                                                                       Content="{Binding Name}"

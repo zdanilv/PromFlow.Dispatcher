@@ -2,95 +2,96 @@
 
 ## Назначение
 
-`ModbusDemo` - отдельная вкладка для проверки сценария Modbus TCP на карте Holding Registers `16384..16419`.
-Экран показывает телеметрию, отправляет командные биты и записывает изменяемые параметры через независимый demo-стек, который не разделяет runtime с основной вкладкой `Modbus TCP`.
+`ModbusDemo` - экран для проверки отдельного Modbus TCP стека по Holding Registers `16384..16419`. Экран показывает телеметрию, пишет командные биты целыми `UInt16` регистрами и позволяет редактировать параметры `MB_*`.
 
 ## Точки входа
 
-- UI вкладки: [WorkspaceView.axaml](Workspace/WorkspaceView.axaml) подключает [ModbusDemoView.axaml](Workspace/ModbusDemo/ModbusDemoView.axaml).
-- Логика экрана: [ModbusDemoViewModel.cs](Workspace/ModbusDemo/ModbusDemoViewModel.cs).
-- Code-behind поведения кнопок: [ModbusDemoView.axaml.cs](Workspace/ModbusDemo/ModbusDemoView.axaml.cs).
-- Регистрация ViewModel и View: [Program.cs](../Configurator.Boot/Program.cs).
-- Настройки demo-секции: [appsettings.json](../Configurator.Boot/appsettings.json), секция `ModbusDemo`.
-- DI отдельного demo-стека: [DependencyInjection.cs](../Configurator.Infrastructure.Modbus/DependencyInjection.cs).
-- Контракты demo-стека: [IModbusDemoTcpService.cs](../Configurator.Application/Services/Modbus/Contracts/IModbusDemoTcpService.cs), [IModbusDemoOptionsProvider.cs](../Configurator.Application/Services/Modbus/Contracts/IModbusDemoOptionsProvider.cs).
-- Реализации: [ModbusDemoTcpService.cs](../Configurator.Infrastructure.Modbus/Runtime/ModbusDemoTcpService.cs), [ModbusDemoOptionsProvider.cs](../Configurator.Infrastructure.Modbus/Configuration/ModbusDemoOptionsProvider.cs).
-- Регрессионные тесты: [ModbusDemoViewModelTests.cs](../Configurator.Infrastructure.Modbus.Tests/ModbusDemoViewModelTests.cs).
+- View: [ModbusDemoView.axaml](Workspace/ModbusDemo/ModbusDemoView.axaml)
+- Q1 toggle-radio behavior: [ModbusDemoView.axaml.cs](Workspace/ModbusDemo/ModbusDemoView.axaml.cs)
+- ViewModel и карта UI: [ModbusDemoViewModel.cs](Workspace/ModbusDemo/ModbusDemoViewModel.cs)
+- Настройки `ModbusDemo`: [appsettings.json](../Configurator.Boot/appsettings.json)
+- DI demo-стека: [DependencyInjection.cs](../Configurator.Infrastructure.Modbus/DependencyInjection.cs)
+- Контракты: [IModbusDemoTcpService.cs](../Configurator.Application/Services/Modbus/Contracts/IModbusDemoTcpService.cs), [IModbusDemoOptionsProvider.cs](../Configurator.Application/Services/Modbus/Contracts/IModbusDemoOptionsProvider.cs)
+- Реализации: [ModbusDemoTcpService.cs](../Configurator.Infrastructure.Modbus/Runtime/ModbusDemoTcpService.cs), [ModbusDemoOptionsProvider.cs](../Configurator.Infrastructure.Modbus/Configuration/ModbusDemoOptionsProvider.cs)
+- Тесты: [ModbusDemoViewModelTests.cs](../Configurator.Infrastructure.Modbus.Tests/ModbusDemoViewModelTests.cs), [ModbusDemoViewUiTests.cs](../Configurator.Infrastructure.Modbus.Tests/UI/ModbusDemoViewUiTests.cs)
 
 ## Карта Holding Registers
 
-В UI используются абсолютные адреса, а в `DataMap.Address` хранится смещение от `HoldingRegisterStartAddress = 16384`.
+`HoldingRegisterStartAddress = 16384`; `DataMap.Address` хранит смещение от этой базы.
 
-| UI address | DataMap address | Point name | Access | Назначение |
+| HR | DataMap.Address | Точка | Access | UI |
 | --- | ---: | --- | --- | --- |
-| `16384..16387` | `0..3` | `Telemetry_1..Telemetry_4` | `Read` | Телеметрия, разбор UInt16 на биты `I1..I16` |
-| `16388..16391` | `4..7` | `Commands_1..Commands_4` | `Write` | Командные слова, сборка битов `Q1..Q16` в UInt16 |
-| `16400..16419` | `16..35` | `MB_*` | `ReadWrite` | Числовые параметры `ushort` |
-
-Клиент и сервер demo-секции настроены на `127.0.0.1:1502`, `UnitId = 1`, `HoldingRegistersEnabled = true`, `RegisterCount = 36`.
+| `16384` | `0` | `Telemetry_1` | `Read` | битовые строки `I1..I16` |
+| `16385` | `1` | `Telemetry_2` | `Read` | битовые строки |
+| `16386` | `2` | `Telemetry_3` | `Read` | битовые строки |
+| `16387` | `3` | `Telemetry_4` | `Read` | битовые строки |
+| `16388` | `4` | `Commands_1` | `Write` | `Q1..Q6` |
+| `16389` | `5` | `Commands_2` | `Write` | зарезервировано, строк нет |
+| `16390` | `6` | `Commands_3` | `Write` | `Q1 СЕТЬ` |
+| `16391` | `7` | `Commands_4` | `Write` | `Q1 ПУСК`, `Q2 СТОП` |
+| `16400` | `16` | `MB_ТЕКУЩАЯ_ПОЗИЦИЯ` | `ReadWrite` | slider |
+| `16401` | `17` | `MB_N_АВАРИЯ-ПОЗ_УПРАВ` | `ReadWrite` | textbox |
+| `16402` | `18` | `MB_N_АВАРИЯ-ВРАЩЕНИЕ` | `ReadWrite` | textbox |
+| `16403` | `19` | `MB_СТАТУС-ВРАЩЕНИЕ` | `ReadWrite` | textbox |
+| `16404` | `20` | `MB_Hz` | `ReadWrite` | textbox |
+| `16411` | `27` | `MB_ЦЕЛЬ_ПОЗИЦИЯ` | `ReadWrite` | textbox |
+| `16412` | `28` | `MB_ВОЗВРАТ_ПОЗИЦИЯ` | `ReadWrite` | textbox |
+| `16413` | `29` | `MB_ТОП_СБРОС-ПОЗ_УПРАВ` | `ReadWrite` | textbox |
+| `16414` | `30` | `MB_ТОП_ФИЛЬТР-ПОЗ_УПРАВ` | `ReadWrite` | textbox |
+| `16415` | `31` | `MB_ТОП_АВАРИЯ-ПОЗ_УПРАВ` | `ReadWrite` | textbox |
+| `16416` | `32` | `MB_ТОП_ПАУЗА-ВРАЩЕНИЕ` | `ReadWrite` | textbox |
+| `16417` | `33` | `MB_ТОП_АВАРИЯ-ВРАЩЕНИЕ` | `ReadWrite` | textbox |
+| `16418` | `34` | `MB_ТОП_СБРОС-З_ВЫГРУЗКА` | `ReadWrite` | textbox |
+| `16419` | `35` | `MB_ТОП_СБРОС-З_ЗАГРУЗКА` | `ReadWrite` | textbox |
 
 ## Запуск и остановка
 
-`Start Server` и `Start Client` в ViewModel запускают фоновые lifecycle-операции, чтобы UI не блокировался при подключении или ожидании TCP.
-Перед запуском берется clone текущих настроек `ModbusDemo`; после изменения настроек они применяются при следующем старте.
+`AddModbusInfrastructure()` регистрирует основной `Modbus` и named-секцию `ModbusDemo`. `CreateDemoTcpService()` вручную собирает отдельные `ModbusClientService`, `ModbusServerService`, `ModbusRuntimeService` и facade, чтобы демо-экран не делил состояние с основным Modbus TCP экраном.
 
-Поток запуска:
-
-1. `ModbusDemoView` вызывает `StartServerCommand` или `StartClientCommand`.
-2. `ModbusDemoViewModel` собирает options и вызывает `IModbusDemoTcpService`.
-3. `ModbusDemoTcpService` делегирует в отдельный `ModbusTcpService`.
-4. `ModbusTcpService` валидирует `DataMap`, переключает роль runtime и запускает client или server.
-5. `ModbusRuntimeService` поднимает `ModbusClientService` или `ModbusServerService`.
-
-`Stop` отменяет активный lifecycle, затем вызывает `StopAsync`. При закрытии приложения [App.axaml.cs](App.axaml.cs) останавливает и основной Modbus runtime, и demo-фасад.
+`Start Client` и `Start Server` берут clone текущих настроек из ViewModel и запускают соответствующую роль через `IModbusDemoTcpService`. `Stop` отменяет активную lifecycle-операцию и вызывает `StopAsync()`.
 
 ## Телеметрия
 
-`TelemetryGroups` создаются в `CreateTelemetryGroups()`. Каждый `Telemetry_*` читается как UInt16 и разворачивается в строки `ModbusTelemetryBitRow`.
+ViewModel подписывается на readable-точки из `TelemetryGroups` и `ParameterRows`. Snapshot приходит с фонового polling-потока, поэтому `OnDataValueChanged()` возвращает обновление bound-свойств через UI dispatcher.
 
-- `BitText` показывает `I1`, `I2`, ... по индексу младшего бита.
-- `RawValueText` показывает исходное значение регистра.
-- Красный индикатор включается только для настроенного бита, сейчас это `Telemetry_1` bit0.
-
-Snapshot приходит из `ModbusTcpService.Subscribe(...)`; ViewModel переводит обновление на UI dispatcher и применяет значение к нужной группе.
+Для `Telemetry_*` значение `UInt16` разворачивается в биты. `Telemetry_1 Q1/I1` дополнительно управляет красным индикатором через `IsRedIndicatorVisible`.
 
 ## Команды
 
-`CommandGroups` создаются в `CreateCommandGroups()`. Каждая строка меняет один бит, но запись в Modbus всегда идет целым UInt16 словом регистра.
-Текущее локальное слово хранится в `_commandWords`, а `WriteCommandBitAsync()` меняет в нем только нужную маску.
+Каждая команда меняет один бит локального слова `_commandWords`, затем пишет целый Holding Register через `SetAsync(pointName, nextWord)`. При ошибке записи ViewModel откатывает локальное слово, чтобы следующий toggle не наследовал бит, который не ушел в устройство.
 
-Текущие типы контролов:
+- `Commands_1 Q1 C_СБРОС` - `RadioButtonToggle`: выглядит как `RadioButton`, повторный клик снимает `IsChecked` и пишет `0`.
+- `Commands_1 Q2 C_ОТМЕНА` - `CheckBox`.
+- `Commands_1 Q3..Q6` - `ToggleButton`.
+- `Commands_3 Q1 СЕТЬ` - `ToggleButton`.
+- `Commands_4 Q1 ПУСК`, `Q2 СТОП` - `ToggleButton`.
 
-- `MomentaryButton` - пишет `1` на press и `0` на release. Используется для `Commands_1 Q3..Q6`, `Commands_4 Q1..Q2`.
-- `CheckBox` - удерживает состояние. Используется для `Commands_1 Q2`.
-- `ToggleButton` - удерживает состояние кнопкой. Используется для `Commands_3 Q1`.
-- `RadioButtonToggle` - выглядит как radio, но удерживает состояние и снимается повторной активацией. Используется для `Commands_1 Q1`.
-
-Для `RadioButtonToggle` в code-behind есть отдельное поведение: Avalonia `RadioButton` сам не снимает выбранное состояние при повторном клике, поэтому `ModbusDemoRadioButtonToggleBehavior` вручную переводит `IsChecked` в `false`.
+Импульсных `press=1/release=0` команд в `ModbusDemo` нет.
 
 ## Параметры
 
-`ParameterRows` создаются в `CreateParameterRows()` для `MB_*` регистров `16400..16419`.
+Polling обновляет только `LastReadValueText`. `EditValueText` не затирается snapshot-ами, чтобы пользователь мог редактировать поле без гонки с чтением.
 
-- Polling обновляет только `LastReadValueText`.
-- `ReadParametersCommand` копирует последнее прочитанное значение в поле редактирования.
-- `WriteParametersCommand` валидирует все значения как `ushort` и записывает их по одному.
-- Slider используется для `MB_ТЕКУЩАЯ_ПОЗИЦИЯ`; остальные параметры редактируются через `TextBox`.
-
-Такой поток защищает ввод пользователя от перезаписи очередным polling snapshot.
+`Считать значения` копирует последний прочитанный snapshot в поля редактирования. `Записать значения` валидирует диапазон `0..65535` и последовательно пишет все `ParameterRows`.
 
 ## Настройки
 
-Кнопка `Настройки` открывает общий диалог Modbus-настроек, но передает section name `ModbusDemo`.
-Сохраненные настройки пишутся через `IAppConfigService.SaveSectionAsync(...)` и применяются при следующем запуске client/server.
+Диалог настроек открывается для named-секции `ModbusDemo`. После сохранения ViewModel хранит clone настроек в `_currentOptions`; следующий `Start Client` или `Start Server` запускается уже с ним.
 
-`ModbusDemoOptionsProvider` всегда возвращает clone, чтобы ViewModel и диалог не меняли live-options напрямую.
+## Тесты и troubleshooting
 
-## Проверка и troubleshooting
+Запуск:
 
-- Unit-тесты ModbusDemo находятся в [ModbusDemoViewModelTests.cs](../Configurator.Infrastructure.Modbus.Tests/ModbusDemoViewModelTests.cs).
-- Быстрая проверка: `dotnet test Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore`.
-- Проверка после изменения project metadata: `dotnet build DesktopTemplate.slnx --no-restore`.
-- Если `Start Client` показывает ожидание подключения, проверьте, что demo-сервер или внешнее устройство слушает `127.0.0.1:1502`.
-- Если запись команды не подтверждается, проверьте `Access` точки в `DataMap`, роль runtime и `WriteConfirmationTimeoutMs`.
-- Если новый файл не виден в Visual Studio, проверьте явный `<None Update="Описание работы ModbusDemo.md" />` в [Configurator.Desktop.csproj](Configurator.Desktop.csproj).
+```powershell
+dotnet test Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj
+dotnet build DesktopTemplate.slnx --no-restore
+```
+
+UI-тесты headless проверяют реальные клики по `RadioButton`, `ToggleButton`, кнопку записи параметров и видимое обновление телеметрии.
+
+Типовые проверки:
+
+- Q1 не снимается повторным кликом: смотреть tunnel handlers в [ModbusDemoView.axaml.cs](Workspace/ModbusDemo/ModbusDemoView.axaml.cs) и тест `RadioButtonQ1_ClickTwice_WritesOneThenZero`.
+- Команда пишет неверный бит: проверить `BitIndex`, `_commandWords` и `WriteCommandBitAsync()` в [ModbusDemoViewModel.cs](Workspace/ModbusDemo/ModbusDemoViewModel.cs).
+- Параметр не обновляется: имя точки в `CreateParameterRows()` должно совпадать с `ModbusDemo/DataMap`.
+- Настройки не применяются: проверить `ModbusOptions.DemoSectionName` и сохранение секции `ModbusDemo`.

@@ -632,15 +632,15 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         =>
         [
             // Commands_* соответствуют write-only Holding Registers. Q1 визуально остается RadioButton,
-            // но работает как удерживаемый переключатель, а не как импульс по нажатию/отпусканию.
+            // остальные кнопочные команды работают как удерживаемые ToggleButton.
             new("Commands_1", 16388,
             [
                 new("Commands_1", "C_СБРОС", 0, ModbusCommandControlKind.RadioButtonToggle, WriteCommandBitAsync),
                 new("Commands_1", "C_ОТМЕНА", 1, ModbusCommandControlKind.CheckBox, WriteCommandBitAsync),
-                new("Commands_1", "C_ПУСК-ВРАЩЕНИЕ", 2, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync),
-                new("Commands_1", "C_ПУСК-З_ВЫГРУЗКА", 3, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync),
-                new("Commands_1", "C_ВКЛ-З_ЗАГРУЗКА", 4, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync),
-                new("Commands_1", "C_ПУСК-З_ЗАГРУЗКА", 5, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync)
+                new("Commands_1", "C_ПУСК-ВРАЩЕНИЕ", 2, ModbusCommandControlKind.ToggleButton, WriteCommandBitAsync),
+                new("Commands_1", "C_ПУСК-З_ВЫГРУЗКА", 3, ModbusCommandControlKind.ToggleButton, WriteCommandBitAsync),
+                new("Commands_1", "C_ВКЛ-З_ЗАГРУЗКА", 4, ModbusCommandControlKind.ToggleButton, WriteCommandBitAsync),
+                new("Commands_1", "C_ПУСК-З_ЗАГРУЗКА", 5, ModbusCommandControlKind.ToggleButton, WriteCommandBitAsync)
             ]),
             new("Commands_2", 16389, []),
             new("Commands_3", 16390,
@@ -649,8 +649,8 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
             ]),
             new("Commands_4", 16391,
             [
-                new("Commands_4", "ПУСК", 0, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync),
-                new("Commands_4", "СТОП", 1, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync)
+                new("Commands_4", "ПУСК", 0, ModbusCommandControlKind.ToggleButton, WriteCommandBitAsync),
+                new("Commands_4", "СТОП", 1, ModbusCommandControlKind.ToggleButton, WriteCommandBitAsync)
             ])
         ];
 
@@ -834,7 +834,6 @@ public sealed class ModbusCommandBitRow : ViewModelBase
 {
     private readonly Func<ModbusCommandBitRow, bool, Task<bool>> _writeBitAsync;
     private bool _isChecked;
-    private bool _isPulseActive;
     private bool _isWriting;
 
     public ModbusCommandBitRow(
@@ -864,16 +863,13 @@ public sealed class ModbusCommandBitRow : ViewModelBase
 
     public string RadioGroupName => $"{PointName}_Q{BitIndex + 1}";
 
-    public bool IsMomentaryButton => ControlKind == ModbusCommandControlKind.MomentaryButton;
-
     public bool IsToggleButton => ControlKind == ModbusCommandControlKind.ToggleButton;
 
     public bool IsRadioButtonToggle => ControlKind == ModbusCommandControlKind.RadioButtonToggle;
 
     public bool IsCheckBox => ControlKind == ModbusCommandControlKind.CheckBox;
 
-    public bool IsPulseControl => ControlKind == ModbusCommandControlKind.MomentaryButton;
-
+    // В ModbusDemo больше нет импульсных press/release-команд: каждый command-контрол удерживает состояние.
     public bool IsHoldControl => ControlKind is
         ModbusCommandControlKind.ToggleButton
         or ModbusCommandControlKind.RadioButtonToggle
@@ -899,7 +895,6 @@ public sealed class ModbusCommandBitRow : ViewModelBase
             this.RaiseAndSetIfChanged(ref _isChecked, value);
 
             // Удерживаемые контролы пишут новое состояние сразу при изменении IsChecked.
-            // Импульсные кнопки используют PressAsync/ReleaseAsync и сюда не попадают.
             if (IsHoldControl)
             {
                 _ = WriteHoldAsync(previous, value);
@@ -907,37 +902,12 @@ public sealed class ModbusCommandBitRow : ViewModelBase
         }
     }
 
-    public bool IsPulseActive
-    {
-        get => _isPulseActive;
-        private set => this.RaiseAndSetIfChanged(ref _isPulseActive, value);
-    }
-
-    public Task PressAsync()
-        => IsPulseControl ? WritePulseAsync(true) : Task.CompletedTask;
-
-    public Task ReleaseAsync()
-        => IsPulseControl ? WritePulseAsync(false) : Task.CompletedTask;
-
     private async Task WriteHoldAsync(bool previous, bool value)
     {
         if (!await WriteAsync(value))
         {
             this.RaiseAndSetIfChanged(ref _isChecked, previous, nameof(IsChecked));
         }
-    }
-
-    private async Task<bool> WritePulseAsync(bool value)
-    {
-        IsPulseActive = value;
-
-        var succeeded = await WriteAsync(value);
-        if (!succeeded || !value)
-        {
-            IsPulseActive = false;
-        }
-
-        return succeeded;
     }
 
     private async Task<bool> WriteAsync(bool value)
@@ -957,7 +927,6 @@ public sealed class ModbusCommandBitRow : ViewModelBase
 
 public enum ModbusCommandControlKind
 {
-    MomentaryButton,
     ToggleButton,
     RadioButtonToggle,
     CheckBox

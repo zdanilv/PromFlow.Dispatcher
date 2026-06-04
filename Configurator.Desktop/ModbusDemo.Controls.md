@@ -1,76 +1,46 @@
-# ModbusDemo: добавление кнопок и реакций UI
+# ModbusDemo: controls
 
-`ModbusDemo` работает только с `HoldingRegister`. В конфигурации `ModbusDemo` задан
-`HoldingRegisterStartAddress = 16384`, поэтому `DataMap.Address` хранит смещение от
-этого адреса:
+`ModbusDemo` работает только с Holding Registers. В `appsettings.json` для секции `ModbusDemo` задана база `HoldingRegisterStartAddress = 16384`; в `DataMap.Address` хранится смещение от этой базы.
 
-- регистр `16384` -> `Address = 0`;
-- регистр `16388` -> `Address = 4`;
-- регистр `16400` -> `Address = 16`.
+Примеры:
 
-## Новая точка DataMap
+- HR `16384` -> `Address = 0`;
+- HR `16388` -> `Address = 4`;
+- HR `16400` -> `Address = 16`.
 
-Добавьте точку в `Configurator.Boot/appsettings.json`, секция `ModbusDemo/DataMap`.
-Для одного 16-битного регистра используйте:
+## Command controls
 
-```json
-{
-  "Name": "My_Register",
-  "Area": "HoldingRegister",
-  "Address": 16,
-  "Length": 1,
-  "Access": "ReadWrite",
-  "Type": "UInt16"
-}
-```
-
-`Access` выбирайте по назначению: `Read` для телеметрии, `Write` для команд,
-`ReadWrite` для изменяемых параметров.
-
-## Командная кнопка
-
-Команды описываются в `ModbusDemoViewModel.CreateCommandGroups()`.
-Каждый бит получает имя точки регистра, подпись, номер бита и тип контрола:
+Команды задаются в `ModbusDemoViewModel.CreateCommandGroups()`. Один control меняет один бит, но запись в Modbus уходит целым `UInt16` словом.
 
 ```csharp
-new("Commands_1", "C_ПУСК", 2, ModbusCommandControlKind.MomentaryButton, WriteCommandBitAsync)
+new("Commands_1", "C_ПУСК-ВРАЩЕНИЕ", 2, ModbusCommandControlKind.ToggleButton, WriteCommandBitAsync)
 ```
 
-Доступные типы:
+Актуальные типы:
 
-- `MomentaryButton`: пишет `1` при нажатии и `0` при отпускании.
-- `RadioButtonToggle`: выглядит как `RadioButton`, но удерживает состояние; повторная активация снимает выбор и пишет `0`.
-- `CheckBox`: удерживает состояние, пишет `1` при включении и `0` при выключении.
-- `ToggleButton`: удерживает состояние как переключатель.
+- `RadioButtonToggle`: для `Commands_1 Q1`; выглядит как `RadioButton`, повторная активация снимает выбор и пишет `0`.
+- `CheckBox`: для `Commands_1 Q2`; пишет held state.
+- `ToggleButton`: для остальных command-кнопок, включая `Commands_1 Q3..Q6`, `Commands_3 Q1`, `Commands_4 Q1..Q2`.
 
-Биты считаются от младшего: `Q1 = bit0`, `Q16 = bit15`.
+Импульсных `Button`/`MomentaryButton` команд в `ModbusDemo` нет.
 
-## Реакция на телеметрию
+## Telemetry
 
-Телеметрические биты описываются в `CreateTelemetryGroups()`.
-Чтобы добавить красный индикатор для конкретного бита, передайте его индекс:
+Телеметрия описана в `CreateTelemetryGroups()`. Значение регистра разворачивается в биты от младшего к старшему: `I1 = bit0`, `I16 = bit15`.
+
+Красный индикатор включается через `redIndicatorBitIndex`:
 
 ```csharp
 new("Telemetry_1", 16384, ["Д_КЮБЕЛЬ_ОТКРЫТ"], redIndicatorBitIndex: 0)
 ```
 
-UI сам показывает кружок, когда `IsRedIndicatorVisible = true`.
-Биты считаются от младшего: `I1 = bit0`, `I16 = bit15`.
+## Parameters
 
-## Изменяемый параметр
-
-Параметры описываются в `CreateParameterRows()`.
-Обычное числовое поле:
+Параметры описаны в `CreateParameterRows()`.
 
 ```csharp
 CreateParameter("MB_Hz", 16404)
-```
-
-Slider для диапазона `0..65535`:
-
-```csharp
 CreateParameter("MB_ТЕКУЩАЯ_ПОЗИЦИЯ", 16400, ModbusParameterEditorKind.Slider)
 ```
 
-Параметры не отправляются при каждом изменении поля или Slider. Новые значения уходят
-в Modbus TCP только по кнопке `Записать значения`.
+Редактирование не пишет Modbus сразу. Запись происходит только по команде `Записать значения`.
