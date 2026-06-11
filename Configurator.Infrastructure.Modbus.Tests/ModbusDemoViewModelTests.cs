@@ -76,14 +76,95 @@ public sealed class ModbusDemoViewModelTests
         using var viewModel = CreateViewModel(service, dialog);
         var command = FindCommand(viewModel, "Commands_1", 2);
 
-        await command.PressAsync();
-        await command.ReleaseAsync();
+        await command.PulseCommand.Execute().FirstAsync().ToTask();
 
         Assert.Equal(ModbusCommandControlKind.MomentaryButton, command.ControlKind);
         Assert.Equal(2, service.SetCalls.Count);
         Assert.Equal(("Commands_1", (ushort)4), service.SetCalls[0]);
         Assert.Equal(("Commands_1", (ushort)0), service.SetCalls[1]);
         Assert.Empty(dialog.Errors);
+    }
+
+    [Fact]
+    public async Task PulseCommandDisablesWhileWriting()
+    {
+        var service = new FakeModbusTcpService();
+        using var viewModel = CreateViewModel(service);
+        var command = FindCommand(viewModel, "Commands_1", 2);
+        var setStarted = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSet = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var canExecuteValues = new List<bool>();
+
+        service.SetCallStarted = setStarted;
+        service.SetCallRelease = releaseSet;
+
+        using var subscription = command.PulseCommand.CanExecute.Subscribe(canExecuteValues.Add);
+
+        var pulseTask = command.PulseCommand.Execute().FirstAsync().ToTask();
+        await setStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(command.IsWriting);
+        Assert.True(await WaitForAsync(() => canExecuteValues.Count > 0 && !canExecuteValues.Last()));
+        Assert.Single(service.SetCalls);
+
+        releaseSet.SetResult(true);
+        await pulseTask;
+
+        Assert.False(command.IsWriting);
+        Assert.Equal(2, service.SetCalls.Count);
+    }
+
+    [Fact]
+    public async Task CommandBitWritesAreSerializedThroughModbusSet()
+    {
+        var service = new FakeModbusTcpService();
+        using var viewModel = CreateViewModel(service);
+        var firstCommand = FindCommand(viewModel, "Commands_1", 2);
+        var secondCommand = FindCommand(viewModel, "Commands_1", 3);
+        var firstSetStarted = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstSet = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        service.SetCallStarted = firstSetStarted;
+        service.SetCallRelease = releaseFirstSet;
+
+        var firstWrite = viewModel.WriteCommandBitAsync(firstCommand, true);
+        await firstSetStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        var secondWrite = viewModel.WriteCommandBitAsync(secondCommand, true);
+        await Task.Delay(100);
+
+        Assert.Single(service.SetCalls);
+
+        releaseFirstSet.SetResult(true);
+
+        Assert.True(await firstWrite);
+        Assert.True(await secondWrite);
+        Assert.Equal(2, service.SetCalls.Count);
+        Assert.Equal(("Commands_1", (ushort)4), service.SetCalls[0]);
+        Assert.Equal(("Commands_1", (ushort)12), service.SetCalls[1]);
+    }
+
+    [Fact]
+    public async Task PulseCommandAttemptsResetAndReportsResetFailure()
+    {
+        var service = new FakeModbusTcpService();
+        var dialog = new FakeDialogService();
+        using var viewModel = CreateViewModel(service, dialog);
+        var command = FindCommand(viewModel, "Commands_1", 2);
+
+        service.SetResults.Enqueue(ModbusOperationResult.Success());
+        service.SetResults.Enqueue(ModbusOperationResult.Failure("WriteFailed", "Write failed.", "No ACK"));
+
+        await command.PulseCommand.Execute().FirstAsync().ToTask();
+
+        Assert.False(command.IsWriting);
+        Assert.False(command.IsPulseActive);
+        Assert.Equal(2, service.SetCalls.Count);
+        Assert.Equal(("Commands_1", (ushort)4), service.SetCalls[0]);
+        Assert.Equal(("Commands_1", (ushort)0), service.SetCalls[1]);
+        var error = Assert.Single(dialog.Errors);
+        Assert.Contains("Write failed.", error.Message, StringComparison.Ordinal);
+        Assert.Contains("No ACK", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -138,21 +219,21 @@ public sealed class ModbusDemoViewModelTests
     }
 
     [Fact]
-    public async Task MomentaryBehaviorUsesControlDataContext()
+    public async Task RadioButtonPulseBehaviorUsesControlDataContext()
     {
         var service = new FakeModbusTcpService();
         using var viewModel = CreateViewModel(service);
-        var command = FindCommand(viewModel, "Commands_4", 0);
+        var command = FindCommand(viewModel, "Commands_1", 0);
         var behavior = new ModbusDemoMomentaryCommandBehavior();
-        var button = new Button { DataContext = command };
+        var radioButton = new RadioButton { DataContext = command };
 
-        var pressed = await behavior.PressAsync(button);
+        var pressed = await behavior.PressAsync(radioButton);
         var released = await behavior.ReleaseAsync();
 
         Assert.True(pressed);
         Assert.True(released);
-        Assert.Equal(("Commands_4", (ushort)1), service.SetCalls[0]);
-        Assert.Equal(("Commands_4", (ushort)0), service.SetCalls[1]);
+        Assert.Equal(("Commands_1", (ushort)1), service.SetCalls[0]);
+        Assert.Equal(("Commands_1", (ushort)0), service.SetCalls[1]);
     }
 
     [Fact]
@@ -564,6 +645,12 @@ public sealed class ModbusDemoViewModelTests
 
         public ModbusOperationResult NextSetResult { get; set; } = ModbusOperationResult.Success();
 
+        public Queue<ModbusOperationResult> SetResults { get; } = [];
+
+        public TaskCompletionSource<int>? SetCallStarted { get; set; }
+
+        public TaskCompletionSource<bool>? SetCallRelease { get; set; }
+
         public ModbusServiceState State { get; private set; } = ModbusServiceState.Stopped;
 
         public event EventHandler<ModbusServiceState>? StateChanged;
@@ -622,10 +709,19 @@ public sealed class ModbusDemoViewModelTests
         public Task<ModbusOperationResult<T>> GetAsync<T>(string name, CancellationToken ct = default)
             => Task.FromResult(ModbusOperationResult<T>.Failure("NotImplemented", "Not implemented."));
 
-        public Task<ModbusOperationResult> SetAsync<T>(string name, T value, CancellationToken ct = default)
+        public async Task<ModbusOperationResult> SetAsync<T>(string name, T value, CancellationToken ct = default)
         {
             SetCalls.Add((name, Convert.ToUInt16(value)));
-            return Task.FromResult(NextSetResult);
+            SetCallStarted?.TrySetResult(SetCalls.Count);
+
+            if (SetCallRelease is not null)
+            {
+                await SetCallRelease.Task.WaitAsync(ct);
+            }
+
+            return SetResults.Count > 0
+                ? SetResults.Dequeue()
+                : NextSetResult;
         }
 
         public IDisposable Subscribe(string name, Action<ModbusDataValue> onChanged)

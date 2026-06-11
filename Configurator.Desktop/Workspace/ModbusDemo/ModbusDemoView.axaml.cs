@@ -83,7 +83,7 @@ internal sealed class ModbusDemoMomentaryCommandBehavior
 
     public async Task<bool> PressAsync(object? source)
     {
-        if (!TryGetCommandRow(source, out var row) || !row.IsPulseControl)
+        if (!TryGetCommandRow(source, out var row) || !row.IsRadioButtonPulse)
         {
             return false;
         }
@@ -129,10 +129,20 @@ internal sealed class ModbusDemoMomentaryCommandBehavior
 
     internal static bool TryGetCommandRow(object? source, out ModbusCommandBitRow row)
     {
-        if (source is Control { DataContext: ModbusCommandBitRow commandRow })
+        if (source is Control control)
         {
-            row = commandRow;
-            return true;
+            var current = control;
+
+            while (current is not null)
+            {
+                if (current.DataContext is ModbusCommandBitRow commandRow)
+                {
+                    row = commandRow;
+                    return true;
+                }
+
+                current = current.Parent as Control;
+            }
         }
 
         row = null!;

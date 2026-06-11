@@ -263,48 +263,46 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
 
     internal async Task<bool> WriteCommandBitAsync(ModbusCommandBitRow row, bool value)
     {
-        await _commandWriteGate.WaitAsync();
+        ModbusOperationResult? failedResult = null;
 
-        ushort previousWord;
-        ushort nextWord;
+        await _commandWriteGate.WaitAsync();
 
         try
         {
-            previousWord = _commandWords.TryGetValue(row.PointName, out var currentWord)
-                ? currentWord
-                : (ushort)0;
+            var hadPreviousWord = _commandWords.TryGetValue(row.PointName, out var previousWord);
+            var currentWord = hadPreviousWord ? previousWord : (ushort)0;
             var mask = checked((ushort)(1 << row.BitIndex));
 
             // Устройство принимает команды целым Holding Register, поэтому каждый бит упаковывается
             // обратно в локально сохраненное 16-битное слово командного регистра.
-            nextWord = value
-                ? (ushort)(previousWord | mask)
-                : (ushort)(previousWord & ~mask);
-            _commandWords[row.PointName] = nextWord;
+            var nextWord = value
+                ? (ushort)(currentWord | mask)
+                : (ushort)(currentWord & ~mask);
+
+            var result = await _modbusTcpService.SetAsync(row.PointName, nextWord);
+            if (result.Succeeded)
+            {
+                _commandWords[row.PointName] = nextWord;
+                return true;
+            }
+
+            if (hadPreviousWord)
+            {
+                _commandWords[row.PointName] = previousWord;
+            }
+            else
+            {
+                _commandWords.Remove(row.PointName);
+            }
+
+            failedResult = result;
         }
         finally
         {
             _commandWriteGate.Release();
         }
 
-        var result = await _modbusTcpService.SetAsync(row.PointName, nextWord);
-        if (result.Succeeded)
-        {
-            return true;
-        }
-
-        await _commandWriteGate.WaitAsync();
-
-        try
-        {
-            _commandWords[row.PointName] = previousWord;
-        }
-        finally
-        {
-            _commandWriteGate.Release();
-        }
-
-        await ShowErrorAsync(OperationMessage(result));
+        await ShowErrorAsync(OperationMessage(failedResult!));
         return false;
     }
 
@@ -826,6 +824,7 @@ public sealed class ModbusCommandRegisterGroup
 
 public sealed class ModbusCommandBitRow : ViewModelBase
 {
+    private static readonly TimeSpan MomentaryPulseDuration = TimeSpan.FromMilliseconds(300);
     private readonly Func<ModbusCommandBitRow, bool, Task<bool>> _writeBitAsync;
     private bool _isChecked;
     private bool _isPulseActive;
@@ -844,6 +843,11 @@ public sealed class ModbusCommandBitRow : ViewModelBase
         ControlKind = controlKind;
         BitText = $"Q{bitIndex + 1}";
         _writeBitAsync = writeBitAsync;
+
+        var canPulse = this
+            .WhenAnyValue(row => row.IsWriting)
+            .Select(isWriting => !isWriting);
+        PulseCommand = ReactiveCommand.CreateFromTask(ExecutePulseAsync, canPulse);
     }
 
     public string PointName { get; }
@@ -867,6 +871,8 @@ public sealed class ModbusCommandBitRow : ViewModelBase
     public bool IsPulseControl => ControlKind is ModbusCommandControlKind.MomentaryButton or ModbusCommandControlKind.RadioButtonPulse;
 
     public bool IsHoldControl => ControlKind is ModbusCommandControlKind.ToggleButton or ModbusCommandControlKind.CheckBox;
+
+    public ReactiveCommand<Unit, Unit> PulseCommand { get; }
 
     public bool IsWriting
     {
@@ -905,6 +911,45 @@ public sealed class ModbusCommandBitRow : ViewModelBase
 
     public Task ReleaseAsync()
         => IsPulseControl ? WritePulseAsync(false) : Task.CompletedTask;
+
+    private async Task ExecutePulseAsync()
+    {
+        if (!IsMomentaryButton)
+        {
+            return;
+        }
+
+        IsWriting = true;
+        IsPulseActive = true;
+
+        var shouldReset = false;
+
+        try
+        {
+            shouldReset = await _writeBitAsync(this, true);
+            if (!shouldReset)
+            {
+                return;
+            }
+
+            await Task.Delay(MomentaryPulseDuration);
+        }
+        finally
+        {
+            try
+            {
+                if (shouldReset)
+                {
+                    await _writeBitAsync(this, false);
+                }
+            }
+            finally
+            {
+                IsPulseActive = false;
+                IsWriting = false;
+            }
+        }
+    }
 
     private async Task WriteHoldAsync(bool previous, bool value)
     {

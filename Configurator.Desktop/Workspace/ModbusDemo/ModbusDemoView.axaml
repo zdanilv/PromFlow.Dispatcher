@@ -173,21 +173,26 @@
                                                             <Button Grid.Column="1"
                                                                     Classes="pulse"
                                                                     IsVisible="{Binding IsMomentaryButton}"
-                                                                    Content="{Binding Name}"/>
+                                                                    Content="{Binding Name}"
+                                                                    Command="{Binding PulseCommand}"
+                                                                    IsEnabled="{Binding !IsWriting}"/>
                                                             <ToggleButton Grid.Column="1"
                                                                           Classes="commandToggle"
                                                                           IsVisible="{Binding IsToggleButton}"
                                                                           Content="{Binding Name}"
-                                                                          IsChecked="{Binding IsChecked, Mode=TwoWay}"/>
+                                                                          IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                                                          IsEnabled="{Binding !IsWriting}"/>
                                                             <RadioButton Grid.Column="1"
                                                                          Classes="commandToggle"
                                                                          IsVisible="{Binding IsRadioButtonPulse}"
                                                                          Content="{Binding Name}"
-                                                                         IsChecked="{Binding IsPulseActive, Mode=OneWay}"/>
+                                                                         IsChecked="{Binding IsPulseActive, Mode=OneWay}"
+                                                                         IsEnabled="{Binding !IsWriting}"/>
                                                             <CheckBox Grid.Column="1"
                                                                       IsVisible="{Binding IsCheckBox}"
                                                                       Content="{Binding Name}"
                                                                       IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                                                      IsEnabled="{Binding !IsWriting}"
                                                                       VerticalAlignment="Center"/>
                                                         </Grid>
                                                     </DataTemplate>
