@@ -39,7 +39,52 @@ public sealed class ModbusDataMapValidator : IModbusDataMapValidator
             }
         }
 
+        var conflictValidation = ValidateAddressConflicts(options.DataMap);
+        if (!conflictValidation.Succeeded)
+        {
+            return conflictValidation;
+        }
+
         return ModbusOperationResult.Success();
+    }
+
+    private static ModbusOperationResult ValidateAddressConflicts(
+        IReadOnlyList<ModbusDataPointOptions> points)
+    {
+        for (var leftIndex = 0; leftIndex < points.Count; leftIndex++)
+        {
+            var left = points[leftIndex];
+            for (var rightIndex = leftIndex + 1; rightIndex < points.Count; rightIndex++)
+            {
+                var right = points[rightIndex];
+                if (left.Area != right.Area || !RangesOverlap(left, right))
+                {
+                    continue;
+                }
+
+                if (left.Area == ModbusDataArea.HoldingRegister
+                    && left.BitIndex is int leftBit
+                    && right.BitIndex is int rightBit
+                    && left.Address == right.Address
+                    && leftBit != rightBit)
+                {
+                    continue;
+                }
+
+                return ModbusOperationResult.Failure(
+                    "ModbusDataPointAddressConflict",
+                    $"Modbus data points '{left.Name}' and '{right.Name}' use overlapping {left.Area} addresses.");
+            }
+        }
+
+        return ModbusOperationResult.Success();
+    }
+
+    private static bool RangesOverlap(ModbusDataPointOptions left, ModbusDataPointOptions right)
+    {
+        var leftEnd = left.Address + left.Length;
+        var rightEnd = right.Address + right.Length;
+        return left.Address < rightEnd && right.Address < leftEnd;
     }
 
     /// <summary>
@@ -98,6 +143,20 @@ public sealed class ModbusDataMapValidator : IModbusDataMapValidator
                 $"Modbus data point '{point.Name}' uses unsupported type '{point.Type}'.");
         }
 
+        if (!Enum.IsDefined(point.WriteMode))
+        {
+            return ModbusOperationResult.Failure(
+                "ModbusWriteModeUnsupported",
+                $"Modbus data point '{point.Name}' uses unsupported write mode '{point.WriteMode}'.");
+        }
+
+        if (point.PulseDurationMs is < 1 or > 60000)
+        {
+            return ModbusOperationResult.Failure(
+                "ModbusPulseDurationInvalid",
+                $"Modbus data point '{point.Name}' pulse duration must be in range 1..60000 ms.");
+        }
+
         return point.Area switch
         {
             ModbusDataArea.Coil => ValidateCoil(point),
@@ -127,6 +186,13 @@ public sealed class ModbusDataMapValidator : IModbusDataMapValidator
                 $"Coil data point '{point.Name}' length must be 1.");
         }
 
+        if (point.BitIndex is not null)
+        {
+            return ModbusOperationResult.Failure(
+                "ModbusCoilBitIndexInvalid",
+                $"Coil data point '{point.Name}' must not define BitIndex.");
+        }
+
         if (point.Address >= MaxCoils)
         {
             return ModbusOperationResult.Failure(
@@ -144,9 +210,21 @@ public sealed class ModbusDataMapValidator : IModbusDataMapValidator
     {
         if (point.Type == ModbusValueType.Bool)
         {
+            if (point.Length != 1 || point.BitIndex is < 0 or > 15)
+            {
+                return ModbusOperationResult.Failure(
+                    "ModbusRegisterBitInvalid",
+                    $"Holding register Bool data point '{point.Name}' must use Length=1 and BitIndex in range 0..15.");
+            }
+
+            return ValidateRegisterRange(point);
+        }
+
+        if (point.BitIndex is not null)
+        {
             return ModbusOperationResult.Failure(
-                "ModbusRegisterTypeInvalid",
-                $"Holding register data point '{point.Name}' cannot use Bool type.");
+                "ModbusRegisterBitTypeInvalid",
+                $"Holding register data point '{point.Name}' can define BitIndex only for Bool type.");
         }
 
         var requiredLength = RequiredRegisterLength(point);
@@ -164,6 +242,11 @@ public sealed class ModbusDataMapValidator : IModbusDataMapValidator
                 $"String data point '{point.Name}' length must be at least 1.");
         }
 
+        return ValidateRegisterRange(point);
+    }
+
+    private static ModbusOperationResult ValidateRegisterRange(ModbusDataPointOptions point)
+    {
         if (point.Address + point.Length > MaxRegisters)
         {
             return ModbusOperationResult.Failure(

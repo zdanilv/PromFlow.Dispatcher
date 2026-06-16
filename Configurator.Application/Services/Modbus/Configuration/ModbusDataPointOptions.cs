@@ -43,6 +43,21 @@ public sealed class ModbusDataPointOptions
     public ModbusValueType Type { get; set; } = ModbusValueType.UInt16;
 
     /// <summary>
+    /// Номер бита 0..15 для Bool, упакованного в Holding Register.
+    /// </summary>
+    public int? BitIndex { get; set; }
+
+    /// <summary>
+    /// Семантика записи команды: удерживаемое значение или импульс.
+    /// </summary>
+    public ModbusWriteMode WriteMode { get; set; } = ModbusWriteMode.Latched;
+
+    /// <summary>
+    /// Длительность импульса для <see cref="ModbusWriteMode.Pulse"/>.
+    /// </summary>
+    public int PulseDurationMs { get; set; } = 300;
+
+    /// <summary>
     /// Показывает, можно ли читать точку данных из snapshots.
     /// </summary>
     public bool IsReadable => Access is ModbusDataAccess.Read or ModbusDataAccess.ReadWrite;
@@ -63,6 +78,9 @@ public sealed class ModbusDataPointOptions
             Address = Address,
             Length = Length,
             Access = Access,
-            Type = Type
+            Type = Type,
+            BitIndex = BitIndex,
+            WriteMode = WriteMode,
+            PulseDurationMs = PulseDurationMs
         };
 }

@@ -5,7 +5,6 @@ using Avalonia.Controls;
 using Configurator.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI.Avalonia;
-using Configurator.Application.Services; // Для WindowSettings
 using System.Diagnostics;
 
 namespace Configurator.Desktop.Main;

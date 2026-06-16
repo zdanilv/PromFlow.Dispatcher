@@ -477,6 +477,9 @@ public sealed class ModbusDataPointEditorRow : ReactiveObject
     private int _length;
     private ModbusDataAccess _access;
     private ModbusValueType _type;
+    private int? _bitIndex;
+    private ModbusWriteMode _writeMode;
+    private int _pulseDurationMs;
 
     /// <summary>
     /// Создает строку редактора из настроенной точки данных.
@@ -491,6 +494,9 @@ public sealed class ModbusDataPointEditorRow : ReactiveObject
         _length = options.Length;
         _access = options.Access;
         _type = options.Type;
+        _bitIndex = options.BitIndex;
+        _writeMode = options.WriteMode;
+        _pulseDurationMs = options.PulseDurationMs;
         RemoveCommand = ReactiveCommand.Create(() => remove(this));
     }
 
@@ -499,6 +505,8 @@ public sealed class ModbusDataPointEditorRow : ReactiveObject
     public IReadOnlyList<ModbusDataAccess> DataAccessModes { get; } = Enum.GetValues<ModbusDataAccess>();
 
     public IReadOnlyList<ModbusValueType> ValueTypes { get; } = Enum.GetValues<ModbusValueType>();
+
+    public IReadOnlyList<ModbusWriteMode> WriteModes { get; } = Enum.GetValues<ModbusWriteMode>();
 
     public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
 
@@ -538,6 +546,24 @@ public sealed class ModbusDataPointEditorRow : ReactiveObject
         set => this.RaiseAndSetIfChanged(ref _type, value);
     }
 
+    public int? BitIndex
+    {
+        get => _bitIndex;
+        set => this.RaiseAndSetIfChanged(ref _bitIndex, value);
+    }
+
+    public ModbusWriteMode WriteMode
+    {
+        get => _writeMode;
+        set => this.RaiseAndSetIfChanged(ref _writeMode, value);
+    }
+
+    public int PulseDurationMs
+    {
+        get => _pulseDurationMs;
+        set => this.RaiseAndSetIfChanged(ref _pulseDurationMs, value);
+    }
+
     /// <summary>
     /// Преобразует значения строки обратно в доменные настройки точки данных.
     /// </summary>
@@ -549,6 +575,9 @@ public sealed class ModbusDataPointEditorRow : ReactiveObject
             Address = Address,
             Length = Length,
             Access = Access,
-            Type = Type
+            Type = Type,
+            BitIndex = BitIndex,
+            WriteMode = WriteMode,
+            PulseDurationMs = PulseDurationMs
         };
 }

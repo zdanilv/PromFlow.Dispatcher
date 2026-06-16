@@ -4,6 +4,7 @@ using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Application.Services.Signals;
 using Configurator.Infrastructure.Modbus.Client;
 using Configurator.Infrastructure.Modbus.Configuration;
 using Configurator.Infrastructure.Modbus.Runtime;
@@ -27,6 +28,7 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         services.Configure<ModbusOptions>(configuration.GetSection(ModbusOptions.SectionName));
+        services.Configure<RouteMapRuntimeOptions>(configuration.GetSection(RouteMapRuntimeOptions.SectionName));
         services.Configure<ModbusOptions>(
             ModbusOptions.DemoSectionName,
             configuration.GetSection(ModbusOptions.DemoSectionName));
@@ -35,6 +37,11 @@ public static class DependencyInjection
         services.AddSingleton<IModbusServerService, ModbusServerService>();
         services.AddSingleton<IModbusRuntimeService, ModbusRuntimeService>();
         services.AddSingleton<IModbusTcpService, ModbusTcpService>();
+        services.AddSingleton<IModbusDataMapRuntime>(sp =>
+            (IModbusDataMapRuntime)sp.GetRequiredService<IModbusTcpService>());
+        services.AddSingleton<IModbusDataSnapshotSource>(sp =>
+            new ModbusDataSnapshotSourceAdapter(
+                (IModbusDataSnapshotSource)sp.GetRequiredService<IModbusTcpService>()));
         services.AddSingleton<IModbusDemoOptionsProvider, ModbusDemoOptionsProvider>();
         services.AddSingleton(CreateDemoTcpService);
 

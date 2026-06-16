@@ -100,6 +100,121 @@ public sealed class ModbusDataMapValidatorTests
         Assert.Equal("ModbusCoilsDisabled", result.ErrorCode);
     }
 
+    [Fact]
+    public void Validate_AcceptsBoolBitInsideHoldingRegister()
+    {
+        var options = CreateOptions();
+        options.DataMap.Add(new ModbusDataPointOptions
+        {
+            Name = "route.node.bsu_1.active",
+            Area = ModbusDataArea.HoldingRegister,
+            Address = 2,
+            Length = 1,
+            BitIndex = 7,
+            Type = ModbusValueType.Bool,
+            Access = ModbusDataAccess.ReadWrite
+        });
+
+        var result = _validator.Validate(options, ModbusRunMode.Server);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(16)]
+    public void Validate_RejectsInvalidHoldingRegisterBit(int bitIndex)
+    {
+        var options = CreateOptions();
+        options.DataMap.Add(new ModbusDataPointOptions
+        {
+            Name = "InvalidBit",
+            Area = ModbusDataArea.HoldingRegister,
+            Address = 2,
+            Length = 1,
+            BitIndex = bitIndex,
+            Type = ModbusValueType.Bool,
+            Access = ModbusDataAccess.ReadWrite
+        });
+
+        var result = _validator.Validate(options, ModbusRunMode.Server);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ModbusRegisterBitInvalid", result.ErrorCode);
+    }
+
+    [Fact]
+    public void Validate_RejectsOverlappingCoilsAndRegisterRanges()
+    {
+        var coilOptions = CreateOptions();
+        coilOptions.DataMap.Add(new ModbusDataPointOptions
+        {
+            Name = "DuplicateCoilAddress",
+            Area = ModbusDataArea.Coil,
+            Address = 0,
+            Length = 1,
+            Type = ModbusValueType.Bool,
+            Access = ModbusDataAccess.Read
+        });
+        var registerOptions = CreateOptions();
+        registerOptions.DataMap.Add(new ModbusDataPointOptions
+        {
+            Name = "OverlappingRegister",
+            Area = ModbusDataArea.HoldingRegister,
+            Address = 1,
+            Length = 1,
+            Type = ModbusValueType.UInt16,
+            Access = ModbusDataAccess.Read
+        });
+
+        var coilResult = _validator.Validate(coilOptions, ModbusRunMode.Server);
+        var registerResult = _validator.Validate(registerOptions, ModbusRunMode.Server);
+
+        Assert.Equal("ModbusDataPointAddressConflict", coilResult.ErrorCode);
+        Assert.Equal("ModbusDataPointAddressConflict", registerResult.ErrorCode);
+    }
+
+    [Fact]
+    public void Validate_AllowsDifferentBitsButRejectsWholeRegisterOverlap()
+    {
+        var options = CreateOptions();
+        options.DataMap.Add(new ModbusDataPointOptions
+        {
+            Name = "Bit0",
+            Area = ModbusDataArea.HoldingRegister,
+            Address = 2,
+            Length = 1,
+            BitIndex = 0,
+            Type = ModbusValueType.Bool,
+            Access = ModbusDataAccess.ReadWrite
+        });
+        options.DataMap.Add(new ModbusDataPointOptions
+        {
+            Name = "Bit1",
+            Area = ModbusDataArea.HoldingRegister,
+            Address = 2,
+            Length = 1,
+            BitIndex = 1,
+            Type = ModbusValueType.Bool,
+            Access = ModbusDataAccess.ReadWrite
+        });
+
+        var valid = _validator.Validate(options, ModbusRunMode.Server);
+        options.DataMap.Add(new ModbusDataPointOptions
+        {
+            Name = "WholeWord",
+            Area = ModbusDataArea.HoldingRegister,
+            Address = 2,
+            Length = 1,
+            Type = ModbusValueType.UInt16,
+            Access = ModbusDataAccess.Read
+        });
+        var invalid = _validator.Validate(options, ModbusRunMode.Server);
+
+        Assert.True(valid.Succeeded, valid.ErrorMessage);
+        Assert.Equal("ModbusDataPointAddressConflict", invalid.ErrorCode);
+    }
+
     private static ModbusOptions CreateOptions()
         => new()
         {

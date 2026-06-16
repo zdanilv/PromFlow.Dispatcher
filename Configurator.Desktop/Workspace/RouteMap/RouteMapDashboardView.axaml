@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Workspace.RouteMap.ViewModels"
+             xmlns:controls="clr-namespace:Configurator.Desktop.Workspace.RouteMap.Controls"
+             xmlns:panels="clr-namespace:Configurator.Desktop.Workspace.RouteMap.Panels"
+             mc:Ignorable="d"
+             d:DesignWidth="1500"
+             d:DesignHeight="860"
+             x:Class="Configurator.Desktop.Workspace.RouteMap.RouteMapDashboardView"
+             x:DataType="vm:RouteMapDashboardViewModel">
+    <Grid RowDefinitions="64,*"
+          Background="#F7F8F8">
+        <panels:TopBarView Grid.Row="0"
+                           DataContext="{Binding TopBar}"/>
+
+        <Grid Grid.Row="1"
+              ColumnDefinitions="*,Auto">
+            <Grid Grid.Column="0">
+                <Border Background="#F7F8F8">
+                    <Grid>
+                        <controls:RouteMapControl Definition="{Binding Definition}"
+                                                  RuntimeState="{Binding RuntimeState}"
+                                                  SelectedObjectId="{Binding SelectedObjectId, Mode=TwoWay}"
+                                                  NodeRoleStates="{Binding NodeRoleStates}"
+                                                  ToggleNodeTargetCommand="{Binding ToggleNodeTargetCommand}"
+                                                  ToggleNodeLoaderCommand="{Binding ToggleNodeLoaderCommand}"/>
+                        <panels:RouteMapAttachedCardsLayer Definition="{Binding Definition}"
+                                                           Cards="{Binding MapEquipmentCards}"
+                                                           ClipToBounds="False"/>
+                        <Border HorizontalAlignment="Right"
+                                VerticalAlignment="Bottom"
+                                Margin="0,0,335,16"
+                                Padding="10,6"
+                                Background="#FFFFFF"
+                                BorderBrush="#DDE2E6"
+                                BorderThickness="1"
+                                CornerRadius="4">
+                            <TextBlock Text="{Binding SelectedObjectTitle}"
+                                       Foreground="#65717D"
+                                       FontSize="12"/>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <panels:RequestsPanelView Grid.Column="1"
+                                      IsVisible="False"
+                                      DataContext="{Binding RequestsPanel}"/>
+        </Grid>
+    </Grid>
+</UserControl>

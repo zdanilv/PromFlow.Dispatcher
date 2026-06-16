@@ -1,0 +1,139 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+			 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+			 xmlns:vm="clr-namespace:Configurator.Desktop.Workspace.RouteMap.ViewModels"
+			 mc:Ignorable="d"
+			 d:DesignWidth="295"
+			 d:DesignHeight="141"
+			 x:Class="Configurator.Desktop.Workspace.RouteMap.Panels.EquipmentCardView"
+			 x:DataType="vm:EquipmentCardViewModel">
+	<UserControl.Styles>
+		<Style Selector="ToggleButton.equipment-action">
+			<Setter Property="MinHeight" Value="40"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="#101820"/>
+			<Setter Property="FontSize" Value="18"/>
+			<Setter Property="FontWeight" Value="Bold"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="ToggleButton.start">
+			<Setter Property="Background" Value="#D0D0D0"/>
+			<Setter Property="BorderBrush" Value="#D0D0D0"/>
+		</Style>
+		<Style Selector="ToggleButton.start:checked">
+			<Setter Property="Background" Value="#3A9D5D"/>
+			<Setter Property="BorderBrush" Value="#3A9D5D"/>
+			<Setter Property="Foreground" Value="#FFFFFF"/>
+		</Style>
+		<Style Selector="ToggleButton.stop">
+			<Setter Property="Background" Value="#D95D4E"/>
+			<Setter Property="BorderBrush" Value="#D95D4E"/>
+			<Setter Property="Foreground" Value="#FFFFFF"/>
+		</Style>
+		<Style Selector="ToggleButton.stop:checked">
+			<Setter Property="Background" Value="#9E2F25"/>
+			<Setter Property="BorderBrush" Value="#9E2F25"/>
+			<Setter Property="Foreground" Value="#FFFFFF"/>
+		</Style>
+		<Style Selector="ToggleButton.stop:pressed">
+			<Setter Property="Background" Value="#8A241D"/>
+			<Setter Property="BorderBrush" Value="#8A241D"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Border MinWidth="{Binding MinimumCardWidth}"
+			MinHeight="{Binding CardHeight}"
+			Padding="{Binding CardPadding}"
+			Background="{Binding BackgroundBrush}"
+			BorderBrush="{Binding BorderBrush}"
+			BorderThickness="{Binding CardBorderThickness}"
+			CornerRadius="{Binding CardCornerRadius}"
+			Margin="{Binding CardMargin}"
+			IsVisible="{Binding IsVisible}">
+		<Grid RowDefinitions="Auto,Auto,Auto,Auto"
+			  ColumnDefinitions="14,*"
+			  RowSpacing="5"
+			  Margin="5">
+			<Viewbox Stretch="Uniform"
+					 StretchDirection="DownOnly"
+					 Grid.ColumnSpan="2"
+					 HorizontalAlignment="Left">
+				<TextBlock Text="{Binding Title}"
+						   Foreground="{Binding TitleBrush}"
+						   FontWeight="SemiBold"
+						   FontSize="{Binding TitleFontSize}"
+						   TextWrapping="NoWrap"/>
+			</Viewbox>
+
+			<Ellipse Grid.Row="1"
+					 Grid.Column="0"
+					 Width="8"
+					 Height="8"
+					 Fill="{Binding StatusBrush}"
+					 HorizontalAlignment="Left"
+					 VerticalAlignment="Center"
+					 Margin="0,3,3,5"/>
+			<Viewbox Grid.Row="1"
+					 Grid.Column="1"
+					 Stretch="Uniform"
+					 StretchDirection="DownOnly"
+					 HorizontalAlignment="Left"
+					 Margin="0,3,0,5">
+				<TextBlock Text="{Binding StatusText}"
+						   Foreground="{Binding StatusBrush}"
+						   FontSize="{Binding StatusFontSize}"
+						   TextWrapping="NoWrap"
+						   VerticalAlignment="Center"/>
+			</Viewbox>
+
+			<StackPanel Grid.Row="2"
+						Grid.ColumnSpan="2"
+						Orientation="Vertical"
+						Spacing="3"
+						Margin="0,8,0,8">
+				<Viewbox Stretch="Uniform"
+						 StretchDirection="DownOnly"
+						 HorizontalAlignment="Left">
+					<TextBlock Text="{Binding SendPointText}"
+							   Foreground="{Binding TextBrush}"
+							   FontSize="{Binding RouteTextFontSize}"
+							   TextWrapping="NoWrap"/>
+				</Viewbox>
+				<Viewbox Stretch="Uniform"
+						 StretchDirection="DownOnly"
+						 HorizontalAlignment="Left">
+					<TextBlock Text="{Binding ReturnPointText}"
+							   Foreground="{Binding TextBrush}"
+							   FontSize="{Binding RouteTextFontSize}"
+							   TextWrapping="NoWrap"/>
+				</Viewbox>
+			</StackPanel>
+
+			<Grid Grid.Row="3"
+				  Grid.ColumnSpan="2"
+				  ColumnDefinitions="*,*"
+				  ColumnSpacing="11">
+				<ToggleButton Classes="equipment-action start"
+							  Content="{Binding StartText}"
+							  Background="{Binding StartBackground}"
+							  BorderBrush="{Binding StartBackground}"
+							  FontSize="{Binding ActionFontSize}"
+							  IsChecked="{Binding IsStartChecked, Mode=TwoWay}"
+							  IsEnabled="{Binding CanStart}"/>
+				<ToggleButton Grid.Column="1"
+							  Classes="equipment-action stop"
+							  Content="{Binding StopText}"
+							  Background="{Binding StopBackground}"
+							  BorderBrush="{Binding StopBackground}"
+							  FontSize="{Binding ActionFontSize}"
+							  IsChecked="{Binding IsStopChecked, Mode=TwoWay}"
+							  IsEnabled="{Binding CanStop}"/>
+			</Grid>
+		</Grid>
+	</Border>
+</UserControl>

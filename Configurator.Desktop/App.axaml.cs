@@ -8,6 +8,7 @@ using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Desktop.Main;
+using Configurator.Application.Services.Signals;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.ComponentModel;
@@ -54,6 +55,8 @@ public partial class App : Avalonia.Application
 
         _isShutdownInProgress = true;
 
+        Services.GetService<MainViewModel>()?.Dispose();
+        (Services.GetService<ISignalValueProvider>() as IDisposable)?.Dispose();
         await StopModbusRuntimeAsync();
         _isShutdownAllowed = true;
 

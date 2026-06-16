@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Configurator.Desktop.Workspace.RouteMap.Settings.SignalBindingsEditor"
+             x:Name="Editor"
+             x:CompileBindings="False">
+  <StackPanel>
+    <TextBlock Text="Signal bindings"
+               FontWeight="SemiBold"
+               FontSize="16"
+               Margin="0,12,0,8"/>
+    <ScrollViewer Classes="signal-bindings-scroll"
+                  HorizontalScrollBarVisibility="Auto"
+                  VerticalScrollBarVisibility="Disabled">
+      <StackPanel MinWidth="900">
+        <Grid Classes="signal-binding-header"
+              ColumnDefinitions="170,300,150,150,Auto"
+              ColumnSpacing="6"
+              Margin="0,0,0,4">
+          <TextBlock Grid.Column="0" Text="Role" Foreground="#66717C"/>
+          <TextBlock Grid.Column="1" Text="SignalId" Foreground="#66717C"/>
+          <TextBlock Grid.Column="2" Text="Direction" Foreground="#66717C"/>
+          <TextBlock Grid.Column="3" Text="ValueType" Foreground="#66717C"/>
+          <TextBlock Grid.Column="4" Text="Действие" Foreground="#66717C"/>
+        </Grid>
+        <ItemsControl Classes="signal-bindings-list"
+                      ItemsSource="{Binding Bindings, ElementName=Editor}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Classes="signal-binding-row"
+                    ColumnDefinitions="170,300,150,150,Auto"
+                    ColumnSpacing="6"
+                    MinWidth="900"
+                    Margin="0,2">
+                <ComboBox Grid.Column="0"
+                          ItemsSource="{Binding AllowedRoles, ElementName=Editor}"
+                          SelectedItem="{Binding Role}"/>
+                <TextBox Grid.Column="1" Text="{Binding SignalId}"/>
+                <ComboBox Grid.Column="2"
+                          ItemsSource="{Binding SignalBindingDirections, ElementName=Editor}"
+                          SelectedItem="{Binding Direction}"/>
+                <ComboBox Grid.Column="3"
+                          ItemsSource="{Binding SignalValueTypes, ElementName=Editor}"
+                          SelectedItem="{Binding ValueType}"/>
+                <Button Grid.Column="4"
+                        Content="Удалить"
+                        Command="{Binding RemoveCommand, ElementName=Editor}"
+                        CommandParameter="{Binding}"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+    <Button Content="Добавить binding"
+            HorizontalAlignment="Left"
+            Margin="0,6,0,0"
+            Command="{Binding AddCommand, ElementName=Editor}"
+            CommandParameter="{Binding AddCommandParameter, ElementName=Editor}"/>
+  </StackPanel>
+</UserControl>

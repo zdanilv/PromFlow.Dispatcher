@@ -1,0 +1,127 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Workspace.RouteMap.SignalMapping"
+             x:Class="Configurator.Desktop.Workspace.RouteMap.SignalMapping.RouteMapSignalMappingView"
+             x:Name="Root"
+             x:CompileBindings="False">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.caption"><Setter Property="Foreground" Value="#66717C"/><Setter Property="FontSize" Value="12"/></Style>
+    <Style Selector="TextBox.cell"><Setter Property="Height" Value="30"/><Setter Property="MinWidth" Value="66"/></Style>
+    <Style Selector="ComboBox.cell"><Setter Property="Height" Value="30"/><Setter Property="MinWidth" Value="112"/></Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,Auto,*" Margin="12" RowSpacing="10">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <StackPanel>
+        <TextBlock Text="Связи SignalId и Modbus TCP" FontSize="22" FontWeight="SemiBold"/>
+        <TextBlock Text="SignalId формируются из актуальной RouteMap. Адрес — zero-based offset относительно StartAddress endpoint."
+                   Classes="caption" TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding ClientAddressBase}" Classes="caption"/>
+        <TextBlock Text="{Binding ServerAddressBase}" Classes="caption"/>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+        <Button Content="ПЕРЕЗАГРУЗИТЬ" Command="{Binding ReloadCommand}"/>
+        <Button Content="СОХРАНИТЬ" Command="{Binding SaveCommand}"/>
+      </StackPanel>
+    </Grid>
+
+    <StackPanel Grid.Row="1" Spacing="4">
+      <Border Background="#FFF4E5" BorderBrush="#E0A84B" BorderThickness="1" CornerRadius="4" Padding="8"
+              IsVisible="{Binding HasExternalChanges}">
+        <TextBlock Text="Modbus.DataMap был изменен извне. Локальный черновик сохранен; используйте ПЕРЕЗАГРУЗИТЬ для принятия внешних изменений."
+                   TextWrapping="Wrap"/>
+      </Border>
+      <Border Background="#FFF0F0" BorderBrush="#E8A4A4" BorderThickness="1" CornerRadius="4" Padding="8"
+              IsVisible="{Binding HasError}">
+        <TextBlock Text="{Binding ErrorMessage}" Foreground="#A22F2F" TextWrapping="Wrap"/>
+      </Border>
+      <TextBlock Text="{Binding StatusMessage}" Foreground="#27804A"/>
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+      <StackPanel MinWidth="1720">
+        <Border Background="#E9EEF3" Padding="6">
+          <Grid ColumnDefinitions="220,180,105,110,130,125,70,70,130,120,70,110,100,160,160,100" ColumnSpacing="6">
+            <TextBlock Text="SignalId" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="1" Text="Роли / объекты" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="2" Text="Тип" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="3" Text="Доступ" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="4" Text="Состояние" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="5" Text="Area" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="6" Text="Offset" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="7" Text="Length" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="8" Text="Access" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="9" Text="Modbus Type" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="10" Text="Bit" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="11" Text="WriteMode" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="12" Text="Pulse ms" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="13" Text="Client address" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="14" Text="Server address" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="15" Text="Действие" FontWeight="SemiBold"/>
+          </Grid>
+        </Border>
+
+        <ItemsControl ItemsSource="{Binding Groups}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Expander Classes="signal-group"
+                        HorizontalContentAlignment="Stretch"
+                        IsExpanded="{Binding IsExpanded, Mode=TwoWay}">
+                <Expander.Header>
+                  <Border Background="#F4F7FA" BorderBrush="#D7E0E7" BorderThickness="0,1,0,1" Padding="10,7">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="#44505C"/>
+                      <TextBlock Grid.Column="1" Text="{Binding CountText}" Classes="caption"/>
+                    </Grid>
+                  </Border>
+                </Expander.Header>
+                <ItemsControl ItemsSource="{Binding Rows}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border BorderBrush="#E1E6EA" BorderThickness="0,0,0,1" Padding="6">
+                        <StackPanel>
+                          <Grid ColumnDefinitions="220,180,105,110,130,125,70,70,130,120,70,110,100,160,160,100" ColumnSpacing="6">
+                            <TextBlock Text="{Binding SignalId}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                              <TextBlock Text="{Binding Roles}" FontSize="11" TextWrapping="Wrap"/>
+                              <TextBlock Text="{Binding Objects}" Classes="caption" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="{Binding ExpectedType}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Text="{Binding RequiredAccess}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="4" Text="{Binding StatusText}" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Column="5" Classes="cell" IsEnabled="{Binding CanEditMapping}"
+                                      ItemsSource="{Binding DataContext.DataAreas, ElementName=Root}" SelectedItem="{Binding Area}"/>
+                            <TextBox Grid.Column="6" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding Address}"/>
+                            <TextBox Grid.Column="7" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding Length}"/>
+                            <ComboBox Grid.Column="8" Classes="cell" IsEnabled="{Binding CanEditMapping}"
+                                      ItemsSource="{Binding DataContext.AccessModes, ElementName=Root}" SelectedItem="{Binding Access}"/>
+                            <ComboBox Grid.Column="9" Classes="cell" IsEnabled="{Binding CanEditMapping}"
+                                      ItemsSource="{Binding DataContext.ValueTypes, ElementName=Root}" SelectedItem="{Binding Type}"/>
+                            <TextBox Grid.Column="10" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding BitIndex}"/>
+                            <ComboBox Grid.Column="11" Classes="cell" IsEnabled="{Binding CanEditMapping}"
+                                      ItemsSource="{Binding DataContext.WriteModes, ElementName=Root}" SelectedItem="{Binding WriteMode}"/>
+                            <TextBox Grid.Column="12" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding PulseDurationMs}"/>
+                            <TextBlock Grid.Column="13" Text="{Binding ClientPhysicalAddress}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="14" Text="{Binding ServerPhysicalAddress}" VerticalAlignment="Center"/>
+                            <Grid Grid.Column="15">
+                              <Button Content="Создать" IsVisible="{Binding CanCreateMapping}"
+                                      Command="{Binding DataContext.CreateMappingCommand, ElementName=Root}" CommandParameter="{Binding}"/>
+                              <Button Content="Удалить" IsVisible="{Binding CanRemoveMapping}"
+                                      Command="{Binding DataContext.RemoveMappingCommand, ElementName=Root}" CommandParameter="{Binding}"/>
+                            </Grid>
+                          </Grid>
+                          <TextBlock Text="{Binding ValidationMessage}" Foreground="#B42318" FontSize="11" TextWrapping="Wrap"
+                                     IsVisible="{Binding HasError}"/>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </Expander>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

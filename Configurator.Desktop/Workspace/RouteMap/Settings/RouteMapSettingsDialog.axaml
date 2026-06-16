@@ -1,0 +1,262 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:settings="clr-namespace:Configurator.Desktop.Workspace.RouteMap.Settings"
+             x:Class="Configurator.Desktop.Workspace.RouteMap.Settings.RouteMapSettingsDialog"
+             x:Name="Root"
+             x:CompileBindings="False"
+             Width="1320"
+             Height="780">
+  <UserControl.Styles>
+    <Style Selector="TextBox.form"><Setter Property="MinWidth" Value="150"/><Setter Property="Margin" Value="0,2,10,6"/></Style>
+    <Style Selector="ComboBox.form"><Setter Property="MinWidth" Value="180"/><Setter Property="Margin" Value="0,2,10,6"/></Style>
+    <Style Selector="TextBlock.label"><Setter Property="Foreground" Value="#66717C"/><Setter Property="FontSize" Value="12"/></Style>
+    <Style Selector="TextBlock.section"><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="FontSize" Value="16"/><Setter Property="Margin" Value="0,12,0,8"/></Style>
+    <Style Selector="Button.small"><Setter Property="MinWidth" Value="92"/><Setter Property="Margin" Value="0,0,6,0"/></Style>
+    <Style Selector="Border.editor"><Setter Property="BorderBrush" Value="#D9DEE2"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="4"/><Setter Property="Padding" Value="12"/></Style>
+  </UserControl.Styles>
+
+  <Border Background="#FFFFFF" CornerRadius="8" Padding="18">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock Text="Настройки RouteMap" FontSize="24" FontWeight="SemiBold"/>
+          <TextBlock Text="{Binding ActiveFilePath}" Foreground="#7A858F" FontSize="12"/>
+        </StackPanel>
+        <Button Grid.Column="1" Content="ЗАКРЫТЬ" Command="{Binding CloseCommand}"/>
+      </Grid>
+
+      <StackPanel Grid.Row="1" Margin="0,10,0,8">
+        <Border Background="#FFF0F0" BorderBrush="#E8A4A4" BorderThickness="1" CornerRadius="4" Padding="10" IsVisible="{Binding HasError}">
+          <TextBlock Text="{Binding ErrorMessage}" Foreground="#A22F2F" TextWrapping="Wrap" MaxHeight="90"/>
+        </Border>
+        <TextBlock Text="{Binding StatusMessage}" Foreground="#27804A" Margin="2,5,0,0"/>
+      </StackPanel>
+
+      <TabControl Grid.Row="2">
+        <TabItem Header="Источник данных">
+          <ScrollViewer Margin="8">
+            <StackPanel MaxWidth="760" HorizontalAlignment="Left" Spacing="14">
+              <TextBlock Classes="section" Text="Источник сигналов RouteMap"/>
+              <Border Classes="editor">
+                <StackPanel Spacing="10">
+                  <CheckBox Content="Использовать Mock-симуляцию"
+                            IsChecked="{Binding UseMockSimulation, Mode=TwoWay}"/>
+                  <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto" RowSpacing="8">
+                    <TextBlock Classes="label" Text="Текущий источник"/>
+                    <TextBlock Grid.Column="1" Text="{Binding CurrentSignalSourceText}" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Row="1" Classes="label" Text="Будет применен"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedSignalSourceText}" FontWeight="SemiBold"/>
+                  </Grid>
+                  <TextBlock Text="{Binding SignalSourceDescription}"
+                             Foreground="#526173"
+                             TextWrapping="Wrap"/>
+                  <TextBlock Text="ПРИМЕНИТЬ переключает источник только для текущей сессии. СОХРАНИТЬ записывает RouteMapRuntime в appsettings.json."
+                             Foreground="#7A858F"
+                             TextWrapping="Wrap"/>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <TabItem Header="Карта и маршруты">
+          <Grid ColumnDefinitions="410,*" ColumnSpacing="14" Margin="8">
+            <ScrollViewer>
+              <StackPanel>
+                <TextBlock Classes="section" Text="Общие параметры"/>
+                <TextBlock Classes="label" Text="Логическая ширина"/><TextBox Classes="form" Text="{Binding Draft.Map.LogicalWidth}"/>
+                <TextBlock Classes="label" Text="Логическая высота"/><TextBox Classes="form" Text="{Binding Draft.Map.LogicalHeight}"/>
+                <TextBlock Classes="label" Text="Padding карты"/><TextBox Classes="form" Text="{Binding Draft.Map.MapPadding}"/>
+                <TextBlock Classes="label" Text="Зазор карточной колонки"/><TextBox Classes="form" Text="{Binding Draft.Map.CardColumnGap}"/>
+                <TextBlock Classes="label" Text="Длина фрагмента"/><TextBox Classes="form" Text="{Binding Draft.Map.FragmentLength}"/>
+                <TextBlock Classes="label" Text="Размер разрыва"/><TextBox Classes="form" Text="{Binding Draft.Map.FragmentGap}"/>
+                <TextBlock Classes="section" Text="Палитра"/>
+                <UniformGrid Columns="2">
+                  <StackPanel><TextBlock Classes="label" Text="Фон"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Background}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Text}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Приглушенный текст"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.MutedText}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Линия"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Track}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Активная линия"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.ActiveTrack}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Ready"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Ready}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Running"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Running}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Warning"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Warning}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Fault"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Fault}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Offline"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Offline}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Disabled"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Disabled}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Узел"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.NodeFill}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Выделение"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Selection}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Наведение"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Hover}"/></StackPanel>
+                </UniformGrid>
+              </StackPanel>
+            </ScrollViewer>
+            <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" RowSpacing="8">
+              <TextBlock Classes="section" Text="Цепочки"/>
+              <Grid Grid.Row="1" ColumnDefinitions="280,*" ColumnSpacing="12">
+                <ListBox ItemsSource="{Binding Draft.Chains}" SelectedItem="{Binding SelectedChain}">
+                  <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4"><TextBlock Text="{Binding Id}" FontWeight="SemiBold"/><TextBlock Text="{Binding ValidationMessage}" Foreground="#B43D3D" FontSize="11" TextWrapping="Wrap"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+                <Border Grid.Column="1" Classes="editor">
+                  <ScrollViewer><StackPanel DataContext="{Binding SelectedChain}">
+                    <TextBlock Classes="label" Text="ID"/><TextBox Classes="form" Text="{Binding Id}"/>
+                    <UniformGrid Columns="2"><StackPanel><TextBlock Classes="label" Text="X"/><TextBox Classes="form" Text="{Binding X}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Y"/><TextBox Classes="form" Text="{Binding Y}"/></StackPanel></UniformGrid>
+                    <TextBlock Classes="label" Text="NodeIds через запятую"/><TextBox Classes="form" Text="{Binding DataContext.SelectedChainNodeIds, ElementName=Root}" AcceptsReturn="True"/>
+                    <TextBlock Classes="label" Text="SegmentIds через запятую"/><TextBox Classes="form" Text="{Binding DataContext.SelectedChainSegmentIds, ElementName=Root}" AcceptsReturn="True"/>
+                  </StackPanel></ScrollViewer>
+                </Border>
+              </Grid>
+              <StackPanel Grid.Row="2" Orientation="Horizontal"><Button Classes="small" Content="Добавить" Command="{Binding AddChainCommand}"/><Button Classes="small" Content="Дублировать" Command="{Binding DuplicateChainCommand}"/><Button Classes="small" Content="Удалить" Command="{Binding DeleteChainCommand}"/></StackPanel>
+            </Grid>
+          </Grid>
+        </TabItem>
+
+        <TabItem Header="TopBar">
+          <ScrollViewer Margin="8">
+            <StackPanel Spacing="12">
+              <TextBlock Classes="section" Text="Кнопки верхней панели"/>
+              <Border Classes="editor" DataContext="{Binding Draft.TopBar.Automatic}">
+                <StackPanel>
+                  <TextBlock Classes="section" Text="АВТОМАТ"/>
+                  <UniformGrid Columns="3">
+                    <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Text}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Обычный фон"/><TextBox Classes="form" Text="{Binding NormalBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Активный фон"/><TextBox Classes="form" Text="{Binding CheckedBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Обычный текст"/><TextBox Classes="form" Text="{Binding NormalForeground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Активный текст"/><TextBox Classes="form" Text="{Binding CheckedForeground}"/></StackPanel>
+                  </UniformGrid>
+                  <settings:SignalBindingsEditor Bindings="{Binding Bindings}" AllowedRoles="{Binding DataContext.AutomaticModeBindingRoles, ElementName=Root}"/>
+                </StackPanel>
+              </Border>
+              <Border Classes="editor" DataContext="{Binding Draft.TopBar.Manual}">
+                <StackPanel>
+                  <TextBlock Classes="section" Text="РУЧНОЙ"/>
+                  <UniformGrid Columns="3">
+                    <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Text}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Обычный фон"/><TextBox Classes="form" Text="{Binding NormalBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Активный фон"/><TextBox Classes="form" Text="{Binding CheckedBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Обычный текст"/><TextBox Classes="form" Text="{Binding NormalForeground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Активный текст"/><TextBox Classes="form" Text="{Binding CheckedForeground}"/></StackPanel>
+                  </UniformGrid>
+                  <settings:SignalBindingsEditor Bindings="{Binding Bindings}" AllowedRoles="{Binding DataContext.ManualModeBindingRoles, ElementName=Root}"/>
+                </StackPanel>
+              </Border>
+              <Border Classes="editor" DataContext="{Binding Draft.TopBar.Emergency}">
+                <StackPanel>
+                  <TextBlock Classes="section" Text="АВАРИЯ"/>
+                  <UniformGrid Columns="3">
+                    <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Text}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Обычный фон"/><TextBox Classes="form" Text="{Binding NormalBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Активный фон"/><TextBox Classes="form" Text="{Binding CheckedBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Обычный текст"/><TextBox Classes="form" Text="{Binding NormalForeground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Активный текст"/><TextBox Classes="form" Text="{Binding CheckedForeground}"/></StackPanel>
+                  </UniformGrid>
+                  <settings:SignalBindingsEditor Bindings="{Binding Bindings}" AllowedRoles="{Binding DataContext.EmergencyBindingRoles, ElementName=Root}"/>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <TabItem Header="Узлы">
+          <Grid ColumnDefinitions="300,*" ColumnSpacing="14" Margin="8">
+            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+              <TextBox PlaceholderText="Поиск узла" Text="{Binding NodeSearch}"/>
+              <ListBox Grid.Row="1" ItemsSource="{Binding FilteredNodes}" SelectedItem="{Binding SelectedNode}"><ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4"><TextBlock Text="{Binding Id}" FontWeight="SemiBold"/><TextBlock Text="{Binding Title}"/><TextBlock Text="{Binding ValidationMessage}" Foreground="#B43D3D" FontSize="11" TextWrapping="Wrap"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox>
+              <WrapPanel Grid.Row="2"><Button Classes="small" Content="Добавить" Command="{Binding AddNodeCommand}"/><Button Classes="small" Content="Дублировать" Command="{Binding DuplicateNodeCommand}"/><Button Classes="small" Content="Удалить" Command="{Binding DeleteNodeCommand}"/></WrapPanel>
+            </Grid>
+            <Border Grid.Column="1" Classes="editor"><ScrollViewer><StackPanel DataContext="{Binding SelectedNode}">
+              <TextBlock Classes="section" Text="Узел"/>
+              <UniformGrid Columns="3">
+                <StackPanel><TextBlock Classes="label" Text="ID"/><TextBox Classes="form" Text="{Binding Id}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Название"/><TextBox Classes="form" Text="{Binding Title}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Тип"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.NodeKinds, ElementName=Root}" SelectedItem="{Binding Kind}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="X"/><TextBox Classes="form" Text="{Binding X}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Y"/><TextBox Classes="form" Text="{Binding Y}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Состояние"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.ObjectStates, ElementName=Root}" SelectedItem="{Binding State}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Offset подписи X"/><TextBox Classes="form" Text="{Binding LabelOffsetX}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Offset подписи Y"/><TextBox Classes="form" Text="{Binding LabelOffsetY}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Положение подписи"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.NodeLabelPlacements, ElementName=Root}" SelectedItem="{Binding LabelPlacement}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Меню"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.NodeMenuKinds, ElementName=Root}" SelectedItem="{Binding MenuKind}"/></StackPanel>
+              </UniformGrid>
+              <WrapPanel><CheckBox Content="Виден" IsChecked="{Binding IsVisible}" Margin="0,0,18,0"/><CheckBox Content="Начальный loader" IsChecked="{Binding IsLoader}" Margin="0,0,18,0"/><CheckBox Content="Начальный target" IsChecked="{Binding IsTarget}"/></WrapPanel>
+              <TextBlock Classes="section" Text="Стиль"/>
+              <UniformGrid Columns="4">
+                <StackPanel><TextBlock Classes="label" Text="Радиус"/><TextBox Classes="form" Text="{Binding Style.Radius}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Внутренний коэффициент"/><TextBox Classes="form" Text="{Binding Style.InnerRadiusRatio}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Толщина border"/><TextBox Classes="form" Text="{Binding Style.BorderThickness}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Размер подписи"/><TextBox Classes="form" Text="{Binding Style.LabelFontSize}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Fill"/><TextBox Classes="form" Text="{Binding Style.FillColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Border"/><TextBox Classes="form" Text="{Binding Style.BorderColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Inner"/><TextBox Classes="form" Text="{Binding Style.InnerColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Подпись"/><TextBox Classes="form" Text="{Binding Style.LabelColor}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Цвет сигнального контура"/><TextBox Classes="form" Text="{Binding Style.ActiveOutlineColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Толщина сигнального контура"/><TextBox Classes="form" Text="{Binding Style.ActiveOutlineThickness}"/></StackPanel>
+              </UniformGrid>
+              <settings:SignalBindingsEditor Bindings="{Binding Bindings}"
+                                             AllowedRoles="{Binding DataContext.NodeBindingRoles, ElementName=Root}"
+                                             AddCommand="{Binding DataContext.AddBindingCommand, ElementName=Root}"
+                                             AddCommandParameter="node"
+                                             RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
+            </StackPanel></ScrollViewer></Border>
+          </Grid>
+        </TabItem>
+
+        <TabItem Header="Линии">
+          <Grid ColumnDefinitions="300,*" ColumnSpacing="14" Margin="8">
+            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8"><TextBox PlaceholderText="Поиск линии" Text="{Binding SegmentSearch}"/><ListBox Grid.Row="1" ItemsSource="{Binding FilteredSegments}" SelectedItem="{Binding SelectedSegment}"><ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4"><TextBlock Text="{Binding Id}" FontWeight="SemiBold"/><TextBlock Text="{Binding Title}"/><TextBlock Text="{Binding ValidationMessage}" Foreground="#B43D3D" FontSize="11" TextWrapping="Wrap"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox><WrapPanel Grid.Row="2"><Button Classes="small" Content="Добавить" Command="{Binding AddSegmentCommand}"/><Button Classes="small" Content="Дублировать" Command="{Binding DuplicateSegmentCommand}"/><Button Classes="small" Content="Удалить" Command="{Binding DeleteSegmentCommand}"/></WrapPanel></Grid>
+            <Border Grid.Column="1" Classes="editor"><ScrollViewer><StackPanel DataContext="{Binding SelectedSegment}">
+              <TextBlock Classes="section" Text="Линия"/><UniformGrid Columns="3">
+                <StackPanel><TextBlock Classes="label" Text="ID"/><TextBox Classes="form" Text="{Binding Id}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="От узла"/><TextBox Classes="form" Text="{Binding FromNodeId}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="К узлу"/><TextBox Classes="form" Text="{Binding ToNodeId}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Тип"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.SegmentKinds, ElementName=Root}" SelectedItem="{Binding Kind}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Радиус дуги"/><TextBox Classes="form" Text="{Binding ArcRadius}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Порядок дуги"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.ElbowOrders, ElementName=Root}" SelectedItem="{Binding ElbowOrder}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Состояние"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.ObjectStates, ElementName=Root}" SelectedItem="{Binding State}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Название"/><TextBox Classes="form" Text="{Binding Title}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Offset X"/><TextBox Classes="form" Text="{Binding LabelOffsetX}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Offset Y"/><TextBox Classes="form" Text="{Binding LabelOffsetY}"/></StackPanel>
+              </UniformGrid><WrapPanel><CheckBox Content="Видна" IsChecked="{Binding IsVisible}" Margin="0,0,18,0"/><CheckBox Content="Направленная" IsChecked="{Binding IsDirectional}"/></WrapPanel>
+              <TextBlock Classes="section" Text="Стиль и фрагментация"/><UniformGrid Columns="4">
+                <StackPanel><TextBlock Classes="label" Text="Обычный цвет"/><TextBox Classes="form" Text="{Binding Style.NormalColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Активный цвет"/><TextBox Classes="form" Text="{Binding Style.ActiveColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Толщина"/><TextBox Classes="form" Text="{Binding Style.Thickness}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Активная толщина"/><TextBox Classes="form" Text="{Binding Style.ActiveThickness}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Фрагмент (пусто = общий)"/><TextBox Classes="form" Text="{Binding Style.FragmentLength}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Разрыв (пусто = общий)"/><TextBox Classes="form" Text="{Binding Style.FragmentGap}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Цвет подписи"/><TextBox Classes="form" Text="{Binding Style.LabelColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Размер подписи"/><TextBox Classes="form" Text="{Binding Style.LabelFontSize}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Зазор от узлов"/><TextBox Classes="form" Text="{Binding Style.EndpointGap}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Края линии"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.LineCaps, ElementName=Root}" SelectedItem="{Binding Style.LineCap}"/></StackPanel>
+              </UniformGrid>
+              <settings:SignalBindingsEditor Bindings="{Binding Bindings}"
+                                             AllowedRoles="{Binding DataContext.SegmentBindingRoles, ElementName=Root}"
+                                             AddCommand="{Binding DataContext.AddBindingCommand, ElementName=Root}"
+                                             AddCommandParameter="segment"
+                                             RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
+            </StackPanel></ScrollViewer></Border>
+          </Grid>
+        </TabItem>
+
+        <TabItem Header="Карточки">
+          <Grid ColumnDefinitions="300,*" ColumnSpacing="14" Margin="8">
+            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8"><TextBox PlaceholderText="Поиск карточки" Text="{Binding CardSearch}"/><ListBox Grid.Row="1" ItemsSource="{Binding FilteredCards}" SelectedItem="{Binding SelectedCard}"><ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4"><TextBlock Text="{Binding Id}" FontWeight="SemiBold"/><TextBlock Text="{Binding Title}"/><TextBlock Text="{Binding ValidationMessage}" Foreground="#B43D3D" FontSize="11" TextWrapping="Wrap"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox><WrapPanel Grid.Row="2"><Button Classes="small" Content="Добавить" Command="{Binding AddCardCommand}"/><Button Classes="small" Content="Дублировать" Command="{Binding DuplicateCardCommand}"/><Button Classes="small" Content="Удалить" Command="{Binding DeleteCardCommand}"/></WrapPanel></Grid>
+            <Border Grid.Column="1" Classes="editor"><ScrollViewer><StackPanel DataContext="{Binding SelectedCard}">
+              <TextBlock Classes="section" Text="Карточка фиксированного шаблона"/><UniformGrid Columns="3">
+                <StackPanel><TextBlock Classes="label" Text="ID"/><TextBox Classes="form" Text="{Binding Id}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Заголовок"/><TextBox Classes="form" Text="{Binding Title}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Статус"/><TextBox Classes="form" Text="{Binding StatusText}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Цепочка"/><TextBox Classes="form" Text="{Binding AttachedChainId}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Правый offset"/><TextBox Classes="form" Text="{Binding AttachedCardRightOffset}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Вид якоря"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.AnchorKinds, ElementName=Root}" SelectedItem="{Binding VerticalAnchorKind}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="NodeId якоря"/><TextBox Classes="form" Text="{Binding VerticalAnchorNodeId}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Состояние"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.ObjectStates, ElementName=Root}" SelectedItem="{Binding State}"/></StackPanel>
+              </UniformGrid><WrapPanel><CheckBox Content="Видна" IsChecked="{Binding IsVisible}" Margin="0,0,18,0"/><CheckBox Content="Можно ПУСК" IsChecked="{Binding CanStart}" Margin="0,0,18,0"/><CheckBox Content="Можно СТОП" IsChecked="{Binding CanStop}"/></WrapPanel>
+              <TextBlock Classes="section" Text="Размеры, подписи и стиль"/><UniformGrid Columns="4">
+                <StackPanel><TextBlock Classes="label" Text="Ширина"/><TextBox Classes="form" Text="{Binding Style.Width}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Мин. ширина"/><TextBox Classes="form" Text="{Binding Style.MinimumWidth}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Высота"/><TextBox Classes="form" Text="{Binding Style.Height}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Фон"/><TextBox Classes="form" Text="{Binding Style.BackgroundColor}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Border"/><TextBox Classes="form" Text="{Binding Style.BorderColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Заголовок"/><TextBox Classes="form" Text="{Binding Style.TitleColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Style.TextColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="ПУСК"/><TextBox Classes="form" Text="{Binding Style.StartText}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="СТОП"/><TextBox Classes="form" Text="{Binding Style.StopText}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Префикс отправки"/><TextBox Classes="form" Text="{Binding Style.SendPrefix}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Префикс возврата"/><TextBox Classes="form" Text="{Binding Style.ReturnPrefix}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="ПУСК цвет"/><TextBox Classes="form" Text="{Binding Style.StartColor}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="ПУСК checked"/><TextBox Classes="form" Text="{Binding Style.StartCheckedColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="СТОП цвет"/><TextBox Classes="form" Text="{Binding Style.StopColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="СТОП checked"/><TextBox Classes="form" Text="{Binding Style.StopCheckedColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Title font"/><TextBox Classes="form" Text="{Binding Style.TitleFontSize}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Status font"/><TextBox Classes="form" Text="{Binding Style.StatusFontSize}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Route font"/><TextBox Classes="form" Text="{Binding Style.RouteTextFontSize}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Action font"/><TextBox Classes="form" Text="{Binding Style.ActionFontSize}"/></StackPanel>
+              </UniformGrid>
+              <TextBlock Classes="section" Text="Margin / Padding / Border / Corner"/><UniformGrid Columns="4"><StackPanel><TextBlock Classes="label" Text="Margin L,T,R,B"/><TextBox Classes="form" Text="{Binding Style.Margin.Left}"/><TextBox Classes="form" Text="{Binding Style.Margin.Top}"/><TextBox Classes="form" Text="{Binding Style.Margin.Right}"/><TextBox Classes="form" Text="{Binding Style.Margin.Bottom}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Padding L,T,R,B"/><TextBox Classes="form" Text="{Binding Style.Padding.Left}"/><TextBox Classes="form" Text="{Binding Style.Padding.Top}"/><TextBox Classes="form" Text="{Binding Style.Padding.Right}"/><TextBox Classes="form" Text="{Binding Style.Padding.Bottom}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Border L,T,R,B"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Left}"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Top}"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Right}"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Bottom}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Corner TL,TR,BR,BL"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.TopLeft}"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.TopRight}"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.BottomRight}"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.BottomLeft}"/></StackPanel></UniformGrid>
+              <settings:SignalBindingsEditor Bindings="{Binding Bindings}"
+                                             AllowedRoles="{Binding DataContext.CardBindingRoles, ElementName=Root}"
+                                             AddCommand="{Binding DataContext.AddBindingCommand, ElementName=Root}"
+                                             AddCommandParameter="card"
+                                             RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
+            </StackPanel></ScrollViewer></Border>
+          </Grid>
+        </TabItem>
+
+        <TabItem Header="Заглушки">
+          <Grid ColumnDefinitions="300,*" ColumnSpacing="14" Margin="8">
+            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8"><TextBox PlaceholderText="Поиск правила" Text="{Binding PlaceholderSearch}"/><ListBox Grid.Row="1" ItemsSource="{Binding FilteredPlaceholderRules}" SelectedItem="{Binding SelectedPlaceholderRule}"><ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4"><TextBlock Text="{Binding Id}" FontWeight="SemiBold"/><TextBlock Text="{Binding CardId}"/><TextBlock Text="{Binding ValidationMessage}" Foreground="#B43D3D" FontSize="11" TextWrapping="Wrap"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox><WrapPanel Grid.Row="2"><Button Classes="small" Content="Добавить" Command="{Binding AddPlaceholderCommand}"/><Button Classes="small" Content="Дублировать" Command="{Binding DuplicatePlaceholderCommand}"/><Button Classes="small" Content="Удалить" Command="{Binding DeletePlaceholderCommand}"/></WrapPanel></Grid>
+            <Border Grid.Column="1" Classes="editor"><ScrollViewer><StackPanel DataContext="{Binding SelectedPlaceholderRule}">
+              <TextBlock Classes="section" Text="Правило автозаполнения"/><UniformGrid Columns="3"><StackPanel><TextBlock Classes="label" Text="ID"/><TextBox Classes="form" Text="{Binding Id}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="CardId"/><TextBox Classes="form" Text="{Binding CardId}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Размещение"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.PlaceholderPlacements, ElementName=Root}" SelectedItem="{Binding Placement}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Высота"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.PlaceholderHeightModes, ElementName=Root}" SelectedItem="{Binding HeightMode}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Фикс. высота"/><TextBox Classes="form" Text="{Binding FixedHeight}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Gap"/><TextBox Classes="form" Text="{Binding Gap}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Макс. количество (пусто = без лимита)"/><TextBox Classes="form" Text="{Binding MaximumCount}"/></StackPanel></UniformGrid><CheckBox Content="Видно" IsChecked="{Binding IsVisible}"/>
+              <TextBlock Classes="section" Text="Стиль"/><UniformGrid Columns="3"><StackPanel><TextBlock Classes="label" Text="Фон"/><TextBox Classes="form" Text="{Binding Style.BackgroundColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Border"/><TextBox Classes="form" Text="{Binding Style.BorderColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Border L,T,R,B"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Left}"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Top}"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Right}"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Bottom}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Margin L,T,R,B"/><TextBox Classes="form" Text="{Binding Style.Margin.Left}"/><TextBox Classes="form" Text="{Binding Style.Margin.Top}"/><TextBox Classes="form" Text="{Binding Style.Margin.Right}"/><TextBox Classes="form" Text="{Binding Style.Margin.Bottom}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Corner TL,TR,BR,BL"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.TopLeft}"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.TopRight}"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.BottomRight}"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.BottomLeft}"/></StackPanel></UniformGrid>
+            </StackPanel></ScrollViewer></Border>
+          </Grid>
+        </TabItem>
+      </TabControl>
+
+      <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" Margin="0,12,0,0">
+        <StackPanel Orientation="Horizontal"><Button Classes="small" Content="ПЕРЕЗАГРУЗИТЬ" Command="{Binding ReloadCommand}"/><Button Classes="small" Content="ИМПОРТ" Command="{Binding ImportCommand}"/><Button Classes="small" Content="ЭКСПОРТ" Command="{Binding ExportCommand}"/></StackPanel>
+        <TextBlock Grid.Column="1" Text="Modbus-адреса не входят в этот профиль; редактируются только SignalId." HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#7A858F"/>
+        <StackPanel Grid.Column="2" Orientation="Horizontal"><Button Classes="small" Content="ПРИМЕНИТЬ" Command="{Binding ApplyCommand}"/><Button Classes="small" Content="СОХРАНИТЬ" Command="{Binding SaveCommand}"/></StackPanel>
+      </Grid>
+    </Grid>
+  </Border>
+</UserControl>

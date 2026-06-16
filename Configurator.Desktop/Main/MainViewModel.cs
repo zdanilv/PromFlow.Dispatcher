@@ -8,11 +8,12 @@ using System.Reactive.Linq;
 
 namespace Configurator.Desktop.Main;
 
-public partial class MainViewModel : ViewModelBase, IScreen
+public partial class MainViewModel : ViewModelBase, IScreen, IDisposable
 {
     private readonly IAuthApp _authService;
     private readonly IDialogService _dialogService;
     private readonly Func<IScreen, WorkspaceViewModel> _workspaceFactory;
+    private readonly WorkspaceViewModel _workspace;
 
     public RoutingState Router { get; } = new RoutingState();
 
@@ -28,8 +29,8 @@ public partial class MainViewModel : ViewModelBase, IScreen
         _workspaceFactory = workspaceFactory;
 
         // При запуске приложения навигируем на экран логина
-        var workVm = _workspaceFactory(this);
-        Router.Navigate.Execute(workVm).Subscribe();
+        _workspace = _workspaceFactory(this);
+        Router.Navigate.Execute(_workspace).Subscribe();
 
         //var authVm = new AuthorizationViewModel(this, _authService, _dialogService);
         //Router.Navigate.Execute(authVm).Subscribe();
@@ -43,4 +44,6 @@ public partial class MainViewModel : ViewModelBase, IScreen
         //        Router.Navigate.Execute(workVm);
         //    });
     }
+
+    public void Dispose() => _workspace.Dispose();
 }

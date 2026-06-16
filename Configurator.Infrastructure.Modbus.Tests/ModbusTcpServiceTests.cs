@@ -203,6 +203,97 @@ public sealed class ModbusTcpServiceTests
                 && server.Snapshot.HoldingRegisters[1] == 9));
     }
 
+    [Fact]
+    public async Task HoldingRegisterBitWrite_PreservesOtherBitsFromSnapshot()
+    {
+        var options = CreateOptions();
+        options.WriteConfirmationTimeoutMs = 0;
+        options.DataMap.Add(CreateRegisterBit("Bit0", 2, 0));
+        var runtime = new FakeRuntimeService();
+        var client = new NoopClientService();
+        await using var service = CreateService(runtime, client, new NoopServerService(), options);
+        await service.StartClientAsync();
+        runtime.PublishSnapshot([0, 0, 2]);
+
+        var result = await service.SetAsync("Bit0", true);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        Assert.Equal((2, (ushort)3), Assert.Single(client.RegisterWrites));
+    }
+
+    [Fact]
+    public async Task ConcurrentHoldingRegisterBitWrites_AreSerializedWithoutLostBits()
+    {
+        var options = CreateOptions();
+        options.WriteConfirmationTimeoutMs = 0;
+        options.DataMap.Add(CreateRegisterBit("Bit0", 2, 0));
+        options.DataMap.Add(CreateRegisterBit("Bit1", 2, 1));
+        var runtime = new FakeRuntimeService();
+        var client = new NoopClientService();
+        await using var service = CreateService(runtime, client, new NoopServerService(), options);
+        await service.StartClientAsync();
+        runtime.PublishSnapshot([0, 0, 0]);
+
+        var results = await Task.WhenAll(
+            service.SetAsync("Bit0", true),
+            service.SetAsync("Bit1", true));
+
+        Assert.All(results, result => Assert.True(result.Succeeded, result.ErrorMessage));
+        Assert.Equal((ushort)3, client.RegisterWrites[^1].Value);
+    }
+
+    [Fact]
+    public async Task DataSnapshot_IsPublishedEveryPollWhilePointSubscriptionRemainsChangeOnly()
+    {
+        var options = CreateOptions();
+        var runtime = new FakeRuntimeService();
+        await using var service = CreateService(runtime, new NoopClientService(), new NoopServerService(), options);
+        await service.StartClientAsync();
+        var snapshots = 0;
+        var pointChanges = 0;
+        service.SnapshotChanged += (_, _) => snapshots++;
+        using var subscription = service.Subscribe("DemoInput", _ => pointChanges++);
+
+        runtime.PublishSnapshot([0, 7]);
+        runtime.PublishSnapshot([0, 7]);
+
+        Assert.Equal(2, snapshots);
+        Assert.Equal(1, pointChanges);
+        Assert.Equal((ushort)7, service.CurrentSnapshot.Values["DemoInput"].Value);
+    }
+
+    [Fact]
+    public async Task ApplyDataMap_ReplacesLookupWithoutRestartAndWaitsForNextSnapshot()
+    {
+        var options = CreateOptions();
+        var runtime = new FakeRuntimeService();
+        await using var service = CreateService(runtime, new NoopClientService(), new NoopServerService(), options);
+        await service.StartClientAsync();
+        runtime.PublishSnapshot([0, 7, 0]);
+        var dataMapRuntime = (IModbusDataMapRuntime)service;
+        var replacement = new ModbusDataPointOptions
+        {
+            Name = "Replacement",
+            Area = ModbusDataArea.HoldingRegister,
+            Address = 2,
+            Length = 1,
+            Type = ModbusValueType.UInt16,
+            Access = ModbusDataAccess.Read
+        };
+
+        var apply = dataMapRuntime.ApplyDataMap([replacement]);
+        var oldPoint = await service.GetAsync<ushort>("DemoInput");
+        var beforePoll = await service.GetAsync<ushort>("Replacement");
+        runtime.PublishSnapshot([0, 7, 9]);
+        var afterPoll = await service.GetAsync<ushort>("Replacement");
+
+        Assert.True(apply.Succeeded, apply.ErrorMessage);
+        Assert.Equal("ModbusDataPointMissing", oldPoint.ErrorCode);
+        Assert.Equal("ModbusValueUnavailable", beforePoll.ErrorCode);
+        Assert.True(afterPoll.Succeeded, afterPoll.ErrorMessage);
+        Assert.Equal((ushort)9, afterPoll.Value);
+    }
+
     private static ModbusTcpService CreateService(
         IModbusRuntimeService runtime,
         IModbusClientService client,
@@ -264,6 +355,18 @@ public sealed class ModbusTcpServiceTests
         };
     }
 
+    private static ModbusDataPointOptions CreateRegisterBit(string name, int address, int bitIndex)
+        => new()
+        {
+            Name = name,
+            Area = ModbusDataArea.HoldingRegister,
+            Address = address,
+            Length = 1,
+            BitIndex = bitIndex,
+            Type = ModbusValueType.Bool,
+            Access = ModbusDataAccess.ReadWrite
+        };
+
     private static async Task<bool> WaitForAsync(Func<bool> condition)
     {
         var startedAt = DateTimeOffset.UtcNow;
@@ -309,11 +412,7 @@ public sealed class ModbusTcpServiceTests
         public ModbusSnapshot ServerSnapshot { get; private set; } = ModbusSnapshot.Empty;
         public ModbusOptions CurrentOptions { get; private set; } = new();
         public event EventHandler<ModbusStatus>? StatusChanged;
-        public event EventHandler<ModbusSnapshot>? SnapshotChanged
-        {
-            add { }
-            remove { }
-        }
+        public event EventHandler<ModbusSnapshot>? SnapshotChanged;
 
         public Task StartAsync(ModbusRunMode mode = ModbusRunMode.Both, ModbusOptions? options = null, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
@@ -339,6 +438,19 @@ public sealed class ModbusTcpServiceTests
                 ServerMessage = "Server running"
             };
             StatusChanged?.Invoke(this, Status);
+        }
+
+        public void PublishSnapshot(IReadOnlyList<ushort> holdingRegisters)
+        {
+            ClientSnapshot = new ModbusSnapshot
+            {
+                Role = ModbusRuntimeRole.Client,
+                Coils = [],
+                HoldingRegisters = holdingRegisters,
+                DecodedRegisters = ModbusDecodedRegisters.Empty,
+                Timestamp = DateTimeOffset.Now
+            };
+            SnapshotChanged?.Invoke(this, ClientSnapshot);
         }
 
         public Task StartClientAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default)

@@ -41,6 +41,10 @@ public sealed class ModbusSettingsDialogViewModelTests
         Assert.Equal(ModbusOptions.DemoSectionName, config.LastSectionName);
         Assert.Equal(1503, config.LastSavedOptions?.Client.Port);
         Assert.Equal(1503, result?.Client.Port);
+        var bitPoint = Assert.Single(result!.DataMap, point => point.Name == "RouteBit");
+        Assert.Equal(4, bitPoint.BitIndex);
+        Assert.Equal(ModbusWriteMode.Pulse, bitPoint.WriteMode);
+        Assert.Equal(450, bitPoint.PulseDurationMs);
         Assert.Empty(viewModel.ErrorText);
     }
 
@@ -102,6 +106,18 @@ public sealed class ModbusSettingsDialogViewModelTests
                     Length = 1,
                     Access = ModbusDataAccess.ReadWrite,
                     Type = ModbusValueType.Bool
+                },
+                new()
+                {
+                    Name = "RouteBit",
+                    Area = ModbusDataArea.HoldingRegister,
+                    Address = 1,
+                    Length = 1,
+                    BitIndex = 4,
+                    Access = ModbusDataAccess.ReadWrite,
+                    Type = ModbusValueType.Bool,
+                    WriteMode = ModbusWriteMode.Pulse,
+                    PulseDurationMs = 450
                 }
             ]
         };

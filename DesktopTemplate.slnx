@@ -16,6 +16,8 @@
   <Folder Name="/Tests/">
     <Project Path="Configurator.Infrastructure.Modbus.Tests/Configurator.Infrastructure.Modbus.Tests.csproj" Id="51918abf-41be-45a7-b74f-a7dedcae9eff" />
     <Project Path="Configurator.Infrastructure.OpcUa.Tests/Configurator.Infrastructure.OpcUa.Tests.csproj" Id="d49f159e-f37d-4c47-9f6e-c516eeb8853c" />
+    <Project Path="Configurator.Tests.RouteMap.Ui/Configurator.Tests.RouteMap.Ui.csproj" />
+    <Project Path="Configurator.Tests.Unit/Configurator.Tests.Unit.csproj" />
   </Folder>
   <Folder Name="/Presentation/">
     <Project Path="Configurator.Desktop/Configurator.Desktop.csproj" />

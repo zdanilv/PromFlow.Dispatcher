@@ -1,13 +1,22 @@
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Modbus.Configuration;
+using Configurator.Application.Services.Modbus.Contracts;
+using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Desktop.Workspace.Modbus;
 using Configurator.Desktop.Workspace.ModbusDemo;
 using Configurator.Desktop.Workspace.OpcUa;
+using Configurator.Desktop.Workspace.RouteMap.ViewModels;
+using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ReactiveUI;
 
 namespace Configurator.Desktop.Workspace
 {
-    public partial class WorkspaceViewModel : ViewModelBase, IRoutableViewModel
+    public partial class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDisposable
     {
+        private readonly CancellationTokenSource _lifetimeCancellation = new();
+        private bool _disposed;
         public string Name { get; set; } = "Work Page";
         public string UrlPathSegment => "main";
         public IScreen HostScreen { get; }
@@ -17,21 +26,73 @@ namespace Configurator.Desktop.Workspace
         public ModbusViewModel Modbus { get; }
         public ModbusDemoViewModel ModbusDemo { get; }
         public OpcUaViewModel OpcUa { get; }
+        public RouteMapDashboardViewModel RouteMapDashboard { get; }
+        public RouteMapSignalMappingViewModel RouteMapSignalMapping { get; }
 
         public WorkspaceViewModel(
             IScreen hostScreen,
             IAuthApp authService,
             ModbusViewModel modbus,
             ModbusDemoViewModel modbusDemo,
-            OpcUaViewModel opcUa)
+            OpcUaViewModel opcUa,
+            RouteMapDashboardViewModel routeMapDashboard,
+            RouteMapSignalMappingViewModel routeMapSignalMapping,
+            IModbusRuntimeService modbusRuntime,
+            IOptionsMonitor<ModbusOptions> modbusOptions,
+            ILogger<WorkspaceViewModel> logger)
         {
             HostScreen = hostScreen;
             AuthToken = authService.IsAuthenticated.ToString();
             Modbus = modbus;
             ModbusDemo = modbusDemo;
             OpcUa = opcUa;
+            RouteMapDashboard = routeMapDashboard;
+            RouteMapSignalMapping = routeMapSignalMapping;
 
-            // Workspace data can be initialized here using the auth token.
+            var options = modbusOptions.CurrentValue.Clone();
+            if (options.AutostartOnWorkspaceOpen && options.StartupMode != ModbusRunMode.None)
+            {
+                _ = StartModbusAsync(modbusRuntime, options, logger, _lifetimeCancellation.Token);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _lifetimeCancellation.Cancel();
+            _lifetimeCancellation.Dispose();
+            RouteMapDashboard.Dispose();
+            RouteMapSignalMapping.Dispose();
+            Modbus.Dispose();
+            ModbusDemo.Dispose();
+            OpcUa.Dispose();
+        }
+
+        private static async Task StartModbusAsync(
+            IModbusRuntimeService runtime,
+            ModbusOptions options,
+            ILogger<WorkspaceViewModel> logger,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                await runtime.StartAsync(options.StartupMode, options, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(
+                    exception,
+                    "Failed to autostart Modbus in {StartupMode} mode.",
+                    options.StartupMode);
+            }
         }
     }
 }

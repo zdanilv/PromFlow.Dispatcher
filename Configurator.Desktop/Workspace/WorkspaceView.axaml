@@ -6,6 +6,8 @@
              xmlns:modbus="using:Configurator.Desktop.Workspace.Modbus"
              xmlns:modbusDemo="using:Configurator.Desktop.Workspace.ModbusDemo"
              xmlns:opcua="using:Configurator.Desktop.Workspace.OpcUa"
+             xmlns:routeMap="using:Configurator.Desktop.Workspace.RouteMap"
+             xmlns:signalMapping="using:Configurator.Desktop.Workspace.RouteMap.SignalMapping"
              mc:Ignorable="d"
              d:DesignWidth="1200"
              d:DesignHeight="760"
@@ -33,6 +35,12 @@
         </Menu>
 
         <TabControl Grid.Row="1" Padding="2">
+            <TabItem Header="Route Map">
+                <routeMap:RouteMapDashboardView DataContext="{Binding RouteMapDashboard}"/>
+            </TabItem>
+            <TabItem Header="SignalId ↔ Modbus">
+                <signalMapping:RouteMapSignalMappingView DataContext="{Binding RouteMapSignalMapping}"/>
+            </TabItem>
             <TabItem Header="Modbus TCP">
                 <modbus:ModbusView DataContext="{Binding Modbus}"/>
             </TabItem>

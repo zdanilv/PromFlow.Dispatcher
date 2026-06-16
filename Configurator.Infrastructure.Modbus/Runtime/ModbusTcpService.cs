@@ -13,7 +13,7 @@ namespace Configurator.Infrastructure.Modbus.Runtime;
 /// <summary>
 /// Безопасный высокоуровневый фасад поверх существующих сервисов Modbus клиента и сервера.
 /// </summary>
-internal sealed class ModbusTcpService : IModbusTcpService
+internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotSource, IModbusDataMapRuntime
 {
     private readonly IModbusRuntimeService _runtimeService;
     private readonly IModbusClientService _clientService;
@@ -26,8 +26,10 @@ internal sealed class ModbusTcpService : IModbusTcpService
     private readonly Dictionary<string, ModbusDataPointOptions> _dataMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ModbusDataValue> _latestValues = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<Action<ModbusDataValue>>> _subscriptions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<int, ushort> _holdingRegisterShadow = [];
     private ModbusOptions _currentOptions;
     private ModbusServiceState _state = ModbusServiceState.Stopped;
+    private ModbusDataSnapshot _currentDataSnapshot = ModbusDataSnapshot.Empty;
 
     /// <summary>
     /// Создает фасад и подписывает его на связанный Modbus runtime.
@@ -48,7 +50,7 @@ internal sealed class ModbusTcpService : IModbusTcpService
         _logger = logger;
         _currentOptions = _optionsMonitor.CurrentValue.Clone();
 
-        ApplyDataMap(_currentOptions);
+        ReplaceDataMap(_currentOptions);
         ApplyStatus(_runtimeService.Status);
         ApplySnapshot(_runtimeService.ClientSnapshot);
         ApplySnapshot(_runtimeService.ServerSnapshot);
@@ -75,6 +77,47 @@ internal sealed class ModbusTcpService : IModbusTcpService
     /// Уведомляет подписчиков об изменении State Changed в подсистеме Modbus.
     /// </summary>
     public event EventHandler<ModbusServiceState>? StateChanged;
+
+    public ModbusDataSnapshot CurrentSnapshot
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _currentDataSnapshot;
+            }
+        }
+    }
+
+    public event EventHandler<ModbusDataSnapshot>? SnapshotChanged;
+
+    public ModbusOperationResult ApplyDataMap(IReadOnlyList<ModbusDataPointOptions> dataMap)
+    {
+        ArgumentNullException.ThrowIfNull(dataMap);
+
+        var nextOptions = _currentOptions.Clone();
+        nextOptions.DataMap = dataMap.Select(point => point.Clone()).ToList();
+        var validation = ValidateForActiveRoles(nextOptions);
+        if (!validation.Succeeded)
+        {
+            return validation;
+        }
+
+        ModbusDataSnapshot snapshot;
+        lock (_sync)
+        {
+            _currentOptions = nextOptions;
+            ReplaceDataMap(nextOptions, clearValues: true);
+            snapshot = new ModbusDataSnapshot(
+                new Dictionary<string, ModbusDataValue>(StringComparer.OrdinalIgnoreCase),
+                DateTimeOffset.MinValue,
+                _state);
+            _currentDataSnapshot = snapshot;
+        }
+
+        SnapshotChanged?.Invoke(this, snapshot);
+        return ModbusOperationResult.Success();
+    }
 
     /// <summary>
     /// Запускает только клиентскую роль runtime.
@@ -180,15 +223,16 @@ internal sealed class ModbusTcpService : IModbusTcpService
                 $"Modbus data point '{point.Name}' is not writable.");
         }
 
-        if (!TryBuildWritePayload(point, value, out var coilValue, out var registers, out var expectedValue, out var payloadFailure))
-        {
-            return payloadFailure;
-        }
-
+        object expectedValue = false;
         await _gate.WaitAsync(ct);
 
         try
         {
+            if (!TryBuildWritePayload(point, value, out var coilValue, out var registers, out expectedValue, out var payloadFailure))
+            {
+                return payloadFailure;
+            }
+
             var role = ResolveWritableRole();
             if (role == ModbusRunMode.None)
             {
@@ -228,6 +272,14 @@ internal sealed class ModbusTcpService : IModbusTcpService
                 else
                 {
                     await _serverService.SetRegistersAsync(point.Address, registers, ct);
+                }
+
+                lock (_sync)
+                {
+                    for (var index = 0; index < registers.Length; index++)
+                    {
+                        _holdingRegisterShadow[point.Address + index] = registers[index];
+                    }
                 }
             }
         }
@@ -323,7 +375,7 @@ internal sealed class ModbusTcpService : IModbusTcpService
 
             _logger.LogInformation("Modbus facade {Role} validation passed", role);
             _currentOptions = nextOptions;
-            ApplyDataMap(_currentOptions);
+            ReplaceDataMap(_currentOptions);
 
             if (role == ModbusRunMode.Client)
             {
@@ -427,8 +479,13 @@ internal sealed class ModbusTcpService : IModbusTcpService
         lock (_sync)
         {
             points = _dataMap.Values.Select(point => point.Clone()).ToList();
+            for (var index = 0; index < snapshot.HoldingRegisters.Count; index++)
+            {
+                _holdingRegisterShadow[index] = snapshot.HoldingRegisters[index];
+            }
         }
 
+        var cycleValues = new Dictionary<string, ModbusDataValue>(StringComparer.OrdinalIgnoreCase);
         foreach (var point in points)
         {
             if (!point.IsReadable)
@@ -438,6 +495,7 @@ internal sealed class ModbusTcpService : IModbusTcpService
 
             if (TryDecodePoint(point, snapshot, out var dataValue, out var failure))
             {
+                cycleValues[dataValue.Name] = dataValue;
                 PublishDataValue(dataValue);
             }
             else
@@ -448,19 +506,28 @@ internal sealed class ModbusTcpService : IModbusTcpService
                     failure.ErrorMessage);
             }
         }
+
+        PublishDataSnapshot(cycleValues, snapshot.Timestamp);
     }
 
     /// <summary>
     /// Перестраивает lookup по именам из настроенной карты данных и удаляет устаревшие значения кеша.
     /// </summary>
-    private void ApplyDataMap(ModbusOptions options)
+    private void ReplaceDataMap(ModbusOptions options, bool clearValues = false)
     {
         lock (_sync)
         {
             _dataMap.Clear();
+            _holdingRegisterShadow.Clear();
             foreach (var point in options.DataMap)
             {
                 _dataMap[point.Name] = point.Clone();
+            }
+
+            if (clearValues)
+            {
+                _latestValues.Clear();
+                return;
             }
 
             var knownNames = new HashSet<string>(_dataMap.Keys, StringComparer.OrdinalIgnoreCase);
@@ -536,6 +603,8 @@ internal sealed class ModbusTcpService : IModbusTcpService
 
                 value = point.Type switch
                 {
+                    ModbusValueType.Bool when point.BitIndex is int bitIndex =>
+                        (snapshot.HoldingRegisters[point.Address] & (1 << bitIndex)) != 0,
                     ModbusValueType.UInt16 => snapshot.HoldingRegisters[point.Address],
                     ModbusValueType.Int => ModbusRegistersCodec.DecodeInt(snapshot.HoldingRegisters, point.Address),
                     ModbusValueType.Real => ModbusRegistersCodec.DecodeReal(snapshot.HoldingRegisters, point.Address),
@@ -592,6 +661,31 @@ internal sealed class ModbusTcpService : IModbusTcpService
             {
                 coilValue = Convert.ToBoolean(value, CultureInfo.InvariantCulture);
                 expectedValue = coilValue;
+                failure = ModbusOperationResult.Success();
+                return true;
+            }
+
+            if (point.Type == ModbusValueType.Bool && point.BitIndex is int bitIndex)
+            {
+                ushort currentWord;
+                lock (_sync)
+                {
+                    if (!_holdingRegisterShadow.TryGetValue(point.Address, out currentWord))
+                    {
+                        failure = ModbusOperationResult.Failure(
+                            "ModbusRegisterShadowUnavailable",
+                            $"Holding register {point.Address} has no snapshot for bit write '{point.Name}'.");
+                        return false;
+                    }
+                }
+
+                var bitValue = Convert.ToBoolean(value, CultureInfo.InvariantCulture);
+                var mask = checked((ushort)(1 << bitIndex));
+                var nextWord = bitValue
+                    ? (ushort)(currentWord | mask)
+                    : (ushort)(currentWord & ~mask);
+                registers = [nextWord];
+                expectedValue = bitValue;
                 failure = ModbusOperationResult.Success();
                 return true;
             }
@@ -737,9 +831,53 @@ internal sealed class ModbusTcpService : IModbusTcpService
         lock (_sync)
         {
             _state = state;
+            _currentDataSnapshot = _currentDataSnapshot with { State = state };
         }
 
         StateChanged?.Invoke(this, state);
+    }
+
+    private void PublishDataSnapshot(
+        IReadOnlyDictionary<string, ModbusDataValue> values,
+        DateTimeOffset timestamp)
+    {
+        ModbusDataSnapshot snapshot;
+        lock (_sync)
+        {
+            snapshot = new ModbusDataSnapshot(
+                new Dictionary<string, ModbusDataValue>(values, StringComparer.OrdinalIgnoreCase),
+                timestamp,
+                _state);
+            _currentDataSnapshot = snapshot;
+        }
+
+        try
+        {
+            SnapshotChanged?.Invoke(this, snapshot);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Modbus data snapshot handler failed");
+        }
+    }
+
+    private ModbusOperationResult ValidateForActiveRoles(ModbusOptions options)
+    {
+        var activeMode = State.ActiveRole;
+        if (activeMode is ModbusRunMode.Client or ModbusRunMode.Server)
+        {
+            return _dataMapValidator.Validate(options, activeMode);
+        }
+
+        if (activeMode == ModbusRunMode.Both)
+        {
+            var client = _dataMapValidator.Validate(options, ModbusRunMode.Client);
+            return client.Succeeded
+                ? _dataMapValidator.Validate(options, ModbusRunMode.Server)
+                : client;
+        }
+
+        return _dataMapValidator.Validate(options, ModbusRunMode.None);
     }
 
     private void Unsubscribe(string name, Action<ModbusDataValue> onChanged)

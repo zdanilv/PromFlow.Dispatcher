@@ -133,7 +133,7 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="dialog:ModbusDataPointEditorRow">
                                         <Border BorderBrush="#EDF1F5" BorderThickness="0,0,0,1" Padding="4">
-                                            <Grid ColumnDefinitions="150,150,80,80,150,150,90" ColumnSpacing="8">
+                                            <Grid ColumnDefinitions="150,140,70,70,130,130,70,110,100,90" ColumnSpacing="8">
                                                 <TextBox Classes="compact" PlaceholderText="Name" Text="{Binding Name, Mode=TwoWay}"/>
                                                 <ComboBox Grid.Column="1"
                                                           Classes="compact"
@@ -149,7 +149,19 @@
                                                           Classes="compact"
                                                           ItemsSource="{Binding ValueTypes}"
                                                           SelectedItem="{Binding Type, Mode=TwoWay}"/>
-                                                <Button Grid.Column="6"
+                                                <TextBox Grid.Column="6"
+                                                         Classes="compact"
+                                                         PlaceholderText="Bit"
+                                                         Text="{Binding BitIndex, Mode=TwoWay}"/>
+                                                <ComboBox Grid.Column="7"
+                                                          Classes="compact"
+                                                          ItemsSource="{Binding WriteModes}"
+                                                          SelectedItem="{Binding WriteMode, Mode=TwoWay}"/>
+                                                <TextBox Grid.Column="8"
+                                                         Classes="compact"
+                                                         PlaceholderText="Pulse ms"
+                                                         Text="{Binding PulseDurationMs, Mode=TwoWay}"/>
+                                                <Button Grid.Column="9"
                                                         Content="Удалить"
                                                         Command="{Binding RemoveCommand}"/>
                                             </Grid>

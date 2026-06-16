@@ -1,0 +1,289 @@
+using System.Collections.ObjectModel;
+using System.Text.Json.Serialization;
+using Configurator.Application.Services.Signals;
+using Configurator.Desktop.Workspace.RouteMap.Models;
+using ReactiveUI;
+
+namespace Configurator.Desktop.Workspace.RouteMap.Configuration;
+
+public abstract class RouteMapConfigurationItem : ReactiveObject
+{
+    private string _id = string.Empty;
+    private bool _isInvalid;
+    private string? _validationMessage;
+
+    public string Id
+    {
+        get => _id;
+        set => this.RaiseAndSetIfChanged(ref _id, value);
+    }
+
+    [JsonIgnore]
+    public bool IsInvalid
+    {
+        get => _isInvalid;
+        set => this.RaiseAndSetIfChanged(ref _isInvalid, value);
+    }
+
+    [JsonIgnore]
+    public string? ValidationMessage
+    {
+        get => _validationMessage;
+        set => this.RaiseAndSetIfChanged(ref _validationMessage, value);
+    }
+}
+
+public sealed class RouteMapConfigurationDocument
+{
+    public const int CurrentSchemaVersion = 4;
+
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
+    public RouteMapSettingsConfiguration Map { get; set; } = new();
+    public RouteTopBarConfiguration TopBar { get; set; } = RouteTopBarConfiguration.CreateDefault();
+    public ObservableCollection<RouteChainConfiguration> Chains { get; set; } = [];
+    public ObservableCollection<RouteNodeConfiguration> Nodes { get; set; } = [];
+    public ObservableCollection<RouteSegmentConfiguration> Segments { get; set; } = [];
+    public ObservableCollection<EquipmentCardConfiguration> Cards { get; set; } = [];
+    public ObservableCollection<RoutePlaceholderRuleConfiguration> PlaceholderRules { get; set; } = [];
+}
+
+public sealed class RouteMapSettingsConfiguration
+{
+    public double LogicalWidth { get; set; } = 1200;
+    public double LogicalHeight { get; set; } = 800;
+    public double MapPadding { get; set; } = 18;
+    public double CardColumnGap { get; set; } = 18;
+    public double FragmentLength { get; set; } = 100;
+    public double FragmentGap { get; set; } = 6;
+    public RouteMapPaletteConfiguration Palette { get; set; } = new();
+}
+
+public sealed class RouteMapPaletteConfiguration
+{
+    public string Background { get; set; } = "#F7F8F8";
+    public string Text { get; set; } = "#44505C";
+    public string MutedText { get; set; } = "#77828D";
+    public string Track { get; set; } = "#C9CED0";
+    public string ActiveTrack { get; set; } = "#2D56B3";
+    public string Ready { get; set; } = "#3A9D5D";
+    public string Running { get; set; } = "#2563EB";
+    public string Warning { get; set; } = "#D99B22";
+    public string Fault { get; set; } = "#D95D4E";
+    public string Offline { get; set; } = "#68717A";
+    public string Disabled { get; set; } = "#D8DCDF";
+    public string NodeFill { get; set; } = "#AEB5BA";
+    public string Selection { get; set; } = "#21428E";
+    public string Hover { get; set; } = "#1E6BFF";
+}
+
+public sealed class RouteChainConfiguration : RouteMapConfigurationItem
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+    public ObservableCollection<string> NodeIds { get; set; } = [];
+    public ObservableCollection<string> SegmentIds { get; set; } = [];
+}
+
+public sealed class RouteNodeConfiguration : RouteMapConfigurationItem
+{
+    public string Title { get; set; } = string.Empty;
+    public double X { get; set; }
+    public double Y { get; set; }
+    public RouteNodeKind Kind { get; set; }
+    public RouteObjectState State { get; set; } = RouteObjectState.Idle;
+    public double LabelOffsetX { get; set; }
+    public double LabelOffsetY { get; set; }
+    public RouteNodeLabelPlacement LabelPlacement { get; set; } = RouteNodeLabelPlacement.Below;
+    public bool IsLoader { get; set; }
+    public bool IsTarget { get; set; }
+    public RouteNodeMenuKind MenuKind { get; set; }
+    public bool IsVisible { get; set; } = true;
+    public RouteNodeStyleConfiguration Style { get; set; } = new();
+    public ObservableCollection<SignalBindingConfiguration> Bindings { get; set; } = [];
+}
+
+public sealed class RouteNodeStyleConfiguration
+{
+    public double Radius { get; set; } = 15;
+    public double InnerRadiusRatio { get; set; } = 0.38;
+    public double BorderThickness { get; set; } = 2;
+    public string FillColor { get; set; } = "#AEB5BA";
+    public string BorderColor { get; set; } = "#DDE1E4";
+    public string InnerColor { get; set; } = "#EEF1F3";
+    public string LabelColor { get; set; } = "#77828D";
+    public double LabelFontSize { get; set; } = 11;
+    public string ActiveOutlineColor { get; set; } = "#00A6A6";
+    public double ActiveOutlineThickness { get; set; } = 3;
+}
+
+public sealed class RouteTopBarConfiguration
+{
+    public RouteTopBarButtonConfiguration Automatic { get; set; } = new();
+    public RouteTopBarButtonConfiguration Manual { get; set; } = new();
+    public RouteTopBarButtonConfiguration Emergency { get; set; } = new();
+
+    public static RouteTopBarConfiguration CreateDefault() => new()
+    {
+        Automatic = RouteTopBarButtonConfiguration.Create(
+            "АВТОМАТ", SignalBindingRole.AutomaticModeCommand, "system.mode.automatic"),
+        Manual = RouteTopBarButtonConfiguration.Create(
+            "РУЧНОЙ", SignalBindingRole.ManualModeCommand, "system.mode.manual"),
+        Emergency = RouteTopBarButtonConfiguration.Create(
+            "АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency",
+            normalBackground: "#D87868", checkedBackground: "#C83F30"),
+    };
+}
+
+public sealed class RouteTopBarButtonConfiguration
+{
+    public string Text { get; set; } = string.Empty;
+    public string NormalBackground { get; set; } = "#ECEFF1";
+    public string CheckedBackground { get; set; } = "#3378D6";
+    public string NormalForeground { get; set; } = "#59636E";
+    public string CheckedForeground { get; set; } = "#FFFFFF";
+    public ObservableCollection<SignalBindingConfiguration> Bindings { get; set; } = [];
+
+    public static RouteTopBarButtonConfiguration Create(
+        string text,
+        SignalBindingRole role,
+        string signalId,
+        string normalBackground = "#ECEFF1",
+        string checkedBackground = "#3378D6") => new()
+        {
+            Text = text,
+            NormalBackground = normalBackground,
+            CheckedBackground = checkedBackground,
+            Bindings =
+            [
+                new SignalBindingConfiguration
+                {
+                    Role = role,
+                    SignalId = signalId,
+                    Direction = SignalBindingDirection.ReadWrite,
+                    ValueType = SignalValueType.Bool,
+                },
+            ],
+        };
+}
+
+public sealed class RouteSegmentConfiguration : RouteMapConfigurationItem
+{
+    public string FromNodeId { get; set; } = string.Empty;
+    public string ToNodeId { get; set; } = string.Empty;
+    public RouteObjectState State { get; set; } = RouteObjectState.Idle;
+    public bool IsDirectional { get; set; }
+    public RouteSegmentKind Kind { get; set; }
+    public double ArcRadius { get; set; }
+    public RouteElbowOrder ElbowOrder { get; set; }
+    public string? Title { get; set; }
+    public double LabelOffsetX { get; set; }
+    public double LabelOffsetY { get; set; }
+    public bool IsVisible { get; set; } = true;
+    public RouteSegmentStyleConfiguration Style { get; set; } = new();
+    public ObservableCollection<SignalBindingConfiguration> Bindings { get; set; } = [];
+}
+
+public sealed class RouteSegmentStyleConfiguration
+{
+    public string NormalColor { get; set; } = "#C9CED0";
+    public string ActiveColor { get; set; } = "#2D56B3";
+    public double Thickness { get; set; } = 4;
+    public double ActiveThickness { get; set; } = 5;
+    public double? FragmentLength { get; set; }
+    public double? FragmentGap { get; set; }
+    public double EndpointGap { get; set; } = 6;
+    public RouteLineCap LineCap { get; set; } = RouteLineCap.Round;
+    public string LabelColor { get; set; } = "#77828D";
+    public double LabelFontSize { get; set; } = 11;
+}
+
+public sealed class EquipmentCardConfiguration : RouteMapConfigurationItem
+{
+    public string Title { get; set; } = string.Empty;
+    public string StatusText { get; set; } = "Ожидание";
+    public RouteObjectState State { get; set; } = RouteObjectState.Idle;
+    public bool CanStart { get; set; } = true;
+    public bool CanStop { get; set; } = true;
+    public bool IsVisible { get; set; } = true;
+    public string? AttachedChainId { get; set; }
+    public double AttachedCardRightOffset { get; set; }
+    public RouteCardVerticalAnchorKind VerticalAnchorKind { get; set; } = RouteCardVerticalAnchorKind.ChainBoundsCenter;
+    public string? VerticalAnchorNodeId { get; set; }
+    public EquipmentCardStyleConfiguration Style { get; set; } = new();
+    public ObservableCollection<SignalBindingConfiguration> Bindings { get; set; } = [];
+}
+
+public sealed class EquipmentCardStyleConfiguration
+{
+    public double Width { get; set; } = 295;
+    public double MinimumWidth { get; set; } = 250;
+    public double Height { get; set; } = 141;
+    public RouteThicknessConfiguration Margin { get; set; } = RouteThicknessConfiguration.Uniform(5);
+    public RouteThicknessConfiguration Padding { get; set; } = new() { Left = 12, Top = 8, Right = 6, Bottom = 8 };
+    public string BackgroundColor { get; set; } = "#00FFFFFF";
+    public string BorderColor { get; set; } = "#C8D0D7";
+    public RouteThicknessConfiguration BorderThickness { get; set; } = new() { Left = 2 };
+    public RouteCornerRadiusConfiguration CornerRadius { get; set; } = new();
+    public string TitleColor { get; set; } = "#48525C";
+    public string TextColor { get; set; } = "#48525C";
+    public double TitleFontSize { get; set; } = 18;
+    public double StatusFontSize { get; set; } = 16;
+    public double RouteTextFontSize { get; set; } = 14;
+    public double ActionFontSize { get; set; } = 18;
+    public string StartText { get; set; } = "ПУСК";
+    public string StopText { get; set; } = "СТОП";
+    public string SendPrefix { get; set; } = "Отправить";
+    public string ReturnPrefix { get; set; } = "Возврат";
+    public string StartColor { get; set; } = "#D0D0D0";
+    public string StartCheckedColor { get; set; } = "#3A9D5D";
+    public string StopColor { get; set; } = "#D95D4E";
+    public string StopCheckedColor { get; set; } = "#9E2F25";
+}
+
+public sealed class RoutePlaceholderRuleConfiguration : RouteMapConfigurationItem
+{
+    public string CardId { get; set; } = string.Empty;
+    public RoutePlaceholderPlacement Placement { get; set; } = RoutePlaceholderPlacement.Both;
+    public RoutePlaceholderHeightMode HeightMode { get; set; } = RoutePlaceholderHeightMode.MatchCard;
+    public double FixedHeight { get; set; } = 141;
+    public double Gap { get; set; } = 10;
+    public int? MaximumCount { get; set; }
+    public bool IsVisible { get; set; } = true;
+    public RoutePlaceholderStyleConfiguration Style { get; set; } = new();
+}
+
+public sealed class RoutePlaceholderStyleConfiguration
+{
+    public string BackgroundColor { get; set; } = "#00FFFFFF";
+    public string BorderColor { get; set; } = "#C8D0D7";
+    public RouteThicknessConfiguration BorderThickness { get; set; } = new() { Left = 2 };
+    public RouteCornerRadiusConfiguration CornerRadius { get; set; } = new();
+    public RouteThicknessConfiguration Margin { get; set; } = RouteThicknessConfiguration.Uniform(5);
+}
+
+public sealed class RouteThicknessConfiguration
+{
+    public double Left { get; set; }
+    public double Top { get; set; }
+    public double Right { get; set; }
+    public double Bottom { get; set; }
+
+    public static RouteThicknessConfiguration Uniform(double value) =>
+        new() { Left = value, Top = value, Right = value, Bottom = value };
+}
+
+public sealed class RouteCornerRadiusConfiguration
+{
+    public double TopLeft { get; set; }
+    public double TopRight { get; set; }
+    public double BottomRight { get; set; }
+    public double BottomLeft { get; set; }
+}
+
+public sealed class SignalBindingConfiguration
+{
+    public SignalBindingRole Role { get; set; }
+    public string SignalId { get; set; } = string.Empty;
+    public SignalBindingDirection Direction { get; set; }
+    public SignalValueType ValueType { get; set; }
+}
