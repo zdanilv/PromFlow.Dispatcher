@@ -1,5 +1,6 @@
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
+using Avalonia.Media;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
@@ -185,6 +186,86 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
     }
 
     [Fact]
+    public void MappingDefaults_UsePulseForMomentaryCommandsAndDemoAddressBases()
+    {
+        using var scope = new ConfigurationScope();
+        var draft = scope.Manager.CreateDraft();
+        draft.Cards.Single().StartButtonKind = RouteCommandButtonKind.Momentary;
+        draft.Cards.Single().StartOffFeedbackEnabled = false;
+        draft.Cards.Single().Bindings.Remove(draft.Cards.Single().Bindings.Single(x => x.Role == SignalBindingRole.StartOffFeedback));
+        Assert.True(scope.Manager.Apply(draft).IsSuccess);
+        var routeOptions = new ModbusOptions();
+        var demoOptions = new ModbusOptions
+        {
+            Client = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 100,
+                HoldingRegisterStartAddress = 200,
+                CoilCount = 20,
+                RegisterCount = 20
+            },
+            Server = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 300,
+                HoldingRegisterStartAddress = 400,
+                CoilCount = 20,
+                RegisterCount = 20
+            }
+        };
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(routeOptions, demoOptions),
+            new RecordingAppConfigService(),
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == "equip.bucket.start");
+
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+
+        Assert.Equal(ModbusWriteMode.Pulse, row.WriteMode);
+        Assert.Equal("100", row.ClientPhysicalAddress);
+        Assert.Equal("300", row.ServerPhysicalAddress);
+    }
+
+    [Fact]
+    public void SignalInventory_ExposesOffFeedbackSignalsAsReadOnly()
+    {
+        var definition = RouteMapSeed.Create();
+
+        var inventory = RouteMapSignalInventory.Build(definition);
+
+        var cardOff = inventory.Single(item => item.SignalId == "equip.bucket.start.off");
+        Assert.Equal(ModbusDataAccess.Read, cardOff.RequiredAccess);
+        Assert.Equal(SignalValueType.Bool, cardOff.ExpectedType);
+
+        var topBarOff = inventory.Single(item => item.SignalId == "system.emergency.off");
+        Assert.Equal(ModbusDataAccess.Read, topBarOff.RequiredAccess);
+        Assert.Equal(RouteMapSignalElementCategory.TopBar, topBarOff.Category);
+        Assert.DoesNotContain(inventory, item => item.SignalId == "system.mode.manual.off");
+        Assert.DoesNotContain(inventory, item => item.SignalId == "route.node.bsu_1.loader.off");
+    }
+
+    [Fact]
+    public void MappingRow_UsesGrayBackgroundOnlyWhenUnused()
+    {
+        using var scope = new ConfigurationScope();
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(new ModbusOptions()),
+            new RecordingAppConfigService(),
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.First(item => !item.IsSystem && !item.IsMapped);
+
+        var unusedBrush = Assert.IsType<SolidColorBrush>(row.RowBackground);
+        Assert.Equal(Color.Parse("#F1F3F5"), unusedBrush.Color);
+
+        row.IsMapped = true;
+
+        Assert.Same(Brushes.White, row.RowBackground);
+    }
+
+    [Fact]
     public async Task MappingSave_ReplacesRoutePointAndPreservesUnrelatedDataMapPoints()
     {
         using var scope = new ConfigurationScope();
@@ -280,10 +361,13 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         }
     }
 
-    private sealed class TestOptionsMonitor(ModbusOptions value) : IOptionsMonitor<ModbusOptions>
+    private sealed class TestOptionsMonitor(ModbusOptions value, ModbusOptions? demoValue = null) : IOptionsMonitor<ModbusOptions>
     {
         public ModbusOptions CurrentValue { get; private set; } = value;
-        public ModbusOptions Get(string? name) => CurrentValue;
+        public ModbusOptions Get(string? name) =>
+            string.Equals(name, ModbusOptions.DemoSectionName, StringComparison.Ordinal)
+                ? demoValue ?? CurrentValue
+                : CurrentValue;
         public IDisposable? OnChange(Action<ModbusOptions, string?> listener) => null;
     }
 

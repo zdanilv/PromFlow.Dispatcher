@@ -1,12 +1,15 @@
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
+using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Desktop.Dialogs.ModbusSettingsDialog;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
@@ -59,6 +62,9 @@ public sealed class RouteMapSettingsDialogVisualTests
     [InlineData(3, "Толщина сигнального контура")]
     [InlineData(4, "Зазор от узлов")]
     [InlineData(4, "Края линии")]
+    [InlineData(5, "Тип ПУСК")]
+    [InlineData(5, "Тип СТОП")]
+    [InlineData(2, "Тип кнопки")]
     public void New_visual_properties_are_present_in_settings_tabs(int tabIndex, string label)
     {
         using var fixture = new DialogFixture(1320, 780);
@@ -133,11 +139,9 @@ public sealed class RouteMapSettingsDialogVisualTests
         Dispatcher.UIThread.RunJobs();
 
         var tabs = view.GetVisualDescendants().OfType<TabControl>().Single();
-        var headers = tabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString()).ToArray();
+        var headers = tabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString() ?? string.Empty).ToArray();
 
-        Assert.Equal("Route Map", headers[0]);
-        Assert.Equal("SignalId ↔ Modbus", headers[1]);
-        Assert.Equal("Modbus TCP", headers[2]);
+        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Modbus Demo"], headers);
 
         window.Close();
     }
@@ -161,6 +165,75 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         Assert.False(first.IsExpanded);
         Assert.False(group.IsExpanded);
+    }
+
+    [AvaloniaFact]
+    public void Signal_mapping_uses_gray_background_only_for_unmapped_rows()
+    {
+        using var fixture = new SignalMappingFixture(1200, 760);
+        var rowBorders = fixture.View.GetVisualDescendants()
+            .OfType<Border>()
+            .Where(border => border.Classes.Contains("signal-mapping-row"))
+            .ToArray();
+
+        Assert.NotEmpty(rowBorders);
+        var unmapped = rowBorders.First(border =>
+            border.DataContext is RouteMapSignalMappingRow { IsSystem: false, IsMapped: false });
+        var brush = Assert.IsType<SolidColorBrush>(unmapped.Background);
+        Assert.Equal(Color.Parse("#F1F3F5"), brush.Color);
+
+        Assert.All(
+            rowBorders.Where(border => border.DataContext is RouteMapSignalMappingRow { IsSystem: true }),
+            border => Assert.Same(Brushes.White, border.Background));
+    }
+
+    [AvaloniaFact]
+    public void Modbus_settings_data_map_rows_scroll_horizontally_without_overlap()
+    {
+        var options = new ModbusOptions
+        {
+            DataMap =
+            [
+                new ModbusDataPointOptions
+                {
+                    Name = "route.node.bsu_1.target.off",
+                    Area = ModbusDataArea.Coil,
+                    Address = 0,
+                    Length = 1,
+                    Access = ModbusDataAccess.Read,
+                    Type = ModbusValueType.Bool,
+                }
+            ]
+        };
+        var viewModel = new ModbusSettingsDialogViewModel(
+            "Настройки Modbus TCP Demo",
+            ModbusOptions.DemoSectionName,
+            options,
+            new NullAppConfigService(),
+            new ModbusDataMapValidator());
+        var view = new ModbusSettingsDialogView { DataContext = viewModel };
+        var window = new Window { Width = 900, Height = 520, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var tabs = view.GetVisualDescendants().OfType<TabControl>().Single();
+        tabs.SelectedIndex = 3;
+        Dispatcher.UIThread.RunJobs();
+
+        var row = view.GetVisualDescendants()
+            .OfType<Grid>()
+            .Single(item => item.Classes.Contains("modbus-data-point-row"));
+        var controls = row.Children.OfType<Control>().ToArray();
+
+        Assert.Equal(10, controls.Length);
+        for (var index = 1; index < controls.Length; index++)
+            Assert.True(controls[index - 1].Bounds.Right <= controls[index].Bounds.Left);
+
+        Assert.Contains(
+            view.GetVisualDescendants().OfType<ScrollViewer>(),
+            scroll => scroll.Extent.Width > scroll.Viewport.Width);
+
+        window.Close();
     }
 
     private sealed class DialogFixture : IDisposable

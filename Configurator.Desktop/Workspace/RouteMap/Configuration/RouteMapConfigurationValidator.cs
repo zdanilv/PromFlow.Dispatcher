@@ -84,12 +84,17 @@ public sealed class RouteMapConfigurationValidator
                 (nameof(node.Style.ActiveOutlineColor), node.Style.ActiveOutlineColor));
             ValidateBindings(errors, "node", node.Id, node.Bindings,
                 [SignalBindingRole.State, SignalBindingRole.Visible, SignalBindingRole.Fault, SignalBindingRole.ActiveRoute,
-                    SignalBindingRole.TargetCommand, SignalBindingRole.LoaderCommand]);
+                    SignalBindingRole.TargetCommand,
+                    SignalBindingRole.LoaderCommand]);
             ValidateRequiredBinding(errors, "node", node.Id, node.Bindings, SignalBindingRole.ActiveRoute, SignalBindingDirection.Read);
             if (node.MenuKind is RouteNodeMenuKind.SendOnly or RouteNodeMenuKind.SendAndReturn)
+            {
                 ValidateRequiredBinding(errors, "node", node.Id, node.Bindings, SignalBindingRole.TargetCommand, SignalBindingDirection.ReadWrite);
+            }
             if (node.MenuKind == RouteNodeMenuKind.SendAndReturn)
+            {
                 ValidateRequiredBinding(errors, "node", node.Id, node.Bindings, SignalBindingRole.LoaderCommand, SignalBindingDirection.ReadWrite);
+            }
         }
 
         foreach (var segment in document.Segments)
@@ -177,6 +182,8 @@ public sealed class RouteMapConfigurationValidator
             ValidatePositive(errors, "card", card.Id, nameof(card.Style.ActionFontSize), card.Style.ActionFontSize);
             if (card.Style.MinimumWidth > card.Style.Width)
                 Add(errors, "card", card.Id, nameof(card.Style.MinimumWidth), "Минимальная ширина не должна превышать ширину.");
+            ValidateEnum(errors, "card", card.Id, nameof(card.StartButtonKind), card.StartButtonKind);
+            ValidateEnum(errors, "card", card.Id, nameof(card.StopButtonKind), card.StopButtonKind);
             ValidateThickness(errors, "card", card.Id, nameof(card.Style.Margin), card.Style.Margin);
             ValidateThickness(errors, "card", card.Id, nameof(card.Style.Padding), card.Style.Padding);
             ValidateThickness(errors, "card", card.Id, nameof(card.Style.BorderThickness), card.Style.BorderThickness);
@@ -190,13 +197,33 @@ public sealed class RouteMapConfigurationValidator
                 (nameof(card.Style.StartCheckedColor), card.Style.StartCheckedColor),
                 (nameof(card.Style.StopColor), card.Style.StopColor),
                 (nameof(card.Style.StopCheckedColor), card.Style.StopCheckedColor));
-            ValidateBindings(errors, "card", card.Id, card.Bindings,
-                [SignalBindingRole.State, SignalBindingRole.Text, SignalBindingRole.Value, SignalBindingRole.Visible,
-                    SignalBindingRole.StartCommand, SignalBindingRole.StopCommand, SignalBindingRole.Fault]);
+            var cardAllowedRoles = new List<SignalBindingRole>
+            {
+                SignalBindingRole.State,
+                SignalBindingRole.Text,
+                SignalBindingRole.Value,
+                SignalBindingRole.Visible,
+                SignalBindingRole.StartCommand,
+                SignalBindingRole.StopCommand,
+                SignalBindingRole.Fault,
+            };
+            if (card.StartButtonKind == RouteCommandButtonKind.Toggle && card.StartOffFeedbackEnabled)
+                cardAllowedRoles.Add(SignalBindingRole.StartOffFeedback);
+            if (card.StopButtonKind == RouteCommandButtonKind.Toggle && card.StopOffFeedbackEnabled)
+                cardAllowedRoles.Add(SignalBindingRole.StopOffFeedback);
+            ValidateBindings(errors, "card", card.Id, card.Bindings, cardAllowedRoles);
             if (card.CanStart)
+            {
                 ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.StartCommand, SignalBindingDirection.ReadWrite);
+                if (card.StartButtonKind == RouteCommandButtonKind.Toggle && card.StartOffFeedbackEnabled)
+                    ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.StartOffFeedback, SignalBindingDirection.Read);
+            }
             if (card.CanStop)
+            {
                 ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.StopCommand, SignalBindingDirection.ReadWrite);
+                if (card.StopButtonKind == RouteCommandButtonKind.Toggle && card.StopOffFeedbackEnabled)
+                    ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.StopOffFeedback, SignalBindingDirection.Read);
+            }
         }
 
         foreach (var duplicatedChain in document.Cards
@@ -253,10 +280,14 @@ public sealed class RouteMapConfigurationValidator
             if (string.IsNullOrWhiteSpace(binding.SignalId))
                 Add(errors, scope, objectId, nameof(SignalBindingConfiguration.SignalId), "SignalId обязателен.");
 
-            var isCommand = binding.Role is SignalBindingRole.StartCommand or SignalBindingRole.StopCommand
-                or SignalBindingRole.TargetCommand or SignalBindingRole.LoaderCommand
-                or SignalBindingRole.AutomaticModeCommand or SignalBindingRole.ManualModeCommand
-                or SignalBindingRole.EmergencyCommand;
+            var isCommand = IsCommandRole(binding.Role);
+            if (IsOffFeedbackRole(binding.Role))
+            {
+                if (binding.Direction != SignalBindingDirection.Read)
+                    Add(errors, scope, objectId, nameof(SignalBindingConfiguration.Direction), $"Binding {binding.Role} must use Read direction.");
+                if (binding.ValueType != Configurator.Application.Services.Signals.SignalValueType.Bool)
+                    Add(errors, scope, objectId, nameof(SignalBindingConfiguration.ValueType), $"Binding {binding.Role} must use Bool value type.");
+            }
             if (isCommand && binding.Direction == SignalBindingDirection.Read)
                 Add(errors, scope, objectId, nameof(SignalBindingConfiguration.Direction), "Команда должна иметь направление Write или ReadWrite.");
             if (!isCommand && binding.Direction == SignalBindingDirection.Write)
@@ -268,16 +299,38 @@ public sealed class RouteMapConfigurationValidator
         ICollection<RouteMapConfigurationError> errors,
         RouteTopBarConfiguration topBar)
     {
-        ValidateTopBarButton(errors, "automatic", topBar.Automatic, SignalBindingRole.AutomaticModeCommand);
-        ValidateTopBarButton(errors, "manual", topBar.Manual, SignalBindingRole.ManualModeCommand);
-        ValidateTopBarButton(errors, "emergency", topBar.Emergency, SignalBindingRole.EmergencyCommand);
+        ValidateTopBarButton(
+            errors,
+            "automatic",
+            topBar.Automatic,
+            SignalBindingRole.AutomaticModeCommand,
+            offFeedbackRole: null,
+            requireOffFeedback: false);
+        ValidateTopBarButton(
+            errors,
+            "manual",
+            topBar.Manual,
+            SignalBindingRole.ManualModeCommand,
+            offFeedbackRole: null,
+            requireOffFeedback: false);
+        ValidateTopBarButton(
+            errors,
+            "emergency",
+            topBar.Emergency,
+            SignalBindingRole.EmergencyCommand,
+            topBar.Emergency.ButtonKind == RouteCommandButtonKind.Toggle && topBar.Emergency.OffFeedbackEnabled
+                ? SignalBindingRole.EmergencyOffFeedback
+                : null,
+            requireOffFeedback: topBar.Emergency.ButtonKind == RouteCommandButtonKind.Toggle && topBar.Emergency.OffFeedbackEnabled);
     }
 
     private static void ValidateTopBarButton(
         ICollection<RouteMapConfigurationError> errors,
         string id,
         RouteTopBarButtonConfiguration button,
-        SignalBindingRole role)
+        SignalBindingRole role,
+        SignalBindingRole? offFeedbackRole,
+        bool requireOffFeedback)
     {
         if (string.IsNullOrWhiteSpace(button.Text))
             Add(errors, "topBar", id, nameof(button.Text), "Текст кнопки обязателен.");
@@ -286,8 +339,42 @@ public sealed class RouteMapConfigurationValidator
             (nameof(button.CheckedBackground), button.CheckedBackground),
             (nameof(button.NormalForeground), button.NormalForeground),
             (nameof(button.CheckedForeground), button.CheckedForeground));
-        ValidateBindings(errors, "topBar", id, button.Bindings, [role]);
+        if (button is RouteTopBarEmergencyButtonConfiguration emergency)
+            ValidateEnum(errors, "topBar", id, nameof(emergency.ButtonKind), emergency.ButtonKind);
+        var allowedRoles = offFeedbackRole.HasValue ? [role, offFeedbackRole.Value] : new[] { role };
+        ValidateBindings(errors, "topBar", id, button.Bindings, allowedRoles);
         ValidateRequiredBinding(errors, "topBar", id, button.Bindings, role, SignalBindingDirection.ReadWrite);
+        if (requireOffFeedback && offFeedbackRole.HasValue)
+            ValidateRequiredBinding(errors, "topBar", id, button.Bindings, offFeedbackRole.Value, SignalBindingDirection.Read);
+    }
+
+    private static bool IsCommandRole(SignalBindingRole role) => role is
+        SignalBindingRole.StartCommand or
+        SignalBindingRole.StopCommand or
+        SignalBindingRole.TargetCommand or
+        SignalBindingRole.LoaderCommand or
+        SignalBindingRole.AutomaticModeCommand or
+        SignalBindingRole.ManualModeCommand or
+        SignalBindingRole.EmergencyCommand;
+
+    private static bool IsOffFeedbackRole(SignalBindingRole role) => role is
+        SignalBindingRole.StartOffFeedback or
+        SignalBindingRole.StopOffFeedback or
+        SignalBindingRole.TargetOffFeedback or
+        SignalBindingRole.LoaderOffFeedback or
+        SignalBindingRole.AutomaticModeOffFeedback or
+        SignalBindingRole.ManualModeOffFeedback or
+        SignalBindingRole.EmergencyOffFeedback;
+
+    private static void ValidateEnum<TEnum>(
+        ICollection<RouteMapConfigurationError> errors,
+        string scope,
+        string objectId,
+        string property,
+        TEnum value) where TEnum : struct, Enum
+    {
+        if (!Enum.IsDefined(value))
+            Add(errors, scope, objectId, property, $"Недопустимое значение {typeof(TEnum).Name}: {value}.");
     }
 
     private static void ValidateRequiredBinding(

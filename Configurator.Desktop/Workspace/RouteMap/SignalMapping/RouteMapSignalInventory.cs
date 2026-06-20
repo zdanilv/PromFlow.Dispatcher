@@ -23,7 +23,8 @@ internal sealed record RouteMapSignalInventoryItem(
     string Objects,
     bool HasTypeConflict,
     RouteMapSignalElementCategory Category,
-    bool IsSystem = false);
+    bool IsSystem = false,
+    bool PreferPulseWriteMode = false);
 
 internal static class RouteMapSignalInventory
 {
@@ -66,7 +67,8 @@ internal static class RouteMapSignalInventory
                     string.Join(", ", group.Select(item => item.Binding.Role).Distinct()),
                     string.Join(", ", group.Select(item => item.ObjectName).Distinct(StringComparer.Ordinal)),
                     types.Length > 1,
-                    categories.Length == 1 ? categories[0] : RouteMapSignalElementCategory.Common);
+                    categories.Length == 1 ? categories[0] : RouteMapSignalElementCategory.Common,
+                    PreferPulseWriteMode: group.Any(item => item.PreferPulseWriteMode));
             })
             .OrderBy(item => item.SignalId, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -87,21 +89,28 @@ internal static class RouteMapSignalInventory
         return items;
     }
 
-    private static IEnumerable<(string ObjectName, RouteMapSignalElementCategory Category, SignalBinding Binding)> EnumerateBindings(
+    private static IEnumerable<(string ObjectName, RouteMapSignalElementCategory Category, SignalBinding Binding, bool PreferPulseWriteMode)> EnumerateBindings(
         RouteMapDefinition definition)
     {
         if (definition.TopBar is not null)
         {
-            yield return ("TopBar.АВТОМАТ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Automatic.Binding);
-            yield return ("TopBar.РУЧНОЙ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Manual.Binding);
-            yield return ("TopBar.АВАРИЯ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Emergency.Binding);
+            yield return ("TopBar.АВТОМАТ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Automatic.Binding, false);
+            yield return ("TopBar.РУЧНОЙ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Manual.Binding, false);
+            yield return (
+                "TopBar.АВАРИЯ",
+                RouteMapSignalElementCategory.TopBar,
+                definition.TopBar.Emergency.Binding,
+                definition.TopBar.Emergency.ButtonKind == RouteCommandButtonKind.Momentary);
         }
+
+        if (definition.TopBar?.Emergency.OffFeedbackBinding is not null)
+            yield return ("TopBar Emergency OffFeedback", RouteMapSignalElementCategory.TopBar, definition.TopBar.Emergency.OffFeedbackBinding, false);
 
         foreach (var node in definition.Nodes)
         {
             foreach (var binding in node.Bindings)
             {
-                yield return ($"Узел {node.Id}", RouteMapSignalElementCategory.Node, binding);
+                yield return ($"Узел {node.Id}", RouteMapSignalElementCategory.Node, binding, false);
             }
         }
 
@@ -109,7 +118,7 @@ internal static class RouteMapSignalInventory
         {
             foreach (var binding in segment.Bindings)
             {
-                yield return ($"Линия {segment.Id}", RouteMapSignalElementCategory.Segment, binding);
+                yield return ($"Линия {segment.Id}", RouteMapSignalElementCategory.Segment, binding, false);
             }
         }
 
@@ -117,7 +126,7 @@ internal static class RouteMapSignalInventory
         {
             foreach (var binding in vehicle.Bindings)
             {
-                yield return ($"Объект {vehicle.Id}", RouteMapSignalElementCategory.Vehicle, binding);
+                yield return ($"Объект {vehicle.Id}", RouteMapSignalElementCategory.Vehicle, binding, false);
             }
         }
 
@@ -125,7 +134,16 @@ internal static class RouteMapSignalInventory
         {
             foreach (var binding in card.Bindings)
             {
-                yield return ($"Карточка {card.Id}", RouteMapSignalElementCategory.Card, binding);
+                yield return (
+                    $"Карточка {card.Id}",
+                    RouteMapSignalElementCategory.Card,
+                    binding,
+                    binding.Role switch
+                    {
+                        SignalBindingRole.StartCommand => card.StartButtonKind == RouteCommandButtonKind.Momentary,
+                        SignalBindingRole.StopCommand => card.StopButtonKind == RouteCommandButtonKind.Momentary,
+                        _ => false,
+                    });
             }
         }
     }

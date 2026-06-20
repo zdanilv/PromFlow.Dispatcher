@@ -3,9 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Configurator.Desktop.Workspace;assembly=Configurator.Desktop"
-             xmlns:modbus="using:Configurator.Desktop.Workspace.Modbus"
              xmlns:modbusDemo="using:Configurator.Desktop.Workspace.ModbusDemo"
-             xmlns:opcua="using:Configurator.Desktop.Workspace.OpcUa"
              xmlns:routeMap="using:Configurator.Desktop.Workspace.RouteMap"
              xmlns:signalMapping="using:Configurator.Desktop.Workspace.RouteMap.SignalMapping"
              mc:Ignorable="d"
@@ -41,14 +39,8 @@
             <TabItem Header="SignalId ↔ Modbus">
                 <signalMapping:RouteMapSignalMappingView DataContext="{Binding RouteMapSignalMapping}"/>
             </TabItem>
-            <TabItem Header="Modbus TCP">
-                <modbus:ModbusView DataContext="{Binding Modbus}"/>
-            </TabItem>
             <TabItem Header="Modbus Demo">
                 <modbusDemo:ModbusDemoView DataContext="{Binding ModbusDemo}"/>
-            </TabItem>
-            <TabItem Header="OPC UA">
-                <opcua:OpcUaView DataContext="{Binding OpcUa}"/>
             </TabItem>
         </TabControl>
     </Grid>

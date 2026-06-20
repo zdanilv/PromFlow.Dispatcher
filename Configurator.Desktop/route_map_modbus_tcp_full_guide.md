@@ -8,11 +8,11 @@
 RouteMap является первой вкладкой Workspace и экраном по умолчанию. Она отображает
 технологический маршрут, состояние узлов и линий, роли погрузки/назначения, карточки
 оборудования, TopBar и команды оператора. Источником данных может быть встроенный Mock
-или основной Modbus TCP runtime.
+или общий Modbus Demo TCP runtime.
 
-Диагностические экраны `Modbus TCP`, `Modbus Demo` и `OPC UA` остаются отдельными
-вкладками. `ModbusDemo` имеет собственную секцию конфигурации и не используется как
-источник RouteMap.
+В Workspace остаются вкладки `Route Map`, `SignalId ↔ Modbus` и `Modbus Demo`. Экран
+`Modbus Demo` владеет запуском, остановкой и настройкой TCP endpoint. RouteMap работает
+через тот же runtime, но декодирует snapshot по отдельной RouteMap-карте `Modbus.DataMap`.
 
 UI не является контуром функциональной безопасности. Блокировки, interlock, аварийная
 логика и окончательное разрешение исполнительных команд должны оставаться в PLC.
@@ -36,10 +36,10 @@ UI не является контуром функциональной безо�
 
 ### Запуск с PLC или локальным Modbus-сервером
 
-1. Заполните секции `Modbus.Client`, `Modbus.Server` и `Modbus.DataMap`.
+1. Настройте endpoint и lifecycle в секции `ModbusDemo` или на вкладке `Modbus Demo`.
 2. Убедитесь, что `DataMap[].Name` совпадает с `SignalId` RouteMap.
 3. Переключите `RouteMapRuntime.SignalSource` в `Modbus`.
-4. Настройте `Modbus.StartupMode` и `AutostartOnWorkspaceOpen`.
+4. Заполните RouteMap-карту `Modbus.DataMap` на вкладке `SignalId ↔ Modbus`.
 5. Сначала проверьте read-only сигналы, затем разрешайте команды.
 
 Пример:
@@ -50,6 +50,9 @@ UI не является контуром функциональной безо�
   "StaleAfterMs": 1500
 },
 "Modbus": {
+  "DataMap": []
+},
+"ModbusDemo": {
   "AutostartOnWorkspaceOpen": true,
   "StartupMode": "Client"
 }
@@ -60,9 +63,9 @@ UI не является контуром функциональной безо�
 ### Чтение данных
 
 ```text
-ModbusClientService / ModbusServerService
-  -> ModbusRuntimeService
-  -> ModbusTcpService
+ModbusDemo Client/Server settings
+  -> shared ModbusRuntimeService
+  -> RouteMap ModbusTcpService facade
   -> IModbusDataSnapshotSource
   -> ModbusTcpSignalValueProvider
   -> ISignalValueProvider
@@ -78,14 +81,14 @@ TopBar / узел / карточка оборудования
   -> SignalWriteRequest
   -> IEquipmentCommandDispatcher
   -> ModbusTcpCommandDispatcher
-  -> IModbusTcpService.SetAsync
-  -> Modbus client или локальный server runtime
+  -> RouteMap IModbusTcpService.SetAsync
+  -> shared Modbus client или локальный server runtime
   -> обычный poll/readback
 ```
 
 RouteMap не знает IP-адресов, UnitId, номеров регистров и coils. UI работает только с
 доменными `SignalId`, типами и направлениями bindings. Физическая адресация находится в
-`Modbus.DataMap`.
+`Modbus.DataMap`, а endpoint и lifecycle берутся из `ModbusDemo`.
 
 ### Выбор реализации через DI
 
@@ -110,7 +113,7 @@ RouteMap не знает IP-адресов, UnitId, номеров регист�
 | Modbus-контракты и options | `Configurator.Application/Services/Modbus` |
 | RouteMap UI и конфигурация | `Configurator.Desktop/Workspace/RouteMap` |
 | Modbus adapters RouteMap | `Configurator.Infrastructure.Modbus/RouteMap` |
-| Основной Modbus facade | `Configurator.Infrastructure.Modbus/Runtime/ModbusTcpService.cs` |
+| Shared Modbus facade/runtime | `Configurator.Infrastructure.Modbus/Runtime/ModbusTcpService.cs` |
 | DI и выбор источника | `Configurator.Boot/Program.cs` |
 | Runtime-конфигурация | `Configurator.Boot/appsettings.json` |
 | RouteMap unit-тесты | `Configurator.Tests.Unit/RouteMap` |
@@ -136,11 +139,11 @@ RouteMap не знает IP-адресов, UnitId, номеров регист�
 
 ### Корневая структура JSON
 
-Текущая версия схемы — `4`:
+Текущая версия схемы — `5`:
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 6,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -218,9 +221,9 @@ style, bindings
 
 ### Карточки оборудования
 
-Карточка содержит состояние, текст, bindings команд, доступность `ПУСК`/`СТОП`, стиль и
-привязку к цепочке. Вертикальный якорь может быть центром bounds цепочки или конкретным
-узлом.
+Карточка содержит состояние, текст, bindings команд, доступность `ПУСК`/`СТОП`,
+`startButtonKind`, `stopButtonKind`, стиль и привязку к цепочке. Вертикальный якорь
+может быть центром bounds цепочки или конкретным узлом.
 
 ### Заглушки
 
@@ -239,10 +242,10 @@ style, bindings
 |---|---|
 | Источник данных | Mock/Modbus, текущий источник и горячее переключение |
 | Карта и маршруты | Размеры, padding, палитра, цепочки |
-| TopBar | Тексты, цвета и bindings трех кнопок |
+| TopBar | Тексты, цвета, bindings трех кнопок и тип кнопки `АВАРИЯ` |
 | Узлы | Геометрия, роли, меню, стиль, bindings |
 | Линии | Endpoints, геометрия, стиль, bindings |
-| Карточки | Данные, команды, размеры и привязка |
+| Карточки | Данные, команды, типы `ПУСК`/`СТОП`, размеры и привязка |
 | Заглушки | Правила автоматической компоновки |
 
 Списки поддерживают поиск, добавление, дублирование и удаление. При переименовании ID
@@ -353,13 +356,19 @@ Dashboard получает целый словарь сигналов, прео�
 
 ## 8. Конфигурация Modbus TCP
 
-Основная секция находится в `Configurator.Boot/appsettings.json`:
+В `Configurator.Boot/appsettings.json` используются две секции:
+
+- `ModbusDemo` задает endpoint, lifecycle и карту данных для экрана `Modbus Demo`;
+- `Modbus` хранит RouteMap `DataMap` и `WriteConfirmationTimeoutMs`.
 
 ```json
 "Modbus": {
+  "WriteConfirmationTimeoutMs": 2000,
+  "DataMap": []
+},
+"ModbusDemo": {
   "AutostartOnWorkspaceOpen": false,
   "StartupMode": "None",
-  "WriteConfirmationTimeoutMs": 2000,
   "Client": {},
   "Server": {},
   "DataMap": []
@@ -375,13 +384,13 @@ Dashboard получает целый словарь сигналов, прео�
 | `Server` | Локальный Modbus TCP сервер |
 | `Both` | Одновременный запуск разрешенных ролей |
 
-`AutostartOnWorkspaceOpen=true` запускает выбранный режим при создании Workspace.
+`ModbusDemo.AutostartOnWorkspaceOpen=true` запускает выбранный режим при создании Workspace.
 Ошибки автозапуска логируются и не завершают приложение аварийно. При закрытии приложения
 Modbus runtime останавливается.
 
 ### Endpoint
 
-Основные поля клиента/сервера:
+Основные поля `ModbusDemo.Client`/`ModbusDemo.Server`:
 
 | Поле | Назначение |
 |---|---|
@@ -400,7 +409,7 @@ Modbus runtime останавливается.
 
 ### Правило адресации
 
-`DataMap[].Address` — нулевое смещение внутри области endpoint:
+`Modbus.DataMap[].Address` — нулевое смещение внутри области endpoint:
 
 ```text
 physical coil address = CoilStartAddress + Address
@@ -408,11 +417,12 @@ physical register address = HoldingRegisterStartAddress + Address
 ```
 
 Не записывайте в `Address` документационное обозначение вида `40001`. Используйте
-фактическое zero-based смещение, ожидаемое PLC и Modbus-библиотекой.
+фактическое zero-based смещение, ожидаемое PLC и Modbus-библиотекой. Базы адресов
+берутся из `ModbusDemo.Client` и `ModbusDemo.Server`.
 
 ## 9. Modbus DataMap
 
-Каждая точка имеет поля:
+Каждая точка `Modbus.DataMap` имеет поля:
 
 | Поле | Назначение |
 |---|---|
@@ -514,6 +524,14 @@ timestamp и состояние Modbus.
 - право на запись;
 - совместимость `SignalValueType` и `ModbusValueType`;
 - корректность значения и карты на уровне `IModbusTcpService`.
+
+`RouteCommandButtonKind` управляет только UI:
+
+- `Toggle` рендерит toggle-кнопку и хранит checked/readback состояние;
+- `Momentary` рендерит обычную кнопку и отправляет `true` на каждый клик.
+
+`ModbusWriteMode` управляет физической записью. Для новых mapping от momentary-команд
+`SignalId ↔ Modbus` предлагает `Pulse`, но существующие точки не меняет автоматически.
 
 ### Latched
 
@@ -670,7 +688,7 @@ Latched/Pulse, quality/stale, reconnect и локальный Modbus TCP server.
 ## 17. Ограничения и правила сопровождения
 
 - Не добавляйте Modbus-адреса в XAML, RouteMap ViewModel или `route-map.json`.
-- Не смешивайте основную `Modbus.DataMap` с `ModbusDemo.DataMap`.
+- Не смешивайте RouteMap-карту `Modbus.DataMap` с demo-картой `ModbusDemo.DataMap`.
 - Не обновляйте Avalonia controls из Modbus callback.
 - Не меняйте `SignalId` при изменении только физического адреса PLC.
 - Не назначайте Pulse без подтвержденной семантики PLC.
@@ -684,5 +702,5 @@ Latched/Pulse, quality/stale, reconnect и локальный Modbus TCP server.
 - `Configurator.Desktop/signal_id_modbus_tcp_mapping_guide.md` — SignalId и настройка физических связей.
 - `Configurator.Desktop/route_map_programmer_guide.md` — детали RouteMap UI, геометрии и редактора.
 - `Configurator.Desktop/modbus_tcp_integration_guide.md` — краткий гайд подключения Modbus.
-- `Configurator.Desktop/Описание ModbusDemo.md` — независимый диагностический ModbusDemo.
+- `Configurator.Desktop/Описание ModbusDemo.md` — экран Modbus Demo и общий TCP runtime.
 - `docs/promflow_dispatcher_route_map_ui_merge_recommendations.md` — итоговые рекомендации по слиянию.

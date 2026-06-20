@@ -162,7 +162,9 @@ public static class RouteMapSeed
                 new SignalBinding(SignalBindingRole.State, $"{id}.state", SignalBindingDirection.Read, SignalValueType.String),
                 new SignalBinding(SignalBindingRole.Text, $"{id}.text", SignalBindingDirection.Read, SignalValueType.UInt16),
                 new SignalBinding(SignalBindingRole.StartCommand, $"{id}.start", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+                new SignalBinding(SignalBindingRole.StartOffFeedback, $"{id}.start.off", SignalBindingDirection.Read, SignalValueType.Bool),
                 new SignalBinding(SignalBindingRole.StopCommand, $"{id}.stop", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+                new SignalBinding(SignalBindingRole.StopOffFeedback, $"{id}.stop.off", SignalBindingDirection.Read, SignalValueType.Bool),
             });
     }
 
@@ -176,9 +178,13 @@ public static class RouteMapSeed
         };
 
         if (menuKind is RouteNodeMenuKind.SendOnly or RouteNodeMenuKind.SendAndReturn)
+        {
             bindings.Add(new SignalBinding(SignalBindingRole.TargetCommand, $"route.node.{id}.target", SignalBindingDirection.ReadWrite, SignalValueType.Bool));
+        }
         if (menuKind == RouteNodeMenuKind.SendAndReturn)
+        {
             bindings.Add(new SignalBinding(SignalBindingRole.LoaderCommand, $"route.node.{id}.loader", SignalBindingDirection.ReadWrite, SignalValueType.Bool));
+        }
 
         return bindings.ToArray();
     }
@@ -202,6 +208,8 @@ public static class RouteMapSeed
             NormalForeground = "#FFFFFF",
             CheckedForeground = "#FFFFFF",
             Binding = new SignalBinding(SignalBindingRole.EmergencyCommand, "system.emergency", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+            OffFeedbackEnabled = true,
+            OffFeedbackBinding = new SignalBinding(SignalBindingRole.EmergencyOffFeedback, "system.emergency.off", SignalBindingDirection.Read, SignalValueType.Bool),
         });
 
     private static SignalBinding[] SegmentBindings(string id)

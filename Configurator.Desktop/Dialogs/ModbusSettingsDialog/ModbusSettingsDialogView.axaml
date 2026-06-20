@@ -22,11 +22,13 @@
         </Style>
     </UserControl.Styles>
 
+    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                  VerticalScrollBarVisibility="Auto"
+                  MaxHeight="820">
     <Border Padding="18"
             CornerRadius="8"
             Background="White"
-            Width="860"
-            MaxHeight="720">
+            Width="1320">
         <Grid RowDefinitions="Auto,*,Auto" RowSpacing="14">
             <StackPanel Spacing="3">
                 <TextBlock Classes="title" Text="{Binding Title}"/>
@@ -129,11 +131,12 @@
                                 HorizontalAlignment="Left"
                                 Command="{Binding AddDataPointCommand}"/>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding DataPoints}">
+                            <ItemsControl ItemsSource="{Binding DataPoints}" MinWidth="1270">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="dialog:ModbusDataPointEditorRow">
                                         <Border BorderBrush="#EDF1F5" BorderThickness="0,0,0,1" Padding="4">
-                                            <Grid ColumnDefinitions="150,140,70,70,130,130,70,110,100,90" ColumnSpacing="8">
+                                            <Grid Classes="modbus-data-point-row"
+                                                  ColumnDefinitions="210,160,96,96,150,150,96,130,110,110" ColumnSpacing="8">
                                                 <TextBox Classes="compact" PlaceholderText="Name" Text="{Binding Name, Mode=TwoWay}"/>
                                                 <ComboBox Grid.Column="1"
                                                           Classes="compact"
@@ -186,4 +189,5 @@
             </Grid>
         </Grid>
     </Border>
+    </ScrollViewer>
 </UserControl>

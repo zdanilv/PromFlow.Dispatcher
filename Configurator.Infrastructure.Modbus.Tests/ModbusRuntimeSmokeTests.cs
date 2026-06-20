@@ -31,7 +31,7 @@ public sealed class ModbusRuntimeSmokeTests
     }
 
     [Fact]
-    public async Task DependencyInjection_RegistersIndependentMainAndDemoStacks()
+    public async Task DependencyInjection_RegistersSharedDemoRuntimeAndSeparateFacades()
     {
         var mainPort = GetAvailablePort();
         var demoPort = GetDifferentAvailablePort(mainPort);
@@ -44,6 +44,7 @@ public sealed class ModbusRuntimeSmokeTests
 
         var mainFacade = provider.GetRequiredService<IModbusTcpService>();
         var demoFacade = provider.GetRequiredService<IModbusDemoTcpService>();
+        var runtime = provider.GetRequiredService<IModbusRuntimeService>();
         var optionsMonitor = provider.GetRequiredService<IOptionsMonitor<ModbusOptions>>();
         var demoOptionsProvider = provider.GetRequiredService<IModbusDemoOptionsProvider>();
 
@@ -56,10 +57,12 @@ public sealed class ModbusRuntimeSmokeTests
         Assert.False(demoOptionsProvider.CurrentValue.AutostartOnWorkspaceOpen);
         Assert.Equal(ModbusRunMode.None, optionsMonitor.CurrentValue.StartupMode);
         Assert.Equal(ModbusRunMode.None, demoOptionsProvider.CurrentValue.StartupMode);
+        Assert.Equal(demoPort, runtime.CurrentOptions.Client.Port);
+        Assert.Equal(demoPort, runtime.CurrentOptions.Server.Port);
     }
 
     [Fact]
-    public async Task MainAndDemoServers_CanRunOnDifferentPortsIndependently()
+    public async Task RouteMapAndDemoFacades_ShareDemoRuntimeWithSeparateDataMaps()
     {
         var mainPort = GetAvailablePort();
         var demoPort = GetDifferentAvailablePort(mainPort);
@@ -69,25 +72,48 @@ public sealed class ModbusRuntimeSmokeTests
         services.AddSingleton<IModbusDataMapValidator, ModbusDataMapValidator>();
         services.AddModbusInfrastructure(configuration);
         await using var provider = services.BuildServiceProvider();
-        var mainRuntime = provider.GetRequiredService<IModbusRuntimeService>();
+        var routeFacade = provider.GetRequiredService<IModbusTcpService>();
         var demoFacade = provider.GetRequiredService<IModbusDemoTcpService>();
-        var mainOptions = provider.GetRequiredService<IOptionsMonitor<ModbusOptions>>().CurrentValue;
+        var runtime = provider.GetRequiredService<IModbusRuntimeService>();
+        var routeDataMap = provider.GetRequiredService<IModbusDataMapRuntime>();
 
-        await mainRuntime.StartServerAsync(mainOptions);
         var demoStart = await demoFacade.StartServerAsync();
 
         Assert.True(demoStart.Succeeded, demoStart.ErrorMessage);
         Assert.True(await WaitForAsync(
-            () => mainRuntime.Status.ServerState == ModbusConnectionState.Running
+            () => runtime.Status.ServerState == ModbusConnectionState.Running
+                && routeFacade.State.ServerState == ModbusConnectionState.Running
                 && demoFacade.State.ServerState == ModbusConnectionState.Running));
-        Assert.Equal(ModbusConnectionState.Stopped, mainRuntime.Status.ClientState);
+        Assert.Equal(ModbusConnectionState.Stopped, runtime.Status.ClientState);
+        Assert.Equal(demoPort, runtime.CurrentOptions.Server.Port);
         Assert.Equal(ModbusConnectionState.Stopped, demoFacade.State.ClientState);
 
-        await demoFacade.StopAsync();
-        Assert.True(await WaitForAsync(() => demoFacade.State.ServerState == ModbusConnectionState.Stopped));
-        Assert.Equal(ModbusConnectionState.Running, mainRuntime.Status.ServerState);
+        var apply = routeDataMap.ApplyDataMap(
+        [
+            new ModbusDataPointOptions
+            {
+                Name = "route.hot",
+                Area = ModbusDataArea.Coil,
+                Address = 0,
+                Length = 1,
+                Access = ModbusDataAccess.ReadWrite,
+                Type = ModbusValueType.Bool
+            }
+        ]);
+        Assert.True(apply.Succeeded, apply.ErrorMessage);
 
-        await mainRuntime.StopAsync();
+        var routeWrite = await routeFacade.SetAsync("route.hot", true);
+        Assert.True(routeWrite.Succeeded, routeWrite.ErrorMessage);
+        var demoWrite = await demoFacade.SetAsync("demo.flag", false);
+        Assert.True(demoWrite.Succeeded, demoWrite.ErrorMessage);
+
+        var routeCannotReadDemo = await routeFacade.GetAsync<bool>("demo.flag");
+        var demoCannotReadRoute = await demoFacade.GetAsync<bool>("route.hot");
+
+        Assert.False(routeCannotReadDemo.Succeeded);
+        Assert.False(demoCannotReadRoute.Succeeded);
+        await demoFacade.StopAsync();
+        Assert.True(await WaitForAsync(() => runtime.Status.ServerState == ModbusConnectionState.Stopped));
     }
 
     [Fact]
@@ -518,6 +544,12 @@ public sealed class ModbusRuntimeSmokeTests
                 ["Modbus:Server:PollIntervalMs"] = "100",
                 ["Modbus:Server:CoilCount"] = "4",
                 ["Modbus:Server:RegisterCount"] = "4",
+                ["Modbus:DataMap:0:Name"] = "route.flag",
+                ["Modbus:DataMap:0:Area"] = "Coil",
+                ["Modbus:DataMap:0:Address"] = "0",
+                ["Modbus:DataMap:0:Length"] = "1",
+                ["Modbus:DataMap:0:Access"] = "ReadWrite",
+                ["Modbus:DataMap:0:Type"] = "Bool",
                 ["ModbusDemo:AutostartOnWorkspaceOpen"] = "false",
                 ["ModbusDemo:StartupMode"] = "None",
                 ["ModbusDemo:Client:Host"] = "127.0.0.1",
@@ -532,7 +564,13 @@ public sealed class ModbusRuntimeSmokeTests
                 ["ModbusDemo:Server:UnitId"] = "1",
                 ["ModbusDemo:Server:PollIntervalMs"] = "100",
                 ["ModbusDemo:Server:CoilCount"] = "4",
-                ["ModbusDemo:Server:RegisterCount"] = "4"
+                ["ModbusDemo:Server:RegisterCount"] = "4",
+                ["ModbusDemo:DataMap:0:Name"] = "demo.flag",
+                ["ModbusDemo:DataMap:0:Area"] = "Coil",
+                ["ModbusDemo:DataMap:0:Address"] = "0",
+                ["ModbusDemo:DataMap:0:Length"] = "1",
+                ["ModbusDemo:DataMap:0:Access"] = "ReadWrite",
+                ["ModbusDemo:DataMap:0:Type"] = "Bool"
             })
             .Build();
 

@@ -2,13 +2,10 @@ using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Runtime;
-using Configurator.Desktop.Workspace.Modbus;
 using Configurator.Desktop.Workspace.ModbusDemo;
-using Configurator.Desktop.Workspace.OpcUa;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ReactiveUI;
 
 namespace Configurator.Desktop.Workspace
@@ -23,29 +20,23 @@ namespace Configurator.Desktop.Workspace
 
         // Example data passed from the login screen: authorization token.
         public string AuthToken { get; }
-        public ModbusViewModel Modbus { get; }
         public ModbusDemoViewModel ModbusDemo { get; }
-        public OpcUaViewModel OpcUa { get; }
         public RouteMapDashboardViewModel RouteMapDashboard { get; }
         public RouteMapSignalMappingViewModel RouteMapSignalMapping { get; }
 
         public WorkspaceViewModel(
             IScreen hostScreen,
             IAuthApp authService,
-            ModbusViewModel modbus,
             ModbusDemoViewModel modbusDemo,
-            OpcUaViewModel opcUa,
             RouteMapDashboardViewModel routeMapDashboard,
             RouteMapSignalMappingViewModel routeMapSignalMapping,
             IModbusRuntimeService modbusRuntime,
-            IOptionsMonitor<ModbusOptions> modbusOptions,
+            IModbusDemoOptionsProvider modbusOptions,
             ILogger<WorkspaceViewModel> logger)
         {
             HostScreen = hostScreen;
             AuthToken = authService.IsAuthenticated.ToString();
-            Modbus = modbus;
             ModbusDemo = modbusDemo;
-            OpcUa = opcUa;
             RouteMapDashboard = routeMapDashboard;
             RouteMapSignalMapping = routeMapSignalMapping;
 
@@ -68,9 +59,7 @@ namespace Configurator.Desktop.Workspace
             _lifetimeCancellation.Dispose();
             RouteMapDashboard.Dispose();
             RouteMapSignalMapping.Dispose();
-            Modbus.Dispose();
             ModbusDemo.Dispose();
-            OpcUa.Dispose();
         }
 
         private static async Task StartModbusAsync(

@@ -59,7 +59,9 @@ public sealed class RouteMapSeedTests
         Assert.Equal(SignalBindingDirection.Read, bindingsByRole[SignalBindingRole.Text].Direction);
         Assert.Equal(Configurator.Application.Services.Signals.SignalValueType.UInt16, bindingsByRole[SignalBindingRole.Text].ValueType);
         Assert.Equal(SignalBindingDirection.ReadWrite, bindingsByRole[SignalBindingRole.StartCommand].Direction);
+        Assert.Equal(SignalBindingDirection.Read, bindingsByRole[SignalBindingRole.StartOffFeedback].Direction);
         Assert.Equal(SignalBindingDirection.ReadWrite, bindingsByRole[SignalBindingRole.StopCommand].Direction);
+        Assert.Equal(SignalBindingDirection.Read, bindingsByRole[SignalBindingRole.StopOffFeedback].Direction);
 
         var nodesById = definition.Nodes.ToDictionary(x => x.Id);
         Assert.Equal((240d, 500d), (nodesById["dead_end_lower"].X, nodesById["dead_end_lower"].Y));
@@ -93,12 +95,19 @@ public sealed class RouteMapSeedTests
             Assert.Equal(RouteNodeMenuKind.SendAndReturn, nodesById[nodeId].MenuKind);
 
         Assert.Equal(RouteNodeMenuKind.SendOnly, nodesById["concrete_bucket"].MenuKind);
+        Assert.DoesNotContain(nodesById["bsu_1"].Bindings, x => x.Role == SignalBindingRole.TargetOffFeedback);
+        Assert.DoesNotContain(nodesById["bsu_1"].Bindings, x => x.Role == SignalBindingRole.LoaderOffFeedback);
+        Assert.DoesNotContain(nodesById["concrete_bucket"].Bindings, x => x.Role == SignalBindingRole.TargetOffFeedback);
         Assert.Equal(RouteNodeMenuKind.None, nodesById["dead_end_lower"].MenuKind);
         Assert.Equal(RouteNodeMenuKind.None, nodesById["dead_end_upper"].MenuKind);
         Assert.NotNull(definition.TopBar);
         Assert.Equal("system.mode.automatic", definition.TopBar.Automatic.Binding.SignalId);
+        Assert.Null(definition.TopBar.Automatic.OffFeedbackBinding);
         Assert.Equal("system.mode.manual", definition.TopBar.Manual.Binding.SignalId);
+        Assert.Null(definition.TopBar.Manual.OffFeedbackBinding);
         Assert.Equal("system.emergency", definition.TopBar.Emergency.Binding.SignalId);
+        Assert.True(definition.TopBar.Emergency.OffFeedbackEnabled);
+        Assert.Equal("system.emergency.off", definition.TopBar.Emergency.OffFeedbackBinding?.SignalId);
         foreach (var node in definition.Nodes)
         {
             var active = Assert.Single(node.Bindings, x => x.Role == SignalBindingRole.ActiveRoute);

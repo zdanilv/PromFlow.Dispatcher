@@ -4,6 +4,7 @@ using Configurator.Desktop.Workspace.RouteMap.Models;
 using Avalonia;
 using Avalonia.Media;
 using ReactiveUI;
+using System.Reactive;
 
 namespace Configurator.Desktop.Workspace.RouteMap.ViewModels;
 
@@ -36,6 +37,10 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         Title = card.Title;
         IsStaticallyVisible = card.IsVisible;
         Style = card.Style ?? new EquipmentCardStyle();
+        StartButtonKind = card.StartButtonKind;
+        StopButtonKind = card.StopButtonKind;
+        StartOffFeedbackEnabled = card.StartOffFeedbackEnabled;
+        StopOffFeedbackEnabled = card.StopOffFeedbackEnabled;
         _usesDefaultPalette = palette is null;
         _palette = palette ?? new RouteMapPaletteSettings();
         _statusText = card.StatusText;
@@ -45,6 +50,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         _commandDispatcher = commandDispatcher;
         _startBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.StartCommand);
         _stopBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.StopCommand);
+        StartMomentaryCommand = ReactiveCommand.CreateFromTask(() => DispatchMomentaryAsync(_startBinding));
+        StopMomentaryCommand = ReactiveCommand.CreateFromTask(() => DispatchMomentaryAsync(_stopBinding));
 
     }
 
@@ -52,6 +59,14 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public string Title { get; }
     public bool IsStaticallyVisible { get; }
     public EquipmentCardStyle Style { get; }
+    public RouteCommandButtonKind StartButtonKind { get; }
+    public RouteCommandButtonKind StopButtonKind { get; }
+    public bool StartOffFeedbackEnabled { get; }
+    public bool StopOffFeedbackEnabled { get; }
+    public bool IsStartToggle => StartButtonKind == RouteCommandButtonKind.Toggle;
+    public bool IsStartMomentary => StartButtonKind == RouteCommandButtonKind.Momentary;
+    public bool IsStopToggle => StopButtonKind == RouteCommandButtonKind.Toggle;
+    public bool IsStopMomentary => StopButtonKind == RouteCommandButtonKind.Momentary;
     public bool IsVisible => IsStaticallyVisible && _runtimeVisible;
     public double CardWidth => Style.Width;
     public double MinimumCardWidth => Style.MinimumWidth;
@@ -72,6 +87,10 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public string StopText => Style.StopText;
     public IBrush StartBackground => RouteMapPalette.Brush(IsStartChecked ? Style.StartCheckedColor : Style.StartColor);
     public IBrush StopBackground => RouteMapPalette.Brush(IsStopChecked ? Style.StopCheckedColor : Style.StopColor);
+    public IBrush StartMomentaryBackground => RouteMapPalette.Brush(Style.StartColor);
+    public IBrush StopMomentaryBackground => RouteMapPalette.Brush(Style.StopColor);
+    public ReactiveCommand<Unit, Unit> StartMomentaryCommand { get; }
+    public ReactiveCommand<Unit, Unit> StopMomentaryCommand { get; }
 
     public string SendPointTitle
     {
@@ -142,6 +161,12 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             if (_isStartChecked == value)
                 return;
 
+            if (!_isApplyingRuntime && IsStartToggle && StartOffFeedbackEnabled && !value)
+            {
+                this.RaisePropertyChanged(nameof(IsStartChecked));
+                return;
+            }
+
             this.RaiseAndSetIfChanged(ref _isStartChecked, value);
             this.RaisePropertyChanged(nameof(StartBackground));
 
@@ -157,6 +182,12 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         {
             if (_isStopChecked == value)
                 return;
+
+            if (!_isApplyingRuntime && IsStopToggle && StopOffFeedbackEnabled && !value)
+            {
+                this.RaisePropertyChanged(nameof(IsStopChecked));
+                return;
+            }
 
             this.RaiseAndSetIfChanged(ref _isStopChecked, value);
             this.RaisePropertyChanged(nameof(StopBackground));
@@ -228,6 +259,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         return _commandDispatcher.DispatchAsync(
             new SignalWriteRequest(binding.SignalId, value, binding.ValueType));
     }
+
+    private Task DispatchMomentaryAsync(SignalBinding? binding) => DispatchAsync(binding, true);
 
     private static string SelectedPointTitle(
         IEnumerable<RouteNode> chainNodes,

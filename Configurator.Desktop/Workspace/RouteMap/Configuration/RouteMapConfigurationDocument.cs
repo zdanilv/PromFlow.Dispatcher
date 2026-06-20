@@ -35,7 +35,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 7;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();
@@ -120,7 +120,7 @@ public sealed class RouteTopBarConfiguration
 {
     public RouteTopBarButtonConfiguration Automatic { get; set; } = new();
     public RouteTopBarButtonConfiguration Manual { get; set; } = new();
-    public RouteTopBarButtonConfiguration Emergency { get; set; } = new();
+    public RouteTopBarEmergencyButtonConfiguration Emergency { get; set; } = new();
 
     public static RouteTopBarConfiguration CreateDefault() => new()
     {
@@ -128,13 +128,13 @@ public sealed class RouteTopBarConfiguration
             "АВТОМАТ", SignalBindingRole.AutomaticModeCommand, "system.mode.automatic"),
         Manual = RouteTopBarButtonConfiguration.Create(
             "РУЧНОЙ", SignalBindingRole.ManualModeCommand, "system.mode.manual"),
-        Emergency = RouteTopBarButtonConfiguration.Create(
+        Emergency = RouteTopBarEmergencyButtonConfiguration.Create(
             "АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency",
             normalBackground: "#D87868", checkedBackground: "#C83F30"),
     };
 }
 
-public sealed class RouteTopBarButtonConfiguration
+public class RouteTopBarButtonConfiguration : ReactiveObject
 {
     public string Text { get; set; } = string.Empty;
     public string NormalBackground { get; set; } = "#ECEFF1";
@@ -153,17 +153,72 @@ public sealed class RouteTopBarButtonConfiguration
             Text = text,
             NormalBackground = normalBackground,
             CheckedBackground = checkedBackground,
-            Bindings =
-            [
-                new SignalBindingConfiguration
-                {
-                    Role = role,
-                    SignalId = signalId,
-                    Direction = SignalBindingDirection.ReadWrite,
-                    ValueType = SignalValueType.Bool,
-                },
-            ],
+            Bindings = CreateButtonBindings(role, signalId),
         };
+
+    protected static ObservableCollection<SignalBindingConfiguration> CreateButtonBindings(
+        SignalBindingRole role,
+        string signalId) =>
+    [
+        new()
+        {
+            Role = role,
+            SignalId = signalId,
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Bool,
+        },
+    ];
+}
+
+public sealed class RouteTopBarEmergencyButtonConfiguration : RouteTopBarButtonConfiguration
+{
+    private RouteCommandButtonKind _buttonKind = RouteCommandButtonKind.Toggle;
+    private bool _offFeedbackEnabled = true;
+
+    public RouteCommandButtonKind ButtonKind
+    {
+        get => _buttonKind;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _buttonKind, value);
+            this.RaisePropertyChanged(nameof(IsOffFeedbackAvailable));
+        }
+    }
+
+    public bool OffFeedbackEnabled
+    {
+        get => _offFeedbackEnabled;
+        set => this.RaiseAndSetIfChanged(ref _offFeedbackEnabled, value);
+    }
+
+    [JsonIgnore]
+    public bool IsOffFeedbackAvailable => ButtonKind == RouteCommandButtonKind.Toggle;
+
+    public static new RouteTopBarEmergencyButtonConfiguration Create(
+        string text,
+        SignalBindingRole role,
+        string signalId,
+        string normalBackground = "#ECEFF1",
+        string checkedBackground = "#3378D6")
+    {
+        var bindings = CreateButtonBindings(role, signalId);
+        bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.EmergencyOffFeedback,
+            SignalId = $"{signalId}.off",
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.Bool,
+        });
+
+        return new()
+        {
+            Text = text,
+            NormalBackground = normalBackground,
+            CheckedBackground = checkedBackground,
+            Bindings = bindings,
+            OffFeedbackEnabled = true,
+        };
+    }
 }
 
 public sealed class RouteSegmentConfiguration : RouteMapConfigurationItem
@@ -199,11 +254,66 @@ public sealed class RouteSegmentStyleConfiguration
 
 public sealed class EquipmentCardConfiguration : RouteMapConfigurationItem
 {
+    private bool _canStart = true;
+    private bool _canStop = true;
+    private RouteCommandButtonKind _startButtonKind = RouteCommandButtonKind.Toggle;
+    private RouteCommandButtonKind _stopButtonKind = RouteCommandButtonKind.Toggle;
+    private bool _startOffFeedbackEnabled = true;
+    private bool _stopOffFeedbackEnabled = true;
+
     public string Title { get; set; } = string.Empty;
     public string StatusText { get; set; } = "Ожидание";
     public RouteObjectState State { get; set; } = RouteObjectState.Idle;
-    public bool CanStart { get; set; } = true;
-    public bool CanStop { get; set; } = true;
+    public bool CanStart
+    {
+        get => _canStart;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _canStart, value);
+            this.RaisePropertyChanged(nameof(IsStartOffFeedbackAvailable));
+        }
+    }
+    public bool CanStop
+    {
+        get => _canStop;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _canStop, value);
+            this.RaisePropertyChanged(nameof(IsStopOffFeedbackAvailable));
+        }
+    }
+    public RouteCommandButtonKind StartButtonKind
+    {
+        get => _startButtonKind;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _startButtonKind, value);
+            this.RaisePropertyChanged(nameof(IsStartOffFeedbackAvailable));
+        }
+    }
+    public RouteCommandButtonKind StopButtonKind
+    {
+        get => _stopButtonKind;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _stopButtonKind, value);
+            this.RaisePropertyChanged(nameof(IsStopOffFeedbackAvailable));
+        }
+    }
+    public bool StartOffFeedbackEnabled
+    {
+        get => _startOffFeedbackEnabled;
+        set => this.RaiseAndSetIfChanged(ref _startOffFeedbackEnabled, value);
+    }
+    public bool StopOffFeedbackEnabled
+    {
+        get => _stopOffFeedbackEnabled;
+        set => this.RaiseAndSetIfChanged(ref _stopOffFeedbackEnabled, value);
+    }
+    [JsonIgnore]
+    public bool IsStartOffFeedbackAvailable => CanStart && StartButtonKind == RouteCommandButtonKind.Toggle;
+    [JsonIgnore]
+    public bool IsStopOffFeedbackAvailable => CanStop && StopButtonKind == RouteCommandButtonKind.Toggle;
     public bool IsVisible { get; set; } = true;
     public string? AttachedChainId { get; set; }
     public double AttachedCardRightOffset { get; set; }

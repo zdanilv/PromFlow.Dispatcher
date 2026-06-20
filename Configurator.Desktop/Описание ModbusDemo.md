@@ -1,4 +1,4 @@
-ModbusDemo — отдельный демо-экран, который показывает простые привязки UI к Modbus TCP: toggle пишет/читает Coil, textbox пишет Holding Register, картинка показывается по значению регистра. Важно: демо использует отдельную секцию настроек ModbusDemo и отдельный стек сервисов, поэтому не мешает основному экрану Modbus TCP.
+ModbusDemo — экран управления общим Modbus TCP runtime. Он показывает простые привязки UI к Modbus TCP: toggle пишет/читает Coil, textbox пишет Holding Register, картинка показывается по значению регистра. Важно: endpoint, start/stop, autostart и lifecycle настраиваются на этом экране через секцию `ModbusDemo`. RouteMap использует тот же TCP runtime, но отдельную карту `Modbus.DataMap`.
 
 **Где Экран**  
 Экран подключён во вкладке Modbus Demo в WorkspaceView.axaml (line 38):
@@ -8,6 +8,8 @@ xml
 `<modbusDemo:ModbusDemoView DataContext="{Binding ModbusDemo}"/>`
 
 WorkspaceViewModel получает ModbusDemoViewModel через DI и кладёт его в свойство ModbusDemo: WorkspaceViewModel.cs (line 18).
+
+В Workspace рядом с ним остаются только `Route Map` и `SignalId ↔ Modbus`.
 
 Сам UI находится в ModbusDemoView.axaml (line 1). Основные биндинги:
 
@@ -58,7 +60,7 @@ csharp
 
 Класс настроек: ModbusOptions, внутри него Client, Server, DataMap, WriteConfirmationTimeoutMs.
 
-**DI И Отдельный Demo-Стек**  
+**DI И Общий Runtime**  
 Регистрация идёт в DependencyInjection.cs (line 25), метод:
 
 csharp
@@ -71,13 +73,23 @@ csharp
 
 `services.Configure<ModbusOptions>(configuration.GetSection(ModbusOptions.SectionName)); services.Configure<ModbusOptions>( ModbusOptions.DemoSectionName, configuration.GetSection(ModbusOptions.DemoSectionName));`
 
-Для демо вызывается CreateDemoTcpService(IServiceProvider serviceProvider). Там вручную создаётся отдельный набор:
+DI регистрирует один общий набор низкоуровневых сервисов:
 
 csharp
 
-`NamedOptionsMonitor<ModbusOptions>(..., "ModbusDemo") ModbusClientService ModbusServerService ModbusRuntimeService ModbusTcpService ModbusDemoTcpService`
+`ModbusClientService ModbusServerService ModbusRuntimeService`
 
-Это важно: ModbusDemoTcpService не переиспользует основной IModbusTcpService.
+`ModbusRuntimeService` получает настройки из named-секции `ModbusDemo`, поэтому именно
+демо-экран владеет TCP endpoint и lifecycle.
+
+Поверх общего runtime создаются два facade:
+
+- `IModbusDemoTcpService` использует `ModbusDemo.DataMap` для контролов demo UI;
+- `IModbusTcpService` для RouteMap использует `Modbus.DataMap`, но берет Client/Server
+  настройки из `ModbusDemo`.
+
+Это важно: demo UI и RouteMap не смешивают DataMap, но читают и пишут через один TCP
+runtime.
 
 **Facade**  
 ModbusDemoTcpService — тонкий делегирующий фасад: ModbusDemoTcpService.cs (line 12).
@@ -292,12 +304,14 @@ csharp
 - _clientService.StopAsync(...)
 - _serverService.StopAsync(...)
 
-При закрытии приложения App.StopModbusRuntimeAsync() дополнительно останавливает и основной runtime, и demo facade. Это в App.axaml.cs (line 67).
+При закрытии приложения App.StopModbusRuntimeAsync() останавливает demo facade, который
+останавливает общий runtime. Если demo facade недоступен, приложение останавливает runtime
+напрямую. Это в App.axaml.cs.
 
 **Коротко**  
 ModbusDemoView только отображает кнопки и поля.  
 ModbusDemoViewModel переводит действия пользователя в команды IModbusDemoTcpService.  
-ModbusDemoTcpService отделяет demo от основного Modbus.  
+ModbusDemoTcpService отделяет demo-карту данных от RouteMap-карты, но использует общий runtime.  
 ModbusTcpService знает про именованные точки DemoButton, DemoInput, DemoImageVisible.  
 ModbusRuntimeService координирует клиент и сервер.  
 ModbusClientService реально подключается по TCP и читает/пишет через ModbusIpMaster.  

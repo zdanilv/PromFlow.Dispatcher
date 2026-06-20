@@ -8,19 +8,16 @@ using Configurator.Application.Services.Modbus.Validation;
 namespace Configurator.Infrastructure.Modbus.Runtime;
 
 /// <summary>
-/// Делегирующий фасад, владеющий отдельным Modbus-стеком демо-экрана.
+/// Делегирующий фасад demo-карты поверх общего Modbus runtime.
 /// </summary>
 internal sealed class ModbusDemoTcpService(
-    IModbusTcpService facade,
-    IModbusRuntimeService runtime,
-    IModbusClientService client,
-    IModbusServerService server) : IModbusDemoTcpService
+    IModbusTcpService facade) : IModbusDemoTcpService
 {
     private int _disposed;
 
-    /// <summary>
-    /// Текущее состояние независимого демо-сервиса Modbus.
-    /// </summary>
+/// <summary>
+/// Текущее состояние общего Modbus runtime со стороны demo-фасада.
+/// </summary>
     public ModbusServiceState State => facade.State;
 
     /// <summary>
@@ -79,8 +76,5 @@ internal sealed class ModbusDemoTcpService(
         }
 
         await facade.DisposeAsync();
-        await runtime.DisposeAsync();
-        await client.DisposeAsync();
-        await server.DisposeAsync();
     }
 }

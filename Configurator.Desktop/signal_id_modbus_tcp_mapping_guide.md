@@ -122,9 +122,7 @@ plc1.db20.value         # плохо, если это физическое ра�
 ```text
 Route Map
 SignalId ↔ Modbus
-Modbus TCP
 Modbus Demo
-OPC UA
 ```
 
 Вкладка автоматически читает актуальную RouteMap definition и показывает все уникальные
@@ -180,12 +178,16 @@ SignalId из TopBar, узлов, линий, vehicles и карточек.
 | `Float32` | `HoldingRegister` | `Real` | 2 |
 | `String` | `HoldingRegister` | `String` | 1 |
 
+Для новых связей, созданных от momentary-команд RouteMap (`ПУСК`, `СТОП`, `АВАРИЯ`),
+`WriteMode` по умолчанию становится `Pulse`. Для остальных команд и для старых
+существующих точек значение не меняется автоматически.
+
 Адрес всегда вводится пользователем по официальной карте PLC. Вкладка не пытается
 самостоятельно распределять production-адреса.
 
 ### Удаление связи
 
-Кнопка `Удалить` удаляет из основной `Modbus.DataMap` только точку выбранного SignalId
+Кнопка `Удалить` удаляет из RouteMap-карты `Modbus.DataMap` только точку выбранного SignalId
 после сохранения. Сторонние и диагностические точки, которых нет в актуальной RouteMap,
 сохраняются без изменений.
 
@@ -194,7 +196,7 @@ SignalId из TopBar, узлов, линий, vehicles и карточек.
 После горячего применения новой RouteMap definition список SignalId перестраивается.
 Несохраненные строки с теми же SignalId сохраняют введенные значения.
 
-Если `Modbus.DataMap` изменен в другой вкладке или непосредственно в конфигурации:
+Если `Modbus.DataMap` изменен снаружи или непосредственно в конфигурации:
 
 - при чистом редакторе список обновляется автоматически;
 - при локальном черновике показывается предупреждение;
@@ -223,8 +225,9 @@ BitIndex                    = 5
 Сначала уточните, использует ли документация 0-based или 1-based notation, и преобразуйте
 его в offset, который ожидает Modbus-библиотека.
 
-Вкладка отдельно показывает вычисленный адрес для Client и Server, поскольку их
-`StartAddress` могут отличаться.
+Вкладка отдельно показывает вычисленный адрес для Client и Server. Базы адресов берутся
+из `ModbusDemo.Client` и `ModbusDemo.Server`, потому что именно экран `Modbus Demo`
+владеет TCP endpoint и lifecycle. Сохраняется при этом только `Modbus.DataMap`.
 
 ## 6. Варианты хранения Bool
 
@@ -321,8 +324,8 @@ snapshots направляются выбранному backend.
 
 Переключение на Modbus не запускает TCP runtime. Соединение запускается:
 
-- вручную на вкладке `Modbus TCP`;
-- автоматически через `Modbus.AutostartOnWorkspaceOpen` и `StartupMode`.
+- вручную на вкладке `Modbus Demo`;
+- автоматически через `ModbusDemo.AutostartOnWorkspaceOpen` и `StartupMode`.
 
 Если Modbus остановлен, RouteMap получает bad quality/stale вместо аварийного завершения.
 
@@ -330,7 +333,7 @@ snapshots направляются выбранному backend.
 
 После сохранения вкладка:
 
-1. записывает полную секцию `Modbus`, сохраняя сторонние точки;
+1. записывает секцию `Modbus`, сохраняя сторонние точки RouteMap-карты;
 2. передает новый DataMap в `IModbusDataMapRuntime`;
 3. атомарно заменяет lookup работающего facade без разрыва TCP-соединения;
 4. очищает старые значения и register shadow;
@@ -397,7 +400,7 @@ PulseDurationMs = 300
 
 1. Получить утвержденную карту coils/registers и bit layout.
 2. Уточнить 0-based/1-based notation каждого диапазона.
-3. Настроить Host, Port, UnitId, StartAddress и Count на вкладке Modbus TCP.
+3. Настроить Host, Port, UnitId, StartAddress и Count на вкладке Modbus Demo.
 4. Проверить все RouteMap SignalId во вкладке сопоставлений.
 5. Устранить строки `Не настроен` и `Ошибка`.
 6. Проверить отсутствие физических конфликтов.
@@ -414,4 +417,4 @@ PulseDurationMs = 300
 - `route_map_modbus_tcp_full_guide.md` — полное описание RouteMap и Modbus TCP.
 - `route_map_programmer_guide.md` — структура RouteMap, JSON и редактор.
 - `modbus_tcp_integration_guide.md` — краткое руководство интеграции.
-- `Описание ModbusDemo.md` — независимый диагностический стек ModbusDemo.
+- `Описание ModbusDemo.md` — экран Modbus Demo и общий TCP runtime.

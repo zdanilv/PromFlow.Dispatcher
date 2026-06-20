@@ -2,26 +2,40 @@
 
 ## Архитектура
 
-RouteMap работает только с доменными `SignalId`:
+RouteMap работает только с доменными `SignalId` и не хранит IP, UnitId или физические
+адреса в `route-map.json`, XAML и ViewModel.
 
 ```text
-ModbusTcpService
+ModbusDemo screen
+  -> IModbusDemoTcpService
+  -> shared ModbusRuntimeService / client / server
+
+shared runtime snapshots
+  -> RouteMap IModbusTcpService facade
   -> IModbusDataSnapshotSource
   -> ModbusTcpSignalValueProvider
-  -> ISignalValueProvider
   -> RouteMapRuntimeMapper
   -> UI
 
-UI
-  -> IEquipmentCommandDispatcher
+RouteMap UI commands
   -> ModbusTcpCommandDispatcher
-  -> IModbusTcpService
+  -> RouteMap IModbusTcpService facade
+  -> shared ModbusRuntimeService / client / server
 ```
 
-IP, UnitId, адреса и номера битов находятся в `Configurator.Boot/appsettings.json`,
-секция `Modbus.DataMap`. В `route-map.json`, XAML и ViewModel Modbus-адресов нет.
+`ModbusDemo` является единственным экраном запуска, остановки и настройки Modbus TCP
+подключения. `ModbusDemo.Client`, `ModbusDemo.Server`, `AutostartOnWorkspaceOpen` и
+`StartupMode` задают endpoint и lifecycle.
 
-## Выбор Источника
+Карты данных разделены:
+
+- `ModbusDemo.DataMap` используется только контролами экрана `Modbus Demo`;
+- `Modbus.DataMap` используется RouteMap и вкладкой `SignalId ↔ Modbus`;
+- обе карты читают и пишут через общий TCP runtime.
+
+В Workspace остаются только вкладки `Route Map`, `SignalId ↔ Modbus`, `Modbus Demo`.
+
+## Выбор Источника RouteMap
 
 ```json
 "RouteMapRuntime": {
@@ -30,25 +44,21 @@ IP, UnitId, адреса и номера битов находятся в `Confi
 }
 ```
 
-- `Mock` использует `MockSignalProvider` и не требует PLC;
-- `Modbus` использует основной `IModbusTcpService`;
-- `ModbusDemo` всегда остается отдельным стеком и отдельной секцией конфигурации.
+- `Mock` использует встроенную симуляцию и не требует PLC;
+- `Modbus` использует общий demo runtime, но декодирует snapshot по `Modbus.DataMap`.
 
-Источник можно переключить без перезапуска в `Route Map` → `НАСТРОЙКИ` →
-`Источник данных`. `ПРИМЕНИТЬ` меняет текущую сессию, `СОХРАНИТЬ` также обновляет
-`RouteMapRuntime` в `appsettings.json`. Переключение на Modbus не запускает соединение.
+Источник переключается в `Route Map` -> `НАСТРОЙКИ` -> `Источник данных`.
+`ПРИМЕНИТЬ` меняет текущую сессию, `СОХРАНИТЬ` также обновляет `RouteMapRuntime` в
+`appsettings.json`. Переключение на Modbus не запускает соединение: запуск выполняется
+на вкладке `Modbus Demo`.
 
-Связи SignalId с физическими адресами редактируются на отдельной вкладке
-`SignalId ↔ Modbus`. Подробности: `signal_id_modbus_tcp_mapping_guide.md`.
-
-`Modbus.AutostartOnWorkspaceOpen` и `Modbus.StartupMode` применяются при создании
-Workspace. Допустимы `None`, `Client`, `Server` и `Both`.
+Связи SignalId с адресами редактируются на вкладке `SignalId ↔ Modbus`.
 
 ## Каталог SignalId
 
 `ModbusDataPointOptions.Name` должен точно совпадать с `SignalBinding.SignalId`.
-Адрес хранится как нулевое смещение относительно `CoilStartAddress` или
-`HoldingRegisterStartAddress` endpoint.
+`Address` хранится как нулевое смещение относительно `ModbusDemo.Client` или
+`ModbusDemo.Server` start address.
 
 Обычный Coil:
 
@@ -75,52 +85,35 @@ Bool внутри Holding Register:
   "BitIndex": 0,
   "Access": "ReadWrite",
   "Type": "Bool",
-  "WriteMode": "Latched"
+  "WriteMode": "Pulse",
+  "PulseDurationMs": 300
 }
 ```
 
 Для register-bit точки обязательны `Type=Bool`, `Length=1` и `BitIndex=0..15`.
-Запись выполняется как сериализованный read-modify-write. Последнее сырое слово
-поддерживается из poll snapshot и после успешных записей, поэтому параллельные изменения
-соседних битов не теряются. До получения первого слова bit-write отклоняется.
+Запись выполняется как сериализованный read-modify-write.
 
 ## Семантика Команд
 
-`WriteMode` задается отдельно для каждой writable-точки:
+`RouteCommandButtonKind` и `ModbusWriteMode` отвечают за разные уровни:
 
-- `Latched` записывает переданное `true/false` и для readable-точки ждет readback;
-- `Pulse` обрабатывает запрос `true`, записывает `true`, ждет `PulseDurationMs`, затем
-  гарантированно пытается записать `false`; входной запрос `false` игнорируется.
+- `RouteCommandButtonKind.Toggle` рендерит toggle-кнопку и хранит checked/readback state;
+- `RouteCommandButtonKind.Momentary` рендерит обычную кнопку и по клику отправляет `true`;
+- `ModbusWriteMode.Latched` физически записывает переданное значение;
+- `ModbusWriteMode.Pulse` физически пишет `true`, ждет `PulseDurationMs`, затем пишет `false`.
 
-Значение по умолчанию — `Latched`, длительность импульса — `300 ms`. Не назначайте
-`Pulse` режимам, ролям маршрута или toggle-кнопкам без подтвержденной PLC-семантики.
-
-## Snapshots, Quality И Stale
-
-`IModbusTcpService.Subscribe` сохраняет прежний контракт и уведомляет только при изменении
-точки. `IModbusDataSnapshotSource` дополнительно публикует согласованный набор именованных
-значений на каждом poll, даже если данные не изменились.
-
-`ModbusTcpSignalValueProvider`:
-
-- преобразует значения в `SignalValue`;
-- публикует `connection.status` из `ModbusServiceState`;
-- ставит плохое quality при `Stopped`, `Faulted` и `Reconnecting`;
-- ставит `IsStale`, если snapshot старше `RouteMapRuntime.StaleAfterMs`;
-- не обращается к Avalonia dispatcher: перевод на UI-поток выполняет dashboard.
-
-При `SignalSource=Modbus` диагностика сопоставляет актуальные bindings RouteMap с
-`Modbus.DataMap` и пишет предупреждения для отсутствующих SignalId, неправильного доступа
-и несовместимого типа. Ошибка конфигурации не завершает приложение.
+Для новых mapping от momentary-команд вкладка `SignalId ↔ Modbus` по умолчанию ставит
+`WriteMode=Pulse`. Существующие точки не меняются автоматически.
 
 ## Ввод В Эксплуатацию
 
-1. Оставить `SignalSource=Mock` и проверить UI, настройки и JSON migrations.
-2. Заполнить production `Modbus.DataMap`, не меняя RouteMap JSON.
-3. Переключить `SignalSource=Modbus`, начать с read-only сигналов.
-4. Сверить значения и bit order с диагностикой PLC.
-5. Последовательно разрешить TopBar, роли узлов и ПУСК/СТОП.
-6. Проверить readback, timeout, reconnect и interlock на стенде.
+1. Оставить `SignalSource=Mock` и проверить RouteMap UI.
+2. Настроить endpoint и lifecycle на вкладке `Modbus Demo`.
+3. Заполнить `Modbus.DataMap` на вкладке `SignalId ↔ Modbus`.
+4. Заполнить `ModbusDemo.DataMap` только для контролов demo-экрана.
+5. Запустить Client или Server на вкладке `Modbus Demo`.
+6. Переключить RouteMap на `SignalSource=Modbus`.
+7. Проверить readback, timeout, reconnect и interlock на стенде.
 
 UI не является контуром функциональной безопасности. Interlock режимов, аварии и
 исполнительных механизмов должен оставаться в PLC.
@@ -128,8 +121,6 @@ UI не является контуром функциональной безо�
 ## Проверка
 
 ```powershell
-dotnet build .\Configurator.Boot\Configurator.Boot.csproj --no-restore
-dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore
-dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~RouteMap" -p:RouteMapOnly=true
-dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.csproj --no-restore
+dotnet build .\DesktopTemplate.slnx --no-restore
+dotnet test .\DesktopTemplate.slnx --no-restore
 ```

@@ -27,6 +27,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     private readonly Dictionary<string, ModbusDataValue> _latestValues = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<Action<ModbusDataValue>>> _subscriptions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, ushort> _holdingRegisterShadow = [];
+    private int _disposed;
     private ModbusOptions _currentOptions;
     private ModbusServiceState _state = ModbusServiceState.Stopped;
     private ModbusDataSnapshot _currentDataSnapshot = ModbusDataSnapshot.Empty;
@@ -95,7 +96,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     {
         ArgumentNullException.ThrowIfNull(dataMap);
 
-        var nextOptions = _currentOptions.Clone();
+        var nextOptions = _optionsMonitor.CurrentValue.Clone();
         nextOptions.DataMap = dataMap.Select(point => point.Clone()).ToList();
         var validation = ValidateForActiveRoles(nextOptions);
         if (!validation.Succeeded)
@@ -343,6 +344,11 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     /// </summary>
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         _runtimeService.StatusChanged -= OnRuntimeStatusChanged;
         _runtimeService.SnapshotChanged -= OnRuntimeSnapshotChanged;
         await StopAsync();

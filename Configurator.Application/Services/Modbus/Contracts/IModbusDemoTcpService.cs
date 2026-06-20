@@ -8,6 +8,6 @@ using Configurator.Application.Services.Modbus.Validation;
 namespace Configurator.Application.Services.Modbus.Contracts;
 
 /// <summary>
-/// Маркерный фасад для независимого Modbus TCP демо-экрана.
+/// Маркерный фасад demo-карты поверх общего Modbus TCP runtime.
 /// </summary>
 public interface IModbusDemoTcpService : IModbusTcpService;

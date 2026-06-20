@@ -53,6 +53,21 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 4;
                     wasMigrated = true;
                     break;
+                case 4:
+                    ApplyVersion5(document);
+                    document.SchemaVersion = 5;
+                    wasMigrated = true;
+                    break;
+                case 5:
+                    ApplyVersion6(document);
+                    document.SchemaVersion = 6;
+                    wasMigrated = true;
+                    break;
+                case 6:
+                    ApplyVersion7(document);
+                    document.SchemaVersion = 7;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }
@@ -171,6 +186,93 @@ public sealed class RouteMapConfigurationMigrator
         }
     }
 
+    private static void ApplyVersion5(RouteMapConfigurationDocument document)
+    {
+        document.TopBar ??= RouteTopBarConfiguration.CreateDefault();
+        document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create(
+            "АВАРИЯ",
+            SignalBindingRole.EmergencyCommand,
+            "system.emergency",
+            normalBackground: "#D87868",
+            checkedBackground: "#C83F30");
+        document.TopBar.Emergency.ButtonKind = RouteCommandButtonKind.Toggle;
+
+        foreach (var card in document.Cards)
+        {
+            card.StartButtonKind = RouteCommandButtonKind.Toggle;
+            card.StopButtonKind = RouteCommandButtonKind.Toggle;
+        }
+    }
+
+    private static void ApplyVersion6(RouteMapConfigurationDocument document)
+    {
+        document.TopBar ??= RouteTopBarConfiguration.CreateDefault();
+        document.TopBar.Automatic ??= RouteTopBarButtonConfiguration.Create("РђР’РўРћРњРђРў", SignalBindingRole.AutomaticModeCommand, "system.mode.automatic");
+        document.TopBar.Manual ??= RouteTopBarButtonConfiguration.Create("Р РЈР§РќРћР™", SignalBindingRole.ManualModeCommand, "system.mode.manual");
+        document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create(
+            "РђР’РђР РРЇ",
+            SignalBindingRole.EmergencyCommand,
+            "system.emergency",
+            normalBackground: "#D87868",
+            checkedBackground: "#C83F30");
+        EnsureBinding(document.TopBar.Automatic.Bindings, SignalBindingRole.AutomaticModeOffFeedback, "system.mode.automatic.off", SignalBindingDirection.Read);
+        EnsureBinding(document.TopBar.Manual.Bindings, SignalBindingRole.ManualModeOffFeedback, "system.mode.manual.off", SignalBindingDirection.Read);
+        EnsureBinding(document.TopBar.Emergency.Bindings, SignalBindingRole.EmergencyOffFeedback, "system.emergency.off", SignalBindingDirection.Read);
+
+        foreach (var node in document.Nodes)
+        {
+            if (node.MenuKind is RouteNodeMenuKind.SendOnly or RouteNodeMenuKind.SendAndReturn)
+                EnsureBinding(node.Bindings, SignalBindingRole.TargetOffFeedback, $"route.node.{node.Id}.target.off", SignalBindingDirection.Read);
+            if (node.MenuKind == RouteNodeMenuKind.SendAndReturn)
+                EnsureBinding(node.Bindings, SignalBindingRole.LoaderOffFeedback, $"route.node.{node.Id}.loader.off", SignalBindingDirection.Read);
+        }
+
+        foreach (var card in document.Cards)
+        {
+            EnsureBinding(card.Bindings, SignalBindingRole.StartOffFeedback, $"{card.Id}.start.off", SignalBindingDirection.Read);
+            EnsureBinding(card.Bindings, SignalBindingRole.StopOffFeedback, $"{card.Id}.stop.off", SignalBindingDirection.Read);
+        }
+    }
+
+    private static void ApplyVersion7(RouteMapConfigurationDocument document)
+    {
+        foreach (var node in document.Nodes)
+            RemoveBindings(node.Bindings, SignalBindingRole.TargetOffFeedback, SignalBindingRole.LoaderOffFeedback);
+
+        document.TopBar ??= RouteTopBarConfiguration.CreateDefault();
+        document.TopBar.Automatic ??= RouteTopBarButtonConfiguration.Create("АВТОМАТ", SignalBindingRole.AutomaticModeCommand, "system.mode.automatic");
+        document.TopBar.Manual ??= RouteTopBarButtonConfiguration.Create("РУЧНОЙ", SignalBindingRole.ManualModeCommand, "system.mode.manual");
+        document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create(
+            "АВАРИЯ",
+            SignalBindingRole.EmergencyCommand,
+            "system.emergency",
+            normalBackground: "#D87868",
+            checkedBackground: "#C83F30");
+        RemoveBindings(document.TopBar.Automatic.Bindings, SignalBindingRole.AutomaticModeOffFeedback);
+        RemoveBindings(document.TopBar.Manual.Bindings, SignalBindingRole.ManualModeOffFeedback);
+
+        document.TopBar.Emergency.OffFeedbackEnabled =
+            document.TopBar.Emergency.ButtonKind == RouteCommandButtonKind.Toggle;
+        if (document.TopBar.Emergency.OffFeedbackEnabled)
+            EnsureBinding(document.TopBar.Emergency.Bindings, SignalBindingRole.EmergencyOffFeedback, "system.emergency.off", SignalBindingDirection.Read);
+        else
+            RemoveBindings(document.TopBar.Emergency.Bindings, SignalBindingRole.EmergencyOffFeedback);
+
+        foreach (var card in document.Cards)
+        {
+            card.StartOffFeedbackEnabled = card.StartButtonKind == RouteCommandButtonKind.Toggle;
+            card.StopOffFeedbackEnabled = card.StopButtonKind == RouteCommandButtonKind.Toggle;
+            if (card.StartOffFeedbackEnabled)
+                EnsureBinding(card.Bindings, SignalBindingRole.StartOffFeedback, $"{card.Id}.start.off", SignalBindingDirection.Read);
+            else
+                RemoveBindings(card.Bindings, SignalBindingRole.StartOffFeedback);
+            if (card.StopOffFeedbackEnabled)
+                EnsureBinding(card.Bindings, SignalBindingRole.StopOffFeedback, $"{card.Id}.stop.off", SignalBindingDirection.Read);
+            else
+                RemoveBindings(card.Bindings, SignalBindingRole.StopOffFeedback);
+        }
+    }
+
     private static void EnsureTopBarButton(
         RouteTopBarButtonConfiguration button,
         string defaultText,
@@ -203,5 +305,14 @@ public sealed class RouteMapConfigurationMigrator
 
         binding.Direction = direction;
         binding.ValueType = SignalValueType.Bool;
+    }
+
+    private static void RemoveBindings(
+        ICollection<SignalBindingConfiguration> bindings,
+        params SignalBindingRole[] roles)
+    {
+        var roleSet = roles.ToHashSet();
+        foreach (var binding in bindings.Where(x => roleSet.Contains(x.Role)).ToArray())
+            bindings.Remove(binding);
     }
 }

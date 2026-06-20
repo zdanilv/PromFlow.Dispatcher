@@ -2,6 +2,7 @@ using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
+using System.Reactive.Linq;
 using Xunit;
 
 namespace Configurator.Tests.Unit.RouteMap;
@@ -32,7 +33,7 @@ public sealed class EquipmentCardViewModelTests
     }
 
     [Fact]
-    public void Start_toggle_dispatches_true_and_false()
+    public void Start_toggle_dispatches_true_only_and_ignores_user_false()
     {
         var dispatcher = new CapturingEquipmentCommandDispatcher();
         var card = RouteMapSeed.Create().MapEquipment.Single();
@@ -41,24 +42,15 @@ public sealed class EquipmentCardViewModelTests
         viewModel.IsStartChecked = true;
         viewModel.IsStartChecked = false;
 
-        Assert.Collection(
-            dispatcher.Requests,
-            request =>
-            {
-                Assert.Equal("equip.bucket.start", request.SignalId);
-                Assert.Equal(true, request.Value);
-                Assert.Equal(SignalValueType.Bool, request.ValueType);
-            },
-            request =>
-            {
-                Assert.Equal("equip.bucket.start", request.SignalId);
-                Assert.Equal(false, request.Value);
-                Assert.Equal(SignalValueType.Bool, request.ValueType);
-            });
+        var request = Assert.Single(dispatcher.Requests);
+        Assert.Equal("equip.bucket.start", request.SignalId);
+        Assert.Equal(true, request.Value);
+        Assert.Equal(SignalValueType.Bool, request.ValueType);
+        Assert.True(viewModel.IsStartChecked);
     }
 
     [Fact]
-    public void Stop_toggle_dispatches_true_and_false()
+    public void Stop_toggle_dispatches_true_only_and_ignores_user_false()
     {
         var dispatcher = new CapturingEquipmentCommandDispatcher();
         var card = RouteMapSeed.Create().MapEquipment.Single();
@@ -67,20 +59,57 @@ public sealed class EquipmentCardViewModelTests
         viewModel.IsStopChecked = true;
         viewModel.IsStopChecked = false;
 
+        var request = Assert.Single(dispatcher.Requests);
+        Assert.Equal("equip.bucket.stop", request.SignalId);
+        Assert.Equal(true, request.Value);
+        Assert.Equal(SignalValueType.Bool, request.ValueType);
+        Assert.True(viewModel.IsStopChecked);
+    }
+
+    [Fact]
+    public void Start_toggle_dispatches_false_when_off_feedback_is_disabled()
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var card = RouteMapSeed.Create().MapEquipment.Single() with
+        {
+            StartOffFeedbackEnabled = false,
+            Bindings = RouteMapSeed.Create().MapEquipment.Single().Bindings
+                .Where(x => x.Role != SignalBindingRole.StartOffFeedback)
+                .ToArray()
+        };
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+
+        viewModel.IsStartChecked = true;
+        viewModel.IsStartChecked = false;
+
+        Assert.Collection(dispatcher.Requests,
+            request => Assert.Equal(("equip.bucket.start", true), (request.SignalId, request.Value)),
+            request => Assert.Equal(("equip.bucket.start", false), (request.SignalId, request.Value)));
+        Assert.False(viewModel.IsStartChecked);
+    }
+
+    [Fact]
+    public async Task Momentary_commands_dispatch_true_without_changing_checked_state()
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var card = RouteMapSeed.Create().MapEquipment.Single() with
+        {
+            StartButtonKind = RouteCommandButtonKind.Momentary,
+            StopButtonKind = RouteCommandButtonKind.Momentary
+        };
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+
+        await viewModel.StartMomentaryCommand.Execute().FirstAsync();
+        await viewModel.StopMomentaryCommand.Execute().FirstAsync();
+
+        Assert.False(viewModel.IsStartChecked);
+        Assert.False(viewModel.IsStopChecked);
+        Assert.True(viewModel.IsStartMomentary);
+        Assert.True(viewModel.IsStopMomentary);
         Assert.Collection(
             dispatcher.Requests,
-            request =>
-            {
-                Assert.Equal("equip.bucket.stop", request.SignalId);
-                Assert.Equal(true, request.Value);
-                Assert.Equal(SignalValueType.Bool, request.ValueType);
-            },
-            request =>
-            {
-                Assert.Equal("equip.bucket.stop", request.SignalId);
-                Assert.Equal(false, request.Value);
-                Assert.Equal(SignalValueType.Bool, request.ValueType);
-            });
+            request => Assert.Equal(("equip.bucket.start", true), (request.SignalId, request.Value)),
+            request => Assert.Equal(("equip.bucket.stop", true), (request.SignalId, request.Value)));
     }
 
     [Theory]

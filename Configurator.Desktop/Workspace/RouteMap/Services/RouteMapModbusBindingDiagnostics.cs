@@ -99,12 +99,15 @@ public sealed class RouteMapModbusBindingDiagnostics : IDisposable
 
         if (definition.TopBar is not null)
         {
-            bindings = bindings.Concat(
-            [
+            var topBarBindings = new[]
+            {
                 definition.TopBar.Automatic.Binding,
                 definition.TopBar.Manual.Binding,
-                definition.TopBar.Emergency.Binding
-            ]);
+                definition.TopBar.Emergency.Binding,
+                definition.TopBar.Emergency.OffFeedbackBinding,
+            }.OfType<SignalBinding>();
+
+            bindings = bindings.Concat(topBarBindings);
         }
 
         return bindings

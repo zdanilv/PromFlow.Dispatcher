@@ -148,17 +148,17 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> StartServerCommand { get; }
 
     /// <summary>
-    /// Запускает клиентскую роль Modbus для демо-стека.
+    /// Запускает клиентскую роль общего Modbus runtime.
     /// </summary>
     public ReactiveCommand<Unit, Unit> StartClientCommand { get; }
 
     /// <summary>
-    /// Останавливает роли Modbus внутри демо-стека.
+    /// Останавливает роли общего Modbus runtime.
     /// </summary>
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
 
     /// <summary>
-    /// Открывает настройки независимой секции ModbusDemo.
+    /// Открывает настройки секции ModbusDemo.
     /// </summary>
     public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
 
@@ -523,7 +523,7 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     private void OnDataValueChanged(ModbusDataValue value)
     {
         // Snapshot-ы клиента тоже приходят с фонового потока; коллекции и строки UI
-        // обновляем только через dispatcher, как в основном Modbus-экране.
+        // обновляем только через dispatcher, как в остальных UI-экранах.
         _dispatchToUi(() => ApplyDataValue(value));
     }
 

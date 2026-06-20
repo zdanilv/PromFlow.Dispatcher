@@ -79,14 +79,13 @@ public partial class App : Avalonia.Application
 
         try
         {
-            if (runtime is not null)
-            {
-                await runtime.StopAsync(timeout.Token);
-            }
-
             if (demoFacade is not null)
             {
                 await demoFacade.StopAsync(timeout.Token);
+            }
+            else if (runtime is not null)
+            {
+                await runtime.StopAsync(timeout.Token);
             }
         }
         catch (OperationCanceledException)

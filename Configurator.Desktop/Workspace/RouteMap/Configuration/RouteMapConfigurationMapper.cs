@@ -168,7 +168,7 @@ public sealed class RouteMapConfigurationMapper
     {
         Automatic = ToConfiguration(topBar.Automatic),
         Manual = ToConfiguration(topBar.Manual),
-        Emergency = ToConfiguration(topBar.Emergency),
+        Emergency = ToEmergencyConfiguration(topBar.Emergency),
     };
 
     private static RouteTopBarButtonConfiguration ToConfiguration(RouteTopBarButtonSettings button) => new()
@@ -178,27 +178,81 @@ public sealed class RouteMapConfigurationMapper
         CheckedBackground = button.CheckedBackground,
         NormalForeground = button.NormalForeground,
         CheckedForeground = button.CheckedForeground,
-        Bindings = new ObservableCollection<SignalBindingConfiguration>([ToConfiguration(button.Binding)]),
+        Bindings = ToButtonBindings(button),
     };
 
+    private static RouteTopBarEmergencyButtonConfiguration ToEmergencyConfiguration(RouteTopBarButtonSettings button) => new()
+    {
+        Text = button.Text,
+        NormalBackground = button.NormalBackground,
+        CheckedBackground = button.CheckedBackground,
+        NormalForeground = button.NormalForeground,
+        CheckedForeground = button.CheckedForeground,
+        ButtonKind = button.ButtonKind,
+        OffFeedbackEnabled = button.ButtonKind == RouteCommandButtonKind.Toggle && button.OffFeedbackEnabled,
+        Bindings = ToButtonBindings(button),
+    };
+
+    private static ObservableCollection<SignalBindingConfiguration> ToButtonBindings(RouteTopBarButtonSettings button)
+    {
+        var bindings = new List<SignalBindingConfiguration> { ToConfiguration(button.Binding) };
+        if (button.OffFeedbackEnabled && button.OffFeedbackBinding is not null)
+            bindings.Add(ToConfiguration(button.OffFeedbackBinding));
+
+        return new ObservableCollection<SignalBindingConfiguration>(bindings);
+    }
+
     private static RouteTopBarSettings ToModel(RouteTopBarConfiguration topBar) => new(
-        ToModel(topBar.Automatic, SignalBindingRole.AutomaticModeCommand, "system.mode.automatic"),
-        ToModel(topBar.Manual, SignalBindingRole.ManualModeCommand, "system.mode.manual"),
-        ToModel(topBar.Emergency, SignalBindingRole.EmergencyCommand, "system.emergency"));
+        ToModel(
+            topBar.Automatic,
+            SignalBindingRole.AutomaticModeCommand,
+            "system.mode.automatic",
+            offFeedbackRole: null,
+            offFeedbackSignalId: null,
+            offFeedbackEnabled: false,
+            RouteCommandButtonKind.Toggle),
+        ToModel(
+            topBar.Manual,
+            SignalBindingRole.ManualModeCommand,
+            "system.mode.manual",
+            offFeedbackRole: null,
+            offFeedbackSignalId: null,
+            offFeedbackEnabled: false,
+            RouteCommandButtonKind.Toggle),
+        ToModel(
+            topBar.Emergency,
+            SignalBindingRole.EmergencyCommand,
+            "system.emergency",
+            SignalBindingRole.EmergencyOffFeedback,
+            "system.emergency.off",
+            offFeedbackEnabled: topBar.Emergency.ButtonKind == RouteCommandButtonKind.Toggle && topBar.Emergency.OffFeedbackEnabled,
+            topBar.Emergency.ButtonKind));
 
     private static RouteTopBarButtonSettings ToModel(
         RouteTopBarButtonConfiguration button,
         SignalBindingRole role,
-        string signalId) => new()
+        string signalId,
+        SignalBindingRole? offFeedbackRole,
+        string? offFeedbackSignalId,
+        bool offFeedbackEnabled,
+        RouteCommandButtonKind buttonKind) => new()
         {
             Text = button.Text,
             NormalBackground = button.NormalBackground,
             CheckedBackground = button.CheckedBackground,
             NormalForeground = button.NormalForeground,
             CheckedForeground = button.CheckedForeground,
-            Binding = button.Bindings.FirstOrDefault() is { } binding
+            ButtonKind = buttonKind,
+            OffFeedbackEnabled = offFeedbackEnabled,
+            Binding = button.Bindings.FirstOrDefault(x => x.Role == role) is { } binding
                 ? ToModel(binding)
                 : new SignalBinding(role, signalId, SignalBindingDirection.ReadWrite, Configurator.Application.Services.Signals.SignalValueType.Bool),
+            OffFeedbackBinding = offFeedbackRole is { } actualOffRole &&
+                                 button.Bindings.FirstOrDefault(x => x.Role == actualOffRole) is { } offFeedback
+                ? ToModel(offFeedback)
+                : offFeedbackEnabled && offFeedbackRole.HasValue && offFeedbackSignalId is not null
+                    ? new SignalBinding(offFeedbackRole.Value, offFeedbackSignalId, SignalBindingDirection.Read, Configurator.Application.Services.Signals.SignalValueType.Bool)
+                    : null,
         };
 
     private static RouteTopBarSettings CreateDefaultTopBar()
@@ -287,6 +341,10 @@ public sealed class RouteMapConfigurationMapper
             State = card.State,
             CanStart = card.CanStart,
             CanStop = card.CanStop,
+            StartButtonKind = card.StartButtonKind,
+            StopButtonKind = card.StopButtonKind,
+            StartOffFeedbackEnabled = card.StartButtonKind == RouteCommandButtonKind.Toggle && card.StartOffFeedbackEnabled,
+            StopOffFeedbackEnabled = card.StopButtonKind == RouteCommandButtonKind.Toggle && card.StopOffFeedbackEnabled,
             IsVisible = card.IsVisible,
             AttachedChainId = card.AttachedChainId ?? chain?.Id,
             AttachedCardRightOffset = card.AttachedChainId is not null
@@ -309,6 +367,10 @@ public sealed class RouteMapConfigurationMapper
             card.CanStart,
             card.CanStop,
             card.Bindings.Select(ToModel).ToArray(),
+            card.StartButtonKind,
+            card.StopButtonKind,
+            card.StartButtonKind == RouteCommandButtonKind.Toggle && card.StartOffFeedbackEnabled,
+            card.StopButtonKind == RouteCommandButtonKind.Toggle && card.StopOffFeedbackEnabled,
             card.IsVisible,
             card.AttachedChainId,
             card.AttachedCardRightOffset,

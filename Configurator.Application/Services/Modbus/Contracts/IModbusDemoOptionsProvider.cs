@@ -8,7 +8,7 @@ using Configurator.Application.Services.Modbus.Validation;
 namespace Configurator.Application.Services.Modbus.Contracts;
 
 /// <summary>
-/// Предоставляет настройки независимого Modbus TCP демо-экрана.
+/// Предоставляет настройки секции ModbusDemo, которая управляет общим TCP runtime.
 /// </summary>
 public interface IModbusDemoOptionsProvider
 {

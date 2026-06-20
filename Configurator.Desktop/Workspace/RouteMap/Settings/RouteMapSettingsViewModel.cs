@@ -96,11 +96,14 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public IReadOnlyList<RouteCardVerticalAnchorKind> AnchorKinds { get; } = Enum.GetValues<RouteCardVerticalAnchorKind>();
     public IReadOnlyList<RoutePlaceholderPlacement> PlaceholderPlacements { get; } = Enum.GetValues<RoutePlaceholderPlacement>();
     public IReadOnlyList<RoutePlaceholderHeightMode> PlaceholderHeightModes { get; } = Enum.GetValues<RoutePlaceholderHeightMode>();
+    public IReadOnlyList<RouteCommandButtonKind> CommandButtonKinds { get; } = Enum.GetValues<RouteCommandButtonKind>();
     public IReadOnlyList<SignalBindingRole> SignalBindingRoles { get; } = Enum.GetValues<SignalBindingRole>();
     public IReadOnlyList<SignalBindingRole> NodeBindingRoles { get; } =
     [
         SignalBindingRole.State, SignalBindingRole.Visible, SignalBindingRole.Fault,
-        SignalBindingRole.ActiveRoute, SignalBindingRole.TargetCommand, SignalBindingRole.LoaderCommand,
+        SignalBindingRole.ActiveRoute,
+        SignalBindingRole.TargetCommand,
+        SignalBindingRole.LoaderCommand,
     ];
     public IReadOnlyList<SignalBindingRole> SegmentBindingRoles { get; } =
     [
@@ -109,11 +112,16 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public IReadOnlyList<SignalBindingRole> CardBindingRoles { get; } =
     [
         SignalBindingRole.State, SignalBindingRole.Text, SignalBindingRole.Value, SignalBindingRole.Visible,
-        SignalBindingRole.StartCommand, SignalBindingRole.StopCommand, SignalBindingRole.Fault,
+        SignalBindingRole.StartCommand, SignalBindingRole.StartOffFeedback,
+        SignalBindingRole.StopCommand, SignalBindingRole.StopOffFeedback,
+        SignalBindingRole.Fault,
     ];
-    public IReadOnlyList<SignalBindingRole> AutomaticModeBindingRoles { get; } = [SignalBindingRole.AutomaticModeCommand];
-    public IReadOnlyList<SignalBindingRole> ManualModeBindingRoles { get; } = [SignalBindingRole.ManualModeCommand];
-    public IReadOnlyList<SignalBindingRole> EmergencyBindingRoles { get; } = [SignalBindingRole.EmergencyCommand];
+    public IReadOnlyList<SignalBindingRole> AutomaticModeBindingRoles { get; } =
+        [SignalBindingRole.AutomaticModeCommand];
+    public IReadOnlyList<SignalBindingRole> ManualModeBindingRoles { get; } =
+        [SignalBindingRole.ManualModeCommand];
+    public IReadOnlyList<SignalBindingRole> EmergencyBindingRoles { get; } =
+        [SignalBindingRole.EmergencyCommand, SignalBindingRole.EmergencyOffFeedback];
     public IReadOnlyList<SignalBindingDirection> SignalBindingDirections { get; } = Enum.GetValues<SignalBindingDirection>();
     public IReadOnlyList<SignalValueType> SignalValueTypes { get; } = Enum.GetValues<SignalValueType>();
 
@@ -171,7 +179,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public string SelectedSignalSourceText => UseMockSimulation ? "Mock" : "Modbus";
     public string SignalSourceDescription => UseMockSimulation
         ? "RouteMap получает тестовые значения и команды от встроенной Mock-симуляции."
-        : "RouteMap использует основной Modbus TCP runtime. Переключение не запускает соединение автоматически.";
+        : "RouteMap использует общий Modbus Demo runtime и отдельную карту Modbus.DataMap. Переключение не запускает соединение автоматически.";
 
     public ReactiveCommand<Unit, Unit> ApplyCommand { get; }
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
@@ -358,7 +366,9 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
             return binding.Role == SignalBindingRole.ActiveRoute;
         if (SelectedCard?.Bindings.Contains(binding) == true)
             return binding.Role == SignalBindingRole.StartCommand && SelectedCard.CanStart
-                || binding.Role == SignalBindingRole.StopCommand && SelectedCard.CanStop;
+                || binding.Role == SignalBindingRole.StartOffFeedback && SelectedCard.IsStartOffFeedbackAvailable && SelectedCard.StartOffFeedbackEnabled
+                || binding.Role == SignalBindingRole.StopCommand && SelectedCard.CanStop
+                || binding.Role == SignalBindingRole.StopOffFeedback && SelectedCard.IsStopOffFeedbackAvailable && SelectedCard.StopOffFeedbackEnabled;
         return false;
     }
 
@@ -366,27 +376,72 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     {
         EnsureBinding(node.Bindings, SignalBindingRole.ActiveRoute, $"route.node.{node.Id}.active", SignalBindingDirection.Read);
         if (node.MenuKind is RouteNodeMenuKind.SendOnly or RouteNodeMenuKind.SendAndReturn)
+        {
             EnsureBinding(node.Bindings, SignalBindingRole.TargetCommand, $"route.node.{node.Id}.target", SignalBindingDirection.ReadWrite);
+        }
         if (node.MenuKind == RouteNodeMenuKind.SendAndReturn)
+        {
             EnsureBinding(node.Bindings, SignalBindingRole.LoaderCommand, $"route.node.{node.Id}.loader", SignalBindingDirection.ReadWrite);
+        }
+        RemoveBindings(node.Bindings, SignalBindingRole.TargetOffFeedback, SignalBindingRole.LoaderOffFeedback);
     }
 
     private static void EnsureCardBindings(EquipmentCardConfiguration card)
     {
         if (card.CanStart)
+        {
             EnsureBinding(card.Bindings, SignalBindingRole.StartCommand, $"{card.Id}.start", SignalBindingDirection.ReadWrite);
+            if (card.IsStartOffFeedbackAvailable && card.StartOffFeedbackEnabled)
+                EnsureBinding(card.Bindings, SignalBindingRole.StartOffFeedback, $"{card.Id}.start.off", SignalBindingDirection.Read);
+            else
+                RemoveBindings(card.Bindings, SignalBindingRole.StartOffFeedback);
+        }
+        else
+            RemoveBindings(card.Bindings, SignalBindingRole.StartOffFeedback);
+
+        if (!card.IsStartOffFeedbackAvailable)
+            card.StartOffFeedbackEnabled = false;
+
         if (card.CanStop)
+        {
             EnsureBinding(card.Bindings, SignalBindingRole.StopCommand, $"{card.Id}.stop", SignalBindingDirection.ReadWrite);
+            if (card.IsStopOffFeedbackAvailable && card.StopOffFeedbackEnabled)
+                EnsureBinding(card.Bindings, SignalBindingRole.StopOffFeedback, $"{card.Id}.stop.off", SignalBindingDirection.Read);
+            else
+                RemoveBindings(card.Bindings, SignalBindingRole.StopOffFeedback);
+        }
+        else
+            RemoveBindings(card.Bindings, SignalBindingRole.StopOffFeedback);
+
+        if (!card.IsStopOffFeedbackAvailable)
+            card.StopOffFeedbackEnabled = false;
     }
 
     private void EnsureDraftRequiredBindings()
     {
+        EnsureTopBarBindings(Draft.TopBar);
         foreach (var node in Draft.Nodes)
             EnsureNodeBindings(node);
         foreach (var segment in Draft.Segments)
             EnsureSegmentActiveBinding(segment);
         foreach (var card in Draft.Cards)
             EnsureCardBindings(card);
+    }
+
+    private static void EnsureTopBarBindings(RouteTopBarConfiguration topBar)
+    {
+        EnsureBinding(topBar.Automatic.Bindings, SignalBindingRole.AutomaticModeCommand, "system.mode.automatic", SignalBindingDirection.ReadWrite);
+        RemoveBindings(topBar.Automatic.Bindings, SignalBindingRole.AutomaticModeOffFeedback);
+        EnsureBinding(topBar.Manual.Bindings, SignalBindingRole.ManualModeCommand, "system.mode.manual", SignalBindingDirection.ReadWrite);
+        RemoveBindings(topBar.Manual.Bindings, SignalBindingRole.ManualModeOffFeedback);
+        EnsureBinding(topBar.Emergency.Bindings, SignalBindingRole.EmergencyCommand, "system.emergency", SignalBindingDirection.ReadWrite);
+        if (topBar.Emergency.IsOffFeedbackAvailable && topBar.Emergency.OffFeedbackEnabled)
+            EnsureBinding(topBar.Emergency.Bindings, SignalBindingRole.EmergencyOffFeedback, "system.emergency.off", SignalBindingDirection.Read);
+        else
+            RemoveBindings(topBar.Emergency.Bindings, SignalBindingRole.EmergencyOffFeedback);
+
+        if (!topBar.Emergency.IsOffFeedbackAvailable)
+            topBar.Emergency.OffFeedbackEnabled = false;
     }
 
     private static void EnsureBinding(
@@ -404,6 +459,15 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
             Direction = direction,
             ValueType = SignalValueType.Bool,
         });
+    }
+
+    private static void RemoveBindings(
+        ICollection<SignalBindingConfiguration> bindings,
+        params SignalBindingRole[] roles)
+    {
+        var roleSet = roles.ToHashSet();
+        foreach (var binding in bindings.Where(x => roleSet.Contains(x.Role)).ToArray())
+            bindings.Remove(binding);
     }
 
     private static void RewriteNodeBindingIds(RouteNodeConfiguration node)
@@ -427,7 +491,9 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
             binding.SignalId = binding.Role switch
             {
                 SignalBindingRole.StartCommand => $"{card.Id}.start",
+                SignalBindingRole.StartOffFeedback => $"{card.Id}.start.off",
                 SignalBindingRole.StopCommand => $"{card.Id}.stop",
+                SignalBindingRole.StopOffFeedback => $"{card.Id}.stop.off",
                 _ => binding.SignalId,
             };
         }
@@ -464,6 +530,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         document.Segments.CollectionChanged += OnCollectionChanged;
         document.Cards.CollectionChanged += OnCollectionChanged;
         document.PlaceholderRules.CollectionChanged += OnCollectionChanged;
+        document.TopBar.Emergency.PropertyChanged += OnTopBarEmergencyPropertyChanged;
         foreach (var item in Items(document)) AttachItem(item);
     }
 
@@ -474,8 +541,16 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         document.Segments.CollectionChanged -= OnCollectionChanged;
         document.Cards.CollectionChanged -= OnCollectionChanged;
         document.PlaceholderRules.CollectionChanged -= OnCollectionChanged;
+        document.TopBar.Emergency.PropertyChanged -= OnTopBarEmergencyPropertyChanged;
         foreach (var item in Items(document)) item.PropertyChanged -= OnItemPropertyChanged;
         _knownIds.Clear();
+    }
+
+    private void OnTopBarEmergencyPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(RouteTopBarEmergencyButtonConfiguration.ButtonKind)
+            or nameof(RouteTopBarEmergencyButtonConfiguration.OffFeedbackEnabled))
+            EnsureTopBarBindings(Draft.TopBar);
     }
 
     private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -495,7 +570,13 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     {
         if (sender is RouteNodeConfiguration node && e.PropertyName == nameof(RouteNodeConfiguration.MenuKind))
             EnsureNodeBindings(node);
-        if (sender is EquipmentCardConfiguration changedCard && e.PropertyName is nameof(EquipmentCardConfiguration.CanStart) or nameof(EquipmentCardConfiguration.CanStop))
+        if (sender is EquipmentCardConfiguration changedCard &&
+            e.PropertyName is nameof(EquipmentCardConfiguration.CanStart)
+                or nameof(EquipmentCardConfiguration.CanStop)
+                or nameof(EquipmentCardConfiguration.StartButtonKind)
+                or nameof(EquipmentCardConfiguration.StopButtonKind)
+                or nameof(EquipmentCardConfiguration.StartOffFeedbackEnabled)
+                or nameof(EquipmentCardConfiguration.StopOffFeedbackEnabled))
             EnsureCardBindings(changedCard);
         if (e.PropertyName != nameof(RouteMapConfigurationItem.Id) || sender is not RouteMapConfigurationItem item) return;
         var oldId = _knownIds[item];

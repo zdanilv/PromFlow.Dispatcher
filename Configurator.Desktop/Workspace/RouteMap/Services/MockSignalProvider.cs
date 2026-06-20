@@ -85,12 +85,15 @@ public sealed class MockSignalProvider : ISignalValueProvider
             SignalBindingRole.Fault => false,
             SignalBindingRole.ActiveRoute => true,
             SignalBindingRole.StartCommand => false,
+            SignalBindingRole.StartOffFeedback => false,
             SignalBindingRole.StopCommand => false,
+            SignalBindingRole.StopOffFeedback => false,
             SignalBindingRole.TargetCommand => definition.Nodes.Any(x => x.IsTarget && x.Bindings.Any(candidate => candidate.SignalId == binding.SignalId)),
             SignalBindingRole.LoaderCommand => definition.Nodes.Any(x => x.IsLoader && x.Bindings.Any(candidate => candidate.SignalId == binding.SignalId)),
             SignalBindingRole.AutomaticModeCommand => false,
             SignalBindingRole.ManualModeCommand => true,
             SignalBindingRole.EmergencyCommand => tick % 20 == 12,
+            SignalBindingRole.EmergencyOffFeedback => false,
             _ => false,
         };
 
@@ -135,7 +138,13 @@ public sealed class MockSignalProvider : ISignalValueProvider
     {
         if (definition.TopBar is null)
             return [];
-        return [definition.TopBar.Automatic.Binding, definition.TopBar.Manual.Binding, definition.TopBar.Emergency.Binding];
+        return new[]
+        {
+            definition.TopBar.Automatic.Binding,
+            definition.TopBar.Manual.Binding,
+            definition.TopBar.Emergency.Binding,
+            definition.TopBar.Emergency.OffFeedbackBinding,
+        }.OfType<SignalBinding>();
     }
 
     private static SignalValue Bool(string signalId, bool value, DateTimeOffset timestamp)

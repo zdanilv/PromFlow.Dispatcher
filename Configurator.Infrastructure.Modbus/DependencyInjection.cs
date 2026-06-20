@@ -35,8 +35,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IModbusClientService, ModbusClientService>();
         services.AddSingleton<IModbusServerService, ModbusServerService>();
-        services.AddSingleton<IModbusRuntimeService, ModbusRuntimeService>();
-        services.AddSingleton<IModbusTcpService, ModbusTcpService>();
+        services.AddSingleton(CreateSharedRuntimeService);
+        services.AddSingleton(CreateRouteMapTcpService);
         services.AddSingleton<IModbusDataMapRuntime>(sp =>
             (IModbusDataMapRuntime)sp.GetRequiredService<IModbusTcpService>());
         services.AddSingleton<IModbusDataSnapshotSource>(sp =>
@@ -48,29 +48,50 @@ public static class DependencyInjection
         return services;
     }
 
-    private static IModbusDemoTcpService CreateDemoTcpService(IServiceProvider serviceProvider)
+    private static IModbusRuntimeService CreateSharedRuntimeService(IServiceProvider serviceProvider)
     {
         var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
-        // Демо-экран не должен переиспользовать основной runtime: у него отдельная
-        // секция настроек, клиент, сервер и facade, чтобы сценарии не мешали друг другу.
         var optionsMonitor = new NamedOptionsMonitor<ModbusOptions>(
             serviceProvider.GetRequiredService<IOptionsMonitor<ModbusOptions>>(),
             ModbusOptions.DemoSectionName);
-        var client = new ModbusClientService(loggerFactory.CreateLogger<ModbusClientService>());
-        var server = new ModbusServerService(loggerFactory.CreateLogger<ModbusServerService>());
-        var runtime = new ModbusRuntimeService(
-            client,
-            server,
+
+        return new ModbusRuntimeService(
+            serviceProvider.GetRequiredService<IModbusClientService>(),
+            serviceProvider.GetRequiredService<IModbusServerService>(),
             optionsMonitor,
             loggerFactory.CreateLogger<ModbusRuntimeService>());
+    }
+
+    private static IModbusTcpService CreateRouteMapTcpService(IServiceProvider serviceProvider)
+    {
+        var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+        var optionsMonitor = new RouteMapModbusOptionsMonitor(
+            serviceProvider.GetRequiredService<IOptionsMonitor<ModbusOptions>>());
+
+        return new ModbusTcpService(
+            serviceProvider.GetRequiredService<IModbusRuntimeService>(),
+            serviceProvider.GetRequiredService<IModbusClientService>(),
+            serviceProvider.GetRequiredService<IModbusServerService>(),
+            optionsMonitor,
+            serviceProvider.GetRequiredService<IModbusDataMapValidator>(),
+            loggerFactory.CreateLogger<ModbusTcpService>());
+    }
+
+    private static IModbusDemoTcpService CreateDemoTcpService(IServiceProvider serviceProvider)
+    {
+        var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+        // Демо-экран владеет lifecycle общего runtime, но использует собственную DataMap.
+        var optionsMonitor = new NamedOptionsMonitor<ModbusOptions>(
+            serviceProvider.GetRequiredService<IOptionsMonitor<ModbusOptions>>(),
+            ModbusOptions.DemoSectionName);
         var facade = new ModbusTcpService(
-            runtime,
-            client,
-            server,
+            serviceProvider.GetRequiredService<IModbusRuntimeService>(),
+            serviceProvider.GetRequiredService<IModbusClientService>(),
+            serviceProvider.GetRequiredService<IModbusServerService>(),
             optionsMonitor,
             serviceProvider.GetRequiredService<IModbusDataMapValidator>(),
             loggerFactory.CreateLogger<ModbusTcpService>());
 
-        return new ModbusDemoTcpService(facade, runtime, client, server);
+        return new ModbusDemoTcpService(facade);
     }
 }

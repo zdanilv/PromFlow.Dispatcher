@@ -26,7 +26,7 @@ public sealed class TopBarViewModel : ViewModelBase
 
         SwitchToAutomaticCommand = ReactiveCommand.CreateFromTask(SwitchToAutomaticAsync);
         SwitchToManualCommand = ReactiveCommand.CreateFromTask(SwitchToManualAsync);
-        EmergencyCommand = ReactiveCommand.CreateFromTask(ToggleEmergencyAsync);
+        EmergencyCommand = ReactiveCommand.CreateFromTask(ExecuteEmergencyAsync);
         OpenSettingsCommand = ReactiveCommand.CreateFromTask(() =>
             settingsDialogService?.ShowAsync() ?? Task.CompletedTask);
     }
@@ -64,6 +64,10 @@ public sealed class TopBarViewModel : ViewModelBase
     public IBrush ManualForeground => ButtonBrush(_settings.Manual, IsManualMode, foreground: true);
     public IBrush EmergencyBackground => ButtonBrush(_settings.Emergency, HasEmergency, foreground: false);
     public IBrush EmergencyForeground => ButtonBrush(_settings.Emergency, HasEmergency, foreground: true);
+    public IBrush EmergencyMomentaryBackground => ButtonBrush(_settings.Emergency, isChecked: false, foreground: false);
+    public IBrush EmergencyMomentaryForeground => ButtonBrush(_settings.Emergency, isChecked: false, foreground: true);
+    public bool IsEmergencyToggle => _settings.Emergency.ButtonKind == RouteCommandButtonKind.Toggle;
+    public bool IsEmergencyMomentary => _settings.Emergency.ButtonKind == RouteCommandButtonKind.Momentary;
 
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SwitchToAutomaticCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SwitchToManualCommand { get; }
@@ -103,11 +107,33 @@ public sealed class TopBarViewModel : ViewModelBase
         await DispatchAsync(_settings.Manual.Binding, true);
     }
 
-    private async Task ToggleEmergencyAsync()
+    private async Task ActivateEmergencyAsync()
     {
-        HasEmergency = !HasEmergency;
+        if (HasEmergency)
+            return;
+
+        HasEmergency = true;
         RaiseButtonProperties();
-        await DispatchAsync(_settings.Emergency.Binding, HasEmergency);
+        await DispatchAsync(_settings.Emergency.Binding, true);
+    }
+
+    private async Task ExecuteEmergencyAsync()
+    {
+        if (_settings.Emergency.ButtonKind == RouteCommandButtonKind.Momentary)
+        {
+            await DispatchAsync(_settings.Emergency.Binding, true);
+            return;
+        }
+
+        if (!_settings.Emergency.OffFeedbackEnabled)
+        {
+            HasEmergency = !HasEmergency;
+            RaiseButtonProperties();
+            await DispatchAsync(_settings.Emergency.Binding, HasEmergency);
+            return;
+        }
+
+        await ActivateEmergencyAsync();
     }
 
     private Task DispatchAsync(SignalBinding binding, bool value)
@@ -128,6 +154,10 @@ public sealed class TopBarViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(ManualForeground));
         this.RaisePropertyChanged(nameof(EmergencyBackground));
         this.RaisePropertyChanged(nameof(EmergencyForeground));
+        this.RaisePropertyChanged(nameof(EmergencyMomentaryBackground));
+        this.RaisePropertyChanged(nameof(EmergencyMomentaryForeground));
+        this.RaisePropertyChanged(nameof(IsEmergencyToggle));
+        this.RaisePropertyChanged(nameof(IsEmergencyMomentary));
     }
 
     private static IBrush ButtonBrush(RouteTopBarButtonSettings button, bool isChecked, bool foreground) =>

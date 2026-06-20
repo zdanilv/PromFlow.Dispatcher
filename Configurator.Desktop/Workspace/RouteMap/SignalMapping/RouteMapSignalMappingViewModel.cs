@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Reactive;
 using System.Reactive.Linq;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Modbus.Configuration;
@@ -28,6 +29,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
     private readonly IDisposable _definitionSubscription;
     private readonly IDisposable? _optionsSubscription;
     private ModbusOptions _baseOptions;
+    private ModbusOptions _addressOptions;
     private bool _isLoading;
     private bool _isDirty;
     private bool _hasExternalChanges;
@@ -48,6 +50,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         _validator = validator;
         _dataMapRuntime = dataMapRuntime;
         _baseOptions = optionsMonitor.CurrentValue.Clone();
+        _addressOptions = ReadAddressOptions();
 
         SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync);
         ReloadCommand = ReactiveCommand.Create(Reload);
@@ -59,8 +62,8 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             .Skip(1)
             .Subscribe(definition => Dispatcher.UIThread.Post(() =>
                 RebuildRows(definition, _baseOptions, preserveDraft: IsDirty)));
-        _optionsSubscription = optionsMonitor.OnChange((options, _) =>
-            Dispatcher.UIThread.Post(() => HandleExternalOptions(options)));
+        _optionsSubscription = optionsMonitor.OnChange((options, name) =>
+            Dispatcher.UIThread.Post(() => HandleExternalOptions(options, name)));
     }
 
     public ObservableCollection<RouteMapSignalMappingRow> Rows { get; } = [];
@@ -105,10 +108,10 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
     }
 
     public string ClientAddressBase =>
-        $"Client: Coil +{_baseOptions.Client.CoilStartAddress}, Holding Register +{_baseOptions.Client.HoldingRegisterStartAddress}";
+        $"Client: Coil +{_addressOptions.Client.CoilStartAddress}, Holding Register +{_addressOptions.Client.HoldingRegisterStartAddress}";
 
     public string ServerAddressBase =>
-        $"Server: Coil +{_baseOptions.Server.CoilStartAddress}, Holding Register +{_baseOptions.Server.HoldingRegisterStartAddress}";
+        $"Server: Coil +{_addressOptions.Server.CoilStartAddress}, Holding Register +{_addressOptions.Server.HoldingRegisterStartAddress}";
 
     public void Dispose()
     {
@@ -183,6 +186,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         {
             await _appConfigService.SaveSectionAsync(ModbusOptions.SectionName, latest, cancellationToken);
             _baseOptions = latest.Clone();
+            _addressOptions = ReadAddressOptions();
             IsDirty = false;
             HasExternalChanges = false;
             RefreshPhysicalAddresses();
@@ -210,8 +214,14 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         HasExternalChanges = false;
     }
 
-    private void HandleExternalOptions(ModbusOptions options)
+    private void HandleExternalOptions(ModbusOptions options, string? name)
     {
+        if (string.Equals(name, ModbusOptions.DemoSectionName, StringComparison.Ordinal))
+        {
+            RefreshPhysicalAddresses();
+            return;
+        }
+
         if (OptionsEquivalent(options, _baseOptions))
         {
             return;
@@ -249,6 +259,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             Rows.Clear();
             Groups.Clear();
             _baseOptions = options.Clone();
+            _addressOptions = ReadAddressOptions();
             foreach (var item in inventory)
             {
                 RouteMapSignalMappingRow row;
@@ -266,7 +277,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
                         point is not null);
                 }
 
-                row.UpdateAddressBases(options.Client, options.Server);
+                row.UpdateAddressBases(_addressOptions.Client, _addressOptions.Server);
                 row.PropertyChanged += OnRowPropertyChanged;
                 ValidateRow(row);
                 Rows.Add(row);
@@ -308,7 +319,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
 
         IsDirty = true;
         StatusMessage = null;
-        row.UpdateAddressBases(_baseOptions.Client, _baseOptions.Server);
+        row.UpdateAddressBases(_addressOptions.Client, _addressOptions.Server);
         ValidateRow(row);
     }
 
@@ -344,7 +355,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        var singlePointOptions = _baseOptions.Clone();
+        var singlePointOptions = CreateValidationOptions(_baseOptions);
         singlePointOptions.DataMap = [row.ToOptions()];
         var validation = _validator.Validate(singlePointOptions, ModbusRunMode.None);
         row.SetValidation(validation.Succeeded ? null : OperationMessage(validation));
@@ -352,31 +363,33 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
 
     private ModbusOperationResult ValidateOptions(ModbusOptions options)
     {
-        var structural = _validator.Validate(options, ModbusRunMode.None);
+        var validationOptions = CreateValidationOptions(options);
+        var structural = _validator.Validate(validationOptions, ModbusRunMode.None);
         if (!structural.Succeeded)
         {
             return structural;
         }
 
-        if (options.Client.Enabled)
+        if (validationOptions.Client.Enabled)
         {
-            var client = _validator.Validate(options, ModbusRunMode.Client);
+            var client = _validator.Validate(validationOptions, ModbusRunMode.Client);
             if (!client.Succeeded)
             {
                 return client;
             }
         }
 
-        return options.Server.Enabled
-            ? _validator.Validate(options, ModbusRunMode.Server)
+        return validationOptions.Server.Enabled
+            ? _validator.Validate(validationOptions, ModbusRunMode.Server)
             : ModbusOperationResult.Success();
     }
 
     private void RefreshPhysicalAddresses()
     {
+        _addressOptions = ReadAddressOptions();
         foreach (var row in Rows)
         {
-            row.UpdateAddressBases(_baseOptions.Client, _baseOptions.Server);
+            row.UpdateAddressBases(_addressOptions.Client, _addressOptions.Server);
         }
 
         this.RaisePropertyChanged(nameof(ClientAddressBase));
@@ -431,13 +444,23 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             ? $"{result.ErrorMessage} {result.ErrorDetails}"
             : result.ErrorMessage ?? "Ошибка Modbus.DataMap.";
 
+    private ModbusOptions CreateValidationOptions(ModbusOptions routeOptions)
+    {
+        var options = routeOptions.Clone();
+        var addressOptions = ReadAddressOptions();
+        options.AutostartOnWorkspaceOpen = addressOptions.AutostartOnWorkspaceOpen;
+        options.StartupMode = addressOptions.StartupMode;
+        options.Client = addressOptions.Client.Clone();
+        options.Server = addressOptions.Server.Clone();
+        return options;
+    }
+
+    private ModbusOptions ReadAddressOptions()
+        => _optionsMonitor.Get(ModbusOptions.DemoSectionName).Clone();
+
     private static bool OptionsEquivalent(ModbusOptions left, ModbusOptions right)
     {
-        if (left.AutostartOnWorkspaceOpen != right.AutostartOnWorkspaceOpen
-            || left.StartupMode != right.StartupMode
-            || left.WriteConfirmationTimeoutMs != right.WriteConfirmationTimeoutMs
-            || !EndpointsEquivalent(left.Client, right.Client)
-            || !EndpointsEquivalent(left.Server, right.Server)
+        if (left.WriteConfirmationTimeoutMs != right.WriteConfirmationTimeoutMs
             || left.DataMap.Count != right.DataMap.Count)
         {
             return false;
@@ -455,23 +478,13 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             && pair.First.PulseDurationMs == pair.Second.PulseDurationMs);
     }
 
-    private static bool EndpointsEquivalent(ModbusEndpointOptions left, ModbusEndpointOptions right) =>
-        left.Host == right.Host
-        && left.BindAddress == right.BindAddress
-        && left.Port == right.Port
-        && left.UnitId == right.UnitId
-        && left.PollIntervalMs == right.PollIntervalMs
-        && left.Enabled == right.Enabled
-        && left.CoilsEnabled == right.CoilsEnabled
-        && left.HoldingRegistersEnabled == right.HoldingRegistersEnabled
-        && left.CoilStartAddress == right.CoilStartAddress
-        && left.HoldingRegisterStartAddress == right.HoldingRegisterStartAddress
-        && left.CoilCount == right.CoilCount
-        && left.RegisterCount == right.RegisterCount;
 }
 
 public sealed class RouteMapSignalMappingRow : ReactiveObject
 {
+    private static readonly IBrush UsedRowBackground = Brushes.White;
+    private static readonly IBrush UnusedRowBackground = new SolidColorBrush(Color.Parse("#F1F3F5"));
+
     private bool _isMapped;
     private ModbusDataArea _area;
     private int _address;
@@ -498,6 +511,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         HasTypeConflict = inventory.HasTypeConflict;
         Category = inventory.Category;
         IsSystem = inventory.IsSystem;
+        PreferPulseWriteMode = inventory.PreferPulseWriteMode;
         _isMapped = isMapped;
         ApplyPoint(point);
     }
@@ -510,6 +524,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     public bool HasTypeConflict { get; }
     internal RouteMapSignalElementCategory Category { get; }
     public bool IsSystem { get; }
+    public bool PreferPulseWriteMode { get; }
 
     public bool IsMapped { get => _isMapped; set { this.RaiseAndSetIfChanged(ref _isMapped, value); RaiseStatus(); } }
     public ModbusDataArea Area { get => _area; set { this.RaiseAndSetIfChanged(ref _area, value); RaiseStatus(); } }
@@ -523,6 +538,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     public string? ValidationMessage => _validationMessage;
     public bool HasError => !string.IsNullOrWhiteSpace(ValidationMessage);
     public string StatusText => IsSystem ? "Системный" : HasError ? "Ошибка" : IsMapped ? "Настроен" : "Не настроен";
+    public IBrush RowBackground => !IsSystem && !IsMapped ? UnusedRowBackground : UsedRowBackground;
     public bool CanCreateMapping => !IsSystem && !IsMapped;
     public bool CanRemoveMapping => !IsSystem && IsMapped;
     public bool CanEditMapping => !IsSystem && IsMapped;
@@ -530,7 +546,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     public string ServerPhysicalAddress => _serverPhysicalAddress;
 
     public void ResetToDefaults() => ApplyPoint(CreateDefaultPoint(new RouteMapSignalInventoryItem(
-        SignalId, ExpectedType, RequiredAccess, Roles, Objects, HasTypeConflict, Category, IsSystem)));
+        SignalId, ExpectedType, RequiredAccess, Roles, Objects, HasTypeConflict, Category, IsSystem, PreferPulseWriteMode)));
 
     public ModbusDataPointOptions ToOptions() => new()
     {
@@ -580,7 +596,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
             Length = length,
             Access = item.RequiredAccess,
             Type = type,
-            WriteMode = ModbusWriteMode.Latched,
+            WriteMode = item.PreferPulseWriteMode ? ModbusWriteMode.Pulse : ModbusWriteMode.Latched,
             PulseDurationMs = 300,
         };
     }
@@ -613,6 +629,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     private void RaiseStatus()
     {
         this.RaisePropertyChanged(nameof(StatusText));
+        this.RaisePropertyChanged(nameof(RowBackground));
         this.RaisePropertyChanged(nameof(CanCreateMapping));
         this.RaisePropertyChanged(nameof(CanRemoveMapping));
         this.RaisePropertyChanged(nameof(CanEditMapping));

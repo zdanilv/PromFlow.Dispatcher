@@ -8,9 +8,15 @@
 - регистр `16388` -> `Address = 4`;
 - регистр `16400` -> `Address = 16`.
 
+Экран `Modbus Demo` владеет запуском, остановкой и настройкой общего Modbus TCP runtime.
+Точки из этого документа добавляются только в `ModbusDemo.DataMap` и обслуживают demo UI.
+RouteMap использует тот же TCP runtime, но отдельную карту `Modbus.DataMap`, которая
+редактируется на вкладке `SignalId ↔ Modbus`.
+
 ## Новая точка DataMap
 
 Добавьте точку в `Configurator.Boot/appsettings.json`, секция `ModbusDemo/DataMap`.
+Не добавляйте сюда RouteMap SignalId: для них предназначена секция `Modbus/DataMap`.
 Для одного 16-битного регистра используйте:
 
 ```json

@@ -16,7 +16,14 @@ public enum SignalBindingRole
     LoaderCommand,
     AutomaticModeCommand,
     ManualModeCommand,
-    EmergencyCommand
+    EmergencyCommand,
+    StartOffFeedback,
+    StopOffFeedback,
+    TargetOffFeedback,
+    LoaderOffFeedback,
+    AutomaticModeOffFeedback,
+    ManualModeOffFeedback,
+    EmergencyOffFeedback
 }
 
 public enum SignalBindingDirection

@@ -237,4 +237,30 @@ public sealed class RouteMapRuntimeMapperTests
         Assert.True(bucket?.IsStartChecked);
         Assert.True(bucket?.IsStopChecked);
     }
+
+    [Fact]
+    public void Map_off_feedback_overrides_only_supported_toggle_readback()
+    {
+        var definition = RouteMapSeed.Create();
+        var mapper = new RouteMapRuntimeMapper(definition);
+        var now = DateTimeOffset.UtcNow;
+        var signals = new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.start"] = new("equip.bucket.start", true, SignalValueType.Bool, now, true, false),
+            ["equip.bucket.start.off"] = new("equip.bucket.start.off", true, SignalValueType.Bool, now, true, false),
+            ["route.node.bsu_1.loader"] = new("route.node.bsu_1.loader", true, SignalValueType.Bool, now, true, false),
+            ["route.node.bsu_1.loader.off"] = new("route.node.bsu_1.loader.off", true, SignalValueType.Bool, now, true, false),
+            ["system.mode.manual"] = new("system.mode.manual", true, SignalValueType.Bool, now, true, false),
+            ["system.mode.manual.off"] = new("system.mode.manual.off", true, SignalValueType.Bool, now, true, false),
+            ["system.emergency"] = new("system.emergency", true, SignalValueType.Bool, now, true, false),
+            ["system.emergency.off"] = new("system.emergency.off", true, SignalValueType.Bool, now, true, false),
+        };
+
+        var runtime = mapper.Map(signals);
+
+        Assert.False(runtime.Find("equip.bucket")?.IsStartChecked);
+        Assert.True(runtime.Find("bsu_1")?.IsLoader);
+        Assert.True(runtime.IsManualMode);
+        Assert.False(runtime.HasEmergency);
+    }
 }

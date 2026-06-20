@@ -30,7 +30,19 @@
             <Setter Property="BorderBrush" Value="#D87868"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
+        <Style Selector="Button.emergency">
+            <Setter Property="MinWidth" Value="168"/>
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="Background" Value="#D87868"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#D87868"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
         <Style Selector="ToggleButton.emergency:checked">
+            <Setter Property="Background" Value="#C83F30"/>
+            <Setter Property="BorderBrush" Value="#C83F30"/>
+        </Style>
+        <Style Selector="Button.emergency:pressed">
             <Setter Property="Background" Value="#C83F30"/>
             <Setter Property="BorderBrush" Value="#C83F30"/>
         </Style>
@@ -93,7 +105,14 @@
                           Background="{Binding EmergencyBackground}"
                           Foreground="{Binding EmergencyForeground}"
                           IsChecked="{Binding HasEmergency}"
-                          Command="{Binding EmergencyCommand}"/>
+                          Command="{Binding EmergencyCommand}"
+                          IsVisible="{Binding IsEmergencyToggle}"/>
+            <Button Classes="emergency"
+                    Content="{Binding EmergencyText}"
+                    Background="{Binding EmergencyMomentaryBackground}"
+                    Foreground="{Binding EmergencyMomentaryForeground}"
+                    Command="{Binding EmergencyCommand}"
+                    IsVisible="{Binding IsEmergencyMomentary}"/>
             <Button Classes="settings"
                     Content="НАСТРОЙКИ"
                     Command="{Binding OpenSettingsCommand}"/>

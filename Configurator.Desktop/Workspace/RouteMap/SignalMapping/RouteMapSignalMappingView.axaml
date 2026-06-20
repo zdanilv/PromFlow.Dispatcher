@@ -40,7 +40,7 @@
 
     <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
       <StackPanel MinWidth="1720">
-        <Border Background="#E9EEF3" Padding="6">
+        <Border Background="White" Padding="6">
           <Grid ColumnDefinitions="220,180,105,110,130,125,70,70,130,120,70,110,100,160,160,100" ColumnSpacing="6">
             <TextBlock Text="SignalId" FontWeight="SemiBold"/>
             <TextBlock Grid.Column="1" Text="Роли / объекты" FontWeight="SemiBold"/>
@@ -68,7 +68,7 @@
                         HorizontalContentAlignment="Stretch"
                         IsExpanded="{Binding IsExpanded, Mode=TwoWay}">
                 <Expander.Header>
-                  <Border Background="#F4F7FA" BorderBrush="#D7E0E7" BorderThickness="0,1,0,1" Padding="10,7">
+                  <Border Background="White" BorderBrush="#D7E0E7" BorderThickness="0,1,0,1" Padding="10,7">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                       <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="#44505C"/>
                       <TextBlock Grid.Column="1" Text="{Binding CountText}" Classes="caption"/>
@@ -78,7 +78,11 @@
                 <ItemsControl ItemsSource="{Binding Rows}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                      <Border BorderBrush="#E1E6EA" BorderThickness="0,0,0,1" Padding="6">
+                      <Border Classes="signal-mapping-row"
+                              BorderBrush="#E1E6EA"
+                              BorderThickness="0,0,0,1"
+                              Padding="6"
+                              Background="{Binding RowBackground}">
                         <StackPanel>
                           <Grid ColumnDefinitions="220,180,105,110,130,125,70,70,130,120,70,110,100,160,160,100" ColumnSpacing="6">
                             <TextBlock Text="{Binding SignalId}" TextWrapping="Wrap" VerticalAlignment="Center"/>

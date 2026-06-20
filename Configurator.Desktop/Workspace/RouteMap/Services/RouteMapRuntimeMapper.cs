@@ -43,7 +43,9 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 signals,
                 equipment.CanStart,
                 equipment.CanStop,
-                equipment.StatusText);
+                equipment.StatusText,
+                useStartOffFeedback: equipment.StartOffFeedbackEnabled,
+                useStopOffFeedback: equipment.StopOffFeedbackEnabled);
         }
 
         return new RouteMapRuntimeState(
@@ -63,7 +65,9 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         bool canStartFallback,
         bool canStopFallback,
         string? textFallback = null,
-        bool activeAsState = true)
+        bool activeAsState = true,
+        bool useStartOffFeedback = false,
+        bool useStopOffFeedback = false)
     {
         var state = fallbackState;
         var text = textFallback;
@@ -71,6 +75,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         var isVisible = true;
         var isStartChecked = false;
         var isStopChecked = false;
+        var isStartOffFeedback = false;
+        var isStopOffFeedback = false;
         var mappedState = fallbackState;
         var isOffline = false;
         var hasFault = false;
@@ -115,9 +121,17 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                     if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
                         isStartChecked = ReadBool(signal, isStartChecked);
                     break;
+                case SignalBindingRole.StartOffFeedback:
+                    if (useStartOffFeedback && (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite))
+                        isStartOffFeedback = ReadBool(signal, isStartOffFeedback);
+                    break;
                 case SignalBindingRole.StopCommand:
                     if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
                         isStopChecked = ReadBool(signal, isStopChecked);
+                    break;
+                case SignalBindingRole.StopOffFeedback:
+                    if (useStopOffFeedback && (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite))
+                        isStopOffFeedback = ReadBool(signal, isStopOffFeedback);
                     break;
                 case SignalBindingRole.LoaderCommand:
                     if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
@@ -127,9 +141,15 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                     if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
                         isTarget = ReadBool(signal, isTarget ?? false);
                     break;
+                case SignalBindingRole.LoaderOffFeedback:
+                case SignalBindingRole.TargetOffFeedback:
+                    break;
                 case SignalBindingRole.AutomaticModeCommand:
                 case SignalBindingRole.ManualModeCommand:
                 case SignalBindingRole.EmergencyCommand:
+                case SignalBindingRole.AutomaticModeOffFeedback:
+                case SignalBindingRole.ManualModeOffFeedback:
+                case SignalBindingRole.EmergencyOffFeedback:
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(binding.Role), binding.Role, "Unknown signal binding role.");
@@ -148,6 +168,10 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             and not RouteObjectState.Fault
             and not RouteObjectState.Disabled;
 
+        if (isStartOffFeedback)
+            isStartChecked = false;
+        if (isStopOffFeedback)
+            isStopChecked = false;
         return new RouteObjectRuntimeState(
             objectId,
             state,
@@ -168,9 +192,19 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         RouteTopBarButtonSettings? button,
         bool fallback)
     {
-        if (button is null || button.Binding.Direction == SignalBindingDirection.Write)
+        if (button is null)
             return fallback;
-        return ReadBool(signals, button.Binding.SignalId, fallback);
+
+        var value = button.Binding.Direction == SignalBindingDirection.Write
+            ? fallback
+            : ReadBool(signals, button.Binding.SignalId, fallback);
+        if (button.OffFeedbackEnabled &&
+            button.OffFeedbackBinding is { } offFeedback &&
+            offFeedback.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite &&
+            ReadBool(signals, offFeedback.SignalId))
+            return false;
+
+        return value;
     }
 
     private static RouteObjectState ReadState(SignalValue signal, RouteObjectState fallback)

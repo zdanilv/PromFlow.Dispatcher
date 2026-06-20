@@ -5,6 +5,10 @@
 `RouteMap` - операторская мнемосхема маршрута бетонной линии и первая вкладка
 `WorkspaceView` в `PromFlow.Dispatcher`.
 
+В Workspace сейчас подключены только вкладки `Route Map`, `SignalId ↔ Modbus` и
+`Modbus Demo`. Экраны `Modbus TCP` и `OPC UA` остаются в кодовой базе, но не подключаются
+к основному Workspace.
+
 Экран состоит из:
 
 - верхней панели `TopBarView`;
@@ -320,11 +324,14 @@ equip.bucket.stop
 
 Кнопки `ПУСК` и `СТОП`:
 
-- являются `ToggleButton`;
+- имеют настраиваемый `RouteCommandButtonKind`: `Toggle` рендерит `ToggleButton`,
+  `Momentary` рендерит обычный `Button`;
 - занимают две равные `*`-колонки нижнего ряда карточки;
 - расширяются вместе с шириной карточки;
 - имеют `MinHeight = 40` и `FontSize = 18`;
-- пишут `true/false` в `equip.bucket.start` и `equip.bucket.stop`;
+- toggle-кнопки пишут `true/false` в `equip.bucket.start` и `equip.bucket.stop`;
+- momentary-кнопки по клику пишут только `true`, а физический импульс задается
+  `ModbusWriteMode.Pulse` в `Modbus.DataMap`;
 - runtime-обновление checked-состояния не отправляет команды обратно, потому что VM защищена флагом `_isApplyingRuntime`.
 
 Визуал карточки:
@@ -441,8 +448,21 @@ services.AddTransient<RouteMapDashboardViewModel>();
 
 Правильный поток:
 
+Начиная со `schemaVersion = 7`, OffFeedback включается отдельно для карточных
+toggle-кнопок `ПУСК`/`СТОП` и TopBar `АВАРИЯ`. Если флаг OffFeedback включен,
+пользовательский клик пишет только `true` в `*Command`, а сброс checked-состояния
+в `false` приходит от PLC через `*OffFeedback = true`. Если флаг выключен, toggle
+пишет `true/false` напрямую в свой `*Command`.
+
+Toggle-команды узлов `Отправить`/`Возврат` и режимы TopBar `АВТОМАТ`/`РУЧНОЕ`
+не используют OffFeedback-роли: они пишут включение и выключение по прежней
+логике через `TargetCommand`/`LoaderCommand` и `AutomaticModeCommand`/
+`ManualModeCommand`.
+
 ```text
-Modbus TCP
+Modbus Demo lifecycle
+  -> shared Modbus runtime/client/server
+  -> RouteMap IModbusTcpService facade
   -> IModbusDataSnapshotSource
   -> ModbusTcpSignalValueProvider
   -> ISignalValueProvider
@@ -451,8 +471,9 @@ Modbus TCP
   -> Avalonia View / RouteMapControl
 ```
 
-Параметры подключения (`Host`, `Port`, `UnitId`) задаются в endpoint клиента/сервера.
-Каталог `Modbus.DataMap` хранит соответствие доменных сигналов реальным адресам:
+Параметры подключения (`Host`, `Port`, `UnitId`, start addresses и counts) задаются на
+экране `Modbus Demo` и хранятся в `ModbusDemo.Client`/`ModbusDemo.Server`.
+Каталог `Modbus.DataMap` хранит RouteMap-соответствие доменных сигналов адресам:
 
 ```text
 Name == SignalId
@@ -481,6 +502,9 @@ route.active_bsu1_bsu2.active
 запись через `IModbusTcpService`. Bool внутри Holding Register записывается защищенным
 read-modify-write. UI при этом не меняется: он продолжает получать `SignalValue` и
 отправлять `SignalWriteRequest`.
+
+`ModbusDemo.DataMap` используется только экраном `Modbus Demo`. RouteMap hot-apply меняет
+только `Modbus.DataMap` и не трогает demo-карту.
 
 Начальный источник читается при запуске, но может быть горячо изменен в редакторе:
 
@@ -520,6 +544,7 @@ read-modify-write. UI при этом не меняется: он продолж
 - `StatusBrush` для известных статусов;
 - checked-состояние `ПУСК` / `СТОП`;
 - запись `true/false` для `equip.bucket.start` и `equip.bucket.stop`;
+- momentary-команды `ПУСК` / `СТОП` / `АВАРИЯ`;
 - отображение `Отправить` / `Возврат` в карточке из выбранных ролей узлов;
 - уникальность ролей `IsLoader` и `IsTarget`.
 - последовательные миграции v1→v2→v3 и v2→v3 с сохранением пользовательских свойств;
@@ -529,8 +554,8 @@ Headless layout-тесты находятся в отдельном проект
 `Configurator.Tests.RouteMap.Ui`. Разделение необходимо, потому что
 `Avalonia.Headless.XUnit 12` работает с xUnit v3, а основной unit-проект использует
 xUnit v2. UI-набор открывает диалог `1320x780`, проверяет пять колонок bindings на
-вкладках узлов, линий и карточек, горизонтальный scroll при узкой ширине и успешный
-layout всех пяти вкладок.
+вкладках узлов, линий и карточек, горизонтальный scroll при узкой ширине, список вкладок
+Workspace и успешный layout всех семи вкладок настроек.
 
 Проверка сборки целевого приложения:
 
@@ -575,13 +600,13 @@ dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.cspr
   применение и сохранение `RouteMapRuntime`;
 - `Карта и маршруты` — логические размеры, padding, карточный gap, общая фрагментация,
   палитра и упорядоченные `NodeIds`/`SegmentIds` цепочек;
-- `TopBar` — тексты, обычные/активные цвета и командные bindings кнопок `АВТОМАТ`,
-  `РУЧНОЙ`, `АВАРИЯ`;
+- `TopBar` — тексты, обычные/активные цвета, командные bindings кнопок `АВТОМАТ`,
+  `РУЧНОЙ`, `АВАРИЯ`, а также тип кнопки только для `АВАРИЯ`;
 - `Узлы` — геометрия, placement подписи, тип, меню, начальные роли, видимость, стиль и bindings;
 - `Линии` — endpoints, геометрия, радиус и порядок дуги, endpoint-gap, line-cap,
   подпись, цвета, толщины, индивидуальная фрагментация и bindings;
-- `Карточки` — фиксированный шаблон карточки, данные, команды, размеры, отступы,
-  цвета, подписи кнопок, цепочка и вертикальный якорь;
+- `Карточки` — фиксированный шаблон карточки, данные, команды, типы кнопок `ПУСК`/`СТОП`,
+  размеры, отступы, цвета, подписи кнопок, цепочка и вертикальный якорь;
 - `Заглушки` — правила автоматического заполнения `Above`, `Below` или `Both`, режим
   высоты, gap, лимит количества и стиль.
 
@@ -596,7 +621,7 @@ dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.cspr
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 6,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -633,6 +658,9 @@ endpoint-gap, round-cap и отсутствующий `ActiveRoute` binding ка
 Шаг v3→v4 добавляет конфигурацию TopBar, сигнальный контур узлов и обязательные bindings
 `ActiveRoute`, `TargetCommand` и `LoaderCommand`, сохраняя существующие пользовательские
 `SignalId` для уже известных ролей.
+Шаг v4→v5 добавляет `startButtonKind`, `stopButtonKind` и
+`topBar.emergency.buttonKind`, выставляя `Toggle`, чтобы старые профили визуально не
+изменились.
 После успешной валидации мигрированный активный профиль атомарно сохраняется. При ошибке
 исходный файл остается без изменений, manager использует seed и публикует текст ошибки.
 
@@ -695,6 +723,7 @@ viewport предусмотрен горизонтальный `ScrollViewer`.
 - допустимость ролей bindings, обязательный `SignalId`, направления команд и дубли ролей;
 - единственность начальных `IsLoader` и `IsTarget`;
 - конечность координат, положительные размеры и формат цветов;
+- допустимые значения `RouteCommandButtonKind` для `ПУСК`, `СТОП` и `АВАРИЯ`;
 - радиус дуги `0..min(|dx|, |dy|)`;
 - неотрицательный endpoint-gap;
 - ссылки правил заглушек и их размеры/лимиты.
@@ -735,6 +764,10 @@ dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restor
 `TopBar` редактора позволяет менять тексты, обычные/активные цвета и bindings кнопок
 `АВТОМАТ`, `РУЧНОЙ`, `АВАРИЯ`. Телефон, логотип, пользователь и статусная область остаются
 частью фиксированного XAML-шаблона.
+
+Начиная со `schemaVersion = 5`, у `ПУСК`, `СТОП` и `АВАРИЯ` есть
+`RouteCommandButtonKind`. `Toggle` сохраняет checked/readback поведение, `Momentary`
+отправляет `true` обычной кнопкой. `АВТОМАТ` и `РУЧНОЙ` остаются toggle-кнопками.
 
 Обязательные командные роли:
 

@@ -60,6 +60,12 @@ public enum RoutePlaceholderHeightMode
     Fixed
 }
 
+public enum RouteCommandButtonKind
+{
+    Toggle,
+    Momentary
+}
+
 public sealed record RouteThickness(
     double Left,
     double Top,
@@ -126,6 +132,9 @@ public sealed record RouteTopBarButtonSettings
     public string CheckedBackground { get; init; } = "#3378D6";
     public string NormalForeground { get; init; } = "#59636E";
     public string CheckedForeground { get; init; } = "#FFFFFF";
+    public RouteCommandButtonKind ButtonKind { get; init; } = RouteCommandButtonKind.Toggle;
+    public bool OffFeedbackEnabled { get; init; }
+    public SignalBinding? OffFeedbackBinding { get; init; }
     public SignalBinding Binding { get; init; } = new(
         SignalBindingRole.AutomaticModeCommand,
         "system.mode.automatic",
@@ -302,6 +311,7 @@ public static class RouteNodeRoleStateTransitions
             ? state with { IsTarget = false }
             : state with { IsLoader = false, IsTarget = true };
     }
+
 }
 
 public sealed record RouteSegment(
@@ -336,6 +346,10 @@ public sealed record EquipmentCommandCard(
     bool CanStart,
     bool CanStop,
     IReadOnlyList<SignalBinding> Bindings,
+    RouteCommandButtonKind StartButtonKind = RouteCommandButtonKind.Toggle,
+    RouteCommandButtonKind StopButtonKind = RouteCommandButtonKind.Toggle,
+    bool StartOffFeedbackEnabled = true,
+    bool StopOffFeedbackEnabled = true,
     bool IsVisible = true,
     string? AttachedChainId = null,
     double AttachedCardRightOffset = 0,

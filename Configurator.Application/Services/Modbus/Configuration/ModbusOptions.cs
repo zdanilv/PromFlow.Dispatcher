@@ -18,7 +18,7 @@ public sealed class ModbusOptions
     public const string SectionName = "Modbus";
 
     /// <summary>
-    /// Имя секции конфигурации для независимого демо-экрана.
+    /// Имя секции конфигурации для экрана Modbus Demo и общего TCP runtime.
     /// </summary>
     public const string DemoSectionName = "ModbusDemo";
 
