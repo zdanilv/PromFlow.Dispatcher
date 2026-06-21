@@ -100,16 +100,16 @@ internal static class RouteMapSignalInventory
                 "TopBar.АВАРИЯ",
                 RouteMapSignalElementCategory.TopBar,
                 definition.TopBar.Emergency.Binding,
-                definition.TopBar.Emergency.ButtonKind == RouteCommandButtonKind.Momentary);
+                false);
         }
-
-        if (definition.TopBar?.Emergency.OffFeedbackBinding is not null)
-            yield return ("TopBar Emergency OffFeedback", RouteMapSignalElementCategory.TopBar, definition.TopBar.Emergency.OffFeedbackBinding, false);
 
         foreach (var node in definition.Nodes)
         {
             foreach (var binding in node.Bindings)
             {
+                if (IsDeprecatedSignalRole(binding.Role))
+                    continue;
+
                 yield return ($"Узел {node.Id}", RouteMapSignalElementCategory.Node, binding, false);
             }
         }
@@ -118,6 +118,9 @@ internal static class RouteMapSignalInventory
         {
             foreach (var binding in segment.Bindings)
             {
+                if (IsDeprecatedSignalRole(binding.Role))
+                    continue;
+
                 yield return ($"Линия {segment.Id}", RouteMapSignalElementCategory.Segment, binding, false);
             }
         }
@@ -126,6 +129,9 @@ internal static class RouteMapSignalInventory
         {
             foreach (var binding in vehicle.Bindings)
             {
+                if (IsDeprecatedSignalRole(binding.Role))
+                    continue;
+
                 yield return ($"Объект {vehicle.Id}", RouteMapSignalElementCategory.Vehicle, binding, false);
             }
         }
@@ -134,17 +140,25 @@ internal static class RouteMapSignalInventory
         {
             foreach (var binding in card.Bindings)
             {
+                if (IsDeprecatedSignalRole(binding.Role))
+                    continue;
+
                 yield return (
                     $"Карточка {card.Id}",
                     RouteMapSignalElementCategory.Card,
                     binding,
-                    binding.Role switch
-                    {
-                        SignalBindingRole.StartCommand => card.StartButtonKind == RouteCommandButtonKind.Momentary,
-                        SignalBindingRole.StopCommand => card.StopButtonKind == RouteCommandButtonKind.Momentary,
-                        _ => false,
-                    });
+                    false);
             }
         }
     }
+
+    private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
+        SignalBindingRole.State or
+        SignalBindingRole.StartOffFeedback or
+        SignalBindingRole.StopOffFeedback or
+        SignalBindingRole.TargetOffFeedback or
+        SignalBindingRole.LoaderOffFeedback or
+        SignalBindingRole.AutomaticModeOffFeedback or
+        SignalBindingRole.ManualModeOffFeedback or
+        SignalBindingRole.EmergencyOffFeedback;
 }

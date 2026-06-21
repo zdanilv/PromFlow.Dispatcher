@@ -68,6 +68,16 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 7;
                     wasMigrated = true;
                     break;
+                case 7:
+                    ApplyVersion8(document);
+                    document.SchemaVersion = 8;
+                    wasMigrated = true;
+                    break;
+                case 8:
+                    ApplyVersion9(document);
+                    document.SchemaVersion = 9;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }
@@ -270,6 +280,55 @@ public sealed class RouteMapConfigurationMigrator
                 EnsureBinding(card.Bindings, SignalBindingRole.StopOffFeedback, $"{card.Id}.stop.off", SignalBindingDirection.Read);
             else
                 RemoveBindings(card.Bindings, SignalBindingRole.StopOffFeedback);
+        }
+    }
+
+    private static void ApplyVersion8(RouteMapConfigurationDocument document)
+    {
+        foreach (var node in document.Nodes)
+            RemoveBindings(node.Bindings, SignalBindingRole.TargetOffFeedback, SignalBindingRole.LoaderOffFeedback);
+
+        document.TopBar ??= RouteTopBarConfiguration.CreateDefault();
+        document.TopBar.Automatic ??= RouteTopBarButtonConfiguration.Create("РђР’РўРћРњРђРў", SignalBindingRole.AutomaticModeCommand, "system.mode.automatic");
+        document.TopBar.Manual ??= RouteTopBarButtonConfiguration.Create("Р РЈР§РќРћР™", SignalBindingRole.ManualModeCommand, "system.mode.manual");
+        document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create(
+            "РђР’РђР РРЇ",
+            SignalBindingRole.EmergencyCommand,
+            "system.emergency",
+            normalBackground: "#D87868",
+            checkedBackground: "#C83F30");
+        RemoveBindings(document.TopBar.Automatic.Bindings, SignalBindingRole.AutomaticModeOffFeedback);
+        RemoveBindings(document.TopBar.Manual.Bindings, SignalBindingRole.ManualModeOffFeedback);
+        document.TopBar.Emergency.ButtonKind = RouteCommandButtonKind.Toggle;
+        document.TopBar.Emergency.OffFeedbackEnabled = false;
+        RemoveBindings(document.TopBar.Emergency.Bindings, SignalBindingRole.EmergencyOffFeedback);
+
+        foreach (var card in document.Cards)
+        {
+            card.StartButtonKind = RouteCommandButtonKind.Toggle;
+            card.StopButtonKind = RouteCommandButtonKind.Toggle;
+            card.StartOffFeedbackEnabled = false;
+            card.StopOffFeedbackEnabled = false;
+            RemoveBindings(card.Bindings, SignalBindingRole.StartOffFeedback, SignalBindingRole.StopOffFeedback);
+        }
+    }
+
+    private static void ApplyVersion9(RouteMapConfigurationDocument document)
+    {
+        foreach (var node in document.Nodes)
+            RemoveBindings(node.Bindings, SignalBindingRole.State);
+
+        foreach (var segment in document.Segments)
+            RemoveBindings(segment.Bindings, SignalBindingRole.State);
+
+        foreach (var card in document.Cards)
+        {
+            RemoveBindings(card.Bindings, SignalBindingRole.State);
+            if (string.IsNullOrWhiteSpace(card.StatusText) ||
+                string.Equals(card.StatusText, "Ожидание", StringComparison.Ordinal))
+            {
+                card.StatusText = "Выключено";
+            }
         }
     }
 

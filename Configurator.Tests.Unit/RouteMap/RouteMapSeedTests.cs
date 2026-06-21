@@ -52,6 +52,7 @@ public sealed class RouteMapSeedTests
         var mapEquipment = Assert.Single(definition.MapEquipment);
         Assert.Equal("equip.bucket", mapEquipment.Id);
         Assert.Equal("Кюбель Л.К.", mapEquipment.Title);
+        Assert.Equal("Выключено", mapEquipment.StatusText);
         Assert.True(mapEquipment.CanStart);
         Assert.True(mapEquipment.CanStop);
 
@@ -59,9 +60,10 @@ public sealed class RouteMapSeedTests
         Assert.Equal(SignalBindingDirection.Read, bindingsByRole[SignalBindingRole.Text].Direction);
         Assert.Equal(Configurator.Application.Services.Signals.SignalValueType.UInt16, bindingsByRole[SignalBindingRole.Text].ValueType);
         Assert.Equal(SignalBindingDirection.ReadWrite, bindingsByRole[SignalBindingRole.StartCommand].Direction);
-        Assert.Equal(SignalBindingDirection.Read, bindingsByRole[SignalBindingRole.StartOffFeedback].Direction);
         Assert.Equal(SignalBindingDirection.ReadWrite, bindingsByRole[SignalBindingRole.StopCommand].Direction);
-        Assert.Equal(SignalBindingDirection.Read, bindingsByRole[SignalBindingRole.StopOffFeedback].Direction);
+        Assert.DoesNotContain(mapEquipment.Bindings, x => x.Role == SignalBindingRole.State);
+        Assert.DoesNotContain(mapEquipment.Bindings, x => x.Role == SignalBindingRole.StartOffFeedback);
+        Assert.DoesNotContain(mapEquipment.Bindings, x => x.Role == SignalBindingRole.StopOffFeedback);
 
         var nodesById = definition.Nodes.ToDictionary(x => x.Id);
         Assert.Equal((240d, 500d), (nodesById["dead_end_lower"].X, nodesById["dead_end_lower"].Y));
@@ -106,10 +108,11 @@ public sealed class RouteMapSeedTests
         Assert.Equal("system.mode.manual", definition.TopBar.Manual.Binding.SignalId);
         Assert.Null(definition.TopBar.Manual.OffFeedbackBinding);
         Assert.Equal("system.emergency", definition.TopBar.Emergency.Binding.SignalId);
-        Assert.True(definition.TopBar.Emergency.OffFeedbackEnabled);
-        Assert.Equal("system.emergency.off", definition.TopBar.Emergency.OffFeedbackBinding?.SignalId);
+        Assert.False(definition.TopBar.Emergency.OffFeedbackEnabled);
+        Assert.Null(definition.TopBar.Emergency.OffFeedbackBinding);
         foreach (var node in definition.Nodes)
         {
+            Assert.DoesNotContain(node.Bindings, x => x.Role == SignalBindingRole.State);
             var active = Assert.Single(node.Bindings, x => x.Role == SignalBindingRole.ActiveRoute);
             Assert.Equal($"route.node.{node.Id}.active", active.SignalId);
             var style = node.Style ?? new RouteNodeStyle();
@@ -124,6 +127,7 @@ public sealed class RouteMapSeedTests
         Assert.Equal("ПОВОРОТ", elbow.Title);
         Assert.All(definition.Segments, segment =>
         {
+            Assert.DoesNotContain(segment.Bindings, x => x.Role == SignalBindingRole.State);
             var activeBinding = Assert.Single(segment.Bindings, x => x.Role == SignalBindingRole.ActiveRoute);
             Assert.Equal($"route.{segment.Id}.active", activeBinding.SignalId);
             Assert.Equal(SignalBindingDirection.Read, activeBinding.Direction);

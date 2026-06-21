@@ -20,8 +20,20 @@
         <TextBlock Text="{Binding ServerAddressBase}" Classes="caption"/>
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
-        <Button Content="ПЕРЕЗАГРУЗИТЬ" Command="{Binding ReloadCommand}"/>
-        <Button Content="СОХРАНИТЬ" Command="{Binding SaveCommand}"/>
+        <Button Content="ПЕРЕЗАГРУЗИТЬ" Command="{Binding ReloadCommand}">
+          <Button.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Перечитать Modbus.DataMap из конфигурации." IsEnabled="False"/>
+            </ContextMenu>
+          </Button.ContextMenu>
+        </Button>
+        <Button Content="СОХРАНИТЬ" Command="{Binding SaveCommand}">
+          <Button.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Сохранить связи и применить DataMap к runtime." IsEnabled="False"/>
+            </ContextMenu>
+          </Button.ContextMenu>
+        </Button>
       </StackPanel>
     </Grid>
 
@@ -85,33 +97,141 @@
                               Background="{Binding RowBackground}">
                         <StackPanel>
                           <Grid ColumnDefinitions="220,180,105,110,130,125,70,70,130,120,70,110,100,160,160,100" ColumnSpacing="6">
-                            <TextBlock Text="{Binding SignalId}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding SignalId}" TextWrapping="Wrap" VerticalAlignment="Center">
+                              <TextBlock.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Доменное имя сигнала RouteMap." IsEnabled="False"/>
+                                </ContextMenu>
+                              </TextBlock.ContextMenu>
+                            </TextBlock>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                              <TextBlock Text="{Binding Roles}" FontSize="11" TextWrapping="Wrap"/>
-                              <TextBlock Text="{Binding Objects}" Classes="caption" TextWrapping="Wrap"/>
+                              <TextBlock Text="{Binding Roles}" FontSize="11" TextWrapping="Wrap">
+                                <TextBlock.ContextMenu>
+                                  <ContextMenu>
+                                    <MenuItem Header="Роли Signal Binding, которые используют этот SignalId." IsEnabled="False"/>
+                                  </ContextMenu>
+                                </TextBlock.ContextMenu>
+                              </TextBlock>
+                              <TextBlock Text="{Binding Objects}" Classes="caption" TextWrapping="Wrap">
+                                <TextBlock.ContextMenu>
+                                  <ContextMenu>
+                                    <MenuItem Header="Объекты RouteMap, связанные с этим SignalId." IsEnabled="False"/>
+                                  </ContextMenu>
+                                </TextBlock.ContextMenu>
+                              </TextBlock>
                             </StackPanel>
-                            <TextBlock Grid.Column="2" Text="{Binding ExpectedType}" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="3" Text="{Binding RequiredAccess}" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="4" Text="{Binding StatusText}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Text="{Binding ExpectedType}" VerticalAlignment="Center">
+                              <TextBlock.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Тип значения, ожидаемый RouteMap." IsEnabled="False"/>
+                                </ContextMenu>
+                              </TextBlock.ContextMenu>
+                            </TextBlock>
+                            <TextBlock Grid.Column="3" Text="{Binding RequiredAccess}" VerticalAlignment="Center">
+                              <TextBlock.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Минимальный доступ Modbus для всех ролей SignalId." IsEnabled="False"/>
+                                </ContextMenu>
+                              </TextBlock.ContextMenu>
+                            </TextBlock>
+                            <TextBlock Grid.Column="4" Text="{Binding StatusText}" VerticalAlignment="Center">
+                              <TextBlock.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Состояние настройки или ошибка строки." IsEnabled="False"/>
+                                </ContextMenu>
+                              </TextBlock.ContextMenu>
+                            </TextBlock>
                             <ComboBox Grid.Column="5" Classes="cell" IsEnabled="{Binding CanEditMapping}"
-                                      ItemsSource="{Binding DataContext.DataAreas, ElementName=Root}" SelectedItem="{Binding Area}"/>
-                            <TextBox Grid.Column="6" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding Address}"/>
-                            <TextBox Grid.Column="7" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding Length}"/>
+                                      ItemsSource="{Binding DataContext.DataAreas, ElementName=Root}" SelectedItem="{Binding Area}">
+                              <ComboBox.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Coil: Bool без Bit. HoldingRegister: регистр или бит Bool." IsEnabled="False"/>
+                                </ContextMenu>
+                              </ComboBox.ContextMenu>
+                            </ComboBox>
+                            <TextBox Grid.Column="6" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding Address, Mode=TwoWay}">
+                              <TextBox.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Zero-based offset внутри выбранной области." IsEnabled="False"/>
+                                </ContextMenu>
+                              </TextBox.ContextMenu>
+                            </TextBox>
+                            <TextBox Grid.Column="7" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding Length, Mode=TwoWay}">
+                              <TextBox.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Количество coils/registers, занимаемое значением." IsEnabled="False"/>
+                                </ContextMenu>
+                              </TextBox.ContextMenu>
+                            </TextBox>
                             <ComboBox Grid.Column="8" Classes="cell" IsEnabled="{Binding CanEditMapping}"
-                                      ItemsSource="{Binding DataContext.AccessModes, ElementName=Root}" SelectedItem="{Binding Access}"/>
+                                      ItemsSource="{Binding DataContext.AccessModes, ElementName=Root}" SelectedItem="{Binding Access}">
+                              <ComboBox.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Read, Write или ReadWrite для Modbus-точки." IsEnabled="False"/>
+                                </ContextMenu>
+                              </ComboBox.ContextMenu>
+                            </ComboBox>
                             <ComboBox Grid.Column="9" Classes="cell" IsEnabled="{Binding CanEditMapping}"
-                                      ItemsSource="{Binding DataContext.ValueTypes, ElementName=Root}" SelectedItem="{Binding Type}"/>
-                            <TextBox Grid.Column="10" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding BitIndex}"/>
+                                      ItemsSource="{Binding DataContext.ValueTypes, ElementName=Root}" SelectedItem="{Binding Type}">
+                              <ComboBox.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Modbus-тип должен совпадать с типом SignalId." IsEnabled="False"/>
+                                </ContextMenu>
+                              </ComboBox.ContextMenu>
+                            </ComboBox>
+                            <TextBox Grid.Column="10" Classes="cell" IsEnabled="{Binding CanEditBitIndex}" Text="{Binding BitIndex, Mode=TwoWay}">
+                              <TextBox.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Только для HoldingRegister Bool: бит 0..15." IsEnabled="False"/>
+                                </ContextMenu>
+                              </TextBox.ContextMenu>
+                            </TextBox>
                             <ComboBox Grid.Column="11" Classes="cell" IsEnabled="{Binding CanEditMapping}"
-                                      ItemsSource="{Binding DataContext.WriteModes, ElementName=Root}" SelectedItem="{Binding WriteMode}"/>
-                            <TextBox Grid.Column="12" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding PulseDurationMs}"/>
-                            <TextBlock Grid.Column="13" Text="{Binding ClientPhysicalAddress}" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="14" Text="{Binding ServerPhysicalAddress}" VerticalAlignment="Center"/>
+                                      ItemsSource="{Binding DataContext.WriteModes, ElementName=Root}" SelectedItem="{Binding WriteMode}">
+                              <ComboBox.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Latched удерживает значение, Pulse пишет короткий импульс." IsEnabled="False"/>
+                                </ContextMenu>
+                              </ComboBox.ContextMenu>
+                            </ComboBox>
+                            <TextBox Grid.Column="12" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding PulseDurationMs, Mode=TwoWay}">
+                              <TextBox.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Длительность Pulse в миллисекундах." IsEnabled="False"/>
+                                </ContextMenu>
+                              </TextBox.ContextMenu>
+                            </TextBox>
+                            <TextBox Grid.Column="13" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding ClientPhysicalAddressText, Mode=TwoWay}">
+                              <TextBox.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Физический адрес клиента; Area определяется по диапазону." IsEnabled="False"/>
+                                </ContextMenu>
+                              </TextBox.ContextMenu>
+                            </TextBox>
+                            <TextBox Grid.Column="14" Classes="cell" IsEnabled="{Binding CanEditMapping}" Text="{Binding ServerPhysicalAddressText, Mode=TwoWay}">
+                              <TextBox.ContextMenu>
+                                <ContextMenu>
+                                  <MenuItem Header="Физический адрес сервера; Area определяется по диапазону." IsEnabled="False"/>
+                                </ContextMenu>
+                              </TextBox.ContextMenu>
+                            </TextBox>
                             <Grid Grid.Column="15">
                               <Button Content="Создать" IsVisible="{Binding CanCreateMapping}"
-                                      Command="{Binding DataContext.CreateMappingCommand, ElementName=Root}" CommandParameter="{Binding}"/>
+                                      Command="{Binding DataContext.CreateMappingCommand, ElementName=Root}" CommandParameter="{Binding}">
+                                <Button.ContextMenu>
+                                  <ContextMenu>
+                                    <MenuItem Header="Создать точку Modbus.DataMap для SignalId." IsEnabled="False"/>
+                                  </ContextMenu>
+                                </Button.ContextMenu>
+                              </Button>
                               <Button Content="Удалить" IsVisible="{Binding CanRemoveMapping}"
-                                      Command="{Binding DataContext.RemoveMappingCommand, ElementName=Root}" CommandParameter="{Binding}"/>
+                                      Command="{Binding DataContext.RemoveMappingCommand, ElementName=Root}" CommandParameter="{Binding}">
+                                <Button.ContextMenu>
+                                  <ContextMenu>
+                                    <MenuItem Header="Удалить точку SignalId из RouteMap Modbus.DataMap." IsEnabled="False"/>
+                                  </ContextMenu>
+                                </Button.ContextMenu>
+                              </Button>
                             </Grid>
                           </Grid>
                           <TextBlock Text="{Binding ValidationMessage}" Foreground="#B42318" FontSize="11" TextWrapping="Wrap"

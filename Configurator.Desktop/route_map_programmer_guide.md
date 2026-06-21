@@ -175,7 +175,7 @@ route.<segmentId>.active
 
 Если `route.<segmentId>.active == true`, mapper переводит линию в `RouteObjectState.ActiveRoute`, и `RouteMapControl` рисует ее активной синей линией.
 `IsDirectional` не участвует в этом решении. Итоговый приоритет runtime-состояния:
-`Offline`, затем `Fault`, `ActiveRoute`, `State`, fallback; порядок bindings в JSON на
+`Offline`, затем `Fault`, `ActiveRoute`, fallback; порядок bindings в JSON на
 результат не влияет.
 
 Линии не выбираются мышью. `RouteMapHitTester` возвращает только узлы и машинки; marker для сегментов не рисуется.
@@ -290,7 +290,6 @@ Equipment("equip.bucket", "Кюбель Л.К.", canStart: true, canStop: true)
 Сигналы карточки:
 
 ```text
-equip.bucket.state
 equip.bucket.text
 equip.bucket.start
 equip.bucket.stop
@@ -299,39 +298,37 @@ equip.bucket.stop
 `equip.bucket.text` трактуется как числовой статус:
 
 ```text
-0 -> Ожидание
-1 -> Выключен
+0 -> Выключен (legacy)
+1 -> Ожидание
 2 -> Авария
 3 -> Выполнение
 4 -> Выгрузка
 5 -> Загрузка
 ```
 
-Неизвестное значение возвращает fallback, обычно `Ожидание`.
+Неизвестное значение возвращает fallback, обычно `Выключено`.
 
 `EquipmentCardViewModel.StatusBrush`:
 
 ```text
+Выключен -> MutedTextBrush (legacy)
 Ожидание -> WarningBrush
-Выключен -> MutedTextBrush
 Авария -> FaultBrush
 Выполнение -> ReadyBrush
 Выгрузка -> ReadyBrush
 Загрузка -> ReadyBrush
+Выключено -> MutedTextBrush (пользовательская/legacy строка)
 ```
 
 Статусный ellipse в карточке привязан к `StatusBrush`, поэтому меняет цвет так же, как текст статуса.
 
 Кнопки `ПУСК` и `СТОП`:
 
-- имеют настраиваемый `RouteCommandButtonKind`: `Toggle` рендерит `ToggleButton`,
-  `Momentary` рендерит обычный `Button`;
+- всегда рендерятся как обычные `ToggleButton`;
 - занимают две равные `*`-колонки нижнего ряда карточки;
 - расширяются вместе с шириной карточки;
 - имеют `MinHeight = 40` и `FontSize = 18`;
-- toggle-кнопки пишут `true/false` в `equip.bucket.start` и `equip.bucket.stop`;
-- momentary-кнопки по клику пишут только `true`, а физический импульс задается
-  `ModbusWriteMode.Pulse` в `Modbus.DataMap`;
+- пишут `true/false` в `equip.bucket.start` и `equip.bucket.stop`;
 - runtime-обновление checked-состояния не отправляет команды обратно, потому что VM защищена флагом `_isApplyingRuntime`.
 
 Визуал карточки:
@@ -367,7 +364,7 @@ Offline
 в UI:
 
 - `SignalId` — стабильное имя, например `route.bsu2_to_bucket.active`;
-- `Role` описывает назначение значения: состояние, авария, видимость, активный маршрут,
+- `Role` описывает назначение значения: авария, видимость, активный маршрут,
   текст или команда;
 - `ValueType` задает ожидаемый тип (`Bool`, `String`, `UInt16` и другие);
 - `Direction` определяет чтение, запись или оба направления.
@@ -380,7 +377,6 @@ Modbus-адресов.
 Поддерживаемые роли `SignalBindingRole`:
 
 ```text
-State
 Text
 Value
 Visible
@@ -412,8 +408,8 @@ mapper читает readback и обновляет `IsStartChecked` / `IsStopChe
 `MockSignalProvider` каждые 2 секунды генерирует snapshot.
 
 Mock динамически собирает уникальные bindings из актуальной definition manager. Для
-`State` создается строковое состояние, для `Text` — циклический код, для `Visible` —
-`true`, для fault и команд — `false`. Среди `ActiveRoute` bindings каждые две секунды
+`Text` создается циклический код, для `Visible` — `true`, для fault и команд — `false`.
+Среди `ActiveRoute` bindings каждые две секунды
 выбирается ровно один узел или сегмент в порядке `узел -> линия -> узел`. Поэтому новый объект или `SignalId` появляется в
 mock snapshot без изменения жестко заданного перечня ID.
 
@@ -448,16 +444,13 @@ services.AddTransient<RouteMapDashboardViewModel>();
 
 Правильный поток:
 
-Начиная со `schemaVersion = 7`, OffFeedback включается отдельно для карточных
-toggle-кнопок `ПУСК`/`СТОП` и TopBar `АВАРИЯ`. Если флаг OffFeedback включен,
-пользовательский клик пишет только `true` в `*Command`, а сброс checked-состояния
-в `false` приходит от PLC через `*OffFeedback = true`. Если флаг выключен, toggle
-пишет `true/false` напрямую в свой `*Command`.
+Начиная со `schemaVersion = 8`, карточные toggle-кнопки `ПУСК`/`СТОП` и TopBar
+`АВАРИЯ` не используют OffFeedback и не поддерживают `Momentary`: пользовательское
+включение пишет `true` в свой `*Command`, снятие галочки пишет `false`.
 
 Toggle-команды узлов `Отправить`/`Возврат` и режимы TopBar `АВТОМАТ`/`РУЧНОЕ`
-не используют OffFeedback-роли: они пишут включение и выключение по прежней
-логике через `TargetCommand`/`LoaderCommand` и `AutomaticModeCommand`/
-`ManualModeCommand`.
+также пишут включение и выключение напрямую через `TargetCommand`/`LoaderCommand`
+и `AutomaticModeCommand`/`ManualModeCommand`.
 
 ```text
 Modbus Demo lifecycle
@@ -544,7 +537,7 @@ read-modify-write. UI при этом не меняется: он продолж
 - `StatusBrush` для известных статусов;
 - checked-состояние `ПУСК` / `СТОП`;
 - запись `true/false` для `equip.bucket.start` и `equip.bucket.stop`;
-- momentary-команды `ПУСК` / `СТОП` / `АВАРИЯ`;
+- обычные toggle-команды `ПУСК` / `СТОП` / `АВАРИЯ`;
 - отображение `Отправить` / `Возврат` в карточке из выбранных ролей узлов;
 - уникальность ролей `IsLoader` и `IsTarget`.
 - последовательные миграции v1→v2→v3 и v2→v3 с сохранением пользовательских свойств;
@@ -600,12 +593,12 @@ dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.cspr
   применение и сохранение `RouteMapRuntime`;
 - `Карта и маршруты` — логические размеры, padding, карточный gap, общая фрагментация,
   палитра и упорядоченные `NodeIds`/`SegmentIds` цепочек;
-- `TopBar` — тексты, обычные/активные цвета, командные bindings кнопок `АВТОМАТ`,
-  `РУЧНОЙ`, `АВАРИЯ`, а также тип кнопки только для `АВАРИЯ`;
+- `TopBar` — тексты, обычные/активные цвета и командные bindings кнопок `АВТОМАТ`,
+  `РУЧНОЙ`, `АВАРИЯ`;
 - `Узлы` — геометрия, placement подписи, тип, меню, начальные роли, видимость, стиль и bindings;
 - `Линии` — endpoints, геометрия, радиус и порядок дуги, endpoint-gap, line-cap,
   подпись, цвета, толщины, индивидуальная фрагментация и bindings;
-- `Карточки` — фиксированный шаблон карточки, данные, команды, типы кнопок `ПУСК`/`СТОП`,
+- `Карточки` — фиксированный шаблон карточки, данные, команды `ПУСК`/`СТОП`,
   размеры, отступы, цвета, подписи кнопок, цепочка и вертикальный якорь;
 - `Заглушки` — правила автоматического заполнения `Above`, `Below` или `Both`, режим
   высоты, gap, лимит количества и стиль.
@@ -723,7 +716,7 @@ viewport предусмотрен горизонтальный `ScrollViewer`.
 - допустимость ролей bindings, обязательный `SignalId`, направления команд и дубли ролей;
 - единственность начальных `IsLoader` и `IsTarget`;
 - конечность координат, положительные размеры и формат цветов;
-- допустимые значения `RouteCommandButtonKind` для `ПУСК`, `СТОП` и `АВАРИЯ`;
+- что `ПУСК`, `СТОП` и `АВАРИЯ` используют `RouteCommandButtonKind.Toggle`;
 - радиус дуги `0..min(|dx|, |dy|)`;
 - неотрицательный endpoint-gap;
 - ссылки правил заглушек и их размеры/лимиты.
@@ -765,9 +758,11 @@ dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restor
 `АВТОМАТ`, `РУЧНОЙ`, `АВАРИЯ`. Телефон, логотип, пользователь и статусная область остаются
 частью фиксированного XAML-шаблона.
 
-Начиная со `schemaVersion = 5`, у `ПУСК`, `СТОП` и `АВАРИЯ` есть
-`RouteCommandButtonKind`. `Toggle` сохраняет checked/readback поведение, `Momentary`
-отправляет `true` обычной кнопкой. `АВТОМАТ` и `РУЧНОЙ` остаются toggle-кнопками.
+Начиная со `schemaVersion = 8`, `ПУСК`, `СТОП` и `АВАРИЯ` всегда работают как
+обычные `ToggleButton`: `true` пишется при включении, `false` при снятии галочки.
+Legacy-значение `RouteCommandButtonKind.Momentary` остается только для безопасной
+десериализации старых JSON и миграцией приводится к `Toggle`. `АВТОМАТ` и
+`РУЧНОЙ` остаются взаимоисключающими toggle-кнопками.
 
 Обязательные командные роли:
 

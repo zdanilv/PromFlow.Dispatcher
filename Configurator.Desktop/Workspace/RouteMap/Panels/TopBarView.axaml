@@ -105,14 +105,7 @@
                           Background="{Binding EmergencyBackground}"
                           Foreground="{Binding EmergencyForeground}"
                           IsChecked="{Binding HasEmergency}"
-                          Command="{Binding EmergencyCommand}"
-                          IsVisible="{Binding IsEmergencyToggle}"/>
-            <Button Classes="emergency"
-                    Content="{Binding EmergencyText}"
-                    Background="{Binding EmergencyMomentaryBackground}"
-                    Foreground="{Binding EmergencyMomentaryForeground}"
-                    Command="{Binding EmergencyCommand}"
-                    IsVisible="{Binding IsEmergencyMomentary}"/>
+                          Command="{Binding EmergencyCommand}"/>
             <Button Classes="settings"
                     Content="НАСТРОЙКИ"
                     Command="{Binding OpenSettingsCommand}"/>

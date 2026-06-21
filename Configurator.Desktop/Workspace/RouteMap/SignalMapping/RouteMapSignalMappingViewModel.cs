@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Reactive;
 using System.Reactive.Linq;
 using Avalonia.Media;
@@ -312,7 +313,8 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
                 or nameof(RouteMapSignalMappingRow.Type)
                 or nameof(RouteMapSignalMappingRow.BitIndex)
                 or nameof(RouteMapSignalMappingRow.WriteMode)
-                or nameof(RouteMapSignalMappingRow.PulseDurationMs)))
+                or nameof(RouteMapSignalMappingRow.PulseDurationMs)
+                or nameof(RouteMapSignalMappingRow.PhysicalAddressError)))
         {
             return;
         }
@@ -340,6 +342,12 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         if (!row.IsMapped)
         {
             row.SetValidation(null);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.PhysicalAddressError))
+        {
+            row.SetValidation(row.PhysicalAddressError);
             return;
         }
 
@@ -495,6 +503,9 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     private ModbusWriteMode _writeMode;
     private int _pulseDurationMs;
     private string? _validationMessage;
+    private string? _physicalAddressError;
+    private ModbusEndpointOptions _clientEndpoint = new();
+    private ModbusEndpointOptions _serverEndpoint = new();
     private string _clientPhysicalAddress = string.Empty;
     private string _serverPhysicalAddress = string.Empty;
 
@@ -527,23 +538,90 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     public bool PreferPulseWriteMode { get; }
 
     public bool IsMapped { get => _isMapped; set { this.RaiseAndSetIfChanged(ref _isMapped, value); RaiseStatus(); } }
-    public ModbusDataArea Area { get => _area; set { this.RaiseAndSetIfChanged(ref _area, value); RaiseStatus(); } }
-    public int Address { get => _address; set { this.RaiseAndSetIfChanged(ref _address, value); RaiseStatus(); } }
+
+    public ModbusDataArea Area
+    {
+        get => _area;
+        set
+        {
+            if (_area == value)
+            {
+                return;
+            }
+
+            ClearPhysicalAddressError();
+            this.RaiseAndSetIfChanged(ref _area, value);
+            NormalizeBitIndexForShape();
+            RaiseStatus();
+        }
+    }
+
+    public int Address
+    {
+        get => _address;
+        set
+        {
+            ClearPhysicalAddressError();
+            this.RaiseAndSetIfChanged(ref _address, value);
+            RaiseStatus();
+        }
+    }
+
     public int Length { get => _length; set { this.RaiseAndSetIfChanged(ref _length, value); RaiseStatus(); } }
     public ModbusDataAccess Access { get => _access; set { this.RaiseAndSetIfChanged(ref _access, value); RaiseStatus(); } }
-    public ModbusValueType Type { get => _type; set { this.RaiseAndSetIfChanged(ref _type, value); RaiseStatus(); } }
-    public int? BitIndex { get => _bitIndex; set { this.RaiseAndSetIfChanged(ref _bitIndex, value); RaiseStatus(); } }
+
+    public ModbusValueType Type
+    {
+        get => _type;
+        set
+        {
+            if (_type == value)
+            {
+                return;
+            }
+
+            ClearPhysicalAddressError();
+            this.RaiseAndSetIfChanged(ref _type, value);
+            NormalizeBitIndexForShape();
+            RaiseStatus();
+        }
+    }
+
+    public int? BitIndex
+    {
+        get => _bitIndex;
+        set
+        {
+            int? next = UsesRegisterBit ? value ?? 0 : null;
+            SetBitIndex(next);
+        }
+    }
+
     public ModbusWriteMode WriteMode { get => _writeMode; set { this.RaiseAndSetIfChanged(ref _writeMode, value); RaiseStatus(); } }
     public int PulseDurationMs { get => _pulseDurationMs; set { this.RaiseAndSetIfChanged(ref _pulseDurationMs, value); RaiseStatus(); } }
     public string? ValidationMessage => _validationMessage;
+    public string? PhysicalAddressError => _physicalAddressError;
     public bool HasError => !string.IsNullOrWhiteSpace(ValidationMessage);
     public string StatusText => IsSystem ? "Системный" : HasError ? "Ошибка" : IsMapped ? "Настроен" : "Не настроен";
     public IBrush RowBackground => !IsSystem && !IsMapped ? UnusedRowBackground : UsedRowBackground;
     public bool CanCreateMapping => !IsSystem && !IsMapped;
     public bool CanRemoveMapping => !IsSystem && IsMapped;
     public bool CanEditMapping => !IsSystem && IsMapped;
+    public bool CanEditBitIndex => CanEditMapping && UsesRegisterBit;
     public string ClientPhysicalAddress => _clientPhysicalAddress;
     public string ServerPhysicalAddress => _serverPhysicalAddress;
+
+    public string ClientPhysicalAddressText
+    {
+        get => ClientPhysicalAddress;
+        set => ApplyPhysicalAddress(value, _clientEndpoint);
+    }
+
+    public string ServerPhysicalAddressText
+    {
+        get => ServerPhysicalAddress;
+        set => ApplyPhysicalAddress(value, _serverEndpoint);
+    }
 
     public void ResetToDefaults() => ApplyPoint(CreateDefaultPoint(new RouteMapSignalInventoryItem(
         SignalId, ExpectedType, RequiredAccess, Roles, Objects, HasTypeConflict, Category, IsSystem, PreferPulseWriteMode)));
@@ -556,7 +634,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         Length = Length,
         Access = Access,
         Type = Type,
-        BitIndex = BitIndex,
+        BitIndex = UsesRegisterBit ? BitIndex : null,
         WriteMode = WriteMode,
         PulseDurationMs = PulseDurationMs,
     };
@@ -570,10 +648,14 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
 
     public void UpdateAddressBases(ModbusEndpointOptions client, ModbusEndpointOptions server)
     {
-        _clientPhysicalAddress = FormatPhysicalAddress(client);
-        _serverPhysicalAddress = FormatPhysicalAddress(server);
+        _clientEndpoint = client.Clone();
+        _serverEndpoint = server.Clone();
+        _clientPhysicalAddress = FormatPhysicalAddress(_clientEndpoint);
+        _serverPhysicalAddress = FormatPhysicalAddress(_serverEndpoint);
         this.RaisePropertyChanged(nameof(ClientPhysicalAddress));
         this.RaisePropertyChanged(nameof(ServerPhysicalAddress));
+        this.RaisePropertyChanged(nameof(ClientPhysicalAddressText));
+        this.RaisePropertyChanged(nameof(ServerPhysicalAddressText));
     }
 
     internal static ModbusDataPointOptions CreateDefaultPoint(RouteMapSignalInventoryItem item)
@@ -603,14 +685,15 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
 
     private void ApplyPoint(ModbusDataPointOptions point)
     {
-        Area = point.Area;
-        Address = point.Address;
-        Length = point.Length;
-        Access = point.Access;
-        Type = point.Type;
-        BitIndex = point.BitIndex;
-        WriteMode = point.WriteMode;
-        PulseDurationMs = point.PulseDurationMs;
+        this.RaiseAndSetIfChanged(ref _area, point.Area, nameof(Area));
+        this.RaiseAndSetIfChanged(ref _address, point.Address, nameof(Address));
+        this.RaiseAndSetIfChanged(ref _length, point.Length, nameof(Length));
+        this.RaiseAndSetIfChanged(ref _access, point.Access, nameof(Access));
+        this.RaiseAndSetIfChanged(ref _type, point.Type, nameof(Type));
+        SetBitIndex(UsesRegisterBit ? point.BitIndex ?? 0 : null);
+        this.RaiseAndSetIfChanged(ref _writeMode, point.WriteMode, nameof(WriteMode));
+        this.RaiseAndSetIfChanged(ref _pulseDurationMs, point.PulseDurationMs, nameof(PulseDurationMs));
+        RaiseStatus();
     }
 
     private string FormatPhysicalAddress(ModbusEndpointOptions endpoint)
@@ -620,10 +703,105 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
             return "—";
         }
 
-        var physical = (Area == ModbusDataArea.Coil ? endpoint.CoilStartAddress : endpoint.HoldingRegisterStartAddress) + Address;
-        return BitIndex is int bit && Area == ModbusDataArea.HoldingRegister
-            ? $"{physical}, bit {bit}"
-            : physical.ToString();
+        var physical = BaseAddress(endpoint) + Address;
+        return physical.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private void ApplyPhysicalAddress(string? value, ModbusEndpointOptions endpoint)
+    {
+        if (IsSystem || !IsMapped)
+        {
+            return;
+        }
+
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var physical))
+        {
+            SetPhysicalAddressError($"Физический адрес '{value}' должен быть целым числом.");
+            return;
+        }
+
+        if (ResolveArea(physical, endpoint) is not { } area)
+        {
+            SetPhysicalAddressError(
+                $"Физический адрес {physical} не входит в диапазоны endpoint: " +
+                $"Coil {FormatRange(endpoint.CoilStartAddress, endpoint.CoilCount)}, " +
+                $"Holding Register {FormatRange(endpoint.HoldingRegisterStartAddress, endpoint.RegisterCount)}.");
+            return;
+        }
+
+        ClearPhysicalAddressError();
+        Area = area;
+        Address = physical - BaseAddress(endpoint);
+    }
+
+    private int BaseAddress(ModbusEndpointOptions endpoint)
+        => Area == ModbusDataArea.Coil
+            ? endpoint.CoilStartAddress
+            : endpoint.HoldingRegisterStartAddress;
+
+    private bool UsesRegisterBit => Area == ModbusDataArea.HoldingRegister && Type == ModbusValueType.Bool;
+
+    private ModbusDataArea? ResolveArea(int physical, ModbusEndpointOptions endpoint)
+    {
+        var isCoil = Contains(endpoint.CoilStartAddress, endpoint.CoilCount, physical);
+        var isRegister = Contains(endpoint.HoldingRegisterStartAddress, endpoint.RegisterCount, physical);
+
+        return (isCoil, isRegister) switch
+        {
+            (false, false) => null,
+            (true, false) => ModbusDataArea.Coil,
+            (false, true) => ModbusDataArea.HoldingRegister,
+            (true, true) when Type != ModbusValueType.Bool => ModbusDataArea.HoldingRegister,
+            (true, true) => Area,
+        };
+    }
+
+    private static bool Contains(int start, int count, int value)
+    {
+        if (count <= 0)
+        {
+            return false;
+        }
+
+        var endExclusive = (long)start + count;
+        return value >= start && value < endExclusive;
+    }
+
+    private static string FormatRange(int start, int count)
+    {
+        if (count <= 0)
+        {
+            return "disabled";
+        }
+
+        return $"{start}..{start + count - 1}";
+    }
+
+    private void NormalizeBitIndexForShape()
+        => SetBitIndex(UsesRegisterBit ? _bitIndex ?? 0 : null);
+
+    private void SetPhysicalAddressError(string? message)
+    {
+        if (_physicalAddressError == message)
+        {
+            return;
+        }
+
+        this.RaiseAndSetIfChanged(ref _physicalAddressError, message, nameof(PhysicalAddressError));
+        RaiseStatus();
+    }
+
+    private void ClearPhysicalAddressError() => SetPhysicalAddressError(null);
+
+    private void SetBitIndex(int? value)
+    {
+        if (_bitIndex == value)
+        {
+            return;
+        }
+
+        this.RaiseAndSetIfChanged(ref _bitIndex, value, nameof(BitIndex));
+        RaiseStatus();
     }
 
     private void RaiseStatus()
@@ -633,8 +811,11 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         this.RaisePropertyChanged(nameof(CanCreateMapping));
         this.RaisePropertyChanged(nameof(CanRemoveMapping));
         this.RaisePropertyChanged(nameof(CanEditMapping));
+        this.RaisePropertyChanged(nameof(CanEditBitIndex));
         this.RaisePropertyChanged(nameof(ClientPhysicalAddress));
         this.RaisePropertyChanged(nameof(ServerPhysicalAddress));
+        this.RaisePropertyChanged(nameof(ClientPhysicalAddressText));
+        this.RaisePropertyChanged(nameof(ServerPhysicalAddressText));
     }
 }
 

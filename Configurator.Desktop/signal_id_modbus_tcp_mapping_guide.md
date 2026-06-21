@@ -115,6 +115,151 @@ plc1.db20.value         # плохо, если это физическое ра�
 Один SignalId может использоваться несколькими объектами, если тип совместим. Новая
 вкладка группирует такие usages и вычисляет наиболее строгий требуемый доступ.
 
+### Роли узлов, линий и карточек
+
+RouteMap меняет состояние элементов только через `SignalBinding`: роль задается в
+настройках `Route Map`, а физический адрес этой роли настраивается во вкладке
+`SignalId ↔ Modbus`. Для ролей чтения PLC должен записать значение по адресу из
+`Modbus.DataMap`; следующий snapshot обновит UI. Для ролей команд UI сам пишет значение
+в PLC по адресу выбранного `SignalId`.
+
+Общие роли объектов:
+
+| Роль | Где используется | Direction | ValueType | Что меняет в UI |
+|---|---|---|---|---|
+| `Visible` | Узлы, линии, карточки | `Read` | `Bool` | `true` показывает объект, `false` скрывает. |
+| `Fault` | Узлы, линии, карточки | `Read` | `Bool` | `true` переводит объект в аварийный цвет и запрещает команды карточки. |
+| `ActiveRoute` | Узлы, линии | `Read` | `Bool` | `true` показывает объект как часть активного маршрута. |
+| `Text` | Карточки | `Read` | `String` или числовой тип | Меняет текст статуса карточки. |
+| `Value` | Карточки и объекты runtime | `Read` | Любой поддержанный тип | Читает дополнительное значение; стандартная карточка не выводит отдельное поле значения. |
+
+SignalId вида `*.state` больше не являются активными ролями RouteMap. Старые JSON
+могут содержать `SignalBindingRole.State`, но миграция актуальной схемы удаляет такие
+bindings, runtime их не читает, а вкладка `SignalId ↔ Modbus` не показывает их в
+inventory. Старые точки `*.state` в `Modbus.DataMap` не удаляются автоматически, чтобы
+не стереть пользовательские адреса.
+
+Если качество любого активного сигнала объекта плохое или значение stale, объект
+становится `Offline`. `Fault=true` имеет приоритет над `ActiveRoute=true`, а
+`ActiveRoute=true` подсвечивает активный маршрут, если объект не аварийный, не offline
+и не disabled. Если этих сигналов нет, используется статическое fallback-состояние из
+настроек Route Map.
+
+#### Узлы
+
+В стандартном seed у узлов есть роли:
+
+| Роль | Direction | ValueType | Пример SignalId | Пример Modbus mapping | Пример значения PLC |
+|---|---|---|---|---|---|
+| `Fault` | `Read` | `Bool` | `bsu_1.fault` | `Coil`, `Address=20`, `Type=Bool` | `true` переводит узел в аварию. |
+| `ActiveRoute` | `Read` | `Bool` | `route.node.bsu_1.active` | `Coil`, `Address=21`, `Type=Bool` | `true` рисует активный контур узла. |
+| `TargetCommand` | `ReadWrite` | `Bool` | `route.node.bsu_1.target` | `Coil`, `Address=22`, `Type=Bool` | UI пишет `true/false`; PLC readback держит пункт `Отправить` выбранным. |
+| `LoaderCommand` | `ReadWrite` | `Bool` | `route.node.bsu_1.loader` | `Coil`, `Address=23`, `Type=Bool` | UI пишет `true/false`; PLC readback держит пункт `Возврат` выбранным. |
+
+`TargetCommand` появляется у узлов с `MenuKind=SendOnly` или `SendAndReturn`.
+`LoaderCommand` появляется только у `SendAndReturn`. Чтобы PLC сам изменил выбранный
+пункт меню узла, он должен вернуть `true` на соответствующий command/readback адрес и
+`false` на остальные конкурирующие узлы. Например, если PLC пишет
+`route.node.bsu_1.target=true`, узел `БСУ 1` становится выбранной точкой `Отправить`;
+если затем `route.node.bsu_2.target=true`, старый адрес `bsu_1.target` должен стать
+`false`, чтобы UI не показывал два пункта отправки одновременно.
+
+Дополнительно для узла можно добавить `Visible`:
+
+```text
+Role      = Visible
+SignalId  = route.node.bsu_1.visible
+Direction = Read
+ValueType = Bool
+DataMap   = Coil, Address=24, Type=Bool, Access=Read
+PLC value = false -> узел скрыт с карты и недоступен для клика
+```
+
+#### Линии
+
+В стандартном seed у линий есть роли:
+
+| Роль | Direction | ValueType | Пример SignalId | Пример Modbus mapping | Пример значения PLC |
+|---|---|---|---|---|---|
+| `Fault` | `Read` | `Bool` | `active_bsu1_bsu2.fault` | `Coil`, `Address=31`, `Type=Bool` | `true` окрашивает линию как аварийную. |
+| `ActiveRoute` | `Read` | `Bool` | `route.active_bsu1_bsu2.active` | `Coil`, `Address=32`, `Type=Bool` | `true` подсвечивает линию как участок текущего маршрута. |
+
+Чтобы PLC выделил линию активного маршрута, настройте `ActiveRoute` на bool-адрес и
+запишите туда `true`. Чтобы снять выделение, PLC должен вернуть `false`.
+
+Дополнительно для линии можно добавить `Visible`:
+
+```text
+Role      = Visible
+SignalId  = route.active_bsu1_bsu2.visible
+Direction = Read
+ValueType = Bool
+DataMap   = Coil, Address=33, Type=Bool, Access=Read
+PLC value = false -> линия скрыта
+```
+
+`Text` и `Value` runtime может прочитать для любого объекта, но стандартная карта
+не выводит динамический текст поверх узлов и линий: подписи узлов и линий берутся из
+RouteMap definition. Для динамической подписи потребуется отдельная доработка UI.
+
+#### Карточки
+
+В стандартном seed у карточки `equip.bucket` есть роли:
+
+| Роль | Direction | ValueType | Пример SignalId | Пример Modbus mapping | Пример значения PLC/UI |
+|---|---|---|---|---|---|
+| `Text` | `Read` | `UInt16` | `equip.bucket.text` | `HoldingRegister`, `Address=44`, `Type=UInt16` | `0` показывает статус `Выключен`, `1` показывает `Ожидание`, `3` показывает `Выполнение`. |
+| `StartCommand` | `ReadWrite` | `Bool` | `equip.bucket.start` | `Coil`, `Address=45`, `Type=Bool` | Кнопка `ПУСК` пишет команду; PLC readback может удерживать toggle включенным. |
+| `StopCommand` | `ReadWrite` | `Bool` | `equip.bucket.stop` | `Coil`, `Address=47`, `Type=Bool` | Кнопка `СТОП` пишет команду; PLC readback может удерживать toggle включенным. |
+
+Коды для `Text` карточки:
+
+| Код PLC | Статус карточки |
+|---|---|
+| `0` | `Выключен`, legacy-синоним, серый `MutedTextBrush` |
+| `1` | `Ожидание`, желтый `WarningBrush` |
+| `2` | `Авария` |
+| `3` | `Выполнение` |
+| `4` | `Выгрузка` |
+| `5` | `Загрузка` |
+
+Можно передать и строку, если binding `Text` настроен как `SignalValueType.String` и
+точка `Modbus.DataMap` имеет `Type=String`.
+
+Дополнительные роли карточки:
+
+```text
+Role      = Visible
+SignalId  = equip.bucket.visible
+Direction = Read
+ValueType = Bool
+DataMap   = Coil, Address=49, Type=Bool, Access=Read
+PLC value = false -> карточка скрыта
+```
+
+```text
+Role      = Fault
+SignalId  = equip.bucket.fault
+Direction = Read
+ValueType = Bool
+DataMap   = Coil, Address=50, Type=Bool, Access=Read
+PLC value = true -> карточка аварийная, ПУСК/СТОП недоступны
+```
+
+```text
+Role      = Value
+SignalId  = equip.bucket.weight
+Direction = Read
+ValueType = UInt16
+DataMap   = HoldingRegister, Address=51, Type=UInt16, Access=Read
+PLC value = 1250 -> значение попадет в runtime как ValueText; стандартная карточка его отдельно не показывает
+```
+
+`ПУСК` и `СТОП` всегда работают как обычные `ToggleButton`: при включении UI пишет
+`true` в `StartCommand`/`StopCommand`, при снятии галочки пишет `false` в тот же
+command-binding. Отдельных ролей OffFeedback и режима `Momentary` для этих кнопок
+в актуальной схеме RouteMap нет.
+
 ## 4. Вкладка SignalId ↔ Modbus
 
 В Workspace вкладки расположены так:
@@ -145,7 +290,7 @@ SignalId из TopBar, узлов, линий, vehicles и карточек.
 - `Area`, `Address`, `Length`, `BitIndex`;
 - фактический `Access` и Modbus `Type`;
 - `WriteMode`, `PulseDurationMs`;
-- вычисленные адреса Client и Server.
+- редактируемые физические адреса Client и Server.
 
 Состояния:
 
@@ -163,10 +308,11 @@ SignalId из TopBar, узлов, линий, vehicles и карточек.
 
 1. Найдите строку `Не настроен`.
 2. Нажмите `Создать`.
-3. Выберите физическую область и offset.
+3. Выберите область `Area` и задайте `Offset` или физический адрес Client/Server.
 4. Для Bool в регистре выберите `HoldingRegister` и укажите `BitIndex`.
-5. Проверьте Access, WriteMode и физические адреса.
-6. Нажмите `СОХРАНИТЬ`.
+5. Для `Coil` поле `Bit` очищается автоматически и не сохраняется.
+6. Проверьте Access, WriteMode и физические адреса.
+7. Нажмите `СОХРАНИТЬ`.
 
 Автоматические значения по умолчанию:
 
@@ -178,12 +324,21 @@ SignalId из TopBar, узлов, линий, vehicles и карточек.
 | `Float32` | `HoldingRegister` | `Real` | 2 |
 | `String` | `HoldingRegister` | `String` | 1 |
 
-Для новых связей, созданных от momentary-команд RouteMap (`ПУСК`, `СТОП`, `АВАРИЯ`),
-`WriteMode` по умолчанию становится `Pulse`. Для остальных команд и для старых
-существующих точек значение не меняется автоматически.
+Для новых связей RouteMap `WriteMode` по умолчанию становится `Latched`.
+Если физически нужна импульсная запись, выберите `Pulse` вручную для нужной
+точки `Modbus.DataMap`; UI-кнопки `ПУСК`, `СТОП` и `АВАРИЯ` больше не переводят
+mapping в pulse-режим автоматически.
 
-Адрес всегда вводится пользователем по официальной карте PLC. Вкладка не пытается
-самостоятельно распределять production-адреса.
+Адрес всегда вводится пользователем по официальной карте PLC. Можно вводить как `Offset`,
+так и физический адрес в колонках Client/Server. Вкладка не пытается самостоятельно
+распределять production-адреса.
+
+Если Bool-сигнал узла, линии или карточки должен лежать в бите Holding Register,
+можно сразу ввести физический register address в колонке Client/Server. Вкладка сверит
+адрес с диапазонами `ModbusDemo.Client/Server`, переключит `Area` на `HoldingRegister`,
+пересчитает `Offset` и разблокирует поле `Bit`. Например при
+`HoldingRegisterStartAddress = 16384` ввод `16420` даст `Offset = 36`; после этого
+можно указать `BitIndex`, например `2`.
 
 ### Удаление связи
 
@@ -204,7 +359,8 @@ SignalId из TopBar, узлов, линий, vehicles и карточек.
 
 ## 5. От offset до физического адреса
 
-`DataMap.Address` — zero-based offset относительно endpoint:
+`DataMap.Address` — zero-based offset относительно endpoint. В UI можно редактировать
+физический адрес Client или Server; вкладка пересчитает его обратно в тот же offset:
 
 ```text
 physical coil address = CoilStartAddress + Address
@@ -221,13 +377,19 @@ BitIndex                    = 5
 Физический адрес: register 103, bit 5
 ```
 
-Не вводите обозначение `40001` только потому, что оно напечатано в документации PLC.
-Сначала уточните, использует ли документация 0-based или 1-based notation, и преобразуйте
-его в offset, который ожидает Modbus-библиотека.
+Если в колонке Client address ввести `103`, при базе `HoldingRegisterStartAddress = 100`
+в `Modbus.DataMap` сохранится `Address = 3`. Если затем база Server равна `300`, колонка
+Server address покажет `303`.
 
-Вкладка отдельно показывает вычисленный адрес для Client и Server. Базы адресов берутся
-из `ModbusDemo.Client` и `ModbusDemo.Server`, потому что именно экран `Modbus Demo`
-владеет TCP endpoint и lifecycle. Сохраняется при этом только `Modbus.DataMap`.
+Не вводите обозначение `40001` только потому, что оно напечатано в документации PLC.
+Сначала уточните, использует ли документация 0-based или 1-based notation, и введите
+фактический адрес или уже подготовленный offset.
+
+Вкладка отдельно показывает и позволяет редактировать адрес для Client и Server. Базы
+адресов берутся из `ModbusDemo.Client` и `ModbusDemo.Server`, потому что именно экран
+`Modbus Demo` владеет TCP endpoint и lifecycle. Сохраняется при этом только общий
+`Modbus.DataMap`, поэтому разные физические адреса Client/Server пересчитываются в один
+offset.
 
 ## 6. Варианты хранения Bool
 

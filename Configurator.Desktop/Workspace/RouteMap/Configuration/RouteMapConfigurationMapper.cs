@@ -128,7 +128,10 @@ public sealed class RouteMapConfigurationMapper
                 ActiveOutlineColor = style.ActiveOutlineColor,
                 ActiveOutlineThickness = style.ActiveOutlineThickness,
             },
-            Bindings = new ObservableCollection<SignalBindingConfiguration>(node.Bindings.Select(ToConfiguration)),
+            Bindings = new ObservableCollection<SignalBindingConfiguration>(
+                node.Bindings
+                    .Where(binding => !IsDeprecatedSignalRole(binding.Role))
+                    .Select(ToConfiguration)),
         };
     }
 
@@ -141,7 +144,10 @@ public sealed class RouteMapConfigurationMapper
             node.Y,
             node.Kind,
             node.State,
-            node.Bindings.Select(ToModel).ToArray(),
+            node.Bindings
+                .Where(binding => !IsDeprecatedSignalRole(binding.Role))
+                .Select(ToModel)
+                .ToArray(),
             node.LabelOffsetX,
             node.LabelOffsetY,
             node.LabelPlacement,
@@ -188,19 +194,13 @@ public sealed class RouteMapConfigurationMapper
         CheckedBackground = button.CheckedBackground,
         NormalForeground = button.NormalForeground,
         CheckedForeground = button.CheckedForeground,
-        ButtonKind = button.ButtonKind,
-        OffFeedbackEnabled = button.ButtonKind == RouteCommandButtonKind.Toggle && button.OffFeedbackEnabled,
+        ButtonKind = RouteCommandButtonKind.Toggle,
+        OffFeedbackEnabled = false,
         Bindings = ToButtonBindings(button),
     };
 
-    private static ObservableCollection<SignalBindingConfiguration> ToButtonBindings(RouteTopBarButtonSettings button)
-    {
-        var bindings = new List<SignalBindingConfiguration> { ToConfiguration(button.Binding) };
-        if (button.OffFeedbackEnabled && button.OffFeedbackBinding is not null)
-            bindings.Add(ToConfiguration(button.OffFeedbackBinding));
-
-        return new ObservableCollection<SignalBindingConfiguration>(bindings);
-    }
+    private static ObservableCollection<SignalBindingConfiguration> ToButtonBindings(RouteTopBarButtonSettings button) =>
+        new([ToConfiguration(button.Binding)]);
 
     private static RouteTopBarSettings ToModel(RouteTopBarConfiguration topBar) => new(
         ToModel(
@@ -223,10 +223,10 @@ public sealed class RouteMapConfigurationMapper
             topBar.Emergency,
             SignalBindingRole.EmergencyCommand,
             "system.emergency",
-            SignalBindingRole.EmergencyOffFeedback,
-            "system.emergency.off",
-            offFeedbackEnabled: topBar.Emergency.ButtonKind == RouteCommandButtonKind.Toggle && topBar.Emergency.OffFeedbackEnabled,
-            topBar.Emergency.ButtonKind));
+            offFeedbackRole: null,
+            offFeedbackSignalId: null,
+            offFeedbackEnabled: false,
+            RouteCommandButtonKind.Toggle));
 
     private static RouteTopBarButtonSettings ToModel(
         RouteTopBarButtonConfiguration button,
@@ -291,7 +291,10 @@ public sealed class RouteMapConfigurationMapper
                 LabelColor = style.LabelColor,
                 LabelFontSize = style.LabelFontSize,
             },
-            Bindings = new ObservableCollection<SignalBindingConfiguration>(segment.Bindings.Select(ToConfiguration)),
+            Bindings = new ObservableCollection<SignalBindingConfiguration>(
+                segment.Bindings
+                    .Where(binding => !IsDeprecatedSignalRole(binding.Role))
+                    .Select(ToConfiguration)),
         };
     }
 
@@ -303,7 +306,10 @@ public sealed class RouteMapConfigurationMapper
             segment.ToNodeId,
             segment.State,
             segment.IsDirectional,
-            segment.Bindings.Select(ToModel).ToArray(),
+            segment.Bindings
+                .Where(binding => !IsDeprecatedSignalRole(binding.Role))
+                .Select(ToModel)
+                .ToArray(),
             segment.Kind,
             segment.ArcRadius,
             segment.ElbowOrder,
@@ -341,10 +347,10 @@ public sealed class RouteMapConfigurationMapper
             State = card.State,
             CanStart = card.CanStart,
             CanStop = card.CanStop,
-            StartButtonKind = card.StartButtonKind,
-            StopButtonKind = card.StopButtonKind,
-            StartOffFeedbackEnabled = card.StartButtonKind == RouteCommandButtonKind.Toggle && card.StartOffFeedbackEnabled,
-            StopOffFeedbackEnabled = card.StopButtonKind == RouteCommandButtonKind.Toggle && card.StopOffFeedbackEnabled,
+            StartButtonKind = RouteCommandButtonKind.Toggle,
+            StopButtonKind = RouteCommandButtonKind.Toggle,
+            StartOffFeedbackEnabled = false,
+            StopOffFeedbackEnabled = false,
             IsVisible = card.IsVisible,
             AttachedChainId = card.AttachedChainId ?? chain?.Id,
             AttachedCardRightOffset = card.AttachedChainId is not null
@@ -353,7 +359,10 @@ public sealed class RouteMapConfigurationMapper
             VerticalAnchorKind = anchor.Kind,
             VerticalAnchorNodeId = anchor.NodeId,
             Style = ToConfiguration(style),
-            Bindings = new ObservableCollection<SignalBindingConfiguration>(card.Bindings.Select(ToConfiguration)),
+            Bindings = new ObservableCollection<SignalBindingConfiguration>(
+                card.Bindings
+                    .Where(binding => !IsDeprecatedSignalRole(binding.Role))
+                    .Select(ToConfiguration)),
         };
     }
 
@@ -366,11 +375,14 @@ public sealed class RouteMapConfigurationMapper
             card.State,
             card.CanStart,
             card.CanStop,
-            card.Bindings.Select(ToModel).ToArray(),
-            card.StartButtonKind,
-            card.StopButtonKind,
-            card.StartButtonKind == RouteCommandButtonKind.Toggle && card.StartOffFeedbackEnabled,
-            card.StopButtonKind == RouteCommandButtonKind.Toggle && card.StopOffFeedbackEnabled,
+            card.Bindings
+                .Where(binding => !IsDeprecatedSignalRole(binding.Role))
+                .Select(ToModel)
+                .ToArray(),
+            RouteCommandButtonKind.Toggle,
+            RouteCommandButtonKind.Toggle,
+            StartOffFeedbackEnabled: false,
+            StopOffFeedbackEnabled: false,
             card.IsVisible,
             card.AttachedChainId,
             card.AttachedCardRightOffset,
@@ -507,6 +519,16 @@ public sealed class RouteMapConfigurationMapper
 
     private static SignalBinding ToModel(SignalBindingConfiguration binding) =>
         new(binding.Role, binding.SignalId, binding.Direction, binding.ValueType);
+
+    private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
+        SignalBindingRole.State or
+        SignalBindingRole.StartOffFeedback or
+        SignalBindingRole.StopOffFeedback or
+        SignalBindingRole.TargetOffFeedback or
+        SignalBindingRole.LoaderOffFeedback or
+        SignalBindingRole.AutomaticModeOffFeedback or
+        SignalBindingRole.ManualModeOffFeedback or
+        SignalBindingRole.EmergencyOffFeedback;
 
     private static RouteMapPaletteConfiguration ToConfiguration(RouteMapPaletteSettings palette) => new()
     {

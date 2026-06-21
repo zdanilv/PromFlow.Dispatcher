@@ -121,10 +121,10 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
     {
         var definition = RouteMapSeed.Create();
         var binding = new SignalBinding(
-            SignalBindingRole.State,
-            "test.vehicle.state",
+            SignalBindingRole.Visible,
+            "test.vehicle.visible",
             SignalBindingDirection.Read,
-            SignalValueType.String);
+            SignalValueType.Bool);
         definition = definition with
         {
             Vehicles = definition.Vehicles.Concat(
@@ -149,6 +149,62 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         Assert.Equal(
             RouteMapSignalElementCategory.Vehicle,
             inventory.Single(item => item.SignalId == binding.SignalId).Category);
+    }
+
+    [Fact]
+    public void SignalInventory_DoesNotExposeLegacyStateSignals()
+    {
+        var seed = RouteMapSeed.Create();
+        var node = seed.Nodes.Single(x => x.Id == "bsu_1");
+        var segment = seed.Segments.Single(x => x.Id == "bsu2_to_bucket");
+        var card = seed.MapEquipment.Single();
+        var definition = seed with
+        {
+            Nodes = seed.Nodes.Select(x => x.Id == node.Id
+                ? x with
+                {
+                    Bindings = node.Bindings.Concat(
+                    [
+                        new SignalBinding(
+                            SignalBindingRole.State,
+                            "bsu_1.state",
+                            SignalBindingDirection.Read,
+                            SignalValueType.String)
+                    ]).ToArray()
+                }
+                : x).ToArray(),
+            Segments = seed.Segments.Select(x => x.Id == segment.Id
+                ? x with
+                {
+                    Bindings = segment.Bindings.Concat(
+                    [
+                        new SignalBinding(
+                            SignalBindingRole.State,
+                            "bsu2_to_bucket.state",
+                            SignalBindingDirection.Read,
+                            SignalValueType.String)
+                    ]).ToArray()
+                }
+                : x).ToArray(),
+            MapEquipment =
+            [
+                card with
+                {
+                    Bindings = card.Bindings.Concat(
+                    [
+                        new SignalBinding(
+                            SignalBindingRole.State,
+                            "equip.bucket.state",
+                            SignalBindingDirection.Read,
+                            SignalValueType.String)
+                    ]).ToArray()
+                }
+            ]
+        };
+
+        var inventory = RouteMapSignalInventory.Build(definition);
+
+        Assert.DoesNotContain(inventory, item => item.SignalId.EndsWith(".state", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -186,14 +242,9 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
     }
 
     [Fact]
-    public void MappingDefaults_UsePulseForMomentaryCommandsAndDemoAddressBases()
+    public void MappingDefaults_UseLatchedForToggleCommandsAndDemoAddressBases()
     {
         using var scope = new ConfigurationScope();
-        var draft = scope.Manager.CreateDraft();
-        draft.Cards.Single().StartButtonKind = RouteCommandButtonKind.Momentary;
-        draft.Cards.Single().StartOffFeedbackEnabled = false;
-        draft.Cards.Single().Bindings.Remove(draft.Cards.Single().Bindings.Single(x => x.Role == SignalBindingRole.StartOffFeedback));
-        Assert.True(scope.Manager.Apply(draft).IsSuccess);
         var routeOptions = new ModbusOptions();
         var demoOptions = new ModbusOptions
         {
@@ -222,25 +273,345 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
 
         viewModel.CreateMappingCommand.Execute(row).Subscribe();
 
-        Assert.Equal(ModbusWriteMode.Pulse, row.WriteMode);
+        Assert.Equal(ModbusWriteMode.Latched, row.WriteMode);
         Assert.Equal("100", row.ClientPhysicalAddress);
+        Assert.Equal("100", row.ClientPhysicalAddressText);
         Assert.Equal("300", row.ServerPhysicalAddress);
+        Assert.Equal("300", row.ServerPhysicalAddressText);
     }
 
     [Fact]
-    public void SignalInventory_ExposesOffFeedbackSignalsAsReadOnly()
+    public void MappingRow_PhysicalAddressText_RecalculatesSharedOffset()
+    {
+        using var scope = new ConfigurationScope();
+        var routeOptions = new ModbusOptions();
+        var demoOptions = new ModbusOptions
+        {
+            Client = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 100,
+                HoldingRegisterStartAddress = 200,
+                CoilCount = 20,
+                RegisterCount = 20
+            },
+            Server = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 300,
+                HoldingRegisterStartAddress = 400,
+                CoilCount = 20,
+                RegisterCount = 20
+            }
+        };
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(routeOptions, demoOptions),
+            new RecordingAppConfigService(),
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == "system.emergency");
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+        row.Area = ModbusDataArea.HoldingRegister;
+        row.Type = ModbusValueType.Bool;
+
+        row.ClientPhysicalAddressText = "205";
+
+        Assert.Equal(5, row.Address);
+        Assert.Equal("205", row.ClientPhysicalAddressText);
+        Assert.Equal("405", row.ServerPhysicalAddressText);
+
+        row.ServerPhysicalAddressText = "407";
+
+        Assert.Equal(7, row.Address);
+        Assert.Equal("207", row.ClientPhysicalAddressText);
+        Assert.Equal("407", row.ServerPhysicalAddressText);
+
+        row.Address = 9;
+
+        Assert.Equal("209", row.ClientPhysicalAddressText);
+        Assert.Equal("409", row.ServerPhysicalAddressText);
+    }
+
+    [Fact]
+    public void MappingRow_NodeBoolPhysicalRegisterAddress_SwitchesAreaAndEnablesBit()
+    {
+        using var scope = new ConfigurationScope();
+        var routeOptions = new ModbusOptions();
+        var demoOptions = new ModbusOptions
+        {
+            Client = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 0,
+                CoilCount = 2000,
+                HoldingRegisterStartAddress = 16384,
+                RegisterCount = 100
+            },
+            Server = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 0,
+                CoilCount = 2000,
+                HoldingRegisterStartAddress = 16384,
+                RegisterCount = 100
+            }
+        };
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(routeOptions, demoOptions),
+            new RecordingAppConfigService(),
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == "bsu_1.fault");
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+
+        Assert.Equal(ModbusDataArea.Coil, row.Area);
+        Assert.Null(row.BitIndex);
+        Assert.False(row.CanEditBitIndex);
+
+        row.ClientPhysicalAddressText = "16420";
+
+        Assert.Equal(ModbusDataArea.HoldingRegister, row.Area);
+        Assert.Equal(36, row.Address);
+        Assert.Equal(0, row.BitIndex);
+        Assert.True(row.CanEditBitIndex);
+        Assert.Equal("16420", row.ClientPhysicalAddressText);
+        Assert.Equal("16420", row.ServerPhysicalAddressText);
+        Assert.False(row.HasError);
+
+        row.BitIndex = 2;
+
+        var point = row.ToOptions();
+        Assert.Equal(ModbusDataArea.HoldingRegister, point.Area);
+        Assert.Equal(36, point.Address);
+        Assert.Equal(2, point.BitIndex);
+    }
+
+    [Theory]
+    [InlineData("active_bsu1_bsu2.fault")]
+    [InlineData("route.active_bsu1_bsu2.active")]
+    [InlineData("equip.bucket.start")]
+    [InlineData("equip.bucket.stop")]
+    public void MappingRow_LineAndCardBoolPhysicalRegisterAddress_SwitchesAreaAndEnablesBit(string signalId)
+    {
+        using var scope = new ConfigurationScope();
+        var routeOptions = new ModbusOptions();
+        var demoOptions = CreateRegisterAddressDemoOptions();
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(routeOptions, demoOptions),
+            new RecordingAppConfigService(),
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == signalId);
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+
+        row.ClientPhysicalAddressText = "16420";
+        row.BitIndex = 5;
+
+        Assert.Equal(ModbusDataArea.HoldingRegister, row.Area);
+        Assert.Equal(36, row.Address);
+        Assert.Equal(5, row.BitIndex);
+        Assert.True(row.CanEditBitIndex);
+        Assert.Equal("16420", row.ClientPhysicalAddressText);
+
+        var point = row.ToOptions();
+        Assert.Equal(ModbusDataArea.HoldingRegister, point.Area);
+        Assert.Equal(36, point.Address);
+        Assert.Equal(5, point.BitIndex);
+    }
+
+    [Fact]
+    public void MappingRow_CardTextPhysicalRegisterAddress_KeepsRegisterWithoutBit()
+    {
+        using var scope = new ConfigurationScope();
+        var routeOptions = new ModbusOptions();
+        var demoOptions = CreateRegisterAddressDemoOptions();
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(routeOptions, demoOptions),
+            new RecordingAppConfigService(),
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == "equip.bucket.text");
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+
+        row.ClientPhysicalAddressText = "16421";
+
+        Assert.Equal(ModbusDataArea.HoldingRegister, row.Area);
+        Assert.Equal(37, row.Address);
+        Assert.Null(row.BitIndex);
+        Assert.False(row.CanEditBitIndex);
+        Assert.Equal("16421", row.ClientPhysicalAddressText);
+    }
+
+    [Fact]
+    public void MappingRow_ServerPhysicalRegisterAddress_RecalculatesOffset()
+    {
+        using var scope = new ConfigurationScope();
+        var routeOptions = new ModbusOptions();
+        var demoOptions = new ModbusOptions
+        {
+            Client = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 0,
+                CoilCount = 200,
+                HoldingRegisterStartAddress = 100,
+                RegisterCount = 100
+            },
+            Server = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 0,
+                CoilCount = 200,
+                HoldingRegisterStartAddress = 300,
+                RegisterCount = 100
+            }
+        };
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(routeOptions, demoOptions),
+            new RecordingAppConfigService(),
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == "bsu_1.fault");
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+
+        row.ServerPhysicalAddressText = "336";
+
+        Assert.Equal(ModbusDataArea.HoldingRegister, row.Area);
+        Assert.Equal(36, row.Address);
+        Assert.Equal(0, row.BitIndex);
+        Assert.True(row.CanEditBitIndex);
+        Assert.Equal("136", row.ClientPhysicalAddressText);
+        Assert.Equal("336", row.ServerPhysicalAddressText);
+    }
+
+    [Fact]
+    public void MappingRow_PhysicalCoilAddress_SwitchesAreaAndClearsBit()
+    {
+        using var scope = new ConfigurationScope();
+        var routeOptions = new ModbusOptions();
+        var demoOptions = new ModbusOptions
+        {
+            Client = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 0,
+                CoilCount = 2000,
+                HoldingRegisterStartAddress = 16384,
+                RegisterCount = 100
+            },
+            Server = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 0,
+                CoilCount = 2000,
+                HoldingRegisterStartAddress = 16384,
+                RegisterCount = 100
+            }
+        };
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(routeOptions, demoOptions),
+            new RecordingAppConfigService(),
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == "bsu_1.fault");
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+        row.ClientPhysicalAddressText = "16420";
+        row.BitIndex = 2;
+
+        row.ClientPhysicalAddressText = "25";
+
+        Assert.Equal(ModbusDataArea.Coil, row.Area);
+        Assert.Equal(25, row.Address);
+        Assert.Null(row.BitIndex);
+        Assert.False(row.CanEditBitIndex);
+    }
+
+    [Fact]
+    public void MappingRow_PhysicalAddressOutsideEndpointRange_ShowsValidationWithoutChangingOffset()
+    {
+        using var scope = new ConfigurationScope();
+        var routeOptions = new ModbusOptions();
+        var demoOptions = new ModbusOptions
+        {
+            Client = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 0,
+                CoilCount = 2000,
+                HoldingRegisterStartAddress = 16384,
+                RegisterCount = 100
+            },
+            Server = new ModbusEndpointOptions
+            {
+                CoilStartAddress = 0,
+                CoilCount = 2000,
+                HoldingRegisterStartAddress = 16384,
+                RegisterCount = 100
+            }
+        };
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(routeOptions, demoOptions),
+            new RecordingAppConfigService(),
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == "bsu_1.fault");
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+
+        row.ClientPhysicalAddressText = "50000";
+
+        Assert.Equal(ModbusDataArea.Coil, row.Area);
+        Assert.Equal(0, row.Address);
+        Assert.Contains("не входит в диапазоны endpoint", row.ValidationMessage);
+    }
+
+    [Fact]
+    public void MappingRow_NormalizesBitIndexForAreaAndType()
+    {
+        using var scope = new ConfigurationScope();
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(new ModbusOptions()),
+            new RecordingAppConfigService(),
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == "system.emergency");
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+
+        Assert.Equal(ModbusDataArea.Coil, row.Area);
+        Assert.Null(row.BitIndex);
+        Assert.False(row.CanEditBitIndex);
+
+        row.Area = ModbusDataArea.HoldingRegister;
+
+        Assert.Equal(0, row.BitIndex);
+        Assert.True(row.CanEditBitIndex);
+
+        row.BitIndex = 7;
+        row.Area = ModbusDataArea.Coil;
+
+        Assert.Null(row.BitIndex);
+        Assert.False(row.CanEditBitIndex);
+
+        row.Area = ModbusDataArea.HoldingRegister;
+        row.Type = ModbusValueType.UInt16;
+
+        Assert.Null(row.BitIndex);
+        Assert.False(row.CanEditBitIndex);
+
+        row.Type = ModbusValueType.Bool;
+
+        Assert.Equal(0, row.BitIndex);
+        Assert.True(row.CanEditBitIndex);
+    }
+
+    [Fact]
+    public void SignalInventory_DoesNotExposeLegacyOffFeedbackSignals()
     {
         var definition = RouteMapSeed.Create();
 
         var inventory = RouteMapSignalInventory.Build(definition);
 
-        var cardOff = inventory.Single(item => item.SignalId == "equip.bucket.start.off");
-        Assert.Equal(ModbusDataAccess.Read, cardOff.RequiredAccess);
-        Assert.Equal(SignalValueType.Bool, cardOff.ExpectedType);
-
-        var topBarOff = inventory.Single(item => item.SignalId == "system.emergency.off");
-        Assert.Equal(ModbusDataAccess.Read, topBarOff.RequiredAccess);
-        Assert.Equal(RouteMapSignalElementCategory.TopBar, topBarOff.Category);
+        Assert.DoesNotContain(inventory, item => item.SignalId == "equip.bucket.start.off");
+        Assert.DoesNotContain(inventory, item => item.SignalId == "equip.bucket.stop.off");
+        Assert.DoesNotContain(inventory, item => item.SignalId == "system.emergency.off");
         Assert.DoesNotContain(inventory, item => item.SignalId == "system.mode.manual.off");
         Assert.DoesNotContain(inventory, item => item.SignalId == "route.node.bsu_1.loader.off");
     }
@@ -283,6 +654,15 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
                     Length = 1,
                     Type = ModbusValueType.Bool,
                     Access = ModbusDataAccess.Read
+                },
+                new ModbusDataPointOptions
+                {
+                    Name = "equip.bucket.state",
+                    Area = ModbusDataArea.HoldingRegister,
+                    Address = 8,
+                    Length = 1,
+                    Type = ModbusValueType.UInt16,
+                    Access = ModbusDataAccess.Read
                 }
             ]
         };
@@ -303,9 +683,50 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
 
         Assert.NotNull(config.SavedModbus);
         Assert.Contains(config.SavedModbus.DataMap, point => point.Name == "diagnostic.unrelated");
+        Assert.Contains(config.SavedModbus.DataMap, point => point.Name == "equip.bucket.state");
         Assert.Contains(config.SavedModbus.DataMap, point => point.Name == "system.emergency");
         Assert.Contains(runtime.Applied, point => point.Name == "system.emergency");
         Assert.False(viewModel.IsDirty);
+    }
+
+    [Fact]
+    public async Task MappingSave_PersistsOffsetAndBitFromPhysicalAddress()
+    {
+        using var scope = new ConfigurationScope();
+        var routeOptions = new ModbusOptions();
+        var demoOptions = new ModbusOptions
+        {
+            Client = new ModbusEndpointOptions
+            {
+                HoldingRegisterStartAddress = 100,
+                RegisterCount = 20
+            },
+            Server = new ModbusEndpointOptions
+            {
+                HoldingRegisterStartAddress = 300,
+                RegisterCount = 20
+            }
+        };
+        var config = new RecordingAppConfigService();
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(routeOptions, demoOptions),
+            config,
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == "system.emergency");
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+        row.Area = ModbusDataArea.HoldingRegister;
+        row.Type = ModbusValueType.Bool;
+        row.BitIndex = 4;
+        row.ClientPhysicalAddressText = "105";
+
+        await viewModel.SaveAsync();
+
+        var point = Assert.Single(config.SavedModbus!.DataMap, point => point.Name == "system.emergency");
+        Assert.Equal(5, point.Address);
+        Assert.Equal(4, point.BitIndex);
+        Assert.Equal(ModbusDataArea.HoldingRegister, point.Area);
     }
 
     private sealed class ManualSignalProvider : ISignalValueProvider
@@ -360,6 +781,24 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
             return ModbusOperationResult.Success();
         }
     }
+
+    private static ModbusOptions CreateRegisterAddressDemoOptions() => new()
+    {
+        Client = new ModbusEndpointOptions
+        {
+            CoilStartAddress = 0,
+            CoilCount = 2000,
+            HoldingRegisterStartAddress = 16384,
+            RegisterCount = 100
+        },
+        Server = new ModbusEndpointOptions
+        {
+            CoilStartAddress = 0,
+            CoilCount = 2000,
+            HoldingRegisterStartAddress = 16384,
+            RegisterCount = 100
+        }
+    };
 
     private sealed class TestOptionsMonitor(ModbusOptions value, ModbusOptions? demoValue = null) : IOptionsMonitor<ModbusOptions>
     {

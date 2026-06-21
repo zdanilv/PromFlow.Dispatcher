@@ -59,8 +59,19 @@ public sealed partial class SignalBindingsEditor : UserControl
         set => SetValue(AllowedRolesProperty, value);
     }
 
-    public IReadOnlyList<SignalBindingRole> SignalBindingRoles { get; } = Enum.GetValues<SignalBindingRole>();
+    public IReadOnlyList<SignalBindingRole> SignalBindingRoles { get; } = Enum.GetValues<SignalBindingRole>()
+        .Where(role => !IsDeprecatedSignalRole(role))
+        .ToArray();
     public IReadOnlyList<SignalBindingDirection> SignalBindingDirections { get; } = Enum.GetValues<SignalBindingDirection>();
     public IReadOnlyList<SignalValueType> SignalValueTypes { get; } = Enum.GetValues<SignalValueType>();
 
+    private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
+        SignalBindingRole.State or
+        SignalBindingRole.StartOffFeedback or
+        SignalBindingRole.StopOffFeedback or
+        SignalBindingRole.TargetOffFeedback or
+        SignalBindingRole.LoaderOffFeedback or
+        SignalBindingRole.AutomaticModeOffFeedback or
+        SignalBindingRole.ManualModeOffFeedback or
+        SignalBindingRole.EmergencyOffFeedback;
 }

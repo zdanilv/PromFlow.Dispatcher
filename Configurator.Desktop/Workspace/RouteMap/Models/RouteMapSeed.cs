@@ -153,18 +153,15 @@ public static class RouteMapSeed
         return new EquipmentCommandCard(
             id,
             title,
-            "Ожидание",
+            "Выключено",
             RouteObjectState.Idle,
             canStart,
             canStop,
             new[]
             {
-                new SignalBinding(SignalBindingRole.State, $"{id}.state", SignalBindingDirection.Read, SignalValueType.String),
                 new SignalBinding(SignalBindingRole.Text, $"{id}.text", SignalBindingDirection.Read, SignalValueType.UInt16),
                 new SignalBinding(SignalBindingRole.StartCommand, $"{id}.start", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
-                new SignalBinding(SignalBindingRole.StartOffFeedback, $"{id}.start.off", SignalBindingDirection.Read, SignalValueType.Bool),
                 new SignalBinding(SignalBindingRole.StopCommand, $"{id}.stop", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
-                new SignalBinding(SignalBindingRole.StopOffFeedback, $"{id}.stop.off", SignalBindingDirection.Read, SignalValueType.Bool),
             });
     }
 
@@ -172,7 +169,6 @@ public static class RouteMapSeed
     {
         var bindings = new List<SignalBinding>
         {
-            new SignalBinding(SignalBindingRole.State, $"{id}.state", SignalBindingDirection.Read, SignalValueType.String),
             new SignalBinding(SignalBindingRole.Fault, $"{id}.fault", SignalBindingDirection.Read, SignalValueType.Bool),
             new SignalBinding(SignalBindingRole.ActiveRoute, $"route.node.{id}.active", SignalBindingDirection.Read, SignalValueType.Bool),
         };
@@ -208,15 +204,12 @@ public static class RouteMapSeed
             NormalForeground = "#FFFFFF",
             CheckedForeground = "#FFFFFF",
             Binding = new SignalBinding(SignalBindingRole.EmergencyCommand, "system.emergency", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
-            OffFeedbackEnabled = true,
-            OffFeedbackBinding = new SignalBinding(SignalBindingRole.EmergencyOffFeedback, "system.emergency.off", SignalBindingDirection.Read, SignalValueType.Bool),
         });
 
     private static SignalBinding[] SegmentBindings(string id)
     {
         return
         [
-            new SignalBinding(SignalBindingRole.State, $"{id}.state", SignalBindingDirection.Read, SignalValueType.String),
             new SignalBinding(SignalBindingRole.Fault, $"{id}.fault", SignalBindingDirection.Read, SignalValueType.Bool),
             new SignalBinding(SignalBindingRole.ActiveRoute, $"route.{id}.active", SignalBindingDirection.Read, SignalValueType.Bool),
         ];

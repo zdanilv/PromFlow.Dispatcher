@@ -43,9 +43,7 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 signals,
                 equipment.CanStart,
                 equipment.CanStop,
-                equipment.StatusText,
-                useStartOffFeedback: equipment.StartOffFeedbackEnabled,
-                useStopOffFeedback: equipment.StopOffFeedbackEnabled);
+                equipment.StatusText);
         }
 
         return new RouteMapRuntimeState(
@@ -65,19 +63,13 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         bool canStartFallback,
         bool canStopFallback,
         string? textFallback = null,
-        bool activeAsState = true,
-        bool useStartOffFeedback = false,
-        bool useStopOffFeedback = false)
+        bool activeAsState = true)
     {
-        var state = fallbackState;
         var text = textFallback;
         string? valueText = null;
         var isVisible = true;
         var isStartChecked = false;
         var isStopChecked = false;
-        var isStartOffFeedback = false;
-        var isStopOffFeedback = false;
-        var mappedState = fallbackState;
         var isOffline = false;
         var hasFault = false;
         var isActiveRoute = false;
@@ -86,6 +78,9 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
 
         foreach (var binding in bindings)
         {
+            if (IsIgnoredRuntimeRole(binding.Role))
+                continue;
+
             if (!signals.TryGetValue(binding.SignalId, out var signal))
                 continue;
 
@@ -98,7 +93,6 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             switch (binding.Role)
             {
                 case SignalBindingRole.State:
-                    mappedState = ReadState(signal, mappedState);
                     break;
                 case SignalBindingRole.Text:
                     text = ReadText(signal, text);
@@ -122,16 +116,12 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                         isStartChecked = ReadBool(signal, isStartChecked);
                     break;
                 case SignalBindingRole.StartOffFeedback:
-                    if (useStartOffFeedback && (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite))
-                        isStartOffFeedback = ReadBool(signal, isStartOffFeedback);
                     break;
                 case SignalBindingRole.StopCommand:
                     if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
                         isStopChecked = ReadBool(signal, isStopChecked);
                     break;
                 case SignalBindingRole.StopOffFeedback:
-                    if (useStopOffFeedback && (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite))
-                        isStopOffFeedback = ReadBool(signal, isStopOffFeedback);
                     break;
                 case SignalBindingRole.LoaderCommand:
                     if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
@@ -156,22 +146,18 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             }
         }
 
-        state = isOffline
+        var state = isOffline
             ? RouteObjectState.Offline
             : hasFault
                 ? RouteObjectState.Fault
                 : isActiveRoute && activeAsState
                     ? RouteObjectState.ActiveRoute
-                    : mappedState;
+                    : fallbackState;
 
         var commandsAllowed = state is not RouteObjectState.Offline
             and not RouteObjectState.Fault
             and not RouteObjectState.Disabled;
 
-        if (isStartOffFeedback)
-            isStartChecked = false;
-        if (isStopOffFeedback)
-            isStopChecked = false;
         return new RouteObjectRuntimeState(
             objectId,
             state,
@@ -198,32 +184,7 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         var value = button.Binding.Direction == SignalBindingDirection.Write
             ? fallback
             : ReadBool(signals, button.Binding.SignalId, fallback);
-        if (button.OffFeedbackEnabled &&
-            button.OffFeedbackBinding is { } offFeedback &&
-            offFeedback.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite &&
-            ReadBool(signals, offFeedback.SignalId))
-            return false;
-
         return value;
-    }
-
-    private static RouteObjectState ReadState(SignalValue signal, RouteObjectState fallback)
-    {
-        return signal.Value switch
-        {
-            RouteObjectState state => state,
-            string text when Enum.TryParse<RouteObjectState>(text, ignoreCase: true, out var state) => state,
-            bool isActive => isActive ? RouteObjectState.ActiveRoute : fallback,
-            int number => number switch
-            {
-                1 => RouteObjectState.Ready,
-                2 => RouteObjectState.Running,
-                3 => RouteObjectState.Fault,
-                4 => RouteObjectState.Offline,
-                _ => fallback,
-            },
-            _ => fallback,
-        };
     }
 
     private static bool ReadBool(
@@ -261,13 +222,13 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
     {
         return number switch
         {
-            0 => "Ожидание",
-            1 => "Выключен",
+            0 => "Выключен",
+            1 => "Ожидание",
             2 => "Авария",
             3 => "Выполнение",
             4 => "Выгрузка",
             5 => "Загрузка",
-            _ => fallback ?? "Ожидание",
+            _ => fallback ?? "Выключено",
         };
     }
 
@@ -278,4 +239,14 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
 
         return signal.Value?.ToString();
     }
+
+    private static bool IsIgnoredRuntimeRole(SignalBindingRole role) => role is
+        SignalBindingRole.State or
+        SignalBindingRole.StartOffFeedback or
+        SignalBindingRole.StopOffFeedback or
+        SignalBindingRole.TargetOffFeedback or
+        SignalBindingRole.LoaderOffFeedback or
+        SignalBindingRole.AutomaticModeOffFeedback or
+        SignalBindingRole.ManualModeOffFeedback or
+        SignalBindingRole.EmergencyOffFeedback;
 }

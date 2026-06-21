@@ -33,7 +33,7 @@ public sealed class RouteMapRuntimeMapperTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Map_applies_fault_active_and_state_priority_independent_of_binding_order(bool reverse)
+    public void Map_applies_fault_and_active_priority_independent_of_binding_order(bool reverse)
     {
         var seed = RouteMapSeed.Create();
         var source = seed.Segments.Single(x => x.Id == "bsu2_to_bucket");
@@ -51,7 +51,6 @@ public sealed class RouteMapRuntimeMapperTests
                 binding.SignalId,
                 binding.Role switch
                 {
-                    SignalBindingRole.State => RouteObjectState.Running.ToString(),
                     SignalBindingRole.Fault => true,
                     SignalBindingRole.ActiveRoute => true,
                     _ => false,
@@ -79,7 +78,7 @@ public sealed class RouteMapRuntimeMapperTests
                 true,
                 binding.ValueType,
                 now,
-                IsQualityGood: binding.Role != SignalBindingRole.State,
+                IsQualityGood: binding.Role != SignalBindingRole.ActiveRoute,
                 IsStale: false));
 
         var runtime = new RouteMapRuntimeMapper(definition).Map(signals);
@@ -163,10 +162,10 @@ public sealed class RouteMapRuntimeMapperTests
         var now = DateTimeOffset.UtcNow;
         var signals = new Dictionary<string, SignalValue>
         {
-            ["equip.bucket.state"] = new(
-                "equip.bucket.state",
-                RouteObjectState.Ready.ToString(),
-                SignalValueType.String,
+            ["equip.bucket.start"] = new(
+                "equip.bucket.start",
+                true,
+                SignalValueType.Bool,
                 now,
                 IsQualityGood: false,
                 IsStale: false),
@@ -180,8 +179,8 @@ public sealed class RouteMapRuntimeMapperTests
     }
 
     [Theory]
-    [InlineData(0, "Ожидание")]
-    [InlineData(1, "Выключен")]
+    [InlineData(0, "Выключен")]
+    [InlineData(1, "Ожидание")]
     [InlineData(2, "Авария")]
     [InlineData(3, "Выполнение")]
     [InlineData(4, "Выгрузка")]
@@ -239,7 +238,7 @@ public sealed class RouteMapRuntimeMapperTests
     }
 
     [Fact]
-    public void Map_off_feedback_overrides_only_supported_toggle_readback()
+    public void Map_ignores_legacy_off_feedback_toggle_readback()
     {
         var definition = RouteMapSeed.Create();
         var mapper = new RouteMapRuntimeMapper(definition);
@@ -258,9 +257,51 @@ public sealed class RouteMapRuntimeMapperTests
 
         var runtime = mapper.Map(signals);
 
-        Assert.False(runtime.Find("equip.bucket")?.IsStartChecked);
+        Assert.True(runtime.Find("equip.bucket")?.IsStartChecked);
         Assert.True(runtime.Find("bsu_1")?.IsLoader);
         Assert.True(runtime.IsManualMode);
-        Assert.False(runtime.HasEmergency);
+        Assert.True(runtime.HasEmergency);
+    }
+
+    [Fact]
+    public void Map_ignores_legacy_state_binding_and_quality()
+    {
+        var seed = RouteMapSeed.Create();
+        var card = seed.MapEquipment.Single();
+        var definition = seed with
+        {
+            MapEquipment =
+            [
+                card with
+                {
+                    Bindings = card.Bindings.Concat(
+                    [
+                        new SignalBinding(
+                            SignalBindingRole.State,
+                            "equip.bucket.state",
+                            SignalBindingDirection.Read,
+                            SignalValueType.UInt16)
+                    ]).ToArray()
+                }
+            ]
+        };
+        var mapper = new RouteMapRuntimeMapper(definition);
+        var now = DateTimeOffset.UtcNow;
+        var signals = new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.state"] = new(
+                "equip.bucket.state",
+                (ushort)3,
+                SignalValueType.UInt16,
+                now,
+                IsQualityGood: false,
+                IsStale: false),
+        };
+
+        var runtime = mapper.Map(signals);
+        var bucket = runtime.Find("equip.bucket");
+
+        Assert.Equal(RouteObjectState.Idle, bucket?.State);
+        Assert.True(bucket?.CanStart);
     }
 }

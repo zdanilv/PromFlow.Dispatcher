@@ -242,7 +242,7 @@ style, bindings
 |---|---|
 | Источник данных | Mock/Modbus, текущий источник и горячее переключение |
 | Карта и маршруты | Размеры, padding, палитра, цепочки |
-| TopBar | Тексты, цвета, bindings трех кнопок и тип кнопки `АВАРИЯ` |
+| TopBar | Тексты, цвета и bindings трех кнопок |
 | Узлы | Геометрия, роли, меню, стиль, bindings |
 | Линии | Endpoints, геометрия, стиль, bindings |
 | Карточки | Данные, команды, типы `ПУСК`/`СТОП`, размеры и привязка |
@@ -305,7 +305,6 @@ Role + SignalId + Direction + ValueType
 
 | Role | Назначение |
 |---|---|
-| `State` | Состояние объекта |
 | `Text` | Отображаемый текст |
 | `Value` | Числовое или строковое значение |
 | `Visible` | Runtime-видимость |
@@ -525,13 +524,13 @@ timestamp и состояние Modbus.
 - совместимость `SignalValueType` и `ModbusValueType`;
 - корректность значения и карты на уровне `IModbusTcpService`.
 
-`RouteCommandButtonKind` управляет только UI:
+В актуальной RouteMap schema v8 `ПУСК`, `СТОП` и `АВАРИЯ` всегда работают как
+обычные toggle-кнопки и пишут `true/false` в свои command bindings. Legacy-значение
+`RouteCommandButtonKind.Momentary` миграция приводит к `Toggle`.
 
-- `Toggle` рендерит toggle-кнопку и хранит checked/readback состояние;
-- `Momentary` рендерит обычную кнопку и отправляет `true` на каждый клик.
-
-`ModbusWriteMode` управляет физической записью. Для новых mapping от momentary-команд
-`SignalId ↔ Modbus` предлагает `Pulse`, но существующие точки не меняет автоматически.
+`ModbusWriteMode` управляет физической записью. `Latched` хранит переданное значение,
+а `Pulse` можно выбрать вручную для точек, где физически нужен импульс, но RouteMap
+больше не создает pulse mapping автоматически по типу кнопки.
 
 ### Latched
 
@@ -598,7 +597,7 @@ loader/target оформление.
 
 ### Карточка оборудования
 
-Обычно карточка содержит `State`, `Text`, `StartCommand`, `StopCommand` и runtime
+Обычно карточка содержит `Text`, `StartCommand`, `StopCommand` и runtime
 видимость. Команды ПУСК/СТОП должны иметь отдельные SignalId, даже если PLC упаковывает
 их в разные биты одного регистра.
 

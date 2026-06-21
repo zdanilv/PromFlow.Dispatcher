@@ -22,6 +22,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private RouteMapDefinition _definition;
     private IReadOnlyDictionary<string, SignalValue>? _lastSignals;
     private string? _selectedObjectId;
+    private string? _commandErrorMessage;
 
     public RouteMapDashboardViewModel(
         RouteMapConfigurationManager configurationManager,
@@ -97,6 +98,18 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         }
     }
 
+    public string? CommandErrorMessage
+    {
+        get => _commandErrorMessage;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _commandErrorMessage, value);
+            this.RaisePropertyChanged(nameof(HasCommandError));
+        }
+    }
+
+    public bool HasCommandError => !string.IsNullOrWhiteSpace(CommandErrorMessage);
+
     public string SelectedObjectTitle
     {
         get
@@ -170,18 +183,33 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
 
     private async Task ToggleNodeTargetAsync(string objectId)
     {
-        var previous = NodeRoleStates;
-        NodeRoleStates = RouteNodeRoleStateTransitions.ToggleTarget(previous, objectId);
-        ApplyEquipmentRouteSelections();
-        await RouteNodeRoleCommandWriter.DispatchTransitionAsync(Definition, previous, NodeRoleStates, _commandDispatcher);
+        await ToggleNodeRoleAsync(objectId, RouteNodeRoleStateTransitions.ToggleTarget);
     }
 
     private async Task ToggleNodeLoaderAsync(string objectId)
     {
+        await ToggleNodeRoleAsync(objectId, RouteNodeRoleStateTransitions.ToggleLoader);
+    }
+
+    private async Task ToggleNodeRoleAsync(
+        string objectId,
+        Func<IReadOnlyDictionary<string, RouteNodeRoleState>, string, IReadOnlyDictionary<string, RouteNodeRoleState>> transition)
+    {
         var previous = NodeRoleStates;
-        NodeRoleStates = RouteNodeRoleStateTransitions.ToggleLoader(previous, objectId);
+        var next = transition(previous, objectId);
+        NodeRoleStates = next;
         ApplyEquipmentRouteSelections();
-        await RouteNodeRoleCommandWriter.DispatchTransitionAsync(Definition, previous, NodeRoleStates, _commandDispatcher);
+        try
+        {
+            await RouteNodeRoleCommandWriter.DispatchTransitionAsync(Definition, previous, next, _commandDispatcher);
+            CommandErrorMessage = null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            NodeRoleStates = previous;
+            ApplyEquipmentRouteSelections();
+            CommandErrorMessage = $"Команда узла не отправлена: {ex.Message}";
+        }
     }
 
     private void ApplyNodeRoleReadback(RouteMapRuntimeState runtimeState)
@@ -206,6 +234,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         if (!changed)
             return;
         NodeRoleStates = states;
+        CommandErrorMessage = null;
         ApplyEquipmentRouteSelections();
     }
 

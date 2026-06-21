@@ -104,17 +104,27 @@ public sealed class RouteMapModbusBindingDiagnostics : IDisposable
                 definition.TopBar.Automatic.Binding,
                 definition.TopBar.Manual.Binding,
                 definition.TopBar.Emergency.Binding,
-                definition.TopBar.Emergency.OffFeedbackBinding,
             }.OfType<SignalBinding>();
 
             bindings = bindings.Concat(topBarBindings);
         }
 
         return bindings
+            .Where(binding => !IsDeprecatedSignalRole(binding.Role))
             .Where(binding => !string.IsNullOrWhiteSpace(binding.SignalId))
             .GroupBy(binding => binding.SignalId, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First());
     }
+
+    private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
+        SignalBindingRole.State or
+        SignalBindingRole.StartOffFeedback or
+        SignalBindingRole.StopOffFeedback or
+        SignalBindingRole.TargetOffFeedback or
+        SignalBindingRole.LoaderOffFeedback or
+        SignalBindingRole.AutomaticModeOffFeedback or
+        SignalBindingRole.ManualModeOffFeedback or
+        SignalBindingRole.EmergencyOffFeedback;
 
     private static bool TypesMatch(SignalValueType signalType, ModbusValueType modbusType)
     {

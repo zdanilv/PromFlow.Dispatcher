@@ -62,9 +62,6 @@ public sealed class RouteMapSettingsDialogVisualTests
     [InlineData(3, "Толщина сигнального контура")]
     [InlineData(4, "Зазор от узлов")]
     [InlineData(4, "Края линии")]
-    [InlineData(5, "Тип ПУСК")]
-    [InlineData(5, "Тип СТОП")]
-    [InlineData(2, "Тип кнопки")]
     public void New_visual_properties_are_present_in_settings_tabs(int tabIndex, string label)
     {
         using var fixture = new DialogFixture(1320, 780);
@@ -88,10 +85,10 @@ public sealed class RouteMapSettingsDialogVisualTests
             {
                 new SignalBindingConfiguration
                 {
-                    Role = SignalBindingRole.State,
-                    SignalId = "node.state",
+                    Role = SignalBindingRole.Visible,
+                    SignalId = "node.visible",
                     Direction = SignalBindingDirection.Read,
-                    ValueType = Configurator.Application.Services.Signals.SignalValueType.String,
+                    ValueType = Configurator.Application.Services.Signals.SignalValueType.Bool,
                 },
             },
         };
@@ -188,6 +185,76 @@ public sealed class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
+    public void Signal_mapping_physical_addresses_are_editable_text_boxes()
+    {
+        using var fixture = new SignalMappingFixture(1200, 760);
+        var rowGrid = FirstSignalMappingRowGrid(fixture.View);
+
+        var addressInputs = rowGrid.Children
+            .OfType<TextBox>()
+            .Where(textBox => Grid.GetColumn(textBox) is 13 or 14)
+            .ToArray();
+
+        Assert.Equal(2, addressInputs.Length);
+        Assert.All(addressInputs, input => Assert.NotNull(input.ContextMenu));
+    }
+
+    [AvaloniaFact]
+    public void Signal_mapping_interactive_row_controls_have_context_menus()
+    {
+        using var fixture = new SignalMappingFixture(1200, 760);
+        var rowGrid = FirstSignalMappingRowGrid(fixture.View);
+        var actionGrid = rowGrid.Children
+            .OfType<Grid>()
+            .Single(grid => Grid.GetColumn(grid) == 15);
+        var controls = rowGrid.Children
+            .OfType<Control>()
+            .Concat(actionGrid.Children.OfType<Control>())
+            .Where(control => control.IsVisible)
+            .Where(control => control is ComboBox or TextBox or Button)
+            .ToArray();
+
+        Assert.NotEmpty(controls);
+        Assert.All(controls, control => Assert.NotNull(control.ContextMenu));
+    }
+
+    [AvaloniaFact]
+    public void Signal_mapping_node_register_address_enables_bit_input()
+    {
+        using var fixture = new SignalMappingFixture(1200, 760);
+        var rowGrid = SignalMappingRowGrid(fixture.View, "bsu_1.fault");
+        var row = Assert.IsType<RouteMapSignalMappingRow>(rowGrid.DataContext);
+        row.IsMapped = true;
+
+        row.ClientPhysicalAddressText = "16420";
+        Dispatcher.UIThread.RunJobs();
+
+        var bitInput = rowGrid.Children
+            .OfType<TextBox>()
+            .Single(textBox => Grid.GetColumn(textBox) == 10);
+        Assert.True(bitInput.IsEnabled);
+    }
+
+    [AvaloniaTheory]
+    [InlineData("active_bsu1_bsu2.fault")]
+    [InlineData("equip.bucket.start")]
+    public void Signal_mapping_line_and_card_register_address_enables_bit_input(string signalId)
+    {
+        using var fixture = new SignalMappingFixture(1200, 760);
+        var rowGrid = SignalMappingRowGrid(fixture.View, signalId);
+        var row = Assert.IsType<RouteMapSignalMappingRow>(rowGrid.DataContext);
+        row.IsMapped = true;
+
+        row.ClientPhysicalAddressText = "16420";
+        Dispatcher.UIThread.RunJobs();
+
+        var bitInput = rowGrid.Children
+            .OfType<TextBox>()
+            .Single(textBox => Grid.GetColumn(textBox) == 10);
+        Assert.True(bitInput.IsEnabled);
+    }
+
+    [AvaloniaFact]
     public void Modbus_settings_data_map_rows_scroll_horizontally_without_overlap()
     {
         var options = new ModbusOptions
@@ -235,6 +302,23 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         window.Close();
     }
+
+    private static Grid FirstSignalMappingRowGrid(RouteMapSignalMappingView view)
+        => view.GetVisualDescendants()
+            .OfType<Grid>()
+            .First(grid =>
+                grid.DataContext is RouteMapSignalMappingRow
+                && grid.Children.OfType<Control>().Any(control => Grid.GetColumn(control) == 13)
+                && grid.Children.OfType<Control>().Any(control => Grid.GetColumn(control) == 14)
+                && grid.Children.OfType<Grid>().Any(control => Grid.GetColumn(control) == 15));
+
+    private static Grid SignalMappingRowGrid(RouteMapSignalMappingView view, string signalId)
+        => view.GetVisualDescendants()
+            .OfType<Grid>()
+            .Single(grid =>
+                grid.DataContext is RouteMapSignalMappingRow row
+                && row.SignalId == signalId
+                && grid.Children.OfType<Grid>().Any(control => Grid.GetColumn(control) == 15));
 
     private sealed class DialogFixture : IDisposable
     {
@@ -296,8 +380,20 @@ public sealed class RouteMapSettingsDialogVisualTests
                 new RouteMapConfigurationMigrator());
             var options = new ModbusOptions
             {
-                Client = new ModbusEndpointOptions { CoilCount = 100, RegisterCount = 100 },
-                Server = new ModbusEndpointOptions { CoilCount = 100, RegisterCount = 100 }
+                Client = new ModbusEndpointOptions
+                {
+                    CoilStartAddress = 0,
+                    CoilCount = 2000,
+                    HoldingRegisterStartAddress = 16384,
+                    RegisterCount = 100
+                },
+                Server = new ModbusEndpointOptions
+                {
+                    CoilStartAddress = 0,
+                    CoilCount = 2000,
+                    HoldingRegisterStartAddress = 16384,
+                    RegisterCount = 100
+                }
             };
             _viewModel = new RouteMapSignalMappingViewModel(
                 _manager,

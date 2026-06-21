@@ -41,6 +41,21 @@
                                        Foreground="#65717D"
                                        FontSize="12"/>
                         </Border>
+                        <Border HorizontalAlignment="Left"
+                                VerticalAlignment="Bottom"
+                                Margin="16"
+                                Padding="10,6"
+                                Background="#FFF4F2"
+                                BorderBrush="#F4B8B0"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                IsVisible="{Binding HasCommandError}">
+                            <TextBlock Text="{Binding CommandErrorMessage}"
+                                       Foreground="#A22F2F"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       MaxWidth="520"/>
+                        </Border>
                     </Grid>
                 </Border>
             </Grid>

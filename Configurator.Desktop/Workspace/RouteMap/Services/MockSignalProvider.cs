@@ -56,6 +56,7 @@ public sealed class MockSignalProvider : ISignalValueProvider
             .Concat(definition.Vehicles.SelectMany(x => x.Bindings))
             .Concat(definition.MapEquipment.SelectMany(x => x.Bindings))
             .Concat(TopBarBindings(definition))
+            .Where(x => !IsDeprecatedSignalRole(x.Role))
             .GroupBy(x => x.SignalId, StringComparer.Ordinal)
             .Select(x => x.First());
 
@@ -78,7 +79,6 @@ public sealed class MockSignalProvider : ISignalValueProvider
 
         object value = binding.Role switch
         {
-            SignalBindingRole.State => RouteObjectState.Idle.ToString(),
             SignalBindingRole.Text => (ushort)(tick % 6),
             SignalBindingRole.Value => 0,
             SignalBindingRole.Visible => true,
@@ -143,7 +143,6 @@ public sealed class MockSignalProvider : ISignalValueProvider
             definition.TopBar.Automatic.Binding,
             definition.TopBar.Manual.Binding,
             definition.TopBar.Emergency.Binding,
-            definition.TopBar.Emergency.OffFeedbackBinding,
         }.OfType<SignalBinding>();
     }
 
@@ -161,4 +160,14 @@ public sealed class MockSignalProvider : ISignalValueProvider
     {
         return new SignalValue(signalId, value, SignalValueType.UInt16, timestamp, IsQualityGood: true, IsStale: false);
     }
+
+    private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
+        SignalBindingRole.State or
+        SignalBindingRole.StartOffFeedback or
+        SignalBindingRole.StopOffFeedback or
+        SignalBindingRole.TargetOffFeedback or
+        SignalBindingRole.LoaderOffFeedback or
+        SignalBindingRole.AutomaticModeOffFeedback or
+        SignalBindingRole.ManualModeOffFeedback or
+        SignalBindingRole.EmergencyOffFeedback;
 }

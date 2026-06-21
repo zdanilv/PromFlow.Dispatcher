@@ -95,15 +95,17 @@ Bool внутри Holding Register:
 
 ## Семантика Команд
 
-`RouteCommandButtonKind` и `ModbusWriteMode` отвечают за разные уровни:
+В schema v8 карточные `ПУСК`/`СТОП` и TopBar `АВАРИЯ` всегда работают как
+toggle-команды RouteMap и пишут `true/false` в свои command bindings. Legacy-значение
+`RouteCommandButtonKind.Momentary` миграция приводит к `Toggle`.
 
-- `RouteCommandButtonKind.Toggle` рендерит toggle-кнопку и хранит checked/readback state;
-- `RouteCommandButtonKind.Momentary` рендерит обычную кнопку и по клику отправляет `true`;
+`ModbusWriteMode` управляет только физической записью:
+
 - `ModbusWriteMode.Latched` физически записывает переданное значение;
 - `ModbusWriteMode.Pulse` физически пишет `true`, ждет `PulseDurationMs`, затем пишет `false`.
 
-Для новых mapping от momentary-команд вкладка `SignalId ↔ Modbus` по умолчанию ставит
-`WriteMode=Pulse`. Существующие точки не меняются автоматически.
+`Pulse` можно выбрать вручную для нужной точки `Modbus.DataMap`; новые mapping больше
+не получают pulse-режим автоматически по типу кнопки.
 
 ## Ввод В Эксплуатацию
 

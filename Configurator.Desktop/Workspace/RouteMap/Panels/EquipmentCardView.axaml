@@ -149,16 +149,7 @@
 							  BorderBrush="{Binding StartBackground}"
 							  FontSize="{Binding ActionFontSize}"
 							  IsChecked="{Binding IsStartChecked, Mode=TwoWay}"
-							  IsEnabled="{Binding CanStart}"
-							  IsVisible="{Binding IsStartToggle}"/>
-				<Button Classes="equipment-action start"
-						Content="{Binding StartText}"
-						Background="{Binding StartMomentaryBackground}"
-						BorderBrush="{Binding StartMomentaryBackground}"
-						FontSize="{Binding ActionFontSize}"
-						Command="{Binding StartMomentaryCommand}"
-						IsEnabled="{Binding CanStart}"
-						IsVisible="{Binding IsStartMomentary}"/>
+							  IsEnabled="{Binding CanStart}"/>
 				<ToggleButton Grid.Column="1"
 							  Classes="equipment-action stop"
 							  Content="{Binding StopText}"
@@ -166,17 +157,7 @@
 							  BorderBrush="{Binding StopBackground}"
 							  FontSize="{Binding ActionFontSize}"
 							  IsChecked="{Binding IsStopChecked, Mode=TwoWay}"
-							  IsEnabled="{Binding CanStop}"
-							  IsVisible="{Binding IsStopToggle}"/>
-				<Button Grid.Column="1"
-						Classes="equipment-action stop"
-						Content="{Binding StopText}"
-						Background="{Binding StopMomentaryBackground}"
-						BorderBrush="{Binding StopMomentaryBackground}"
-						FontSize="{Binding ActionFontSize}"
-						Command="{Binding StopMomentaryCommand}"
-						IsEnabled="{Binding CanStop}"
-						IsVisible="{Binding IsStopMomentary}"/>
+							  IsEnabled="{Binding CanStop}"/>
 			</Grid>
 		</Grid>
 	</Border>
