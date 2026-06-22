@@ -14,7 +14,7 @@
 
 - [x] Stage 0 — Baseline and documentation
 - [x] Stage 1 — Archive application contracts
-- [ ] Stage 2 — SQLite foundation and migrations
+- [x] Stage 2 — SQLite foundation and migrations
 - [ ] Stage 3 — Snapshot binary codec and partitioning
 - [ ] Stage 4 — Buffered archive writer
 - [ ] Stage 5 — Modbus archive collector
@@ -30,9 +30,9 @@
 
 ## Current stage
 
-- Stage: `1`
+- Stage: `2`
 - Branch: `6-add-archive`
-- Goal: `Add archive application contracts without SQLite, runtime wiring, DI, UI or migrations`
+- Goal: `Add SQLite persistence foundation and explicit archive migrations without collector, writer pipeline, UI or Boot wiring`
 - Status: `Completed`
 
 ## Current findings
@@ -66,7 +66,15 @@
 - Added a direct `Configurator.Tests.Unit` project reference to `Configurator.Application` so Archiving unit tests do not rely on the Desktop project transitively.
 - Added `Configurator.Tests.Unit.Archiving` coverage for options validation, invalid interval/capacity/path/device ID, UTC normalization and defensive copies.
 - `Configurator.Application.csproj` still contains pre-existing Avalonia package references; Stage 1 did not add or remove packages. New `Archiving` source files have no Avalonia, ReactiveUI, Desktop, Infrastructure or SQLite references.
-- Stage 2 has not been started.
+- Stage 2 added a separate `Configurator.Infrastructure.Persistence` net10.0 project and `Configurator.Infrastructure.Persistence.Tests`.
+- Added `Microsoft.Data.Sqlite` `10.0.9` only to the Persistence project, with configuration/DI/options abstraction packages pinned there.
+- Added Persistence and Persistence.Tests to `DesktopTemplate.slnx`; Boot/Desktop/appsettings were not wired or changed.
+- Persistence references `Configurator.Application` and does not reference Desktop, Avalonia, ReactiveUI, Modbus or OPC UA projects.
+- Added `IAppDataPathProvider`, default per-user archive/export path resolution, database initialization options and persistence health state.
+- Added SQLite connection factory, PRAGMA initializer, migration catalog, migration model and idempotent migration runner.
+- Added migration ledger bootstrap and embedded `001_archive_foundation.sql` for archive metadata, snapshots, runtime events and indexes.
+- Added file-backed Persistence tests for app-data paths, WAL/foreign keys/FULL sync/busy timeout, first/repeated/concurrent initialization, checksum mismatch, rollback, invalid paths, architecture boundaries and sensitive-material scanning.
+- Stage 3 has not been started.
 
 ## Commands last executed
 
@@ -77,30 +85,42 @@ dotnet --info
 dotnet restore .\DesktopTemplate.slnx
 dotnet build .\Configurator.Application\Configurator.Application.csproj --no-restore
 dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~Archiving"
+dotnet build .\Configurator.Infrastructure.Persistence\Configurator.Infrastructure.Persistence.csproj --no-restore
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore
 dotnet build .\DesktopTemplate.slnx --no-restore
 dotnet test .\DesktopTemplate.slnx --no-restore
+dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore --filter "FullyQualifiedName=Configurator.Infrastructure.Modbus.Tests.ModbusDemoViewModelTests.StopCommandCancelsActiveLifecycleWithoutModalError"
+dotnet test .\DesktopTemplate.slnx --no-restore
+rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Infrastructure.Persistence .\Configurator.Infrastructure.Persistence.Tests
+rg -n "Avalonia|ReactiveUI|Configurator\.Desktop|Configurator\.Infrastructure\.Modbus|Configurator\.Infrastructure\.OpcUa" .\Configurator.Infrastructure.Persistence
 ```
 
 ## Test results
 
 - Restore: `Passed; all projects up-to-date`
 - Application build: `Passed; 0 warnings, 0 errors`
-- Build: `Passed; 0 warnings, 0 errors in the final Stage 1 run`
+- Persistence build: `Passed; 1 NU1903 warning from transitive SQLitePCLRaw.lib.e_sqlite3`
+- Build: `Passed; 12 warnings, 0 errors in the final Stage 2 run`
 - Archiving unit tests: `Passed; 20 passed, 0 failed, 0 skipped`
-- Full tests: `Passed; 303 passed, 0 failed, 0 skipped`
+- Persistence tests: `Passed; 14 passed, 0 failed, 0 skipped`
+- Full tests: `Passed; 317 passed, 0 failed, 0 skipped in the final full rerun`
 - Unit tests: `Passed; Configurator.Tests.Unit, 156 passed`
 - Modbus tests: `Passed as part of full solution test; Configurator.Infrastructure.Modbus.Tests, 85 passed`
 - OPC UA tests: `Passed as part of full solution test; Configurator.Infrastructure.OpcUa.Tests, 35 passed`
 - RouteMap UI tests: `Passed as part of full solution test; Configurator.Tests.RouteMap.Ui, 27 passed`
-- Persistence tests: `Project not created`
 - Sensitive-material scan over new Archiving source and test files: `Passed`
+- Sensitive-material scan over new Persistence source and test files: `Passed`
+- Forbidden-dependency scan over new Persistence source files: `Passed`
 
 ## Known limitations
 
 - Stage 0 did not fix existing compiler/Avalonia warnings.
 - Stage 1 did not implement archive storage, buffering, runtime collection, query execution, export, retention, authorization, licensing or UI features.
-- Stage 1 did not start Stage 2.
+- Stage 2 did not implement archive buffering, Modbus collection, binary snapshot codec, partition resolver, query execution, export, retention, backup, authorization, licensing or UI features.
+- Stage 2 did not wire Persistence into Boot/Desktop runtime.
+- NuGet restore/build reports NU1903 for transitive `SQLitePCLRaw.lib.e_sqlite3` `2.1.11` through the plan-pinned `Microsoft.Data.Sqlite` `10.0.9`.
+- One full-suite run had a transient failure in existing `ModbusDemoViewModelTests.StopCommandCancelsActiveLifecycleWithoutModalError`; the targeted rerun and the final full rerun passed.
 
 ## Next action
 
-Stop here until Stage 2 is explicitly requested.
+Stop here until Stage 3 is explicitly requested.

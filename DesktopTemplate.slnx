@@ -12,6 +12,7 @@
     <Project Path="Configurator.Infrastructure/Configurator.Infrastructure.csproj" Id="44379fe4-1490-4b20-ad4f-f4d0bc99ef41" />
     <Project Path="Configurator.Infrastructure.Modbus/Configurator.Infrastructure.Modbus.csproj" Id="2cb7d861-29c2-47a0-99e9-08e26afdcad0" />
     <Project Path="Configurator.Infrastructure.OpcUa/Configurator.Infrastructure.OpcUa.csproj" Id="7f7be3a6-5b6f-4f4e-bf3e-1fc3e0a54231" />
+    <Project Path="Configurator.Infrastructure.Persistence/Configurator.Infrastructure.Persistence.csproj" Id="183e9c0e-9064-458b-9917-45fe00811c19" />
   </Folder>
   <Folder Name="/Documentation/">
     <Project Path="AgentDocs/AgentDocs.csproj" Id="84d4a6e2-0d6b-45d5-9fd4-6990b9e04167" />
@@ -19,6 +20,7 @@
   <Folder Name="/Tests/">
     <Project Path="Configurator.Infrastructure.Modbus.Tests/Configurator.Infrastructure.Modbus.Tests.csproj" Id="51918abf-41be-45a7-b74f-a7dedcae9eff" />
     <Project Path="Configurator.Infrastructure.OpcUa.Tests/Configurator.Infrastructure.OpcUa.Tests.csproj" Id="d49f159e-f37d-4c47-9f6e-c516eeb8853c" />
+    <Project Path="Configurator.Infrastructure.Persistence.Tests/Configurator.Infrastructure.Persistence.Tests.csproj" Id="21919c17-af1a-469f-a577-ec5c77e20823" />
     <Project Path="Configurator.Tests.RouteMap.Ui/Configurator.Tests.RouteMap.Ui.csproj" />
     <Project Path="Configurator.Tests.Unit/Configurator.Tests.Unit.csproj" />
   </Folder>
