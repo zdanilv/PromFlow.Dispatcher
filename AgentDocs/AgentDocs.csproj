@@ -1,22 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <EnableDefaultItems>false</EnableDefaultItems>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<EnableDefaultItems>false</EnableDefaultItems>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <None Include="ru\**\*.md" />
-    <None Include="en\**\*.md" />
-    <None Include="source\**\*.md" />
-  </ItemGroup>
+	<ItemGroup>
+		<None Include="ru\**\*.md" />
+		<None Include="en\**\*.md" />
+		<None Include="source\**\*.md" />
+		<None Include="implementation\**\*.md" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="ru\" />
-    <Folder Include="en\" />
-    <Folder Include="source\ru\" />
-  </ItemGroup>
+	<ItemGroup>
+		<Folder Include="ru\" />
+		<Folder Include="en\" />
+		<Folder Include="source\ru\" />
+		<Folder Include="implementation\" />
+	</ItemGroup>
 
 </Project>

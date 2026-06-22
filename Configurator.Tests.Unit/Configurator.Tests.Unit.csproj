@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Configurator.Application\Configurator.Application.csproj" />
     <ProjectReference Include="..\Configurator.Desktop\Configurator.Desktop.csproj" />
   </ItemGroup>
 
