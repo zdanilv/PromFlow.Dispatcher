@@ -66,6 +66,34 @@ public sealed class PersistenceArchitectureTests
         }
     }
 
+    [Fact]
+    public void PersistenceArchive_DoesNotUseBinaryFormatterOrBitConverter()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var archiveDirectories = new[]
+        {
+            Path.Combine(repositoryRoot, "Configurator.Infrastructure.Persistence", "Archive"),
+            Path.Combine(repositoryRoot, "Configurator.Infrastructure.Persistence.Tests", "Archive")
+        };
+        var files = archiveDirectories
+            .Where(Directory.Exists)
+            .SelectMany(directory => Directory.EnumerateFiles(directory, "*.cs", SearchOption.AllDirectories));
+        var forbidden = new[]
+        {
+            string.Concat("Binary", "Formatter"),
+            string.Concat("Bit", "Converter")
+        };
+
+        foreach (var file in files)
+        {
+            var text = File.ReadAllText(file);
+            foreach (var value in forbidden)
+            {
+                Assert.DoesNotContain(value, text, StringComparison.Ordinal);
+            }
+        }
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Archiving;
+using Configurator.Infrastructure.Persistence.Archive;
 using Configurator.Infrastructure.Persistence.Common;
 using Configurator.Infrastructure.Persistence.Sqlite;
 using Microsoft.Extensions.Configuration;
@@ -17,6 +18,8 @@ public static class DependencyInjection
 
         services.Configure<ArchiveOptions>(configuration.GetSection(ArchiveOptions.SectionName));
         services.AddSingleton<IAppDataPathProvider, DefaultAppDataPathProvider>();
+        services.AddSingleton<ArchiveSnapshotBlobCodec>();
+        services.AddSingleton<ArchivePartitionResolver>();
         services.AddSingleton<SqliteConnectionFactory>();
         services.AddSingleton<SqlitePragmaInitializer>();
         services.AddSingleton<SqliteMigrationCatalog>();
