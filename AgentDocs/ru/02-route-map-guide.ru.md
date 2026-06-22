@@ -1,0 +1,105 @@
+# RouteMap guide
+
+RouteMap — первая вкладка Workspace и операторская мнемосхема маршрута. Она хранит
+топологию, визуальные параметры и bindings в RouteMap definition, но не хранит
+физические Modbus-адреса.
+
+## Основные файлы
+
+| Область | Где лежит |
+|---|---|
+| Экран | `Configurator.Desktop/Workspace/RouteMap/RouteMapDashboardView.axaml` |
+| Рисование карты | `Workspace/RouteMap/Controls/RouteMapControl.cs` |
+| Geometry линий | `Workspace/RouteMap/Controls/RouteSegmentGeometry.cs` |
+| Attached cards | `Workspace/RouteMap/Panels/RouteMapAttachedCardsLayer.cs` |
+| Definition/seed | `Workspace/RouteMap/Models/RouteMapDefinition.cs`, `RouteMapSeed.cs` |
+| Runtime mapping | `Workspace/RouteMap/Services/RouteMapRuntimeMapper.cs` |
+| Settings dialog | `Workspace/RouteMap/Settings/*` |
+| JSON configuration | `Workspace/RouteMap/Configuration/*` |
+
+## Definition
+
+`RouteMapDefinition` описывает:
+
+- логические размеры карты;
+- цепочки маршрута;
+- узлы;
+- сегменты;
+- attached-карточки оборудования;
+- заявки и шаблоны заявок из seed;
+- display settings и placeholder rules.
+
+Актуальный пользовательский JSON имеет `schemaVersion = 10`:
+
+```json
+{
+  "schemaVersion": 10,
+  "map": {},
+  "topBar": {},
+  "chains": [],
+  "nodes": [],
+  "segments": [],
+  "cards": [],
+  "placeholderRules": []
+}
+```
+
+JSON не сериализует Avalonia-типы. Цвета хранятся строками `#RRGGBB` или `#AARRGGBB`,
+enum — строками, размеры и отступы — собственными DTO.
+
+## Узлы, линии и карточки
+
+- Узлы создаются с `id`, `title`, координатами, kind, label placement, menu kind,
+  static visibility и bindings.
+- Линии ссылаются на `fromNodeId` и `toNodeId`; поддержаны `Straight` и `RoundedElbow90`.
+- Длинные линии могут иметь `ActiveRouteFragment` bindings вида
+  `route.<segmentId>.fragment_<n>.active`.
+- Карточки оборудования содержат status text, start/stop commands, стили и привязку к
+  цепочке или vertical anchor.
+
+Линии не selectable: hit-test возвращает узлы и runtime-объекты, но не сегменты.
+Не добавляйте selection для линий без отдельного изменения hit-test, marker rendering и тестов.
+
+## Runtime state
+
+RouteMapRuntimeMapper применяет сигналы к объектам. Приоритет состояния:
+
+```text
+Offline -> Fault -> ActiveRoute -> static fallback
+```
+
+`Visible=false` скрывает объект. `Fault=true` перекрывает active route. Bad quality или
+stale по активному сигналу переводят объект в `Offline`.
+
+## Команды
+
+`ПУСК`, `СТОП`, `АВАРИЯ`, `АВТОМАТ`, `РУЧНОЙ`, `TargetCommand` и `LoaderCommand` работают
+как toggle/readback-команды. UI пишет `true` при включении и `false` при снятии или
+переключении. PLC должен вернуть readback, чтобы состояние UI стало окончательным.
+
+Legacy `Momentary`, `State` и `*OffFeedback` остаются только для безопасной загрузки старых
+профилей и миграции; не возвращайте их в новое поведение.
+
+## Редактор
+
+Кнопка `НАСТРОЙКИ` открывает `RouteMapSettingsDialog`. Вкладки:
+
+- `Источник данных`;
+- `Карта и маршруты`;
+- `TopBar`;
+- `Узлы`;
+- `Линии`;
+- `Карточки`;
+- `Заглушки`.
+
+`ПРИМЕНИТЬ` валидирует и публикует definition без записи файла. `СОХРАНИТЬ` валидирует,
+атомарно сохраняет JSON и публикует definition. Невалидный документ не публикуется.
+
+## Миграции и validation
+
+Перед validation документ проходит `RouteMapConfigurationMigrator`. Validator проверяет
+schema version, уникальность ID, ссылки, роли bindings, обязательные команды, геометрию,
+цвета, fragment bindings, placeholder rules и toggle-семантику команд.
+
+Не обходите manager и validator прямыми изменениями UI state.
+

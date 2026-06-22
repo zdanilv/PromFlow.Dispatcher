@@ -29,7 +29,15 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             objects[node.Id] = MapObject(node.Id, node.State, node.Bindings, signals, canStartFallback: false, canStopFallback: false, activeAsState: false);
 
         foreach (var segment in definition.Segments)
-            objects[segment.Id] = MapObject(segment.Id, segment.State, segment.Bindings, signals, canStartFallback: false, canStopFallback: false, activeAsState: true);
+            objects[segment.Id] = MapObject(
+                segment.Id,
+                segment.State,
+                segment.Bindings,
+                signals,
+                canStartFallback: false,
+                canStopFallback: false,
+                activeAsState: true,
+                activeFragments: segment.ActiveFragments);
 
         foreach (var vehicle in definition.Vehicles)
             objects[vehicle.Id] = MapObject(vehicle.Id, vehicle.State, vehicle.Bindings, signals, canStartFallback: false, canStopFallback: false);
@@ -63,7 +71,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         bool canStartFallback,
         bool canStopFallback,
         string? textFallback = null,
-        bool activeAsState = true)
+        bool activeAsState = true,
+        IReadOnlyList<RouteSegmentActiveFragment>? activeFragments = null)
     {
         var text = textFallback;
         string? valueText = null;
@@ -73,8 +82,10 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         var isOffline = false;
         var hasFault = false;
         var isActiveRoute = false;
+        var hasActiveSignal = false;
         bool? isLoader = null;
         bool? isTarget = null;
+        var activeFragmentIndexes = new HashSet<int>();
 
         foreach (var binding in bindings)
         {
@@ -109,7 +120,14 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                     break;
                 case SignalBindingRole.ActiveRoute:
                     if (signal.Value is bool isActive && isActive)
+                    {
                         isActiveRoute = true;
+                        hasActiveSignal = true;
+                    }
+                    break;
+                case SignalBindingRole.ActiveRouteFragment:
+                    if (signal.Value is bool isFragmentActive && isFragmentActive)
+                        hasActiveSignal = true;
                     break;
                 case SignalBindingRole.StartCommand:
                     if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
@@ -146,6 +164,25 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             }
         }
 
+        foreach (var fragment in activeFragments ?? [])
+        {
+            var binding = fragment.Binding;
+            if (!signals.TryGetValue(binding.SignalId, out var signal))
+                continue;
+
+            if (!signal.IsQualityGood || signal.IsStale)
+            {
+                isOffline = true;
+                continue;
+            }
+
+            if (signal.Value is bool isActive && isActive)
+            {
+                hasActiveSignal = true;
+                activeFragmentIndexes.Add(fragment.Index);
+            }
+        }
+
         var state = isOffline
             ? RouteObjectState.Offline
             : hasFault
@@ -168,9 +205,10 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             canStopFallback && commandsAllowed,
             isStartChecked,
             isStopChecked,
-            isActiveRoute,
+            hasActiveSignal,
             isLoader,
-            isTarget);
+            isTarget,
+            activeFragmentIndexes);
     }
 
     private static bool ReadTopBarBool(

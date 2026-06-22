@@ -1,4 +1,4 @@
-ModbusDemo — экран управления общим Modbus TCP runtime. Он показывает простые привязки UI к Modbus TCP: toggle пишет/читает Coil, textbox пишет Holding Register, картинка показывается по значению регистра. Важно: endpoint, start/stop, autostart и lifecycle настраиваются на этом экране через секцию `ModbusDemo`. RouteMap использует тот же TCP runtime, но отдельную карту `Modbus.DataMap`.
+ModbusDemo — экран управления общим Modbus TCP runtime. Он показывает простые привязки UI к Modbus TCP: toggle пишет/читает Coil, textbox пишет Holding Register, картинка показывается по значению регистра. Важно: endpoint, start/stop, autostart и lifecycle настраиваются на этом экране через секцию `ModbusDemo`. RouteMap использует тот же TCP runtime, но отдельную карту `Modbus.DataMap`, включая schema v10 fragment-сигналы линий `route.<segmentId>.fragment_<n>.active`.
 
 **Где Экран**  
 Экран подключён во вкладке Modbus Demo в WorkspaceView.axaml (line 38):

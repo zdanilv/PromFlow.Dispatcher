@@ -139,11 +139,11 @@ RouteMap не знает IP-адресов, UnitId, номеров регист�
 
 ### Корневая структура JSON
 
-Текущая версия схемы — `5`:
+Текущая версия схемы — `10`:
 
 ```json
 {
-  "schemaVersion": 6,
+  "schemaVersion": 10,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -524,7 +524,7 @@ timestamp и состояние Modbus.
 - совместимость `SignalValueType` и `ModbusValueType`;
 - корректность значения и карты на уровне `IModbusTcpService`.
 
-В актуальной RouteMap schema v8 `ПУСК`, `СТОП` и `АВАРИЯ` всегда работают как
+В актуальной RouteMap schema v10 `ПУСК`, `СТОП` и `АВАРИЯ` всегда работают как
 обычные toggle-кнопки и пишут `true/false` в свои command bindings. Legacy-значение
 `RouteCommandButtonKind.Momentary` миграция приводит к `Toggle`.
 
@@ -595,6 +595,13 @@ LoaderCommand -> route.node.<nodeId>.loader
 контуром, а активная линия использует active color/thickness. Эта индикация не заменяет
 loader/target оформление.
 
+У длинных линий дополнительно есть `ActiveRouteFragment` bindings:
+`route.<segmentId>.fragment_<n>.active`. Они всегда `Direction=Read`,
+`ValueType=Bool` и могут быть замаплены на отдельные coils или на разные bits одного
+holding register. `Fault` линии остается общим для всей линии и перекрывает подсветку
+отрезков. Line-level `ActiveRoute=true` подсвечивает всю линию; fragment-сигнал
+подсвечивает только свой range.
+
 ### Карточка оборудования
 
 Обычно карточка содержит `Text`, `StartCommand`, `StopCommand` и runtime
@@ -611,7 +618,9 @@ loader/target оформление.
 - тип RouteMap не совпадает с типом Modbus.
 
 Проблемы пишутся как warning и не завершают приложение. Проверка повторяется при горячем
-изменении RouteMap definition или Modbus options.
+изменении RouteMap definition или Modbus options. Проверка включает `ActiveRouteFragment`
+bindings, поэтому отсутствующий `route.<segmentId>.fragment_<n>.active` будет виден в
+warning-логах так же, как обычный `ActiveRoute`.
 
 Основные причины отсутствия данных:
 
@@ -652,6 +661,10 @@ loader/target оформление.
 4. Укажите `Access=Read` и физическую область.
 5. Перезапустите приложение, если изменялся `appsettings.json`.
 6. Проверьте warning-логи и значение в UI.
+
+Для отрезка линии используйте секцию `Линии` → `Отрезки`; роль фиксирована как
+`ActiveRouteFragment`, а имя по умолчанию имеет вид
+`route.<segmentId>.fragment_<n>.active`.
 
 ### Команда
 

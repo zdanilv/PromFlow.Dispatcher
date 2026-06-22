@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Signals;
+using Configurator.Desktop.Workspace.RouteMap.Controls;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Models;
 
@@ -20,8 +21,7 @@ public static class RouteMapSeed
             Node("dead_end_upper", "ТУПИК", 830, 100, RouteNodeKind.ServicePoint, 0, 6, menuKind: RouteNodeMenuKind.None),
         };
 
-        var segments = new[]
-        {
+        var segments = AddActiveFragments([
             Segment("lower_dead_end_to_bsu1", "dead_end_lower", "bsu_1"),
             ActiveSegment("active_bsu1_bsu2", "bsu_1", "bsu_2"),
             Segment(
@@ -35,7 +35,7 @@ public static class RouteMapSeed
                 labelOffsetX: 20,
                 labelOffsetY: 15),
             Segment("bucket_to_upper_dead_end", "concrete_bucket", "dead_end_upper"),
-        };
+        ], nodes, new RouteMapDisplaySettings());
 
         var chains = new[]
         {
@@ -199,9 +199,11 @@ public static class RouteMapSeed
         new RouteTopBarButtonSettings
         {
             Text = "АВАРИЯ",
-            NormalBackground = "#D87868",
-            CheckedBackground = "#C83F30",
+            NormalBackground = "#D95D4E",
+            PressedBackground = "#949595",
+            CheckedBackground = "#9E2F25",
             NormalForeground = "#FFFFFF",
+            PressedForeground = "#FFFFFF",
             CheckedForeground = "#FFFFFF",
             Binding = new SignalBinding(SignalBindingRole.EmergencyCommand, "system.emergency", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
         });
@@ -213,5 +215,38 @@ public static class RouteMapSeed
             new SignalBinding(SignalBindingRole.Fault, $"{id}.fault", SignalBindingDirection.Read, SignalValueType.Bool),
             new SignalBinding(SignalBindingRole.ActiveRoute, $"route.{id}.active", SignalBindingDirection.Read, SignalValueType.Bool),
         ];
+    }
+
+    private static RouteSegment[] AddActiveFragments(
+        IReadOnlyList<RouteSegment> segments,
+        IReadOnlyList<RouteNode> nodes,
+        RouteMapDisplaySettings display)
+    {
+        var nodesById = nodes.ToDictionary(node => node.Id);
+        return segments.Select(segment =>
+        {
+            if (!nodesById.TryGetValue(segment.FromNodeId, out var from) ||
+                !nodesById.TryGetValue(segment.ToNodeId, out var to))
+            {
+                return segment;
+            }
+
+            var ranges = RouteSegmentGeometry.CalculateLogicalDrawableRanges(segment, from, to, display);
+            if (ranges.Count <= 1)
+                return segment with { ActiveFragments = [] };
+
+            return segment with
+            {
+                ActiveFragments = Enumerable.Range(1, ranges.Count)
+                    .Select(index => new RouteSegmentActiveFragment(
+                        index,
+                        new SignalBinding(
+                            SignalBindingRole.ActiveRouteFragment,
+                            $"route.{segment.Id}.fragment_{index}.active",
+                            SignalBindingDirection.Read,
+                            SignalValueType.Bool)))
+                    .ToArray()
+            };
+        }).ToArray();
     }
 }

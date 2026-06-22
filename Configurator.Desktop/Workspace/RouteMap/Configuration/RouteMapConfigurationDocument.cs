@@ -35,7 +35,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 9;
+    public const int CurrentSchemaVersion = 10;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();
@@ -130,7 +130,7 @@ public sealed class RouteTopBarConfiguration
             "РУЧНОЙ", SignalBindingRole.ManualModeCommand, "system.mode.manual"),
         Emergency = RouteTopBarEmergencyButtonConfiguration.Create(
             "АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency",
-            normalBackground: "#D87868", checkedBackground: "#C83F30"),
+            normalBackground: "#D95D4E", checkedBackground: "#9E2F25"),
     };
 }
 
@@ -138,8 +138,10 @@ public class RouteTopBarButtonConfiguration : ReactiveObject
 {
     public string Text { get; set; } = string.Empty;
     public string NormalBackground { get; set; } = "#ECEFF1";
+    public string PressedBackground { get; set; } = "#949595";
     public string CheckedBackground { get; set; } = "#3378D6";
     public string NormalForeground { get; set; } = "#59636E";
+    public string PressedForeground { get; set; } = "#FFFFFF";
     public string CheckedForeground { get; set; } = "#FFFFFF";
     public ObservableCollection<SignalBindingConfiguration> Bindings { get; set; } = [];
 
@@ -148,10 +150,12 @@ public class RouteTopBarButtonConfiguration : ReactiveObject
         SignalBindingRole role,
         string signalId,
         string normalBackground = "#ECEFF1",
-        string checkedBackground = "#3378D6") => new()
+        string checkedBackground = "#3378D6",
+        string pressedBackground = "#949595") => new()
         {
             Text = text,
             NormalBackground = normalBackground,
+            PressedBackground = pressedBackground,
             CheckedBackground = checkedBackground,
             Bindings = CreateButtonBindings(role, signalId),
         };
@@ -199,13 +203,18 @@ public sealed class RouteTopBarEmergencyButtonConfiguration : RouteTopBarButtonC
         SignalBindingRole role,
         string signalId,
         string normalBackground = "#ECEFF1",
-        string checkedBackground = "#3378D6")
+        string checkedBackground = "#3378D6",
+        string pressedBackground = "#949595")
     {
         return new()
         {
             Text = text,
             NormalBackground = normalBackground,
+            PressedBackground = pressedBackground,
             CheckedBackground = checkedBackground,
+            NormalForeground = "#FFFFFF",
+            PressedForeground = "#FFFFFF",
+            CheckedForeground = "#FFFFFF",
             Bindings = CreateButtonBindings(role, signalId),
             OffFeedbackEnabled = false,
         };
@@ -227,6 +236,18 @@ public sealed class RouteSegmentConfiguration : RouteMapConfigurationItem
     public bool IsVisible { get; set; } = true;
     public RouteSegmentStyleConfiguration Style { get; set; } = new();
     public ObservableCollection<SignalBindingConfiguration> Bindings { get; set; } = [];
+    public ObservableCollection<RouteSegmentActiveFragmentConfiguration> ActiveFragments { get; set; } = [];
+}
+
+public sealed class RouteSegmentActiveFragmentConfiguration : ReactiveObject
+{
+    public int Index { get; set; }
+    public SignalBindingConfiguration Binding { get; set; } = new()
+    {
+        Role = SignalBindingRole.ActiveRouteFragment,
+        Direction = SignalBindingDirection.Read,
+        ValueType = SignalValueType.Bool,
+    };
 }
 
 public sealed class RouteSegmentStyleConfiguration
@@ -336,9 +357,17 @@ public sealed class EquipmentCardStyleConfiguration
     public string SendPrefix { get; set; } = "Отправить";
     public string ReturnPrefix { get; set; } = "Возврат";
     public string StartColor { get; set; } = "#D0D0D0";
+    public string StartPressedColor { get; set; } = "#949595";
     public string StartCheckedColor { get; set; } = "#3A9D5D";
+    public string StartForegroundColor { get; set; } = "#101820";
+    public string StartPressedForegroundColor { get; set; } = "#101820";
+    public string StartCheckedForegroundColor { get; set; } = "#FFFFFF";
     public string StopColor { get; set; } = "#D95D4E";
+    public string StopPressedColor { get; set; } = "#949595";
     public string StopCheckedColor { get; set; } = "#9E2F25";
+    public string StopForegroundColor { get; set; } = "#FFFFFF";
+    public string StopPressedForegroundColor { get; set; } = "#FFFFFF";
+    public string StopCheckedForegroundColor { get; set; } = "#FFFFFF";
 }
 
 public sealed class RoutePlaceholderRuleConfiguration : RouteMapConfigurationItem

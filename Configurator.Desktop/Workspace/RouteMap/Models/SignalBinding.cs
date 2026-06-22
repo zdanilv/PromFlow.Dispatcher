@@ -12,6 +12,7 @@ public enum SignalBindingRole
     StopCommand,
     Fault,
     ActiveRoute,
+    ActiveRouteFragment,
     TargetCommand,
     LoaderCommand,
     AutomaticModeCommand,

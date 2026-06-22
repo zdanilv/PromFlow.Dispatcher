@@ -24,6 +24,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private bool _canStop;
     private bool _isStartChecked;
     private bool _isStopChecked;
+    private bool _isStartPressed;
+    private bool _isStopPressed;
     private bool _runtimeVisible = true;
     private bool _isApplyingRuntime;
 
@@ -79,8 +81,10 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public double ActionFontSize => Style.ActionFontSize;
     public string StartText => Style.StartText;
     public string StopText => Style.StopText;
-    public IBrush StartBackground => RouteMapPalette.Brush(IsStartChecked ? Style.StartCheckedColor : Style.StartColor);
-    public IBrush StopBackground => RouteMapPalette.Brush(IsStopChecked ? Style.StopCheckedColor : Style.StopColor);
+    public IBrush StartBackground => RouteMapPalette.Brush(StartStateColor(Style.StartColor, Style.StartPressedColor, Style.StartCheckedColor));
+    public IBrush StartForeground => RouteMapPalette.Brush(StartStateColor(Style.StartForegroundColor, Style.StartPressedForegroundColor, Style.StartCheckedForegroundColor));
+    public IBrush StopBackground => RouteMapPalette.Brush(StopStateColor(Style.StopColor, Style.StopPressedColor, Style.StopCheckedColor));
+    public IBrush StopForeground => RouteMapPalette.Brush(StopStateColor(Style.StopForegroundColor, Style.StopPressedForegroundColor, Style.StopCheckedForegroundColor));
 
     public string SendPointTitle
     {
@@ -153,6 +157,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
 
             this.RaiseAndSetIfChanged(ref _isStartChecked, value);
             this.RaisePropertyChanged(nameof(StartBackground));
+            this.RaisePropertyChanged(nameof(StartForeground));
 
             if (!_isApplyingRuntime)
                 _ = DispatchAsync(_startBinding, value);
@@ -169,9 +174,38 @@ public sealed class EquipmentCardViewModel : ViewModelBase
 
             this.RaiseAndSetIfChanged(ref _isStopChecked, value);
             this.RaisePropertyChanged(nameof(StopBackground));
+            this.RaisePropertyChanged(nameof(StopForeground));
 
             if (!_isApplyingRuntime)
                 _ = DispatchAsync(_stopBinding, value);
+        }
+    }
+
+    public bool IsStartPressed
+    {
+        get => _isStartPressed;
+        set
+        {
+            if (_isStartPressed == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _isStartPressed, value);
+            this.RaisePropertyChanged(nameof(StartBackground));
+            this.RaisePropertyChanged(nameof(StartForeground));
+        }
+    }
+
+    public bool IsStopPressed
+    {
+        get => _isStopPressed;
+        set
+        {
+            if (_isStopPressed == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _isStopPressed, value);
+            this.RaisePropertyChanged(nameof(StopBackground));
+            this.RaisePropertyChanged(nameof(StopForeground));
         }
     }
 
@@ -259,6 +293,12 @@ public sealed class EquipmentCardViewModel : ViewModelBase
 
     private static Thickness ToThickness(RouteThickness value) =>
         new(value.Left, value.Top, value.Right, value.Bottom);
+
+    private string StartStateColor(string normal, string pressed, string @checked) =>
+        IsStartPressed ? pressed : IsStartChecked ? @checked : normal;
+
+    private string StopStateColor(string normal, string pressed, string @checked) =>
+        IsStopPressed ? pressed : IsStopChecked ? @checked : normal;
 
     private IBrush PaletteBrush(string color, IBrush defaultBrush) =>
         _usesDefaultPalette ? defaultBrush : RouteMapPalette.Brush(color);

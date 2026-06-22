@@ -41,11 +41,6 @@
 			<Setter Property="Background" Value="#D0D0D0"/>
 			<Setter Property="BorderBrush" Value="#D0D0D0"/>
 		</Style>
-		<Style Selector="ToggleButton.start:checked">
-			<Setter Property="Background" Value="#3A9D5D"/>
-			<Setter Property="BorderBrush" Value="#3A9D5D"/>
-			<Setter Property="Foreground" Value="#FFFFFF"/>
-		</Style>
 		<Style Selector="ToggleButton.stop">
 			<Setter Property="Background" Value="#D95D4E"/>
 			<Setter Property="BorderBrush" Value="#D95D4E"/>
@@ -55,19 +50,6 @@
 			<Setter Property="Background" Value="#D95D4E"/>
 			<Setter Property="BorderBrush" Value="#D95D4E"/>
 			<Setter Property="Foreground" Value="#FFFFFF"/>
-		</Style>
-		<Style Selector="ToggleButton.stop:checked">
-			<Setter Property="Background" Value="#9E2F25"/>
-			<Setter Property="BorderBrush" Value="#9E2F25"/>
-			<Setter Property="Foreground" Value="#FFFFFF"/>
-		</Style>
-		<Style Selector="ToggleButton.stop:pressed">
-			<Setter Property="Background" Value="#8A241D"/>
-			<Setter Property="BorderBrush" Value="#8A241D"/>
-		</Style>
-		<Style Selector="Button.stop:pressed">
-			<Setter Property="Background" Value="#8A241D"/>
-			<Setter Property="BorderBrush" Value="#8A241D"/>
 		</Style>
 	</UserControl.Styles>
 
@@ -143,18 +125,22 @@
 				  Grid.ColumnSpan="2"
 				  ColumnDefinitions="*,*"
 				  ColumnSpacing="11">
-				<ToggleButton Classes="equipment-action start"
+				<ToggleButton x:Name="StartButton"
+							  Classes="equipment-action start"
 							  Content="{Binding StartText}"
 							  Background="{Binding StartBackground}"
 							  BorderBrush="{Binding StartBackground}"
+							  Foreground="{Binding StartForeground}"
 							  FontSize="{Binding ActionFontSize}"
 							  IsChecked="{Binding IsStartChecked, Mode=TwoWay}"
 							  IsEnabled="{Binding CanStart}"/>
-				<ToggleButton Grid.Column="1"
+				<ToggleButton x:Name="StopButton"
+							  Grid.Column="1"
 							  Classes="equipment-action stop"
 							  Content="{Binding StopText}"
 							  Background="{Binding StopBackground}"
 							  BorderBrush="{Binding StopBackground}"
+							  Foreground="{Binding StopForeground}"
 							  FontSize="{Binding ActionFontSize}"
 							  IsChecked="{Binding IsStopChecked, Mode=TwoWay}"
 							  IsEnabled="{Binding CanStop}"/>

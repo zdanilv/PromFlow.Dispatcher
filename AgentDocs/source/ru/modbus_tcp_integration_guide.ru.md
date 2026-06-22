@@ -93,9 +93,15 @@ Bool внутри Holding Register:
 Для register-bit точки обязательны `Type=Bool`, `Length=1` и `BitIndex=0..15`.
 Запись выполняется как сериализованный read-modify-write.
 
+Отрезки длинных линий RouteMap v10 используют read-only роль `ActiveRouteFragment`.
+Имена генерируются как `route.<segmentId>.fragment_<n>.active`, например
+`route.bsu2_to_bucket.fragment_1.active`. Их можно маппить в разные coils или в разные
+bits одного holding register; общий `Fault` линии остается отдельным сигналом на всю
+линию.
+
 ## Семантика Команд
 
-В schema v8 карточные `ПУСК`/`СТОП` и TopBar `АВАРИЯ` всегда работают как
+В schema v10 карточные `ПУСК`/`СТОП` и TopBar `АВАРИЯ` всегда работают как
 toggle-команды RouteMap и пишут `true/false` в свои command bindings. Legacy-значение
 `RouteCommandButtonKind.Momentary` миграция приводит к `Toggle`.
 

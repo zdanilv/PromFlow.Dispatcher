@@ -94,6 +94,7 @@ public sealed class RouteMapModbusBindingDiagnostics : IDisposable
     {
         var bindings = definition.Nodes.SelectMany(node => node.Bindings)
             .Concat(definition.Segments.SelectMany(segment => segment.Bindings))
+            .Concat(definition.Segments.SelectMany(segment => segment.ActiveFragments ?? []).Select(fragment => fragment.Binding))
             .Concat(definition.Vehicles.SelectMany(vehicle => vehicle.Bindings))
             .Concat(definition.MapEquipment.SelectMany(card => card.Bindings));
 

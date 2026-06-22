@@ -13,6 +13,7 @@ using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -149,6 +150,44 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         Assert.Equal(
             RouteMapSignalElementCategory.Vehicle,
             inventory.Single(item => item.SignalId == binding.SignalId).Category);
+    }
+
+    [Fact]
+    public void SignalInventory_IncludesSegmentActiveFragmentBindings()
+    {
+        var definition = RouteMapSeed.Create();
+
+        var inventory = RouteMapSignalInventory.Build(definition);
+        var item = inventory.Single(row => row.SignalId == "route.bsu2_to_bucket.fragment_2.active");
+
+        Assert.Equal(SignalValueType.Bool, item.ExpectedType);
+        Assert.Equal(ModbusDataAccess.Read, item.RequiredAccess);
+        Assert.Equal(RouteMapSignalElementCategory.Segment, item.Category);
+        Assert.Contains(nameof(SignalBindingRole.ActiveRouteFragment), item.Roles);
+        Assert.Contains("отрезок 2", item.Objects);
+    }
+
+    [Fact]
+    public void ModbusBindingDiagnostics_IncludesSegmentActiveFragmentBindings()
+    {
+        using var scope = new ConfigurationScope();
+        using var runtime = new RouteMapSignalRuntime(
+            new ManualSignalProvider(),
+            new RecordingCommandDispatcher(),
+            new ManualSignalProvider(),
+            new RecordingCommandDispatcher(),
+            RouteMapSignalSource.Modbus);
+        var logger = new CapturingLogger<RouteMapModbusBindingDiagnostics>();
+
+        using var diagnostics = new RouteMapModbusBindingDiagnostics(
+            scope.Manager,
+            new TestOptionsMonitor(new ModbusOptions()),
+            runtime,
+            logger);
+
+        Assert.Contains(
+            logger.Warnings,
+            message => message.Contains("route.bsu2_to_bucket.fragment_2.active", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -779,6 +818,25 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         {
             Applied = dataMap.Select(point => point.Clone()).ToArray();
             return ModbusOperationResult.Success();
+        }
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning)
+                Warnings.Add(formatter(state, exception));
         }
     }
 

@@ -16,6 +16,7 @@ route.node.bsu_1.active
 route.node.bsu_1.target
 route.node.bsu_1.loader
 route.active_bsu1_bsu2.active
+route.bsu2_to_bucket.fragment_1.active
 equip.bucket.start
 equip.bucket.stop
 equip.bucket.text
@@ -106,6 +107,7 @@ plc1.db20.value         # плохо, если это физическое ра�
 | `ManualModeCommand` | `system.mode.manual` |
 | `EmergencyCommand` | `system.emergency` |
 | `ActiveRoute` | `route.node.bsu_1.active` |
+| `ActiveRouteFragment` | `route.bsu2_to_bucket.fragment_1.active` |
 | `TargetCommand` | `route.node.bsu_1.target` |
 | `LoaderCommand` | `route.node.bsu_1.loader` |
 | `StartCommand` | `equip.bucket.start` |
@@ -130,6 +132,7 @@ RouteMap меняет состояние элементов только чер�
 | `Visible` | Узлы, линии, карточки | `Read` | `Bool` | `true` показывает объект, `false` скрывает. |
 | `Fault` | Узлы, линии, карточки | `Read` | `Bool` | `true` переводит объект в аварийный цвет и запрещает команды карточки. |
 | `ActiveRoute` | Узлы, линии | `Read` | `Bool` | `true` показывает объект как часть активного маршрута. |
+| `ActiveRouteFragment` | Отрезки линий | `Read` | `Bool` | `true` подсвечивает отдельный видимый отрезок линии. |
 | `Text` | Карточки | `Read` | `String` или числовой тип | Меняет текст статуса карточки. |
 | `Value` | Карточки и объекты runtime | `Read` | Любой поддержанный тип | Читает дополнительное значение; стандартная карточка не выводит отдельное поле значения. |
 
@@ -183,9 +186,19 @@ PLC value = false -> узел скрыт с карты и недоступен �
 |---|---|---|---|---|---|
 | `Fault` | `Read` | `Bool` | `active_bsu1_bsu2.fault` | `Coil`, `Address=31`, `Type=Bool` | `true` окрашивает линию как аварийную. |
 | `ActiveRoute` | `Read` | `Bool` | `route.active_bsu1_bsu2.active` | `Coil`, `Address=32`, `Type=Bool` | `true` подсвечивает линию как участок текущего маршрута. |
+| `ActiveRouteFragment` | `Read` | `Bool` | `route.bsu2_to_bucket.fragment_1.active` | `HoldingRegister`, `Address=36`, `BitIndex=1`, `Type=Bool` | `true` подсвечивает только первый отрезок длинной линии. |
 
 Чтобы PLC выделил линию активного маршрута, настройте `ActiveRoute` на bool-адрес и
 запишите туда `true`. Чтобы снять выделение, PLC должен вернуть `false`.
+
+Начиная со `schemaVersion = 10` длинная линия может иметь отдельные fragment bindings.
+Они создаются автоматически по стабильной логической геометрии линии, а не по текущему
+размеру окна. Если линия делится на N видимых отрезков, в секции `Отрезки` появляются
+N read-only по направлению/типу bindings с именами по умолчанию
+`route.<segmentId>.fragment_<1-based-index>.active`. `Fault`, `Offline` и `Disabled`
+остаются состояниями всей линии и перекрывают fragment-подсветку. Line-level
+`ActiveRoute=true` по-прежнему подсвечивает всю линию; если одновременно включены
+line-level и fragment-сигналы, рисуется объединение.
 
 Дополнительно для линии можно добавить `Visible`:
 

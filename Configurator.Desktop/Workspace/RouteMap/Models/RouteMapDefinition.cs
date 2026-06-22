@@ -129,8 +129,10 @@ public sealed record RouteTopBarButtonSettings
 {
     public string Text { get; init; } = string.Empty;
     public string NormalBackground { get; init; } = "#ECEFF1";
+    public string PressedBackground { get; init; } = "#949595";
     public string CheckedBackground { get; init; } = "#3378D6";
     public string NormalForeground { get; init; } = "#59636E";
+    public string PressedForeground { get; init; } = "#FFFFFF";
     public string CheckedForeground { get; init; } = "#FFFFFF";
     public RouteCommandButtonKind ButtonKind { get; init; } = RouteCommandButtonKind.Toggle;
     public bool OffFeedbackEnabled { get; init; }
@@ -183,9 +185,17 @@ public sealed record EquipmentCardStyle
     public string SendPrefix { get; init; } = "Отправить";
     public string ReturnPrefix { get; init; } = "Возврат";
     public string StartColor { get; init; } = "#D0D0D0";
+    public string StartPressedColor { get; init; } = "#949595";
     public string StartCheckedColor { get; init; } = "#3A9D5D";
+    public string StartForegroundColor { get; init; } = "#101820";
+    public string StartPressedForegroundColor { get; init; } = "#101820";
+    public string StartCheckedForegroundColor { get; init; } = "#FFFFFF";
     public string StopColor { get; init; } = "#D95D4E";
+    public string StopPressedColor { get; init; } = "#949595";
     public string StopCheckedColor { get; init; } = "#9E2F25";
+    public string StopForegroundColor { get; init; } = "#FFFFFF";
+    public string StopPressedForegroundColor { get; init; } = "#FFFFFF";
+    public string StopCheckedForegroundColor { get; init; } = "#FFFFFF";
 }
 
 public sealed record RoutePlaceholderStyle
@@ -328,7 +338,12 @@ public sealed record RouteSegment(
     double LabelOffsetX = 0,
     double LabelOffsetY = 0,
     bool IsVisible = true,
-    RouteSegmentStyle? Style = null);
+    RouteSegmentStyle? Style = null,
+    IReadOnlyList<RouteSegmentActiveFragment>? ActiveFragments = null);
+
+public sealed record RouteSegmentActiveFragment(
+    int Index,
+    SignalBinding Binding);
 
 public sealed record RouteVehicle(
     string Id,

@@ -157,6 +157,7 @@ RouteElbowOrder ElbowOrder         // порядок прямых частей �
 string? Title
 double LabelOffsetX
 double LabelOffsetY
+IReadOnlyList<RouteSegmentActiveFragment>? ActiveFragments
 ```
 
 Для `RoundedElbow90` радиус ограничивается диапазоном `0..min(|dx|, |dy|)`. Путь состоит из касательной прямой, точной четверти окружности и второй касательной прямой. Отдельный узел `ПОВОРОТ` не создается; подпись принадлежит сегменту и не участвует в hit-test.
@@ -177,6 +178,14 @@ route.<segmentId>.active
 `IsDirectional` не участвует в этом решении. Итоговый приоритет runtime-состояния:
 `Offline`, затем `Fault`, `ActiveRoute`, fallback; порядок bindings в JSON на
 результат не влияет.
+
+Начиная со `schemaVersion = 10` длинная линия может иметь `ActiveFragments`: по одному
+`ActiveRouteFragment` binding на каждый видимый range после логической фрагментации.
+Имена по умолчанию: `route.<segmentId>.fragment_<1-based-index>.active`.
+`RouteMapControl` сначала рисует базовые ranges, затем overlay активных ranges.
+Line-level `ActiveRoute` подсвечивает всю линию, fragment-сигналы подсвечивают только
+свои ranges, а `Fault`, `Offline` и `Disabled` остаются состояниями всей линии и
+перекрывают fragment overlay.
 
 Линии не выбираются мышью. `RouteMapHitTester` возвращает только узлы и машинки; marker для сегментов не рисуется.
 
@@ -331,6 +340,11 @@ equip.bucket.stop
 - пишут `true/false` в `equip.bucket.start` и `equip.bucket.stop`;
 - runtime-обновление checked-состояния не отправляет команды обратно, потому что VM защищена флагом `_isApplyingRuntime`.
 
+Цвета кнопок вычисляются во ViewModel с приоритетом `pressed > checked > normal`.
+Defaults v10: `ПУСК` normal `#D0D0D0`, pressed `#949595`, checked `#3A9D5D`;
+`СТОП` normal `#D95D4E`, pressed `#949595`, checked `#9E2F25`. Для каждого состояния
+отдельно настраивается foreground.
+
 Визуал карточки:
 
 - фон прозрачный;
@@ -444,7 +458,7 @@ services.AddTransient<RouteMapDashboardViewModel>();
 
 Правильный поток:
 
-Начиная со `schemaVersion = 8`, карточные toggle-кнопки `ПУСК`/`СТОП` и TopBar
+В актуальной `schemaVersion = 10` карточные toggle-кнопки `ПУСК`/`СТОП` и TopBar
 `АВАРИЯ` не используют OffFeedback и не поддерживают `Momentary`: пользовательское
 включение пишет `true` в свой `*Command`, снятие галочки пишет `false`.
 
@@ -593,13 +607,14 @@ dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.cspr
   применение и сохранение `RouteMapRuntime`;
 - `Карта и маршруты` — логические размеры, padding, карточный gap, общая фрагментация,
   палитра и упорядоченные `NodeIds`/`SegmentIds` цепочек;
-- `TopBar` — тексты, обычные/активные цвета и командные bindings кнопок `АВТОМАТ`,
-  `РУЧНОЙ`, `АВАРИЯ`;
+- `TopBar` — тексты, normal/pressed/checked фон, foreground и командные bindings
+  кнопок `АВТОМАТ`, `РУЧНОЙ`, `АВАРИЯ`;
 - `Узлы` — геометрия, placement подписи, тип, меню, начальные роли, видимость, стиль и bindings;
 - `Линии` — endpoints, геометрия, радиус и порядок дуги, endpoint-gap, line-cap,
-  подпись, цвета, толщины, индивидуальная фрагментация и bindings;
+  подпись, цвета, толщины, индивидуальная фрагментация, bindings и секция `Отрезки`;
 - `Карточки` — фиксированный шаблон карточки, данные, команды `ПУСК`/`СТОП`,
-  размеры, отступы, цвета, подписи кнопок, цепочка и вертикальный якорь;
+  размеры, отступы, цвета фона и текста normal/pressed/checked, подписи кнопок,
+  цепочка и вертикальный якорь;
 - `Заглушки` — правила автоматического заполнения `Above`, `Below` или `Both`, режим
   высоты, gap, лимит количества и стиль.
 
@@ -614,7 +629,7 @@ dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.cspr
 
 ```json
 {
-  "schemaVersion": 6,
+  "schemaVersion": 10,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -654,6 +669,10 @@ endpoint-gap, round-cap и отсутствующий `ActiveRoute` binding ка
 Шаг v4→v5 добавляет `startButtonKind`, `stopButtonKind` и
 `topBar.emergency.buttonKind`, выставляя `Toggle`, чтобы старые профили визуально не
 изменились.
+Шаги v6→v9 удаляют legacy off-feedback/state роли и приводят карточные/аварийную
+кнопки к обычному toggle-readback. Шаг v9→v10 добавляет pressed/foreground поля,
+обновляет старые дефолтные цвета `АВАРИЯ`, `ПУСК` и `СТОП`, сохраняя пользовательские
+цвета, и генерирует `ActiveRouteFragment` bindings для split-линий.
 После успешной валидации мигрированный активный профиль атомарно сохраняется. При ошибке
 исходный файл остается без изменений, manager использует seed и публикует текст ошибки.
 
@@ -714,6 +733,8 @@ viewport предусмотрен горизонтальный `ScrollViewer`.
 - endpoints линий, элементы цепочек, card/chain и node-anchor ссылки;
 - не более одной карточки на цепочку;
 - допустимость ролей bindings, обязательный `SignalId`, направления команд и дубли ролей;
+- что `ActiveRouteFragment` bindings линии соответствуют текущим logical ranges и имеют
+  `Direction=Read`, `ValueType=Bool`;
 - единственность начальных `IsLoader` и `IsTarget`;
 - конечность координат, положительные размеры и формат цветов;
 - что `ПУСК`, `СТОП` и `АВАРИЯ` используют `RouteCommandButtonKind.Toggle`;
@@ -754,11 +775,12 @@ dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restor
 ## Командные Bindings И Подсветка Узлов
 
 Начиная со `schemaVersion = 4`, TopBar входит в `RouteMapConfigurationDocument`. Вкладка
-`TopBar` редактора позволяет менять тексты, обычные/активные цвета и bindings кнопок
-`АВТОМАТ`, `РУЧНОЙ`, `АВАРИЯ`. Телефон, логотип, пользователь и статусная область остаются
-частью фиксированного XAML-шаблона.
+`TopBar` редактора позволяет менять тексты, normal/pressed/checked фон, foreground и
+bindings кнопок `АВТОМАТ`, `РУЧНОЙ`, `АВАРИЯ`. Телефон, логотип, пользователь и
+статусная область остаются частью фиксированного XAML-шаблона. Для `АВАРИЯ` defaults v10:
+normal `#D95D4E`, pressed `#949595`, checked `#9E2F25`, foreground `#FFFFFF`.
 
-Начиная со `schemaVersion = 8`, `ПУСК`, `СТОП` и `АВАРИЯ` всегда работают как
+В актуальной `schemaVersion = 10` `ПУСК`, `СТОП` и `АВАРИЯ` всегда работают как
 обычные `ToggleButton`: `true` пишется при включении, `false` при снятии галочки.
 Legacy-значение `RouteCommandButtonKind.Momentary` остается только для безопасной
 десериализации старых JSON и миграцией приводится к `Toggle`. `АВТОМАТ` и
@@ -793,6 +815,10 @@ route.node.<nodeId>.active
 контуром `ActiveOutlineColor/ActiveOutlineThickness`. Она не заменяет loader/target-заливку.
 Hover и выбор мышью рисуются отдельными внешними кольцами. При `Offline`, `Fault` или
 `Disabled` сигнальный контур скрывается.
+
+Для split-линий дополнительно существуют `ActiveRouteFragment` bindings вида
+`route.<segmentId>.fragment_<n>.active`. Они участвуют в mock, SignalId inventory и
+Modbus diagnostics как обычные read/bool сигналы, но не заменяют общий `Fault` линии.
 
 Mock каждые две секунды активирует ровно один объект в порядке цепочки:
 `узел, исходящая линия, следующий узел, ...`. После цепочек добавляются узлы и линии, которые

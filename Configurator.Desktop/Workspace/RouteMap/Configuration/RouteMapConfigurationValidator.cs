@@ -130,6 +130,7 @@ public sealed class RouteMapConfigurationValidator
                 if (activeRoute.ValueType != Configurator.Application.Services.Signals.SignalValueType.Bool)
                     Add(errors, "segment", segment.Id, nameof(activeRoute.ValueType), "ActiveRoute должен иметь тип Bool.");
             }
+            ValidateSegmentActiveFragments(errors, document, segment);
 
             if (segment.Kind == RouteSegmentKind.RoundedElbow90 &&
                 nodes.TryGetValue(segment.FromNodeId, out var from) &&
@@ -202,9 +203,17 @@ public sealed class RouteMapConfigurationValidator
                 (nameof(card.Style.TitleColor), card.Style.TitleColor),
                 (nameof(card.Style.TextColor), card.Style.TextColor),
                 (nameof(card.Style.StartColor), card.Style.StartColor),
+                (nameof(card.Style.StartPressedColor), card.Style.StartPressedColor),
                 (nameof(card.Style.StartCheckedColor), card.Style.StartCheckedColor),
+                (nameof(card.Style.StartForegroundColor), card.Style.StartForegroundColor),
+                (nameof(card.Style.StartPressedForegroundColor), card.Style.StartPressedForegroundColor),
+                (nameof(card.Style.StartCheckedForegroundColor), card.Style.StartCheckedForegroundColor),
                 (nameof(card.Style.StopColor), card.Style.StopColor),
-                (nameof(card.Style.StopCheckedColor), card.Style.StopCheckedColor));
+                (nameof(card.Style.StopPressedColor), card.Style.StopPressedColor),
+                (nameof(card.Style.StopCheckedColor), card.Style.StopCheckedColor),
+                (nameof(card.Style.StopForegroundColor), card.Style.StopForegroundColor),
+                (nameof(card.Style.StopPressedForegroundColor), card.Style.StopPressedForegroundColor),
+                (nameof(card.Style.StopCheckedForegroundColor), card.Style.StopCheckedForegroundColor));
             var cardAllowedRoles = new List<SignalBindingRole>
             {
                 SignalBindingRole.Text,
@@ -333,8 +342,10 @@ public sealed class RouteMapConfigurationValidator
             Add(errors, "topBar", id, nameof(button.Text), "Текст кнопки обязателен.");
         ValidateColors(errors, "topBar", id,
             (nameof(button.NormalBackground), button.NormalBackground),
+            (nameof(button.PressedBackground), button.PressedBackground),
             (nameof(button.CheckedBackground), button.CheckedBackground),
             (nameof(button.NormalForeground), button.NormalForeground),
+            (nameof(button.PressedForeground), button.PressedForeground),
             (nameof(button.CheckedForeground), button.CheckedForeground));
         if (button is RouteTopBarEmergencyButtonConfiguration emergency)
         {
@@ -349,6 +360,49 @@ public sealed class RouteMapConfigurationValidator
         ValidateRequiredBinding(errors, "topBar", id, button.Bindings, role, SignalBindingDirection.ReadWrite);
         if (requireOffFeedback && offFeedbackRole.HasValue)
             ValidateRequiredBinding(errors, "topBar", id, button.Bindings, offFeedbackRole.Value, SignalBindingDirection.Read);
+    }
+
+    private static void ValidateSegmentActiveFragments(
+        ICollection<RouteMapConfigurationError> errors,
+        RouteMapConfigurationDocument document,
+        RouteSegmentConfiguration segment)
+    {
+        var fragments = segment.ActiveFragments?.ToArray() ?? [];
+        var expectedCount = RouteSegmentActiveFragmentSynchronizer.CalculateFragmentCount(document, segment);
+        if (expectedCount <= 1)
+        {
+            if (fragments.Length > 0)
+                Add(errors, "segment", segment.Id, nameof(segment.ActiveFragments), "ActiveRouteFragment должен быть пустым для линии без деления на отрезки.");
+            return;
+        }
+
+        if (fragments.Length != expectedCount)
+            Add(errors, "segment", segment.Id, nameof(segment.ActiveFragments), $"Линия должна иметь {expectedCount} binding ActiveRouteFragment.");
+
+        foreach (var duplicate in fragments.GroupBy(fragment => fragment.Index).Where(group => group.Count() > 1))
+            Add(errors, "segment", segment.Id, nameof(RouteSegmentActiveFragmentConfiguration.Index), $"Индекс отрезка {duplicate.Key} указан несколько раз.");
+
+        for (var index = 1; index <= expectedCount; index++)
+        {
+            if (fragments.All(fragment => fragment.Index != index))
+                Add(errors, "segment", segment.Id, nameof(RouteSegmentActiveFragmentConfiguration.Index), $"Нет binding ActiveRouteFragment для отрезка {index}.");
+        }
+
+        foreach (var fragment in fragments)
+        {
+            if (fragment.Index < 1 || fragment.Index > expectedCount)
+                Add(errors, "segment", segment.Id, nameof(fragment.Index), $"Индекс отрезка должен быть от 1 до {expectedCount}.");
+
+            var binding = fragment.Binding;
+            if (binding.Role != SignalBindingRole.ActiveRouteFragment)
+                Add(errors, "segment", segment.Id, nameof(binding.Role), "Отрезок линии должен использовать роль ActiveRouteFragment.");
+            if (string.IsNullOrWhiteSpace(binding.SignalId))
+                Add(errors, "segment", segment.Id, nameof(binding.SignalId), "SignalId отрезка обязателен.");
+            if (binding.Direction != SignalBindingDirection.Read)
+                Add(errors, "segment", segment.Id, nameof(binding.Direction), "ActiveRouteFragment должен иметь направление Read.");
+            if (binding.ValueType != Configurator.Application.Services.Signals.SignalValueType.Bool)
+                Add(errors, "segment", segment.Id, nameof(binding.ValueType), "ActiveRouteFragment должен иметь тип Bool.");
+        }
     }
 
     private static bool IsCommandRole(SignalBindingRole role) => role is

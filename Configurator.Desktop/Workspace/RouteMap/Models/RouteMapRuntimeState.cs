@@ -36,4 +36,5 @@ public sealed record RouteObjectRuntimeState(
     bool IsStopChecked = false,
     bool IsSignalActive = false,
     bool? IsLoader = null,
-    bool? IsTarget = null);
+    bool? IsTarget = null,
+    IReadOnlySet<int>? ActiveFragmentIndexes = null);

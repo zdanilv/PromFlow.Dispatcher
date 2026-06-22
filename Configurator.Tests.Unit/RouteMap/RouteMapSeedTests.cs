@@ -135,6 +135,14 @@ public sealed class RouteMapSeedTests
             Assert.Equal(6, (segment.Style ?? new RouteSegmentStyle()).EndpointGap);
             Assert.Equal(RouteLineCap.Round, (segment.Style ?? new RouteSegmentStyle()).LineCap);
         });
+        Assert.Empty(definition.Segments.Single(x => x.Id == "lower_dead_end_to_bsu1").ActiveFragments ?? []);
+        Assert.Empty(definition.Segments.Single(x => x.Id == "active_bsu1_bsu2").ActiveFragments ?? []);
+        Assert.Equal(
+            Enumerable.Range(1, 3).Select(index => $"route.bsu2_to_bucket.fragment_{index}.active"),
+            definition.Segments.Single(x => x.Id == "bsu2_to_bucket").ActiveFragments!.Select(fragment => fragment.Binding.SignalId));
+        Assert.Equal(
+            Enumerable.Range(1, 2).Select(index => $"route.bucket_to_upper_dead_end.fragment_{index}.active"),
+            definition.Segments.Single(x => x.Id == "bucket_to_upper_dead_end").ActiveFragments!.Select(fragment => fragment.Binding.SignalId));
 
         var elbowPath = RouteSegmentGeometry.Create(
             elbow,

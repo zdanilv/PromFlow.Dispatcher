@@ -63,6 +63,32 @@ public sealed class EquipmentCardViewModelTests
         Assert.False(viewModel.IsStopChecked);
     }
 
+    [Fact]
+    public void Button_colors_resolve_pressed_checked_normal_priority()
+    {
+        var viewModel = CreateViewModel();
+
+        Assert.Equal(Avalonia.Media.Color.Parse("#D0D0D0"), BrushColor(viewModel.StartBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#101820"), BrushColor(viewModel.StartForeground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#D95D4E"), BrushColor(viewModel.StopBackground));
+
+        viewModel.IsStartChecked = true;
+        viewModel.IsStopChecked = true;
+
+        Assert.Equal(Avalonia.Media.Color.Parse("#3A9D5D"), BrushColor(viewModel.StartBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#FFFFFF"), BrushColor(viewModel.StartForeground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#9E2F25"), BrushColor(viewModel.StopBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#FFFFFF"), BrushColor(viewModel.StopForeground));
+
+        viewModel.IsStartPressed = true;
+        viewModel.IsStopPressed = true;
+
+        Assert.Equal(Avalonia.Media.Color.Parse("#949595"), BrushColor(viewModel.StartBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#101820"), BrushColor(viewModel.StartForeground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#949595"), BrushColor(viewModel.StopBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#FFFFFF"), BrushColor(viewModel.StopForeground));
+    }
+
     [Theory]
     [InlineData("Ожидание", "warning")]
     [InlineData("Выключено", "muted")]
@@ -172,6 +198,9 @@ public sealed class EquipmentCardViewModelTests
             _ => throw new ArgumentOutOfRangeException(nameof(key), key, null),
         };
     }
+
+    private static Avalonia.Media.Color BrushColor(Avalonia.Media.IBrush brush) =>
+        Assert.IsType<Avalonia.Media.SolidColorBrush>(brush).Color;
 
     private sealed class CapturingEquipmentCommandDispatcher : IEquipmentCommandDispatcher
     {

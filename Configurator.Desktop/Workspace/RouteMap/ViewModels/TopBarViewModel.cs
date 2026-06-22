@@ -14,6 +14,9 @@ public sealed class TopBarViewModel : ViewModelBase
     private bool _isAutomaticMode;
     private bool _isManualMode = true;
     private bool _hasEmergency;
+    private bool _isAutomaticPressed;
+    private bool _isManualPressed;
+    private bool _isEmergencyPressed;
     private string _connectionStatusText = "Ожидание";
 
     public TopBarViewModel(
@@ -58,12 +61,12 @@ public sealed class TopBarViewModel : ViewModelBase
     public string AutomaticText => _settings.Automatic.Text;
     public string ManualText => _settings.Manual.Text;
     public string EmergencyText => _settings.Emergency.Text;
-    public IBrush AutomaticBackground => ButtonBrush(_settings.Automatic, IsAutomaticMode, foreground: false);
-    public IBrush AutomaticForeground => ButtonBrush(_settings.Automatic, IsAutomaticMode, foreground: true);
-    public IBrush ManualBackground => ButtonBrush(_settings.Manual, IsManualMode, foreground: false);
-    public IBrush ManualForeground => ButtonBrush(_settings.Manual, IsManualMode, foreground: true);
-    public IBrush EmergencyBackground => ButtonBrush(_settings.Emergency, HasEmergency, foreground: false);
-    public IBrush EmergencyForeground => ButtonBrush(_settings.Emergency, HasEmergency, foreground: true);
+    public IBrush AutomaticBackground => ButtonBrush(_settings.Automatic, IsAutomaticMode, _isAutomaticPressed, foreground: false);
+    public IBrush AutomaticForeground => ButtonBrush(_settings.Automatic, IsAutomaticMode, _isAutomaticPressed, foreground: true);
+    public IBrush ManualBackground => ButtonBrush(_settings.Manual, IsManualMode, _isManualPressed, foreground: false);
+    public IBrush ManualForeground => ButtonBrush(_settings.Manual, IsManualMode, _isManualPressed, foreground: true);
+    public IBrush EmergencyBackground => ButtonBrush(_settings.Emergency, HasEmergency, _isEmergencyPressed, foreground: false);
+    public IBrush EmergencyForeground => ButtonBrush(_settings.Emergency, HasEmergency, _isEmergencyPressed, foreground: true);
 
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SwitchToAutomaticCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SwitchToManualCommand { get; }
@@ -83,6 +86,36 @@ public sealed class TopBarViewModel : ViewModelBase
         HasEmergency = hasEmergency;
         ConnectionStatusText = connectionStatusText;
         RaiseButtonProperties();
+    }
+
+    public void SetAutomaticPressed(bool isPressed)
+    {
+        if (_isAutomaticPressed == isPressed)
+            return;
+
+        _isAutomaticPressed = isPressed;
+        this.RaisePropertyChanged(nameof(AutomaticBackground));
+        this.RaisePropertyChanged(nameof(AutomaticForeground));
+    }
+
+    public void SetManualPressed(bool isPressed)
+    {
+        if (_isManualPressed == isPressed)
+            return;
+
+        _isManualPressed = isPressed;
+        this.RaisePropertyChanged(nameof(ManualBackground));
+        this.RaisePropertyChanged(nameof(ManualForeground));
+    }
+
+    public void SetEmergencyPressed(bool isPressed)
+    {
+        if (_isEmergencyPressed == isPressed)
+            return;
+
+        _isEmergencyPressed = isPressed;
+        this.RaisePropertyChanged(nameof(EmergencyBackground));
+        this.RaisePropertyChanged(nameof(EmergencyForeground));
     }
 
     private async Task SwitchToAutomaticAsync()
@@ -130,10 +163,10 @@ public sealed class TopBarViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(EmergencyForeground));
     }
 
-    private static IBrush ButtonBrush(RouteTopBarButtonSettings button, bool isChecked, bool foreground) =>
+    private static IBrush ButtonBrush(RouteTopBarButtonSettings button, bool isChecked, bool isPressed, bool foreground) =>
         RouteMapPalette.Brush(foreground
-            ? isChecked ? button.CheckedForeground : button.NormalForeground
-            : isChecked ? button.CheckedBackground : button.NormalBackground);
+            ? isPressed ? button.PressedForeground : isChecked ? button.CheckedForeground : button.NormalForeground
+            : isPressed ? button.PressedBackground : isChecked ? button.CheckedBackground : button.NormalBackground);
 
     private static RouteTopBarSettings CreateDefaultSettings() =>
         RouteMapSeed.Create().TopBar ?? throw new InvalidOperationException("RouteMap seed does not define TopBar settings.");

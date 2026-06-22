@@ -17,34 +17,21 @@
             <Setter Property="Foreground" Value="#59636E"/>
             <Setter Property="BorderBrush" Value="#D4D9DD"/>
         </Style>
-        <Style Selector="ToggleButton.mode:checked">
-            <Setter Property="Background" Value="#3378D6"/>
-            <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#3378D6"/>
-        </Style>
         <Style Selector="ToggleButton.emergency">
             <Setter Property="MinWidth" Value="168"/>
             <Setter Property="Height" Value="38"/>
-            <Setter Property="Background" Value="#D87868"/>
+            <Setter Property="Background" Value="#D95D4E"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#D87868"/>
+            <Setter Property="BorderBrush" Value="#D95D4E"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
         <Style Selector="Button.emergency">
             <Setter Property="MinWidth" Value="168"/>
             <Setter Property="Height" Value="38"/>
-            <Setter Property="Background" Value="#D87868"/>
+            <Setter Property="Background" Value="#D95D4E"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#D87868"/>
+            <Setter Property="BorderBrush" Value="#D95D4E"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-        </Style>
-        <Style Selector="ToggleButton.emergency:checked">
-            <Setter Property="Background" Value="#C83F30"/>
-            <Setter Property="BorderBrush" Value="#C83F30"/>
-        </Style>
-        <Style Selector="Button.emergency:pressed">
-            <Setter Property="Background" Value="#C83F30"/>
-            <Setter Property="BorderBrush" Value="#C83F30"/>
         </Style>
         <Style Selector="Button.settings">
             <Setter Property="MinWidth" Value="142"/>
@@ -81,15 +68,19 @@
                     Orientation="Horizontal"
                     VerticalAlignment="Center"
                     Margin="28,0,0,0">
-            <ToggleButton Classes="mode"
+            <ToggleButton x:Name="AutomaticButton"
+                          Classes="mode"
                           Content="{Binding AutomaticText}"
                           Background="{Binding AutomaticBackground}"
+                          BorderBrush="{Binding AutomaticBackground}"
                           Foreground="{Binding AutomaticForeground}"
                           IsChecked="{Binding IsAutomaticMode}"
                           Command="{Binding SwitchToAutomaticCommand}"/>
-            <ToggleButton Classes="mode"
+            <ToggleButton x:Name="ManualButton"
+                          Classes="mode"
                           Content="{Binding ManualText}"
                           Background="{Binding ManualBackground}"
+                          BorderBrush="{Binding ManualBackground}"
                           Foreground="{Binding ManualForeground}"
                           IsChecked="{Binding IsManualMode}"
                           Command="{Binding SwitchToManualCommand}"/>
@@ -100,9 +91,11 @@
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Spacing="10">
-            <ToggleButton Classes="emergency"
+            <ToggleButton x:Name="EmergencyButton"
+                          Classes="emergency"
                           Content="{Binding EmergencyText}"
                           Background="{Binding EmergencyBackground}"
+                          BorderBrush="{Binding EmergencyBackground}"
                           Foreground="{Binding EmergencyForeground}"
                           IsChecked="{Binding HasEmergency}"
                           Command="{Binding EmergencyCommand}"/>

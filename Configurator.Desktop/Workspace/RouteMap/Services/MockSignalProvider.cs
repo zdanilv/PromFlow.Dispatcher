@@ -53,6 +53,7 @@ public sealed class MockSignalProvider : ISignalValueProvider
             : activeRouteSignalIds[Math.Abs(tick) % activeRouteSignalIds.Length];
         var bindings = definition.Nodes.SelectMany(x => x.Bindings)
             .Concat(definition.Segments.SelectMany(x => x.Bindings))
+            .Concat(definition.Segments.SelectMany(x => x.ActiveFragments ?? []).Select(x => x.Binding))
             .Concat(definition.Vehicles.SelectMany(x => x.Bindings))
             .Concat(definition.MapEquipment.SelectMany(x => x.Bindings))
             .Concat(TopBarBindings(definition))
@@ -61,7 +62,7 @@ public sealed class MockSignalProvider : ISignalValueProvider
             .Select(x => x.First());
 
         foreach (var binding in bindings)
-            signals[binding.SignalId] = binding.Role == SignalBindingRole.ActiveRoute
+            signals[binding.SignalId] = binding.Role is SignalBindingRole.ActiveRoute or SignalBindingRole.ActiveRouteFragment
                 ? Bool(binding.SignalId, binding.SignalId == activeRouteSignalId, now)
                 : CreateValue(binding, definition, tick, now);
 
@@ -84,6 +85,7 @@ public sealed class MockSignalProvider : ISignalValueProvider
             SignalBindingRole.Visible => true,
             SignalBindingRole.Fault => false,
             SignalBindingRole.ActiveRoute => true,
+            SignalBindingRole.ActiveRouteFragment => false,
             SignalBindingRole.StartCommand => false,
             SignalBindingRole.StartOffFeedback => false,
             SignalBindingRole.StopCommand => false,
@@ -115,7 +117,13 @@ public sealed class MockSignalProvider : ISignalValueProvider
                 if (index < chain.NodeIds.Count && nodes.TryGetValue(chain.NodeIds[index], out var node) && seen.Add("node:" + node.Id))
                     orderedObjects.Add((node.Id, node.Bindings));
                 if (index < chain.SegmentIds.Count && segments.TryGetValue(chain.SegmentIds[index], out var segment) && seen.Add("segment:" + segment.Id))
-                    orderedObjects.Add((segment.Id, segment.Bindings));
+                {
+                    if (segment.ActiveFragments is null || segment.ActiveFragments.Count == 0)
+                        orderedObjects.Add((segment.Id, segment.Bindings));
+
+                    foreach (var fragment in (segment.ActiveFragments ?? []).OrderBy(fragment => fragment.Index))
+                        orderedObjects.Add(($"{segment.Id}.fragment_{fragment.Index}", [fragment.Binding]));
+                }
             }
         }
 
@@ -124,10 +132,17 @@ public sealed class MockSignalProvider : ISignalValueProvider
                 orderedObjects.Add((node.Id, node.Bindings));
         foreach (var segment in definition.Segments)
             if (seen.Add("segment:" + segment.Id))
-                orderedObjects.Add((segment.Id, segment.Bindings));
+            {
+                if (segment.ActiveFragments is null || segment.ActiveFragments.Count == 0)
+                    orderedObjects.Add((segment.Id, segment.Bindings));
+
+                foreach (var fragment in (segment.ActiveFragments ?? []).OrderBy(fragment => fragment.Index))
+                    orderedObjects.Add(($"{segment.Id}.fragment_{fragment.Index}", [fragment.Binding]));
+            }
 
         return orderedObjects
-            .Select(x => x.Bindings.FirstOrDefault(binding => binding.Role == SignalBindingRole.ActiveRoute)?.SignalId)
+            .Select(x => x.Bindings.FirstOrDefault(binding =>
+                binding.Role is SignalBindingRole.ActiveRoute or SignalBindingRole.ActiveRouteFragment)?.SignalId)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Cast<string>()
             .Distinct(StringComparer.Ordinal)

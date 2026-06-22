@@ -215,6 +215,55 @@ internal static class RouteSegmentGeometry
             .ToArray();
     }
 
+    public static IReadOnlyList<RoutePathRange> CalculateLogicalDrawableRanges(
+        RouteSegment segment,
+        RouteNode from,
+        RouteNode to,
+        RouteMapDisplaySettings display)
+    {
+        var path = Create(
+            segment,
+            new Point(from.X, from.Y),
+            new Point(to.X, to.Y));
+        var style = segment.Style ?? new RouteSegmentStyle();
+        return CalculateDrawableRanges(
+            path.Length,
+            RadiusForNode(from) + style.EndpointGap,
+            RadiusForNode(to) + style.EndpointGap,
+            style.FragmentLength ?? display.FragmentLength,
+            style.FragmentGap ?? display.FragmentGap);
+    }
+
+    public static IReadOnlyList<RoutePathRange> CalculateViewDrawableRanges(
+        RouteSegmentPath path,
+        RouteSegment segment,
+        RouteNode from,
+        RouteNode to,
+        RouteMapDisplaySettings display)
+    {
+        var style = segment.Style ?? new RouteSegmentStyle();
+        return CalculateDrawableRanges(
+            path.Length,
+            RadiusForNode(from) + style.EndpointGap,
+            RadiusForNode(to) + style.EndpointGap,
+            style.FragmentLength ?? display.FragmentLength,
+            style.FragmentGap ?? display.FragmentGap);
+    }
+
+    public static IReadOnlyList<RoutePathRange> ProjectRanges(
+        IReadOnlyList<RoutePathRange> ranges,
+        double sourceLength,
+        double targetLength)
+    {
+        if (ranges.Count == 0 || sourceLength <= 0 || targetLength <= 0)
+            return Array.Empty<RoutePathRange>();
+
+        var ratio = targetLength / sourceLength;
+        return ranges
+            .Select(range => new RoutePathRange(range.Start * ratio, range.End * ratio))
+            .ToArray();
+    }
+
     public static StreamGeometry CreateGeometry(RouteSegmentPath path, RoutePathRange range)
     {
         var geometry = new StreamGeometry();
@@ -274,6 +323,8 @@ internal static class RouteSegmentGeometry
         var dy = a.Y - b.Y;
         return Math.Sqrt(dx * dx + dy * dy);
     }
+
+    private static double RadiusForNode(RouteNode node) => (node.Style ?? new RouteNodeStyle()).Radius;
 
     private static void AddLine(ICollection<RoutePathPart> parts, Point start, Point end)
     {

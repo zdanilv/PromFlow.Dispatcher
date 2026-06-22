@@ -319,13 +319,13 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private void AddChain() { var item = new RouteChainConfiguration { Id = UniqueId("chain", Draft.Chains.Select(x => x.Id)) }; Draft.Chains.Add(item); SelectedChain = item; }
     private void AddNode() { var item = new RouteNodeConfiguration { Id = UniqueId("node", Draft.Nodes.Select(x => x.Id)), Title = "Новый узел", X = 100, Y = 100 }; EnsureNodeBindings(item); Draft.Nodes.Add(item); SelectedNode = item; }
-    private void AddSegment() { var item = new RouteSegmentConfiguration { Id = UniqueId("segment", Draft.Segments.Select(x => x.Id)), FromNodeId = Draft.Nodes.FirstOrDefault()?.Id ?? string.Empty, ToNodeId = Draft.Nodes.Skip(1).FirstOrDefault()?.Id ?? string.Empty }; EnsureSegmentActiveBinding(item); Draft.Segments.Add(item); SelectedSegment = item; }
+    private void AddSegment() { var item = new RouteSegmentConfiguration { Id = UniqueId("segment", Draft.Segments.Select(x => x.Id)), FromNodeId = Draft.Nodes.FirstOrDefault()?.Id ?? string.Empty, ToNodeId = Draft.Nodes.Skip(1).FirstOrDefault()?.Id ?? string.Empty }; EnsureSegmentActiveBinding(item); RouteSegmentActiveFragmentSynchronizer.Ensure(Draft, item); Draft.Segments.Add(item); SelectedSegment = item; }
     private void AddCard() { var item = new EquipmentCardConfiguration { Id = UniqueId("card", Draft.Cards.Select(x => x.Id)), Title = "Новая карточка" }; EnsureCardBindings(item); Draft.Cards.Add(item); SelectedCard = item; }
     private void AddPlaceholder() { var item = new RoutePlaceholderRuleConfiguration { Id = UniqueId("placeholder", Draft.PlaceholderRules.Select(x => x.Id)), CardId = Draft.Cards.FirstOrDefault()?.Id ?? string.Empty }; Draft.PlaceholderRules.Add(item); SelectedPlaceholderRule = item; }
 
     private void DuplicateChain() { if (SelectedChain is null) return; var item = Clone(x => x.Chains, SelectedChain); item.Id = UniqueId(SelectedChain.Id, Draft.Chains.Select(x => x.Id)); Draft.Chains.Add(item); SelectedChain = item; }
     private void DuplicateNode() { if (SelectedNode is null) return; var item = Clone(x => x.Nodes, SelectedNode); item.Id = UniqueId(SelectedNode.Id, Draft.Nodes.Select(x => x.Id)); RewriteNodeBindingIds(item); EnsureNodeBindings(item); Draft.Nodes.Add(item); SelectedNode = item; }
-    private void DuplicateSegment() { if (SelectedSegment is null) return; var item = Clone(x => x.Segments, SelectedSegment); item.Id = UniqueId(SelectedSegment.Id, Draft.Segments.Select(x => x.Id)); var active = item.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.ActiveRoute); if (active is not null) active.SignalId = $"route.{item.Id}.active"; else EnsureSegmentActiveBinding(item); Draft.Segments.Add(item); SelectedSegment = item; }
+    private void DuplicateSegment() { if (SelectedSegment is null) return; var item = Clone(x => x.Segments, SelectedSegment); item.Id = UniqueId(SelectedSegment.Id, Draft.Segments.Select(x => x.Id)); RewriteSegmentBindingIds(item); EnsureSegmentActiveBinding(item); RouteSegmentActiveFragmentSynchronizer.Ensure(Draft, item); Draft.Segments.Add(item); SelectedSegment = item; }
     private void DuplicateCard() { if (SelectedCard is null) return; var item = Clone(x => x.Cards, SelectedCard); item.Id = UniqueId(SelectedCard.Id, Draft.Cards.Select(x => x.Id)); item.AttachedChainId = null; RewriteCardBindingIds(item); EnsureCardBindings(item); Draft.Cards.Add(item); SelectedCard = item; }
     private void DuplicatePlaceholder() { if (SelectedPlaceholderRule is null) return; var item = Clone(x => x.PlaceholderRules, SelectedPlaceholderRule); item.Id = UniqueId(SelectedPlaceholderRule.Id, Draft.PlaceholderRules.Select(x => x.Id)); Draft.PlaceholderRules.Add(item); SelectedPlaceholderRule = item; }
 
@@ -417,7 +417,10 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         foreach (var node in Draft.Nodes)
             EnsureNodeBindings(node);
         foreach (var segment in Draft.Segments)
+        {
             EnsureSegmentActiveBinding(segment);
+            RouteSegmentActiveFragmentSynchronizer.Ensure(Draft, segment);
+        }
         foreach (var card in Draft.Cards)
             EnsureCardBindings(card);
     }
@@ -485,6 +488,18 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
                 _ => binding.SignalId,
             };
         }
+    }
+
+    private static void RewriteSegmentBindingIds(RouteSegmentConfiguration segment)
+    {
+        foreach (var binding in segment.Bindings)
+        {
+            if (binding.Role == SignalBindingRole.ActiveRoute)
+                binding.SignalId = $"route.{segment.Id}.active";
+        }
+
+        foreach (var fragment in segment.ActiveFragments)
+            fragment.Binding.SignalId = $"route.{segment.Id}.fragment_{fragment.Index}.active";
     }
 
     private static void EnsureSegmentActiveBinding(RouteSegmentConfiguration segment)

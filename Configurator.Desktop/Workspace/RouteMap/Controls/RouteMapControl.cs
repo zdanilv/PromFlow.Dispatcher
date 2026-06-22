@@ -103,8 +103,7 @@ public sealed class RouteMapControl : Control
             Bounds.Width,
             Bounds.Height).Transform;
 
-        DrawSegments(context, Definition, runtimeState, transform, activeOnly: false);
-        DrawSegments(context, Definition, runtimeState, transform, activeOnly: true);
+        DrawSegments(context, Definition, runtimeState, transform);
         DrawNodes(context, Definition, runtimeState, transform);
         DrawVehicles(context, Definition, runtimeState, transform);
         DrawSegmentLabels(context, Definition, runtimeState, transform);
@@ -163,8 +162,7 @@ public sealed class RouteMapControl : Control
         DrawingContext context,
         RouteMapDefinition definition,
         RouteMapRuntimeState runtimeState,
-        RouteMapTransform transform,
-        bool activeOnly)
+        RouteMapTransform transform)
     {
         var nodesById = definition.Nodes.ToDictionary(x => x.Id);
 
@@ -177,29 +175,69 @@ public sealed class RouteMapControl : Control
                 !nodesById.TryGetValue(segment.ToNodeId, out var to))
                 continue;
 
-            var state = GetState(runtimeState, segment.Id, segment.State);
-            var isActive = state is RouteObjectState.ActiveRoute or RouteObjectState.Running;
-            if (activeOnly != isActive)
-                continue;
-
             var p1 = transform.ToViewPoint(from.X, from.Y);
             var p2 = transform.ToViewPoint(to.X, to.Y);
-            var path = RouteSegmentGeometry.Create(
+            var viewPath = RouteSegmentGeometry.Create(
                 segment with { ArcRadius = segment.ArcRadius * transform.Scale },
                 p1,
                 p2);
             var display = definition.Display ?? new RouteMapDisplaySettings();
             var style = segment.Style ?? new RouteSegmentStyle();
-            var pen = RouteMapPalette.TrackPenForState(state, display.Palette, style);
+            var state = GetState(runtimeState, segment.Id, segment.State);
+            var runtime = runtimeState.Find(segment.Id);
+            var logicalPath = RouteSegmentGeometry.Create(
+                segment,
+                new Point(from.X, from.Y),
+                new Point(to.X, to.Y));
+            var logicalRanges = RouteSegmentGeometry.CalculateLogicalDrawableRanges(segment, from, to, display);
+            var viewRanges = segment.ActiveFragments is { Count: > 0 }
+                ? RouteSegmentGeometry.ProjectRanges(logicalRanges, logicalPath.Length, viewPath.Length)
+                : RouteSegmentGeometry.CalculateViewDrawableRanges(viewPath, segment, from, to, display);
+            if (viewRanges.Count == 0)
+                continue;
 
-            foreach (var range in RouteSegmentGeometry.CalculateDrawableRanges(
-                         path.Length,
-                         RouteMapNodeMetrics.RadiusForNode(from) + style.EndpointGap,
-                         RouteMapNodeMetrics.RadiusForNode(to) + style.EndpointGap,
-                         style.FragmentLength ?? display.FragmentLength,
-                         style.FragmentGap ?? display.FragmentGap))
-                context.DrawGeometry(null, pen, RouteSegmentGeometry.CreateGeometry(path, range));
+            var baseState = state is RouteObjectState.ActiveRoute or RouteObjectState.Running
+                ? RouteObjectState.Idle
+                : state;
+            var basePen = RouteMapPalette.TrackPenForState(baseState, display.Palette, style);
+            foreach (var range in viewRanges)
+                context.DrawGeometry(null, basePen, RouteSegmentGeometry.CreateGeometry(viewPath, range));
+
+            if (state is RouteObjectState.Fault or RouteObjectState.Offline or RouteObjectState.Disabled)
+                continue;
+
+            var activeRanges = ActiveSegmentRanges(state, runtime, viewRanges);
+            if (activeRanges.Count == 0)
+                continue;
+
+            var activePen = RouteMapPalette.TrackPenForState(RouteObjectState.ActiveRoute, display.Palette, style);
+            foreach (var range in activeRanges)
+                context.DrawGeometry(null, activePen, RouteSegmentGeometry.CreateGeometry(viewPath, range));
         }
+    }
+
+    internal static IReadOnlyList<RoutePathRange> ActiveSegmentRanges(
+        RouteObjectState state,
+        RouteObjectRuntimeState? runtime,
+        IReadOnlyList<RoutePathRange> visualRanges)
+    {
+        if (visualRanges.Count == 0)
+            return Array.Empty<RoutePathRange>();
+
+        if (state is RouteObjectState.Fault or RouteObjectState.Offline or RouteObjectState.Disabled)
+            return Array.Empty<RoutePathRange>();
+
+        if (state is RouteObjectState.ActiveRoute or RouteObjectState.Running)
+            return visualRanges;
+
+        if (runtime?.ActiveFragmentIndexes is null || runtime.ActiveFragmentIndexes.Count == 0)
+            return Array.Empty<RoutePathRange>();
+
+        return visualRanges
+            .Select((range, index) => (Range: range, Index: index + 1))
+            .Where(item => runtime.ActiveFragmentIndexes.Contains(item.Index))
+            .Select(item => item.Range)
+            .ToArray();
     }
 
     private static void DrawSegmentLabels(

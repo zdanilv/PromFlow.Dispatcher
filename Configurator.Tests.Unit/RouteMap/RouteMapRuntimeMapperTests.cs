@@ -66,6 +66,90 @@ public sealed class RouteMapRuntimeMapperTests
     }
 
     [Fact]
+    public void Map_marks_only_active_fragment_without_promoting_whole_segment_state()
+    {
+        var definition = RouteMapSeed.Create();
+        var mapper = new RouteMapRuntimeMapper(definition);
+        var now = DateTimeOffset.UtcNow;
+        var signals = new Dictionary<string, SignalValue>
+        {
+            ["route.bsu2_to_bucket.fragment_2.active"] = new(
+                "route.bsu2_to_bucket.fragment_2.active",
+                true,
+                SignalValueType.Bool,
+                now,
+                IsQualityGood: true,
+                IsStale: false),
+        };
+
+        var runtime = mapper.Map(signals);
+        var segment = runtime.Find("bsu2_to_bucket");
+        var ranges = new[]
+        {
+            new RoutePathRange(0, 10),
+            new RoutePathRange(20, 30),
+            new RoutePathRange(40, 50),
+            new RoutePathRange(60, 70),
+        };
+
+        var activeRanges = RouteMapControl.ActiveSegmentRanges(segment!.State, segment, ranges);
+
+        Assert.Equal(RouteObjectState.Idle, segment.State);
+        Assert.True(segment.IsSignalActive);
+        Assert.Equal([2], segment.ActiveFragmentIndexes);
+        Assert.Equal([ranges[1]], activeRanges);
+    }
+
+    [Fact]
+    public void Fragment_overlay_selects_only_matching_visual_range_index()
+    {
+        var runtime = new RouteObjectRuntimeState(
+            "segment",
+            RouteObjectState.Idle,
+            null,
+            null,
+            IsVisible: true,
+            CanStart: false,
+            CanStop: false,
+            IsSignalActive: true,
+            ActiveFragmentIndexes: new HashSet<int> { 2 });
+        var visualRanges = new[]
+        {
+            new RoutePathRange(20, 120),
+            new RoutePathRange(140, 240),
+        };
+
+        var activeRanges = RouteMapControl.ActiveSegmentRanges(
+            runtime.State,
+            runtime,
+            visualRanges);
+
+        Assert.Equal([visualRanges[1]], activeRanges);
+    }
+
+    [Fact]
+    public void Fault_state_suppresses_fragment_range_overlay()
+    {
+        var definition = RouteMapSeed.Create();
+        var mapper = new RouteMapRuntimeMapper(definition);
+        var now = DateTimeOffset.UtcNow;
+        var signals = new Dictionary<string, SignalValue>
+        {
+            ["bsu2_to_bucket.fault"] = new("bsu2_to_bucket.fault", true, SignalValueType.Bool, now, true, false),
+            ["route.bsu2_to_bucket.fragment_2.active"] = new("route.bsu2_to_bucket.fragment_2.active", true, SignalValueType.Bool, now, true, false),
+        };
+
+        var segment = mapper.Map(signals).Find("bsu2_to_bucket");
+        var activeRanges = RouteMapControl.ActiveSegmentRanges(
+            segment!.State,
+            segment,
+            [new RoutePathRange(0, 10), new RoutePathRange(20, 30)]);
+
+        Assert.Equal(RouteObjectState.Fault, segment.State);
+        Assert.Empty(activeRanges);
+    }
+
+    [Fact]
     public void Map_prioritizes_offline_quality_over_fault_and_active_route()
     {
         var definition = RouteMapSeed.Create();
@@ -95,8 +179,13 @@ public sealed class RouteMapRuntimeMapperTests
         {
             "route.node.dead_end_lower.active", "route.lower_dead_end_to_bsu1.active",
             "route.node.bsu_1.active", "route.active_bsu1_bsu2.active",
-            "route.node.bsu_2.active", "route.bsu2_to_bucket.active",
-            "route.node.concrete_bucket.active", "route.bucket_to_upper_dead_end.active",
+            "route.node.bsu_2.active",
+            "route.bsu2_to_bucket.fragment_1.active",
+            "route.bsu2_to_bucket.fragment_2.active",
+            "route.bsu2_to_bucket.fragment_3.active",
+            "route.node.concrete_bucket.active",
+            "route.bucket_to_upper_dead_end.fragment_1.active",
+            "route.bucket_to_upper_dead_end.fragment_2.active",
             "route.node.dead_end_upper.active",
         };
 

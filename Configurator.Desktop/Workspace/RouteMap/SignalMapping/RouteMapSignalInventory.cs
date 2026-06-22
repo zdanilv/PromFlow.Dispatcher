@@ -123,6 +123,15 @@ internal static class RouteMapSignalInventory
 
                 yield return ($"Линия {segment.Id}", RouteMapSignalElementCategory.Segment, binding, false);
             }
+
+            foreach (var fragment in (segment.ActiveFragments ?? []).OrderBy(fragment => fragment.Index))
+            {
+                var binding = fragment.Binding;
+                if (IsDeprecatedSignalRole(binding.Role))
+                    continue;
+
+                yield return ($"Линия {segment.Id}, отрезок {fragment.Index}", RouteMapSignalElementCategory.Segment, binding, false);
+            }
         }
 
         foreach (var vehicle in definition.Vehicles)

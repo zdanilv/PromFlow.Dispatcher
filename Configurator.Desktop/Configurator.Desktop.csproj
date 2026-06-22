@@ -55,8 +55,6 @@
 	  <Folder Include="Properties\" />
 	</ItemGroup>
 	<ItemGroup>
-	  <None Update="ModbusDemo.Controls.md" />
-	  <None Update="route_map_signal_binding_roles.md" />
 	  <None Update="Workspace\Modbus\ModbusView.axaml">
 	    <SubType>Designer</SubType>
 	  </None>

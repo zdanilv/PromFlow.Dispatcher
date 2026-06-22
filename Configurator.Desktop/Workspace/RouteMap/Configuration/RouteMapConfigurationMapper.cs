@@ -181,8 +181,10 @@ public sealed class RouteMapConfigurationMapper
     {
         Text = button.Text,
         NormalBackground = button.NormalBackground,
+        PressedBackground = button.PressedBackground,
         CheckedBackground = button.CheckedBackground,
         NormalForeground = button.NormalForeground,
+        PressedForeground = button.PressedForeground,
         CheckedForeground = button.CheckedForeground,
         Bindings = ToButtonBindings(button),
     };
@@ -191,8 +193,10 @@ public sealed class RouteMapConfigurationMapper
     {
         Text = button.Text,
         NormalBackground = button.NormalBackground,
+        PressedBackground = button.PressedBackground,
         CheckedBackground = button.CheckedBackground,
         NormalForeground = button.NormalForeground,
+        PressedForeground = button.PressedForeground,
         CheckedForeground = button.CheckedForeground,
         ButtonKind = RouteCommandButtonKind.Toggle,
         OffFeedbackEnabled = false,
@@ -239,8 +243,10 @@ public sealed class RouteMapConfigurationMapper
         {
             Text = button.Text,
             NormalBackground = button.NormalBackground,
+            PressedBackground = button.PressedBackground,
             CheckedBackground = button.CheckedBackground,
             NormalForeground = button.NormalForeground,
+            PressedForeground = button.PressedForeground,
             CheckedForeground = button.CheckedForeground,
             ButtonKind = buttonKind,
             OffFeedbackEnabled = offFeedbackEnabled,
@@ -295,8 +301,18 @@ public sealed class RouteMapConfigurationMapper
                 segment.Bindings
                     .Where(binding => !IsDeprecatedSignalRole(binding.Role))
                     .Select(ToConfiguration)),
+            ActiveFragments = new ObservableCollection<RouteSegmentActiveFragmentConfiguration>(
+                (segment.ActiveFragments ?? [])
+                    .OrderBy(fragment => fragment.Index)
+                    .Select(ToConfiguration)),
         };
     }
+
+    private static RouteSegmentActiveFragmentConfiguration ToConfiguration(RouteSegmentActiveFragment fragment) => new()
+    {
+        Index = fragment.Index,
+        Binding = ToConfiguration(fragment.Binding),
+    };
 
     private static RouteSegment ToModel(RouteSegmentConfiguration segment)
     {
@@ -329,8 +345,15 @@ public sealed class RouteMapConfigurationMapper
                 LineCap = segment.Style.LineCap,
                 LabelColor = segment.Style.LabelColor,
                 LabelFontSize = segment.Style.LabelFontSize,
-            });
+            },
+            segment.ActiveFragments
+                .OrderBy(fragment => fragment.Index)
+                .Select(ToModel)
+                .ToArray());
     }
+
+    private static RouteSegmentActiveFragment ToModel(RouteSegmentActiveFragmentConfiguration fragment) =>
+        new(fragment.Index, ToModel(fragment.Binding));
 
     private static EquipmentCardConfiguration ToConfiguration(
         EquipmentCommandCard card,
@@ -414,9 +437,17 @@ public sealed class RouteMapConfigurationMapper
             SendPrefix = style.SendPrefix,
             ReturnPrefix = style.ReturnPrefix,
             StartColor = style.StartColor,
+            StartPressedColor = style.StartPressedColor,
             StartCheckedColor = style.StartCheckedColor,
+            StartForegroundColor = style.StartForegroundColor,
+            StartPressedForegroundColor = style.StartPressedForegroundColor,
+            StartCheckedForegroundColor = style.StartCheckedForegroundColor,
             StopColor = style.StopColor,
+            StopPressedColor = style.StopPressedColor,
             StopCheckedColor = style.StopCheckedColor,
+            StopForegroundColor = style.StopForegroundColor,
+            StopPressedForegroundColor = style.StopPressedForegroundColor,
+            StopCheckedForegroundColor = style.StopCheckedForegroundColor,
         };
     }
 
@@ -444,9 +475,17 @@ public sealed class RouteMapConfigurationMapper
             SendPrefix = style.SendPrefix,
             ReturnPrefix = style.ReturnPrefix,
             StartColor = style.StartColor,
+            StartPressedColor = style.StartPressedColor,
             StartCheckedColor = style.StartCheckedColor,
+            StartForegroundColor = style.StartForegroundColor,
+            StartPressedForegroundColor = style.StartPressedForegroundColor,
+            StartCheckedForegroundColor = style.StartCheckedForegroundColor,
             StopColor = style.StopColor,
+            StopPressedColor = style.StopPressedColor,
             StopCheckedColor = style.StopCheckedColor,
+            StopForegroundColor = style.StopForegroundColor,
+            StopPressedForegroundColor = style.StopPressedForegroundColor,
+            StopCheckedForegroundColor = style.StopCheckedForegroundColor,
         };
     }
 

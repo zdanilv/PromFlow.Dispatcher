@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Signals;
+using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Configuration;
@@ -76,6 +77,11 @@ public sealed class RouteMapConfigurationMigrator
                 case 8:
                     ApplyVersion9(document);
                     document.SchemaVersion = 9;
+                    wasMigrated = true;
+                    break;
+                case 9:
+                    ApplyVersion10(document);
+                    document.SchemaVersion = 10;
                     wasMigrated = true;
                     break;
                 default:
@@ -332,6 +338,83 @@ public sealed class RouteMapConfigurationMigrator
         }
     }
 
+    private static void ApplyVersion10(RouteMapConfigurationDocument document)
+    {
+        document.TopBar ??= RouteTopBarConfiguration.CreateDefault();
+        ApplyButtonStateDefaults(document.TopBar.Automatic);
+        ApplyButtonStateDefaults(document.TopBar.Manual);
+        ApplyEmergencyDefaults(document.TopBar.Emergency);
+
+        foreach (var card in document.Cards)
+            ApplyCardButtonStateDefaults(card.Style);
+
+        RouteSegmentActiveFragmentSynchronizer.Ensure(document);
+    }
+
+    private static void ApplyButtonStateDefaults(RouteTopBarButtonConfiguration button)
+    {
+        if (string.IsNullOrWhiteSpace(button.PressedBackground))
+            button.PressedBackground = "#949595";
+        if (string.IsNullOrWhiteSpace(button.PressedForeground))
+            button.PressedForeground = "#FFFFFF";
+    }
+
+    private static void ApplyEmergencyDefaults(RouteTopBarEmergencyButtonConfiguration emergency)
+    {
+        ApplyButtonStateDefaults(emergency);
+        if (IsDefaultEmergencyNormal(emergency.NormalBackground))
+            emergency.NormalBackground = "#D95D4E";
+        if (IsDefaultEmergencyChecked(emergency.CheckedBackground))
+            emergency.CheckedBackground = "#9E2F25";
+        if (string.IsNullOrWhiteSpace(emergency.NormalForeground))
+            emergency.NormalForeground = "#FFFFFF";
+        if (string.IsNullOrWhiteSpace(emergency.CheckedForeground))
+            emergency.CheckedForeground = "#FFFFFF";
+        emergency.PressedBackground = "#949595";
+        if (string.IsNullOrWhiteSpace(emergency.PressedForeground))
+            emergency.PressedForeground = "#FFFFFF";
+    }
+
+    private static bool IsDefaultEmergencyNormal(string color) =>
+        string.Equals(color, "#D87868", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(color, "#D95D4E", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsDefaultEmergencyChecked(string color) =>
+        string.Equals(color, "#C83F30", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(color, "#9E2F25", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(color, "#0078D4", StringComparison.OrdinalIgnoreCase);
+
+    private static void ApplyCardButtonStateDefaults(EquipmentCardStyleConfiguration style)
+    {
+        if (string.IsNullOrWhiteSpace(style.StartColor))
+            style.StartColor = "#D0D0D0";
+        if (string.IsNullOrWhiteSpace(style.StartPressedColor))
+            style.StartPressedColor = "#949595";
+        if (string.IsNullOrWhiteSpace(style.StartCheckedColor) ||
+            string.Equals(style.StartCheckedColor, "#0078D4", StringComparison.OrdinalIgnoreCase))
+            style.StartCheckedColor = "#3A9D5D";
+        if (string.IsNullOrWhiteSpace(style.StartForegroundColor))
+            style.StartForegroundColor = "#101820";
+        if (string.IsNullOrWhiteSpace(style.StartPressedForegroundColor))
+            style.StartPressedForegroundColor = "#101820";
+        if (string.IsNullOrWhiteSpace(style.StartCheckedForegroundColor))
+            style.StartCheckedForegroundColor = "#FFFFFF";
+
+        if (string.IsNullOrWhiteSpace(style.StopColor))
+            style.StopColor = "#D95D4E";
+        if (string.IsNullOrWhiteSpace(style.StopPressedColor))
+            style.StopPressedColor = "#949595";
+        if (string.IsNullOrWhiteSpace(style.StopCheckedColor) ||
+            string.Equals(style.StopCheckedColor, "#0078D4", StringComparison.OrdinalIgnoreCase))
+            style.StopCheckedColor = "#9E2F25";
+        if (string.IsNullOrWhiteSpace(style.StopForegroundColor))
+            style.StopForegroundColor = "#FFFFFF";
+        if (string.IsNullOrWhiteSpace(style.StopPressedForegroundColor))
+            style.StopPressedForegroundColor = "#FFFFFF";
+        if (string.IsNullOrWhiteSpace(style.StopCheckedForegroundColor))
+            style.StopCheckedForegroundColor = "#FFFFFF";
+    }
+
     private static void EnsureTopBarButton(
         RouteTopBarButtonConfiguration button,
         string defaultText,
@@ -374,4 +457,132 @@ public sealed class RouteMapConfigurationMigrator
         foreach (var binding in bindings.Where(x => roleSet.Contains(x.Role)).ToArray())
             bindings.Remove(binding);
     }
+}
+
+internal static class RouteSegmentActiveFragmentSynchronizer
+{
+    public static void Ensure(RouteMapConfigurationDocument document)
+    {
+        foreach (var segment in document.Segments)
+            Ensure(document, segment);
+    }
+
+    public static void Ensure(RouteMapConfigurationDocument document, RouteSegmentConfiguration segment)
+    {
+        var fragmentCount = CalculateFragmentCount(document, segment);
+        if (fragmentCount <= 1)
+        {
+            segment.ActiveFragments.Clear();
+            return;
+        }
+
+        var byIndex = segment.ActiveFragments
+            .GroupBy(fragment => fragment.Index)
+            .ToDictionary(group => group.Key, group => group.First());
+        var next = new List<RouteSegmentActiveFragmentConfiguration>();
+        for (var index = 1; index <= fragmentCount; index++)
+        {
+            if (!byIndex.TryGetValue(index, out var fragment))
+            {
+                fragment = new RouteSegmentActiveFragmentConfiguration { Index = index };
+            }
+
+            fragment.Index = index;
+            NormalizeBinding(fragment.Binding, segment.Id, index);
+            next.Add(fragment);
+        }
+
+        segment.ActiveFragments.Clear();
+        foreach (var fragment in next)
+            segment.ActiveFragments.Add(fragment);
+    }
+
+    public static int CalculateFragmentCount(RouteMapConfigurationDocument document, RouteSegmentConfiguration segment)
+    {
+        var from = document.Nodes.FirstOrDefault(node => node.Id == segment.FromNodeId);
+        var to = document.Nodes.FirstOrDefault(node => node.Id == segment.ToNodeId);
+        if (from is null || to is null)
+            return 0;
+
+        var display = new RouteMapDisplaySettings
+        {
+            FragmentLength = document.Map.FragmentLength,
+            FragmentGap = document.Map.FragmentGap,
+        };
+
+        return RouteSegmentGeometry.CalculateLogicalDrawableRanges(
+            ToModel(segment),
+            ToModel(from),
+            ToModel(to),
+            display).Count;
+    }
+
+    private static void NormalizeBinding(SignalBindingConfiguration binding, string segmentId, int index)
+    {
+        binding.Role = SignalBindingRole.ActiveRouteFragment;
+        if (string.IsNullOrWhiteSpace(binding.SignalId))
+            binding.SignalId = DefaultSignalId(segmentId, index);
+        binding.Direction = SignalBindingDirection.Read;
+        binding.ValueType = SignalValueType.Bool;
+    }
+
+    private static string DefaultSignalId(string segmentId, int index) =>
+        $"route.{segmentId}.fragment_{index}.active";
+
+    private static RouteNode ToModel(RouteNodeConfiguration node) => new(
+        node.Id,
+        node.Title,
+        node.X,
+        node.Y,
+        node.Kind,
+        node.State,
+        [],
+        node.LabelOffsetX,
+        node.LabelOffsetY,
+        node.LabelPlacement,
+        node.IsLoader,
+        node.IsTarget,
+        node.MenuKind,
+        node.IsVisible,
+        new RouteNodeStyle
+        {
+            Radius = node.Style.Radius,
+            InnerRadiusRatio = node.Style.InnerRadiusRatio,
+            BorderThickness = node.Style.BorderThickness,
+            FillColor = node.Style.FillColor,
+            BorderColor = node.Style.BorderColor,
+            InnerColor = node.Style.InnerColor,
+            LabelColor = node.Style.LabelColor,
+            LabelFontSize = node.Style.LabelFontSize,
+            ActiveOutlineColor = node.Style.ActiveOutlineColor,
+            ActiveOutlineThickness = node.Style.ActiveOutlineThickness,
+        });
+
+    private static RouteSegment ToModel(RouteSegmentConfiguration segment) => new(
+        segment.Id,
+        segment.FromNodeId,
+        segment.ToNodeId,
+        segment.State,
+        segment.IsDirectional,
+        [],
+        segment.Kind,
+        segment.ArcRadius,
+        segment.ElbowOrder,
+        segment.Title,
+        segment.LabelOffsetX,
+        segment.LabelOffsetY,
+        segment.IsVisible,
+        new RouteSegmentStyle
+        {
+            NormalColor = segment.Style.NormalColor,
+            ActiveColor = segment.Style.ActiveColor,
+            Thickness = segment.Style.Thickness,
+            ActiveThickness = segment.Style.ActiveThickness,
+            FragmentLength = segment.Style.FragmentLength,
+            FragmentGap = segment.Style.FragmentGap,
+            EndpointGap = segment.Style.EndpointGap,
+            LineCap = segment.Style.LineCap,
+            LabelColor = segment.Style.LabelColor,
+            LabelFontSize = segment.Style.LabelFontSize,
+        });
 }

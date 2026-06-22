@@ -57,11 +57,16 @@ public sealed class RouteMapSettingsDialogVisualTests
 
     [AvaloniaTheory]
     [InlineData(2, "Обычный фон")]
+    [InlineData(2, "Pressed фон")]
+    [InlineData(2, "Pressed текст")]
     [InlineData(3, "Положение подписи")]
     [InlineData(3, "Цвет сигнального контура")]
     [InlineData(3, "Толщина сигнального контура")]
     [InlineData(4, "Зазор от узлов")]
     [InlineData(4, "Края линии")]
+    [InlineData(4, "Отрезки")]
+    [InlineData(5, "ПУСК pressed текст")]
+    [InlineData(5, "СТОП checked текст")]
     public void New_visual_properties_are_present_in_settings_tabs(int tabIndex, string label)
     {
         using var fixture = new DialogFixture(1320, 780);
@@ -237,6 +242,7 @@ public sealed class RouteMapSettingsDialogVisualTests
 
     [AvaloniaTheory]
     [InlineData("active_bsu1_bsu2.fault")]
+    [InlineData("route.bsu2_to_bucket.fragment_1.active")]
     [InlineData("equip.bucket.start")]
     public void Signal_mapping_line_and_card_register_address_enables_bit_input(string signalId)
     {

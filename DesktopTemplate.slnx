@@ -13,6 +13,9 @@
     <Project Path="Configurator.Infrastructure.Modbus/Configurator.Infrastructure.Modbus.csproj" Id="2cb7d861-29c2-47a0-99e9-08e26afdcad0" />
     <Project Path="Configurator.Infrastructure.OpcUa/Configurator.Infrastructure.OpcUa.csproj" Id="7f7be3a6-5b6f-4f4e-bf3e-1fc3e0a54231" />
   </Folder>
+  <Folder Name="/Documentation/">
+    <Project Path="AgentDocs/AgentDocs.csproj" Id="84d4a6e2-0d6b-45d5-9fd4-6990b9e04167" />
+  </Folder>
   <Folder Name="/Tests/">
     <Project Path="Configurator.Infrastructure.Modbus.Tests/Configurator.Infrastructure.Modbus.Tests.csproj" Id="51918abf-41be-45a7-b74f-a7dedcae9eff" />
     <Project Path="Configurator.Infrastructure.OpcUa.Tests/Configurator.Infrastructure.OpcUa.Tests.csproj" Id="d49f159e-f37d-4c47-9f6e-c516eeb8853c" />

@@ -119,8 +119,10 @@
                   <UniformGrid Columns="3">
                     <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Text}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный фон"/><TextBox Classes="form" Text="{Binding NormalBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Pressed фон"/><TextBox Classes="form" Text="{Binding PressedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный фон"/><TextBox Classes="form" Text="{Binding CheckedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный текст"/><TextBox Classes="form" Text="{Binding NormalForeground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Pressed текст"/><TextBox Classes="form" Text="{Binding PressedForeground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный текст"/><TextBox Classes="form" Text="{Binding CheckedForeground}"/></StackPanel>
                   </UniformGrid>
                   <settings:SignalBindingsEditor Bindings="{Binding Bindings}" AllowedRoles="{Binding DataContext.AutomaticModeBindingRoles, ElementName=Root}"/>
@@ -132,8 +134,10 @@
                   <UniformGrid Columns="3">
                     <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Text}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный фон"/><TextBox Classes="form" Text="{Binding NormalBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Pressed фон"/><TextBox Classes="form" Text="{Binding PressedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный фон"/><TextBox Classes="form" Text="{Binding CheckedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный текст"/><TextBox Classes="form" Text="{Binding NormalForeground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Pressed текст"/><TextBox Classes="form" Text="{Binding PressedForeground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный текст"/><TextBox Classes="form" Text="{Binding CheckedForeground}"/></StackPanel>
                   </UniformGrid>
                   <settings:SignalBindingsEditor Bindings="{Binding Bindings}" AllowedRoles="{Binding DataContext.ManualModeBindingRoles, ElementName=Root}"/>
@@ -145,8 +149,10 @@
                   <UniformGrid Columns="3">
                     <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Text}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный фон"/><TextBox Classes="form" Text="{Binding NormalBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Pressed фон"/><TextBox Classes="form" Text="{Binding PressedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный фон"/><TextBox Classes="form" Text="{Binding CheckedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный текст"/><TextBox Classes="form" Text="{Binding NormalForeground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Pressed текст"/><TextBox Classes="form" Text="{Binding PressedForeground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный текст"/><TextBox Classes="form" Text="{Binding CheckedForeground}"/></StackPanel>
                   </UniformGrid>
                   <settings:SignalBindingsEditor Bindings="{Binding Bindings}" AllowedRoles="{Binding DataContext.EmergencyBindingRoles, ElementName=Root}"/>
@@ -211,6 +217,20 @@
                                              AddCommand="{Binding DataContext.AddBindingCommand, ElementName=Root}"
                                              AddCommandParameter="segment"
                                              RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
+              <TextBlock Classes="section" Text="Отрезки"/>
+              <ItemsControl ItemsSource="{Binding ActiveFragments}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="54,160,*,76,76" ColumnSpacing="10" Margin="0,0,0,6">
+                      <TextBlock Text="{Binding Index}" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="1" Text="{Binding Binding.Role}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="2" Classes="form" Text="{Binding Binding.SignalId}"/>
+                      <TextBlock Grid.Column="3" Text="{Binding Binding.Direction}" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="4" Text="{Binding Binding.ValueType}" VerticalAlignment="Center"/>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
             </StackPanel></ScrollViewer></Border>
           </Grid>
         </TabItem>
@@ -227,8 +247,10 @@
               <TextBlock Classes="section" Text="Размеры, подписи и стиль"/><UniformGrid Columns="4">
                 <StackPanel><TextBlock Classes="label" Text="Ширина"/><TextBox Classes="form" Text="{Binding Style.Width}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Мин. ширина"/><TextBox Classes="form" Text="{Binding Style.MinimumWidth}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Высота"/><TextBox Classes="form" Text="{Binding Style.Height}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Фон"/><TextBox Classes="form" Text="{Binding Style.BackgroundColor}"/></StackPanel>
                 <StackPanel><TextBlock Classes="label" Text="Border"/><TextBox Classes="form" Text="{Binding Style.BorderColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Заголовок"/><TextBox Classes="form" Text="{Binding Style.TitleColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Style.TextColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="ПУСК"/><TextBox Classes="form" Text="{Binding Style.StartText}"/></StackPanel>
-                <StackPanel><TextBlock Classes="label" Text="СТОП"/><TextBox Classes="form" Text="{Binding Style.StopText}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Префикс отправки"/><TextBox Classes="form" Text="{Binding Style.SendPrefix}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Префикс возврата"/><TextBox Classes="form" Text="{Binding Style.ReturnPrefix}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="ПУСК цвет"/><TextBox Classes="form" Text="{Binding Style.StartColor}"/></StackPanel>
-                <StackPanel><TextBlock Classes="label" Text="ПУСК checked"/><TextBox Classes="form" Text="{Binding Style.StartCheckedColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="СТОП цвет"/><TextBox Classes="form" Text="{Binding Style.StopColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="СТОП checked"/><TextBox Classes="form" Text="{Binding Style.StopCheckedColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Title font"/><TextBox Classes="form" Text="{Binding Style.TitleFontSize}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="СТОП"/><TextBox Classes="form" Text="{Binding Style.StopText}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Префикс отправки"/><TextBox Classes="form" Text="{Binding Style.SendPrefix}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Префикс возврата"/><TextBox Classes="form" Text="{Binding Style.ReturnPrefix}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="ПУСК фон"/><TextBox Classes="form" Text="{Binding Style.StartColor}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="ПУСК pressed фон"/><TextBox Classes="form" Text="{Binding Style.StartPressedColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="ПУСК checked фон"/><TextBox Classes="form" Text="{Binding Style.StartCheckedColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="ПУСК текст"/><TextBox Classes="form" Text="{Binding Style.StartForegroundColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="ПУСК pressed текст"/><TextBox Classes="form" Text="{Binding Style.StartPressedForegroundColor}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="ПУСК checked текст"/><TextBox Classes="form" Text="{Binding Style.StartCheckedForegroundColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="СТОП фон"/><TextBox Classes="form" Text="{Binding Style.StopColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="СТОП pressed фон"/><TextBox Classes="form" Text="{Binding Style.StopPressedColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="СТОП checked фон"/><TextBox Classes="form" Text="{Binding Style.StopCheckedColor}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="СТОП текст"/><TextBox Classes="form" Text="{Binding Style.StopForegroundColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="СТОП pressed текст"/><TextBox Classes="form" Text="{Binding Style.StopPressedForegroundColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="СТОП checked текст"/><TextBox Classes="form" Text="{Binding Style.StopCheckedForegroundColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Title font"/><TextBox Classes="form" Text="{Binding Style.TitleFontSize}"/></StackPanel>
                 <StackPanel><TextBlock Classes="label" Text="Status font"/><TextBox Classes="form" Text="{Binding Style.StatusFontSize}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Route font"/><TextBox Classes="form" Text="{Binding Style.RouteTextFontSize}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Action font"/><TextBox Classes="form" Text="{Binding Style.ActionFontSize}"/></StackPanel>
               </UniformGrid>
               <TextBlock Classes="section" Text="Margin / Padding / Border / Corner"/><UniformGrid Columns="4"><StackPanel><TextBlock Classes="label" Text="Margin L,T,R,B"/><TextBox Classes="form" Text="{Binding Style.Margin.Left}"/><TextBox Classes="form" Text="{Binding Style.Margin.Top}"/><TextBox Classes="form" Text="{Binding Style.Margin.Right}"/><TextBox Classes="form" Text="{Binding Style.Margin.Bottom}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Padding L,T,R,B"/><TextBox Classes="form" Text="{Binding Style.Padding.Left}"/><TextBox Classes="form" Text="{Binding Style.Padding.Top}"/><TextBox Classes="form" Text="{Binding Style.Padding.Right}"/><TextBox Classes="form" Text="{Binding Style.Padding.Bottom}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Border L,T,R,B"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Left}"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Top}"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Right}"/><TextBox Classes="form" Text="{Binding Style.BorderThickness.Bottom}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Corner TL,TR,BR,BL"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.TopLeft}"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.TopRight}"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.BottomRight}"/><TextBox Classes="form" Text="{Binding Style.CornerRadius.BottomLeft}"/></StackPanel></UniformGrid>

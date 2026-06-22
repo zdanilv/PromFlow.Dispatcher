@@ -11,7 +11,9 @@
 Экран `Modbus Demo` владеет запуском, остановкой и настройкой общего Modbus TCP runtime.
 Точки из этого документа добавляются только в `ModbusDemo.DataMap` и обслуживают demo UI.
 RouteMap использует тот же TCP runtime, но отдельную карту `Modbus.DataMap`, которая
-редактируется на вкладке `SignalId ↔ Modbus`.
+редактируется на вкладке `SignalId ↔ Modbus`. RouteMap schema v10 также добавляет
+read-only fragment-сигналы линий вида `route.<segmentId>.fragment_<n>.active`; их не
+нужно добавлять в `ModbusDemo.DataMap`.
 
 ## Новая точка DataMap
 

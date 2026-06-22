@@ -1,4 +1,5 @@
 using System.Reactive.Linq;
+using Avalonia.Media;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -365,6 +366,23 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
+    public void Top_bar_button_colors_resolve_pressed_checked_normal_priority()
+    {
+        var viewModel = new TopBarViewModel(settingsDialogService: null, settings: RouteMapSeed.Create().TopBar);
+
+        Assert.Equal(Color.Parse("#D95D4E"), BrushColor(viewModel.EmergencyBackground));
+
+        viewModel.ApplyRuntime(isAutomaticMode: false, isManualMode: true, hasEmergency: true, "Ожидание");
+
+        Assert.Equal(Color.Parse("#9E2F25"), BrushColor(viewModel.EmergencyBackground));
+
+        viewModel.SetEmergencyPressed(true);
+
+        Assert.Equal(Color.Parse("#949595"), BrushColor(viewModel.EmergencyBackground));
+        Assert.Equal(Color.Parse("#FFFFFF"), BrushColor(viewModel.EmergencyForeground));
+    }
+
+    [Fact]
     public void Migrator_adds_v4_node_and_top_bar_bindings_without_replacing_custom_signal_ids()
     {
         using var scope = new TempConfigurationScope();
@@ -483,6 +501,38 @@ public sealed class RouteMapConfigurationTests
         Assert.DoesNotContain(result.Document.Segments.SelectMany(x => x.Bindings), x => x.Role == SignalBindingRole.State);
         Assert.DoesNotContain(result.Document.Cards.SelectMany(x => x.Bindings), x => x.Role == SignalBindingRole.State);
         Assert.Equal("Выключено", result.Document.Cards.Single().StatusText);
+    }
+
+    [Fact]
+    public void Migrator_v9_to_v10_adds_fragment_bindings_and_button_state_defaults()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.SchemaVersion = 9;
+        document.TopBar.Automatic.CheckedBackground = "#123456";
+        document.TopBar.Emergency.NormalBackground = "#D87868";
+        document.TopBar.Emergency.CheckedBackground = "#C83F30";
+        var card = document.Cards.Single();
+        card.Style.StartCheckedColor = "#0078D4";
+        card.Style.StopCheckedColor = "#0078D4";
+        foreach (var segment in document.Segments)
+            segment.ActiveFragments.Clear();
+
+        var result = new RouteMapConfigurationMigrator().Migrate(document);
+
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, result.Document.SchemaVersion);
+        Assert.Equal("#123456", result.Document.TopBar.Automatic.CheckedBackground);
+        Assert.Equal("#949595", result.Document.TopBar.Automatic.PressedBackground);
+        Assert.Equal("#D95D4E", result.Document.TopBar.Emergency.NormalBackground);
+        Assert.Equal("#949595", result.Document.TopBar.Emergency.PressedBackground);
+        Assert.Equal("#9E2F25", result.Document.TopBar.Emergency.CheckedBackground);
+        Assert.Equal("#3A9D5D", card.Style.StartCheckedColor);
+        Assert.Equal("#9E2F25", card.Style.StopCheckedColor);
+        Assert.Equal("#949595", card.Style.StartPressedColor);
+        Assert.Equal("#949595", card.Style.StopPressedColor);
+        Assert.Equal(
+            Enumerable.Range(1, 3).Select(index => $"route.bsu2_to_bucket.fragment_{index}.active"),
+            result.Document.Segments.Single(x => x.Id == "bsu2_to_bucket").ActiveFragments.Select(fragment => fragment.Binding.SignalId));
     }
 
     [Fact]
@@ -640,6 +690,9 @@ public sealed class RouteMapConfigurationTests
         public Task<string?> PickImportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
         public Task<string?> PickExportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
     }
+
+    private static Color BrushColor(IBrush brush) =>
+        Assert.IsType<SolidColorBrush>(brush).Color;
 
     private sealed class RecordingSettingsDialogService : IRouteMapSettingsDialogService
     {

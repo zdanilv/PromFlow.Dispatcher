@@ -1,0 +1,95 @@
+# SignalId guide
+
+`SignalId` — стабильное доменное имя сигнала. Оно описывает смысл, а не физический адрес
+PLC. RouteMap, ViewModel и XAML должны знать только `SignalId`, role, direction и value type.
+
+## Формат
+
+Рекомендуемый формат:
+
+```text
+<область>.<объект>.<свойство или команда>
+```
+
+Примеры:
+
+```text
+system.mode.automatic
+system.mode.manual
+system.emergency
+route.node.bsu_1.active
+route.node.bsu_1.target
+route.node.bsu_1.loader
+route.bsu2_to_bucket.fragment_1.active
+equip.bucket.start
+equip.bucket.stop
+equip.bucket.text
+```
+
+Используйте латинские буквы в нижнем регистре, цифры, точки и `_` внутри объекта.
+Не используйте физические адреса:
+
+```text
+coil_15
+register_40003_bit_2
+plc1.db20.value
+```
+
+## Binding
+
+Каждый binding содержит:
+
+| Поле | Назначение |
+|---|---|
+| `Role` | Как RouteMap использует сигнал |
+| `SignalId` | Доменное имя |
+| `Direction` | `Read`, `Write` или `ReadWrite` |
+| `ValueType` | Ожидаемый тип значения |
+
+Direction должен соответствовать Modbus access:
+
+| Direction | Требуемый access |
+|---|---|
+| `Read` | `Read` или `ReadWrite` |
+| `Write` | `Write` или `ReadWrite` |
+| `ReadWrite` | `ReadWrite` |
+
+## Основные роли
+
+| Role | Тип | Обычно |
+|---|---|---|
+| `Visible` | `Bool` | read-only visibility |
+| `Fault` | `Bool` | read-only alarm state |
+| `ActiveRoute` | `Bool` | read-only route highlight |
+| `ActiveRouteFragment` | `Bool` | read-only split-line highlight |
+| `Text` | `String` или число | card status |
+| `Value` | любой поддержанный | extra runtime value |
+| `StartCommand`, `StopCommand` | `Bool` | equipment commands |
+| `TargetCommand`, `LoaderCommand` | `Bool` | node menu commands |
+| `AutomaticModeCommand`, `ManualModeCommand`, `EmergencyCommand` | `Bool` | TopBar commands |
+
+`State` и `*OffFeedback` — legacy. Не используйте их в новом поведении.
+
+## Типы
+
+| SignalValueType | Modbus Type |
+|---|---|
+| `Bool` | `Bool` |
+| `UInt16` | `UInt16` |
+| `Int16`, `Int32` | `Int` |
+| `Float32` | `Real` |
+| `String` | `String` |
+
+## Добавление нового сигнала
+
+1. Добавьте binding в редакторе RouteMap или в seed/configuration mapper.
+2. Выберите role, direction и value type.
+3. Примените или сохраните RouteMap definition.
+4. Откройте `SignalId ↔ Modbus`.
+5. Создайте точку в `Modbus.DataMap` с тем же `Name`.
+6. Настройте area, offset/physical address, bit, access, type и write mode.
+7. Проверьте diagnostics, первый snapshot и readback.
+
+SignalId не меняется при переносе сигнала на другой coil/register/bit. Меняется только
+`Modbus.DataMap`.
+

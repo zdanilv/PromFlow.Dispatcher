@@ -114,6 +114,89 @@ public sealed class RouteSegmentGeometryTests
     }
 
     [Fact]
+    public void Logical_drawable_ranges_are_projected_without_refragmenting_for_viewport_scale()
+    {
+        var definition = RouteMapSeed.Create();
+        var segment = definition.Segments.Single(x => x.Id == "bsu2_to_bucket");
+        var nodes = definition.Nodes.ToDictionary(x => x.Id);
+        var from = nodes[segment.FromNodeId];
+        var to = nodes[segment.ToNodeId];
+        var display = definition.Display ?? new RouteMapDisplaySettings();
+        var logicalPath = RouteSegmentGeometry.Create(
+            segment,
+            new Point(from.X, from.Y),
+            new Point(to.X, to.Y));
+        var viewPath = RouteSegmentGeometry.Create(
+            segment with { ArcRadius = segment.ArcRadius * 0.45 },
+            new Point(from.X * 0.45, from.Y * 0.45),
+            new Point(to.X * 0.45, to.Y * 0.45));
+
+        var logicalRanges = RouteSegmentGeometry.CalculateLogicalDrawableRanges(segment, from, to, display);
+        var projected = RouteSegmentGeometry.ProjectRanges(logicalRanges, logicalPath.Length, viewPath.Length);
+
+        Assert.Equal(3, logicalRanges.Count);
+        Assert.Equal(logicalRanges.Count, projected.Count);
+        for (var index = 0; index < logicalRanges.Count; index++)
+        {
+            Assert.Equal(logicalRanges[index].Start / logicalPath.Length, projected[index].Start / viewPath.Length, precision: 8);
+            Assert.Equal(logicalRanges[index].End / logicalPath.Length, projected[index].End / viewPath.Length, precision: 8);
+        }
+    }
+
+    [Fact]
+    public void View_drawable_ranges_use_screen_length_after_viewport_scale()
+    {
+        var definition = RouteMapSeed.Create();
+        var segment = definition.Segments.Single(x => x.Id == "bucket_to_upper_dead_end");
+        var nodes = definition.Nodes.ToDictionary(x => x.Id);
+        var from = nodes[segment.FromNodeId];
+        var to = nodes[segment.ToNodeId];
+        var display = definition.Display ?? new RouteMapDisplaySettings();
+        const double scale = 0.45;
+        var viewPath = RouteSegmentGeometry.Create(
+            segment with { ArcRadius = segment.ArcRadius * scale },
+            new Point(from.X * scale, from.Y * scale),
+            new Point(to.X * scale, to.Y * scale));
+
+        var visualRange = Assert.Single(RouteSegmentGeometry.CalculateViewDrawableRanges(
+            viewPath,
+            segment,
+            from,
+            to,
+            display));
+        var logicalRanges = RouteSegmentGeometry.CalculateLogicalDrawableRanges(segment, from, to, display);
+
+        Assert.Equal(2, logicalRanges.Count);
+        Assert.Equal(21, visualRange.Start, precision: 8);
+        Assert.Equal(viewPath.Length - 21, visualRange.End, precision: 8);
+    }
+
+    [Fact]
+    public void View_drawable_ranges_use_scaled_elbow_path_length_including_arc()
+    {
+        var definition = RouteMapSeed.Create();
+        var segment = definition.Segments.Single(x => x.Id == "bsu2_to_bucket");
+        var nodes = definition.Nodes.ToDictionary(x => x.Id);
+        var from = nodes[segment.FromNodeId];
+        var to = nodes[segment.ToNodeId];
+        var display = definition.Display ?? new RouteMapDisplaySettings();
+        const double scale = 0.8;
+        var viewPath = RouteSegmentGeometry.Create(
+            segment with { ArcRadius = segment.ArcRadius * scale },
+            new Point(from.X * scale, from.Y * scale),
+            new Point(to.X * scale, to.Y * scale));
+
+        var ranges = RouteSegmentGeometry.CalculateViewDrawableRanges(viewPath, segment, from, to, display);
+
+        Assert.IsType<RouteArcPathPart>(viewPath.Parts[1]);
+        Assert.Equal(3, ranges.Count);
+        Assert.Equal(21, ranges[0].Start, precision: 8);
+        Assert.Equal(100, ranges[0].Length, precision: 8);
+        Assert.Equal(100, ranges[1].Length, precision: 8);
+        Assert.True(ranges[2].Length >= 100);
+    }
+
+    [Fact]
     public void Track_pen_uses_configured_round_or_flat_cap()
     {
         var palette = new RouteMapPaletteSettings();
