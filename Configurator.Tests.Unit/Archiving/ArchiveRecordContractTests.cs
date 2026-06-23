@@ -205,4 +205,62 @@ public sealed class ArchiveRecordContractTests
         Assert.Equal(TimeSpan.Zero, record.RequestedAtUtc.Offset);
         Assert.Equal(TimeSpan.Zero, record.CompletedAtUtc!.Value.Offset);
     }
+
+    [Fact]
+    public void Stage7Records_NormalizeUtcAndDefensivelyCopyCollections()
+    {
+        var created = new DateTimeOffset(2026, 6, 22, 15, 0, 0, TimeSpan.FromHours(3));
+        var checksums = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["commands.csv"] = "abc"
+        };
+        var partitions = new List<ArchiveBackupPartitionResult>
+        {
+            new("source.sqlite", "partitions/source.sqlite", 10, "def", quickCheckPassed: true)
+        };
+
+        var runtimeEvent = new ArchiveRuntimeEventRecord(
+            Guid.NewGuid(),
+            created,
+            " device-01 ",
+            "ArchiveRetention",
+            severity: 1,
+            "Applied",
+            detailsJson: "{}");
+        var export = new ArchiveExportResult(
+            "export.zip",
+            created,
+            commandCount: 1,
+            physicalWriteCount: 2,
+            runtimeEventCount: 3,
+            snapshotMetadataCount: 4,
+            checksums);
+        var backup = new ArchiveBackupResult("backup.zip", created, partitions, checksums);
+        var retention = new ArchiveRetentionResult(
+            created,
+            [
+                new ArchiveRetentionPartitionResult(
+                    "old.sqlite",
+                    deletedHighResolutionSnapshotRows: 1,
+                    deletedLongTermSnapshotRows: 2,
+                    deletedRuntimeEventRows: 3,
+                    deletedCommandRows: 4,
+                    deletedPhysicalWriteRows: 5,
+                    deletedSecurityAuditRows: 6,
+                    databaseFileDeleted: true)
+            ]);
+
+        checksums["commands.csv"] = "changed";
+        partitions[0] = new ArchiveBackupPartitionResult("other.sqlite", "partitions/other.sqlite", 1, "000", true);
+
+        Assert.Equal(TimeSpan.Zero, runtimeEvent.OccurredAtUtc.Offset);
+        Assert.Equal("device-01", runtimeEvent.DeviceId);
+        Assert.Equal(TimeSpan.Zero, export.CreatedAtUtc.Offset);
+        Assert.Equal("abc", export.Sha256ByEntryName["commands.csv"]);
+        Assert.Equal(TimeSpan.Zero, backup.CreatedAtUtc.Offset);
+        Assert.Equal("source.sqlite", backup.Partitions[0].SourcePath);
+        Assert.Equal(1, retention.DeletedHighResolutionSnapshotRows);
+        Assert.Equal(4, retention.DeletedCommandRows);
+        Assert.Equal(1, retention.DeletedDatabaseFiles);
+    }
 }

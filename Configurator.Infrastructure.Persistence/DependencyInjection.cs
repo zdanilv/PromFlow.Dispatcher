@@ -33,6 +33,16 @@ public static class DependencyInjection
         services.AddSingleton<SqlitePragmaInitializer>();
         services.AddSingleton<SqliteMigrationCatalog>();
         services.AddSingleton<SqliteMigrationRunner>();
+        services.AddSingleton<ArchivePartitionCatalog>();
+        services.AddSingleton<SqliteArchiveQueryService>();
+        services.AddSingleton<IArchiveQueryService>(serviceProvider => serviceProvider.GetRequiredService<SqliteArchiveQueryService>());
+        services.AddSingleton<ArchiveRuntimeEventWriter>();
+        services.AddSingleton<ArchiveChecksum>();
+        services.AddSingleton<ArchiveCsvWriter>();
+        services.AddSingleton<ArchiveExportPackageWriter>();
+        services.AddSingleton<ArchiveBackupPackageWriter>();
+        services.AddSingleton<ArchiveMaintenanceService>();
+        services.AddSingleton<IArchiveMaintenanceService>(serviceProvider => serviceProvider.GetRequiredService<ArchiveMaintenanceService>());
         services.AddSingleton<SqliteArchiveWriter>();
         services.AddSingleton<ArchiveRuntime>();
         services.AddSingleton<IArchiveRuntime>(serviceProvider => serviceProvider.GetRequiredService<ArchiveRuntime>());

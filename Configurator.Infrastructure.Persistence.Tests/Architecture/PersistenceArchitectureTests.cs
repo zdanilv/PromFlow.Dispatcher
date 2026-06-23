@@ -99,7 +99,7 @@ public sealed class PersistenceArchitectureTests
     }
 
     [Fact]
-    public void PersistenceDependencyInjection_RegistersStage4ArchiveServices()
+    public void PersistenceDependencyInjection_RegistersArchiveServices()
     {
         var repositoryRoot = FindRepositoryRoot();
         var dependencyInjectionPath = Path.Combine(
@@ -117,6 +117,13 @@ public sealed class PersistenceArchitectureTests
         Assert.Contains("IArchiveRuntime", text);
         Assert.Contains("CommandAuditService", text);
         Assert.Contains("ICommandAuditService", text);
+        Assert.Contains("ArchivePartitionCatalog", text);
+        Assert.Contains("SqliteArchiveQueryService", text);
+        Assert.Contains("IArchiveQueryService", text);
+        Assert.Contains("ArchiveExportPackageWriter", text);
+        Assert.Contains("ArchiveBackupPackageWriter", text);
+        Assert.Contains("ArchiveMaintenanceService", text);
+        Assert.Contains("IArchiveMaintenanceService", text);
     }
 
     private static string FindRepositoryRoot()

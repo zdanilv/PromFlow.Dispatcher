@@ -103,3 +103,33 @@ never retries or changes an already attempted PLC write result.
   mandatory.
 - Pulse commands use one `CommandId` across set and reset physical writes.
 - Persistence remains behind `ICommandAuditService`; Modbus code has no SQLite dependency.
+
+---
+
+## ADR-005 - Bounded archive operations and WAL-aware backup
+
+- Status: Proposed
+- Date: 2026-06-23
+
+### Context
+
+Operators need archive query, export, retention and backup features before the Archive UI
+stage, but archive partitions can grow large and SQLite may keep recent pages in WAL files.
+
+### Decision
+
+Archive query reads only existing monthly partitions and enforces configured page-size
+bounds. Export streams typed query pages into a staging directory, writes fixed safe ZIP
+entries, records checksums, and publishes the final package through an atomic rename. Export
+includes command audit, physical Modbus writes, runtime events, and snapshot metadata only.
+Retention deletes expired rows by table-specific cutoffs and may remove old empty partition
+files, but never deletes the active UTC-month partition. Backup uses the SQLite backup API
+per partition, runs `PRAGMA quick_check` on each backup copy, and then packages the verified
+copies into a ZIP with checksums.
+
+### Consequences
+
+- Archive operations stay explicit-call services; no new lifecycle worker is introduced.
+- Query/export avoid loading the entire archive history into memory.
+- Backup remains safe when source databases are in WAL mode.
+- Stage 7 adds no new migration and tolerates missing optional future tables.

@@ -13,6 +13,10 @@ public interface IArchiveQueryService
         ArchiveQuery query,
         CancellationToken cancellationToken = default);
 
+    Task<ArchiveOperationResult<ArchivePage<ArchiveRuntimeEventRecord>>> QueryRuntimeEventsAsync(
+        ArchiveQuery query,
+        CancellationToken cancellationToken = default);
+
     Task<ArchiveOperationResult<ArchivePage<EquipmentCommandAuditRecord>>> QueryEquipmentCommandsAsync(
         ArchiveQuery query,
         CancellationToken cancellationToken = default);

@@ -5,16 +5,15 @@ namespace Configurator.Application.Services.Archiving;
 /// </summary>
 public interface IArchiveMaintenanceService
 {
-    Task<ArchiveOperationResult> ApplyRetentionAsync(
+    Task<ArchiveOperationResult<ArchiveRetentionResult>> ApplyRetentionAsync(
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default);
 
-    Task<ArchiveOperationResult> ExportAsync(
-        ArchiveQuery query,
-        string exportDirectory,
+    Task<ArchiveOperationResult<ArchiveExportResult>> ExportAsync(
+        ArchiveExportRequest request,
         CancellationToken cancellationToken = default);
 
-    Task<ArchiveOperationResult> CreateBackupAsync(
+    Task<ArchiveOperationResult<ArchiveBackupResult>> CreateBackupAsync(
         string destinationDirectory,
         CancellationToken cancellationToken = default);
 }

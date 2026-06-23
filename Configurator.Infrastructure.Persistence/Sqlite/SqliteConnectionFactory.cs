@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Archiving;
+using Configurator.Infrastructure.Persistence.Archive;
 using Configurator.Infrastructure.Persistence.Common;
 using Microsoft.Data.Sqlite;
 
@@ -93,6 +94,79 @@ public sealed class SqliteConnectionFactory
             return ArchiveOperationResult<SqliteConnection>.Failure(
                 PersistenceConnectionFailed,
                 "Archive database connection failed.",
+                ex.Message);
+        }
+    }
+
+    public async Task<ArchiveOperationResult<SqliteConnection>> OpenReadOnlyAsync(
+        string databasePath,
+        CancellationToken cancellationToken)
+        => await OpenExistingAsync(databasePath, SqliteOpenMode.ReadOnly, "read-only", cancellationToken)
+            .ConfigureAwait(false);
+
+    public async Task<ArchiveOperationResult<SqliteConnection>> OpenReadWriteExistingAsync(
+        string databasePath,
+        CancellationToken cancellationToken)
+        => await OpenExistingAsync(databasePath, SqliteOpenMode.ReadWrite, "read/write", cancellationToken)
+            .ConfigureAwait(false);
+
+    private static async Task<ArchiveOperationResult<SqliteConnection>> OpenExistingAsync(
+        string databasePath,
+        SqliteOpenMode mode,
+        string accessDescription,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(databasePath))
+        {
+            return ArchiveOperationResult<SqliteConnection>.Failure(
+                ArchivePersistenceErrorCodes.ArchivePartitionMissing,
+                "Archive database path is required.");
+        }
+
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(databasePath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return ArchiveOperationResult<SqliteConnection>.Failure(
+                ArchivePersistenceErrorCodes.ArchivePartitionMissing,
+                "Archive database path is invalid.",
+                ex.Message);
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            return ArchiveOperationResult<SqliteConnection>.Failure(
+                ArchivePersistenceErrorCodes.ArchivePartitionMissing,
+                "Archive partition does not exist.",
+                fullPath);
+        }
+
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = fullPath,
+            Mode = mode,
+            Cache = SqliteCacheMode.Shared,
+            Pooling = true
+        }.ToString();
+
+        var connection = new SqliteConnection(connectionString);
+
+        try
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+            return ArchiveOperationResult<SqliteConnection>.Success(connection);
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+
+            return ArchiveOperationResult<SqliteConnection>.Failure(
+                ArchivePersistenceErrorCodes.ArchivePartitionCorrupt,
+                $"Archive partition {accessDescription} connection failed.",
                 ex.Message);
         }
     }

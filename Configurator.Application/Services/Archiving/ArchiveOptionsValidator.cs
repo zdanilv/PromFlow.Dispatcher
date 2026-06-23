@@ -22,6 +22,7 @@ public sealed class ArchiveOptionsValidator
         ValidateRetention(options, errors);
         ValidatePartitionMode(options, errors);
         ValidateCommandAudit(options, errors);
+        ValidateQueryExportMaintenance(options, errors);
         ValidatePath(options.BaseDirectory, nameof(options.BaseDirectory), errors);
         ValidatePath(options.ExportDirectory, nameof(options.ExportDirectory), errors);
 
@@ -114,6 +115,51 @@ public sealed class ArchiveOptionsValidator
                 "ArchivePartitionModeUnsupported",
                 $"Archive partition mode '{options.PartitionMode}' is unsupported.",
                 nameof(options.PartitionMode)));
+        }
+    }
+
+    private static void ValidateQueryExportMaintenance(
+        ArchiveOptions options,
+        List<ArchiveValidationError> errors)
+    {
+        if (options.QueryMaxPageSize <= 0 || options.QueryMaxPageSize > 10000)
+        {
+            errors.Add(new ArchiveValidationError(
+                "ArchiveQueryPageSizeInvalid",
+                "Archive query maximum page size must be between 1 and 10000.",
+                nameof(options.QueryMaxPageSize)));
+        }
+
+        if (options.ExportMaxRangeDays <= 0)
+        {
+            errors.Add(new ArchiveValidationError(
+                "ArchiveExportRangeInvalid",
+                "Archive export maximum range must be greater than zero.",
+                nameof(options.ExportMaxRangeDays)));
+        }
+
+        if (options.ExportMaxRecords <= 0 || options.ExportMaxRecords > 1000000)
+        {
+            errors.Add(new ArchiveValidationError(
+                "ArchiveExportRecordLimitInvalid",
+                "Archive export maximum record count must be between 1 and 1000000.",
+                nameof(options.ExportMaxRecords)));
+        }
+
+        if (options.CommandAuditRetentionDays <= 0)
+        {
+            errors.Add(new ArchiveValidationError(
+                "ArchiveRetentionInvalid",
+                "Command audit retention must be greater than zero.",
+                nameof(options.CommandAuditRetentionDays)));
+        }
+
+        if (options.SecurityAuditRetentionDays <= 0)
+        {
+            errors.Add(new ArchiveValidationError(
+                "ArchiveRetentionInvalid",
+                "Security audit retention must be greater than zero.",
+                nameof(options.SecurityAuditRetentionDays)));
         }
     }
 

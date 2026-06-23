@@ -14,4 +14,15 @@ public static class ArchivePersistenceErrorCodes
     public const string ArchiveFlushFailed = nameof(ArchiveFlushFailed);
     public const string ArchiveStartFailed = nameof(ArchiveStartFailed);
     public const string ArchiveStopFailed = nameof(ArchiveStopFailed);
+    public const string ArchiveQueryInvalid = nameof(ArchiveQueryInvalid);
+    public const string ArchiveQueryFailed = nameof(ArchiveQueryFailed);
+    public const string ArchiveExportInvalid = nameof(ArchiveExportInvalid);
+    public const string ArchiveExportLimitExceeded = nameof(ArchiveExportLimitExceeded);
+    public const string ArchiveExportFailed = nameof(ArchiveExportFailed);
+    public const string ArchiveRetentionFailed = nameof(ArchiveRetentionFailed);
+    public const string ArchiveBackupInvalid = nameof(ArchiveBackupInvalid);
+    public const string ArchiveBackupFailed = nameof(ArchiveBackupFailed);
+    public const string ArchiveBackupIntegrityFailed = nameof(ArchiveBackupIntegrityFailed);
+    public const string ArchivePartitionCorrupt = nameof(ArchivePartitionCorrupt);
+    public const string ArchivePartitionMissing = nameof(ArchivePartitionMissing);
 }

@@ -13,6 +13,7 @@ public sealed record ArchiveQuery
         string? deviceId = null,
         ModbusRuntimeRole? role = null,
         ArchiveRecordKind? recordKind = null,
+        string? eventType = null,
         string? signalId = null,
         string? userId = null,
         string? result = null,
@@ -44,6 +45,7 @@ public sealed record ArchiveQuery
         DeviceId = string.IsNullOrWhiteSpace(deviceId) ? null : deviceId.Trim();
         Role = role;
         RecordKind = recordKind;
+        EventType = string.IsNullOrWhiteSpace(eventType) ? null : eventType.Trim();
         SignalId = string.IsNullOrWhiteSpace(signalId) ? null : signalId.Trim();
         UserId = string.IsNullOrWhiteSpace(userId) ? null : userId.Trim();
         Result = string.IsNullOrWhiteSpace(result) ? null : result.Trim();
@@ -61,6 +63,8 @@ public sealed record ArchiveQuery
     public ModbusRuntimeRole? Role { get; }
 
     public ArchiveRecordKind? RecordKind { get; }
+
+    public string? EventType { get; }
 
     public string? SignalId { get; }
 

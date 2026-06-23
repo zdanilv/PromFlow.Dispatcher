@@ -19,7 +19,7 @@
 - [x] Stage 4 — Buffered archive writer
 - [x] Stage 5 — Modbus archive collector
 - [x] Stage 6 — Command and physical write audit
-- [ ] Stage 7 — Query, export, retention and backup
+- [x] Stage 7 — Query, export, retention and backup
 - [ ] Stage 8 — Authentication/application foundation
 - [ ] Stage 9 — Login, RBAC and workspace enforcement
 - [ ] Stage 10 — Offline license core and issuer
@@ -30,9 +30,9 @@
 
 ## Current stage
 
-- Stage: `6`
+- Stage: `7`
 - Branch: `6-add-archive`
-- Goal: `Persist semantic RouteMap command audit and physical Modbus write audit`
+- Goal: `Provide bounded archive query, export, retention and WAL-aware backup`
 - Status: `Completed`
 
 ## Current findings
@@ -110,6 +110,17 @@
 - Command audit failure policy defaults to fail-open; fail-closed blocks only ordinary commands before the first Modbus write. Emergency SignalIds remain fail-open.
 - Added ADR-004 for command audit failure policy.
 - `Configurator.Infrastructure.Modbus` still has no Persistence/Desktop/Avalonia/ReactiveUI/SQLite dependency and does not execute SQL.
+- Stage 7 added typed Application contracts for runtime events, export requests/results, backup results and retention summaries.
+- `ArchiveQuery` now supports `EventType`, and archive options now bound query page size, export range/record count, command audit retention and future security audit retention.
+- `SqliteArchiveQueryService` implements paged/cancelable reads over existing monthly partitions and returns empty pages for missing optional future tables such as `security_audit`.
+- Stage 7 query supports snapshots, Modbus status projections, generic runtime events, semantic equipment commands, physical Modbus writes and security audit rows when the future table exists.
+- `ArchiveExportPackageWriter` writes fixed safe ZIP entries: `manifest.json`, `commands.csv`, `modbus_writes.csv`, `events.csv`, `snapshots.ndjson` and `checksums.sha256`.
+- Export uses a temp staging directory and temp ZIP, then publishes by atomic move. Snapshot export writes metadata only and excludes raw snapshot BLOBs.
+- `ArchiveMaintenanceService` applies retention cutoffs for high-resolution snapshots, long-term snapshots/runtime events, command/write audit and future security audit rows.
+- Retention never deletes the active UTC-month partition and records an observable `ArchiveRetention` runtime event after a successful retention run.
+- `ArchiveBackupPackageWriter` uses SQLite backup API per partition, verifies each backup copy with `PRAGMA quick_check`, computes SHA-256 checksums and packages verified copies into ZIP.
+- Persistence DI now registers query, maintenance, export, backup, partition catalog, runtime-event writer, CSV and checksum services as singletons.
+- Stage 7 did not add a migration, package, UI, auth/RBAC/license logic, Modbus runtime changes or lifecycle startup.
 
 ## Commands last executed
 
@@ -147,6 +158,17 @@ rg -n "Microsoft\.Data\.Sqlite|Configurator\.Infrastructure\.Persistence|Avaloni
 rg -n "\.Wait\(|\.Result|Thread\.Sleep" .\Configurator.Infrastructure.Modbus\Archiving .\Configurator.Infrastructure.Modbus\RouteMap .\Configurator.Infrastructure.Modbus\Runtime
 rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Application\Services\Archiving .\Configurator.Infrastructure.Modbus\Archiving .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence\Migrations
 rg -n "\.Result|\.Wait\(|Thread\.Sleep" .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence\Migrations
+dotnet build .\Configurator.Application\Configurator.Application.csproj --no-restore
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~Archiving"
+dotnet build .\Configurator.Infrastructure.Persistence\Configurator.Infrastructure.Persistence.csproj --no-restore
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore
+dotnet build .\DesktopTemplate.slnx --no-restore
+dotnet test .\DesktopTemplate.slnx --no-restore
+rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Application\Services\Archiving .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence\Sqlite
+rg -n "Avalonia|ReactiveUI|Configurator\.Desktop|Configurator\.Infrastructure\.Modbus|Configurator\.Infrastructure\.OpcUa" .\Configurator.Infrastructure.Persistence
+rg -n "BinaryFormatter|\.Wait\(|\.Result|Thread\.Sleep|BoundedChannelFullMode\.DropOldest|BoundedChannelFullMode\.DropNewest" .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence\Sqlite .\Configurator.Infrastructure.Persistence.Tests\Archive
+git diff --check
+git status --short
 ```
 
 ## Test results
@@ -177,6 +199,12 @@ rg -n "\.Result|\.Wait\(|Thread\.Sleep" .\Configurator.Infrastructure.Persistenc
 - Modbus tests after Stage 6 command/physical audit: `Passed; 111 passed, 0 failed, 0 skipped`
 - RouteMap unit filter after Stage 6 dispatcher changes: `Passed; 136 passed, 0 failed, 0 skipped`
 - Stage 6 forbidden dependency, sensitive-material and blocking-call scans: `Passed`
+- Application Archiving unit tests after Stage 7 contracts/options: `Passed; 33 passed, 0 failed, 0 skipped`
+- Persistence tests after Stage 7 query/export/retention/backup: `Passed; 71 passed, 0 failed, 0 skipped`
+- Full build after Stage 7: `Passed; 2 NU1903 warnings from SQLitePCLRaw.lib.e_sqlite3`
+- Full tests after Stage 7: `Passed; 413 passed, 0 failed, 0 skipped`
+- Stage 7 sensitive-material, forbidden-dependency and blocking-call scans: `Passed`
+- Stage 7 diff whitespace check: `Passed`
 
 ## Known limitations
 
@@ -199,7 +227,10 @@ rg -n "\.Result|\.Wait\(|Thread\.Sleep" .\Configurator.Infrastructure.Persistenc
 - Stage 6 did not implement query execution, export, retention, backup, Archive UI, authentication, RBAC, licensing or security audit persistence.
 - Stage 6 leaves `SessionId`, `UserId` and `Username` nullable until real auth stages.
 - Physical write audit is attached only to writes that pass through `IModbusTcpService.SetAsync` with a non-null `CommandExecutionContext`; direct low-level client/server writes remain out of scope.
+- Stage 7 did not add Archive UI, authentication/RBAC/license enforcement, security audit schema creation or centralized lifecycle startup.
+- Stage 7 backup/export APIs create operational ZIP artifacts only when called explicitly; Boot/Desktop still do not start archive runtime or collector until Stage 13.
+- Stage 7 treats missing `security_audit` as empty because the table is owned by a later stage.
 
 ## Next action
 
-Stop here until Stage 7 is explicitly requested.
+Stop here until Stage 8 is explicitly requested.

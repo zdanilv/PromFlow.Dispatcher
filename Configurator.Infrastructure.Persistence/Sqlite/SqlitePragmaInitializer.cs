@@ -52,6 +52,36 @@ public sealed class SqlitePragmaInitializer
         }
     }
 
+    public async Task<ArchiveOperationResult> ApplyReadOnlyAsync(
+        SqliteConnection connection,
+        int busyTimeoutMs,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+
+        if (busyTimeoutMs <= 0)
+        {
+            return ArchiveOperationResult.Failure(
+                PersistencePragmaFailed,
+                "SQLite busy timeout must be positive.");
+        }
+
+        try
+        {
+            await ExecuteNonQueryAsync(connection, "PRAGMA foreign_keys = ON;", cancellationToken).ConfigureAwait(false);
+            await ExecuteNonQueryAsync(connection, $"PRAGMA busy_timeout = {busyTimeoutMs};", cancellationToken).ConfigureAwait(false);
+
+            return ArchiveOperationResult.Success();
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
+        {
+            return ArchiveOperationResult.Failure(
+                PersistencePragmaFailed,
+                "SQLite read-only PRAGMA initialization failed.",
+                ex.Message);
+        }
+    }
+
     private static async Task ExecuteNonQueryAsync(
         SqliteConnection connection,
         string commandText,

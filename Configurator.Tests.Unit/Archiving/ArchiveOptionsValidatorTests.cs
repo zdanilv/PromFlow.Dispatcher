@@ -110,6 +110,29 @@ public sealed class ArchiveOptionsValidatorTests
             error.Code == "ArchiveRetentionInvalid" && error.PropertyName == property);
     }
 
+    [Theory]
+    [InlineData(nameof(ArchiveOptions.QueryMaxPageSize), 0, "ArchiveQueryPageSizeInvalid")]
+    [InlineData(nameof(ArchiveOptions.QueryMaxPageSize), 10001, "ArchiveQueryPageSizeInvalid")]
+    [InlineData(nameof(ArchiveOptions.ExportMaxRangeDays), 0, "ArchiveExportRangeInvalid")]
+    [InlineData(nameof(ArchiveOptions.ExportMaxRecords), 0, "ArchiveExportRecordLimitInvalid")]
+    [InlineData(nameof(ArchiveOptions.ExportMaxRecords), 1000001, "ArchiveExportRecordLimitInvalid")]
+    [InlineData(nameof(ArchiveOptions.CommandAuditRetentionDays), 0, "ArchiveRetentionInvalid")]
+    [InlineData(nameof(ArchiveOptions.SecurityAuditRetentionDays), 0, "ArchiveRetentionInvalid")]
+    public void Validate_InvalidQueryExportMaintenanceOptions_RejectsExpectedCode(
+        string property,
+        int value,
+        string expectedCode)
+    {
+        var options = CreateValidOptions();
+        SetIntProperty(options, property, value);
+
+        var result = _validator.Validate(options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error =>
+            error.Code == expectedCode && error.PropertyName == property);
+    }
+
     [Fact]
     public void Validate_InvalidPathCharacters_RejectsArchivePathInvalid()
     {

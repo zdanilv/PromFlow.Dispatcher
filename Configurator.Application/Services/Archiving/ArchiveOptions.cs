@@ -31,6 +31,16 @@ public sealed class ArchiveOptions
 
     public string ExportDirectory { get; set; } = string.Empty;
 
+    public int QueryMaxPageSize { get; set; } = 1000;
+
+    public int ExportMaxRangeDays { get; set; } = 31;
+
+    public int ExportMaxRecords { get; set; } = 100000;
+
+    public int CommandAuditRetentionDays { get; set; } = 365;
+
+    public int SecurityAuditRetentionDays { get; set; } = 365;
+
     public CommandAuditFailureMode CommandAuditFailureMode { get; set; } = CommandAuditFailureMode.FailOpen;
 
     public int CommandAuditEnqueueTimeoutMs { get; set; } = 100;
@@ -52,6 +62,11 @@ public sealed class ArchiveOptions
             BusyTimeoutMs = BusyTimeoutMs,
             PartitionMode = PartitionMode,
             ExportDirectory = ExportDirectory,
+            QueryMaxPageSize = QueryMaxPageSize,
+            ExportMaxRangeDays = ExportMaxRangeDays,
+            ExportMaxRecords = ExportMaxRecords,
+            CommandAuditRetentionDays = CommandAuditRetentionDays,
+            SecurityAuditRetentionDays = SecurityAuditRetentionDays,
             CommandAuditFailureMode = CommandAuditFailureMode,
             CommandAuditEnqueueTimeoutMs = CommandAuditEnqueueTimeoutMs,
             EmergencySignalIds = EmergencySignalIds.ToList()
