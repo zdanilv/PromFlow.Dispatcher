@@ -5,6 +5,7 @@ using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Application.Services.Signals;
+using Configurator.Infrastructure.Modbus.Archiving;
 using Configurator.Infrastructure.Modbus.Client;
 using Configurator.Infrastructure.Modbus.Configuration;
 using Configurator.Infrastructure.Modbus.Runtime;
@@ -44,6 +45,10 @@ public static class DependencyInjection
                 (IModbusDataSnapshotSource)sp.GetRequiredService<IModbusTcpService>()));
         services.AddSingleton<IModbusDemoOptionsProvider, ModbusDemoOptionsProvider>();
         services.AddSingleton(CreateDemoTcpService);
+        services.AddSingleton<ModbusConfigurationFingerprint>();
+        services.AddSingleton<ModbusArchiveCollector>();
+        services.AddSingleton<IModbusArchiveCollector>(serviceProvider =>
+            serviceProvider.GetRequiredService<ModbusArchiveCollector>());
 
         return services;
     }

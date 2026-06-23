@@ -17,7 +17,7 @@
 - [x] Stage 2 — SQLite foundation and migrations
 - [x] Stage 3 — Snapshot binary codec and partitioning
 - [x] Stage 4 — Buffered archive writer
-- [ ] Stage 5 — Modbus archive collector
+- [x] Stage 5 — Modbus archive collector
 - [ ] Stage 6 — Command and physical write audit
 - [ ] Stage 7 — Query, export, retention and backup
 - [ ] Stage 8 — Authentication/application foundation
@@ -30,9 +30,9 @@
 
 ## Current stage
 
-- Stage: `4`
+- Stage: `5`
 - Branch: `6-add-archive`
-- Goal: `Add prioritized bounded archive writer runtime without Modbus collector, query, UI or Boot wiring`
+- Goal: `Archive raw Modbus runtime snapshots and meaningful status transitions without UI, SQL or blocking work in callbacks`
 - Status: `Completed`
 
 ## Current findings
@@ -91,6 +91,15 @@
 - Boot/Desktop/appsettings, Modbus runtime and SQLite migrations remain unchanged.
 - Added Stage 4 Persistence tests for priority buffering, telemetry coalescing, ingestor disabled no-op, health observation, backoff, writer insert/type failures, runtime batch/timer/flush/stop/partition lifecycle and transient write recovery.
 - Added architecture coverage for Stage 4 DI registrations and for avoiding forbidden dependencies, `BinaryFormatter`, `.Wait()`, `.Result` and global channel drop policies.
+- Stage 5 added `Configurator.Infrastructure.Modbus.Archiving` with `IModbusArchiveCollector`, `ModbusArchiveCollector` and deterministic `ModbusConfigurationFingerprint`.
+- Collector subscribes to `IModbusRuntimeService.SnapshotChanged` and `StatusChanged` only through `StartAsync`, and unsubscribes through `StopAsync`/`DisposeAsync`; Boot/Desktop lifecycle remains unchanged.
+- Snapshot callback accepts only `Client`/`Server` raw runtime snapshots, copies coils/registers, assigns monotonic sequence numbers, reads role-specific start addresses from `CurrentOptions`, computes configuration hash and enqueues high-resolution telemetry for every accepted snapshot.
+- Long-term snapshot sampling is per role and respects `ArchiveOptions.LongTermSnapshotIntervalMs`.
+- Status callback suppresses duplicate status tuples and enqueues meaningful transitions as `ModbusStatusArchiveRecord` with normal priority.
+- Modbus DI now registers `ModbusConfigurationFingerprint`, `ModbusArchiveCollector` and `IModbusArchiveCollector` as singletons, but does not resolve or start the collector.
+- `Configurator.Infrastructure.Modbus` still has no Persistence/Desktop/Avalonia/ReactiveUI dependency and does not execute SQL.
+- `SqliteArchiveWriter` now also persists `ModbusStatusArchiveRecord` into existing `runtime_event` rows with parameterized SQL; no migration or schema change was added.
+- Added Stage 5 tests for fingerprint stability/order sensitivity, snapshot conversion, defensive copies, role start addresses, sequence, long-term sampling, status suppression, unsubscribe/idempotency, non-blocking enqueue observation, DI registration and status runtime-event persistence.
 
 ## Commands last executed
 
@@ -111,6 +120,13 @@ dotnet test .\DesktopTemplate.slnx --no-restore
 rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Infrastructure.Persistence .\Configurator.Infrastructure.Persistence.Tests
 rg -n "Avalonia|ReactiveUI|Configurator\.Desktop|Configurator\.Infrastructure\.Modbus|Configurator\.Infrastructure\.OpcUa" .\Configurator.Infrastructure.Persistence
 rg -n "BinaryFormatter|\.Wait\(|\.Result|BoundedChannelFullMode\.DropOldest|BoundedChannelFullMode\.DropNewest" .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence.Tests\Archive
+dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore --filter "FullyQualifiedName~Archiving"
+dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore --filter "FullyQualifiedName~SqliteArchiveWriter"
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore
+rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Infrastructure.Modbus\Archiving .\Configurator.Infrastructure.Modbus.Tests\Archiving .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence.Tests\Archive
+rg -n "Avalonia|ReactiveUI|Configurator\.Desktop|ViewModel|Configurator\.Infrastructure\.Persistence|Microsoft\.Data\.Sqlite|Sqlite|ExecuteNonQuery|ExecuteReader|Dispatcher" .\Configurator.Infrastructure.Modbus\Archiving
+rg -n "\.Wait\(|\.Result|Thread\.Sleep|Task\.Delay\(" .\Configurator.Infrastructure.Modbus\Archiving
 ```
 
 ## Test results
@@ -118,19 +134,24 @@ rg -n "BinaryFormatter|\.Wait\(|\.Result|BoundedChannelFullMode\.DropOldest|Boun
 - Restore: `Passed; all projects up-to-date`
 - Application build: `Passed; 0 warnings, 0 errors`
 - Persistence build: `Passed; 1 NU1903 warning from transitive SQLitePCLRaw.lib.e_sqlite3`
-- Build: `Passed; 12 warnings, 0 errors in the final Stage 4 run`
+- Build: `Passed; 2 warnings, 0 errors in the final Stage 5 run`
 - Archiving unit tests: `Passed; 20 passed, 0 failed, 0 skipped`
+- Modbus archive-focused tests: `Passed; 20 passed, 0 failed, 0 skipped`
+- Archive-focused Persistence writer tests: `Passed; 5 passed, 0 failed, 0 skipped`
 - Archive-focused Persistence tests: `Passed; 44 passed, 0 failed, 0 skipped`
-- Persistence tests: `Passed; 57 passed, 0 failed, 0 skipped`
-- Full tests: `Passed; 360 passed, 0 failed, 0 skipped`
+- Persistence tests: `Passed; 59 passed, 0 failed, 0 skipped`
+- Full tests: `Passed; 382 passed, 0 failed, 0 skipped`
 - Unit tests: `Passed; Configurator.Tests.Unit, 156 passed`
-- Modbus tests: `Passed as part of full solution test; Configurator.Infrastructure.Modbus.Tests, 85 passed`
+- Modbus tests: `Passed; Configurator.Infrastructure.Modbus.Tests, 105 passed`
 - OPC UA tests: `Passed as part of full solution test; Configurator.Infrastructure.OpcUa.Tests, 35 passed`
 - RouteMap UI tests: `Passed as part of full solution test; Configurator.Tests.RouteMap.Ui, 27 passed`
 - Sensitive-material scan over new Archiving source and test files: `Passed`
 - Sensitive-material scan over new Persistence source and test files: `Passed`
 - Forbidden-dependency scan over new Persistence source files: `Passed`
 - BinaryFormatter/wait/result/global-drop scan over archive persistence/test files: `Passed`
+- Sensitive-material scan over Modbus archiving, Modbus archiving tests, Persistence archive and Persistence archive tests: `Passed`
+- Forbidden-dependency scan over Modbus archiving source files: `Passed`
+- Blocking-call scan over Modbus archiving source files: `Passed`
 
 ## Known limitations
 
@@ -143,10 +164,13 @@ rg -n "BinaryFormatter|\.Wait\(|\.Result|BoundedChannelFullMode\.DropOldest|Boun
 - Stage 4 did not implement Modbus collection, query execution, export, retention, backup, command/security audit persistence, authorization, licensing or UI features.
 - Stage 4 did not wire Persistence into Boot/Desktop runtime and did not change `appsettings.json`.
 - Stage 4 did not add a migration because Stage 2 `modbus_snapshot` already stores raw snapshot rows and Stage 3 defines the BLOB format.
-- Stage 4 writer persists only `RawModbusSnapshotArchiveRecord`; command/security/status persistence remains for later stages.
+- Stage 5 did not wire or start archive runtime/collector from Boot/Desktop; centralized lifecycle remains Stage 13.
+- Stage 5 did not implement query execution, export, retention, backup, command/physical write audit, security audit, authorization, licensing or UI features.
+- Stage 5 did not add a migration because Modbus status transitions use the existing Stage 2 `runtime_event` table.
+- Stage 5 writer persists `RawModbusSnapshotArchiveRecord` and `ModbusStatusArchiveRecord`; command/security audit persistence remains for later stages.
 - NuGet restore/build reports NU1903 for transitive `SQLitePCLRaw.lib.e_sqlite3` `2.1.11` through the plan-pinned `Microsoft.Data.Sqlite` `10.0.9`.
 - One full-suite run had a transient failure in existing `ModbusDemoViewModelTests.StopCommandCancelsActiveLifecycleWithoutModalError`; the targeted rerun and the final full rerun passed.
 
 ## Next action
 
-Stop here until Stage 5 is explicitly requested.
+Stop here until Stage 6 is explicitly requested.

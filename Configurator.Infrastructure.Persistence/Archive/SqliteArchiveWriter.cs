@@ -1,8 +1,10 @@
 using Configurator.Application.Services.Archiving;
+using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Infrastructure.Persistence.Common;
 using Configurator.Infrastructure.Persistence.Sqlite;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 
 namespace Configurator.Infrastructure.Persistence.Archive;
 
@@ -49,7 +51,7 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
         }
 
         var options = _options.Value.Clone();
-        var prepareResult = PrepareSnapshotItems(envelopes, options);
+        var prepareResult = PrepareBatchItems(envelopes, options);
         if (!prepareResult.Succeeded || prepareResult.Value is null)
         {
             return ArchiveOperationResult<ArchiveWriteBatchResult>.Failure(
@@ -67,7 +69,7 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
         {
             var partition = items[index].Partition;
             var path = partition.DatabasePath;
-            var group = new List<SnapshotWriteItem>();
+            var group = new List<ArchiveWriteItem>();
 
             while (index < items.Count
                 && string.Equals(items[index].Partition.DatabasePath, path, StringComparison.Ordinal))
@@ -111,45 +113,61 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
     public async ValueTask DisposeAsync()
         => await DisposeConnectionAsync().ConfigureAwait(false);
 
-    private ArchiveOperationResult<IReadOnlyList<SnapshotWriteItem>> PrepareSnapshotItems(
+    private ArchiveOperationResult<IReadOnlyList<ArchiveWriteItem>> PrepareBatchItems(
         IReadOnlyList<ArchiveEnvelope> envelopes,
         ArchiveOptions options)
     {
-        var items = new List<SnapshotWriteItem>(envelopes.Count);
+        var items = new List<ArchiveWriteItem>(envelopes.Count);
 
         try
         {
             foreach (var envelope in envelopes)
             {
-                if (envelope.Kind != ArchiveRecordKind.RawModbusSnapshot)
+                if (envelope.Kind == ArchiveRecordKind.RawModbusSnapshot)
                 {
-                    return ArchiveOperationResult<IReadOnlyList<SnapshotWriteItem>>.Failure(
-                        ArchivePersistenceErrorCodes.ArchiveRecordKindUnsupported,
-                        "Archive writer supports only raw Modbus snapshot records.",
-                        envelope.Kind.ToString());
+                    if (envelope.Record is not RawModbusSnapshotArchiveRecord record)
+                    {
+                        return ArchiveOperationResult<IReadOnlyList<ArchiveWriteItem>>.Failure(
+                            ArchivePersistenceErrorCodes.ArchiveRecordTypeMismatch,
+                            "Archive envelope record type does not match raw snapshot kind.",
+                            envelope.Record.GetType().FullName);
+                    }
+
+                    var partition = _partitionResolver.GetWritablePartition(options, record.CapturedAtUtc);
+                    items.Add(ArchiveWriteItem.ForSnapshot(
+                        record,
+                        partition,
+                        _blobCodec.EncodeCoils(record.Coils),
+                        _blobCodec.EncodeHoldingRegisters(record.HoldingRegisters)));
+                    continue;
                 }
 
-                if (envelope.Record is not RawModbusSnapshotArchiveRecord record)
+                if (envelope.Kind == ArchiveRecordKind.ModbusStatus)
                 {
-                    return ArchiveOperationResult<IReadOnlyList<SnapshotWriteItem>>.Failure(
-                        ArchivePersistenceErrorCodes.ArchiveRecordTypeMismatch,
-                        "Archive envelope record type does not match raw snapshot kind.",
-                        envelope.Record.GetType().FullName);
+                    if (envelope.Record is not ModbusStatusArchiveRecord record)
+                    {
+                        return ArchiveOperationResult<IReadOnlyList<ArchiveWriteItem>>.Failure(
+                            ArchivePersistenceErrorCodes.ArchiveRecordTypeMismatch,
+                            "Archive envelope record type does not match Modbus status kind.",
+                            envelope.Record.GetType().FullName);
+                    }
+
+                    var partition = _partitionResolver.GetWritablePartition(options, record.OccurredAtUtc);
+                    items.Add(ArchiveWriteItem.ForStatus(record, partition));
+                    continue;
                 }
 
-                var partition = _partitionResolver.GetWritablePartition(options, record.CapturedAtUtc);
-                items.Add(new SnapshotWriteItem(
-                    record,
-                    partition,
-                    _blobCodec.EncodeCoils(record.Coils),
-                    _blobCodec.EncodeHoldingRegisters(record.HoldingRegisters)));
+                return ArchiveOperationResult<IReadOnlyList<ArchiveWriteItem>>.Failure(
+                    ArchivePersistenceErrorCodes.ArchiveRecordKindUnsupported,
+                    "Archive writer supports only raw Modbus snapshot and Modbus status records.",
+                    envelope.Kind.ToString());
             }
 
-            return ArchiveOperationResult<IReadOnlyList<SnapshotWriteItem>>.Success(items);
+            return ArchiveOperationResult<IReadOnlyList<ArchiveWriteItem>>.Success(items);
         }
         catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException or OverflowException)
         {
-            return ArchiveOperationResult<IReadOnlyList<SnapshotWriteItem>>.Failure(
+            return ArchiveOperationResult<IReadOnlyList<ArchiveWriteItem>>.Failure(
                 ArchivePersistenceErrorCodes.ArchiveWriteFailed,
                 "Archive batch preparation failed.",
                 ex.Message);
@@ -217,7 +235,7 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
 
     private static async Task<ArchiveOperationResult> InsertGroupAsync(
         SqliteConnection connection,
-        IReadOnlyList<SnapshotWriteItem> items,
+        IReadOnlyList<ArchiveWriteItem> items,
         CancellationToken cancellationToken)
     {
         try
@@ -226,7 +244,14 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
 
             foreach (var item in items)
             {
-                await InsertSnapshotAsync(connection, transaction, item, cancellationToken).ConfigureAwait(false);
+                if (item.SnapshotRecord is not null)
+                {
+                    await InsertSnapshotAsync(connection, transaction, item, cancellationToken).ConfigureAwait(false);
+                }
+                else if (item.StatusRecord is not null)
+                {
+                    await InsertStatusAsync(connection, transaction, item.StatusRecord, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             transaction.Commit();
@@ -245,10 +270,10 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
     private static async Task InsertSnapshotAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
-        SnapshotWriteItem item,
+        ArchiveWriteItem item,
         CancellationToken cancellationToken)
     {
-        var record = item.Record;
+        var record = item.SnapshotRecord ?? throw new InvalidOperationException("Snapshot write item is missing a record.");
         await using var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """
@@ -271,11 +296,36 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
         insert.Parameters.AddWithValue("@holdingRegisterStartAddress", record.HoldingRegisterStartAddress);
         insert.Parameters.AddWithValue("@coilCount", record.Coils.Count);
         insert.Parameters.AddWithValue("@holdingRegisterCount", record.HoldingRegisters.Count);
-        insert.Parameters.AddWithValue("@coilsBlob", item.CoilsBlob);
-        insert.Parameters.AddWithValue("@holdingRegistersBlob", item.HoldingRegistersBlob);
+        insert.Parameters.AddWithValue("@coilsBlob", item.CoilsBlob ?? Array.Empty<byte>());
+        insert.Parameters.AddWithValue("@holdingRegistersBlob", item.HoldingRegistersBlob ?? Array.Empty<byte>());
         insert.Parameters.AddWithValue("@configurationHash", record.ConfigurationHash);
         insert.Parameters.AddWithValue("@archiveSchemaVersion", record.SchemaVersion);
         insert.Parameters.AddWithValue("@createdAtUtcMs", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+        await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task InsertStatusAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ModbusStatusArchiveRecord record,
+        CancellationToken cancellationToken)
+    {
+        await using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO runtime_event
+            (id, occurred_at_utc_ms, device_id, event_type, severity, message, details_json)
+            VALUES
+            (@id, @occurredAtUtcMs, @deviceId, @eventType, @severity, @message, @detailsJson);
+            """;
+        insert.Parameters.AddWithValue("@id", record.Id.ToString("D"));
+        insert.Parameters.AddWithValue("@occurredAtUtcMs", record.OccurredAtUtc.ToUnixTimeMilliseconds());
+        insert.Parameters.AddWithValue("@deviceId", record.DeviceId);
+        insert.Parameters.AddWithValue("@eventType", "ModbusStatus");
+        insert.Parameters.AddWithValue("@severity", GetStatusSeverity(record));
+        insert.Parameters.AddWithValue("@message", BuildStatusMessage(record));
+        insert.Parameters.AddWithValue("@detailsJson", BuildStatusDetailsJson(record));
 
         await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -293,9 +343,54 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
     private static string GetApplicationVersion()
         => typeof(SqliteArchiveWriter).Assembly.GetName().Version?.ToString() ?? "unknown";
 
-    private sealed record SnapshotWriteItem(
-        RawModbusSnapshotArchiveRecord Record,
+    private static int GetStatusSeverity(ModbusStatusArchiveRecord record)
+    {
+        if (!string.IsNullOrWhiteSpace(record.LastError)
+            || record.ClientState == ModbusConnectionState.Faulted
+            || record.ServerState == ModbusConnectionState.Faulted)
+        {
+            return 3;
+        }
+
+        if (record.ClientState == ModbusConnectionState.Reconnecting
+            || record.ServerState == ModbusConnectionState.Reconnecting)
+        {
+            return 2;
+        }
+
+        return 1;
+    }
+
+    private static string BuildStatusMessage(ModbusStatusArchiveRecord record)
+        => $"{record.ClientState}/{record.ServerState}: {record.ClientMessage} {record.ServerMessage}".Trim();
+
+    private static string BuildStatusDetailsJson(ModbusStatusArchiveRecord record)
+        => JsonSerializer.Serialize(new
+        {
+            clientState = record.ClientState.ToString(),
+            serverState = record.ServerState.ToString(),
+            clientMessage = record.ClientMessage,
+            serverMessage = record.ServerMessage,
+            lastError = record.LastError
+        });
+
+    private sealed record ArchiveWriteItem(
+        RawModbusSnapshotArchiveRecord? SnapshotRecord,
+        ModbusStatusArchiveRecord? StatusRecord,
         ArchivePartitionInfo Partition,
-        byte[] CoilsBlob,
-        byte[] HoldingRegistersBlob);
+        byte[]? CoilsBlob,
+        byte[]? HoldingRegistersBlob)
+    {
+        public static ArchiveWriteItem ForSnapshot(
+            RawModbusSnapshotArchiveRecord record,
+            ArchivePartitionInfo partition,
+            byte[] coilsBlob,
+            byte[] holdingRegistersBlob)
+            => new(record, null, partition, coilsBlob, holdingRegistersBlob);
+
+        public static ArchiveWriteItem ForStatus(
+            ModbusStatusArchiveRecord record,
+            ArchivePartitionInfo partition)
+            => new(null, record, partition, null, null);
+    }
 }

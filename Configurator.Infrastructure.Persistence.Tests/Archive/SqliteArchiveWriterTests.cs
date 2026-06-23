@@ -6,6 +6,7 @@ using Configurator.Infrastructure.Persistence.Sqlite;
 using Configurator.Infrastructure.Persistence.Tests.TestSupport;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 using Xunit;
 
 namespace Configurator.Infrastructure.Persistence.Tests.Archive;
@@ -87,6 +88,78 @@ public sealed class SqliteArchiveWriterTests
 
         Assert.False(result.Succeeded);
         Assert.Equal(ArchivePersistenceErrorCodes.ArchiveRecordKindUnsupported, result.ErrorCode);
+        Assert.Empty(Directory.EnumerateFiles(database.DirectoryPath, "*.sqlite", SearchOption.TopDirectoryOnly));
+    }
+
+    [Fact]
+    public async Task SqliteArchiveWriter_ModbusStatus_WritesRuntimeEvent()
+    {
+        using var database = new TempArchiveDatabase();
+        var options = CreateOptions(database.DirectoryPath);
+        await using var writer = CreateWriter(options);
+        var status = new ModbusStatusArchiveRecord(
+            Guid.NewGuid(),
+            "device-1",
+            new DateTimeOffset(2026, 6, 22, 11, 30, 0, TimeSpan.Zero),
+            ModbusConnectionState.Reconnecting,
+            ModbusConnectionState.Faulted,
+            "client reconnecting",
+            "server faulted",
+            "socket closed",
+            schemaVersion: 1);
+        var envelope = new ArchiveEnvelope(
+            Guid.NewGuid(),
+            ArchiveRecordKind.ModbusStatus,
+            ArchivePriority.Normal,
+            status,
+            DateTimeOffset.UtcNow);
+
+        var result = await writer.WriteBatchAsync([envelope], CancellationToken.None);
+
+        Assert.True(result.Succeeded, FormatFailure(result.ErrorCode, result.ErrorMessage, result.ErrorDetails));
+        Assert.NotNull(result.Value);
+        var partitionPath = Assert.Single(result.Value!.PartitionPaths);
+        using var connection = OpenConnection(partitionPath);
+        await using var select = connection.CreateCommand();
+        select.CommandText = """
+            SELECT id, occurred_at_utc_ms, device_id, event_type, severity, message, details_json
+            FROM runtime_event
+            WHERE id = @id;
+            """;
+        select.Parameters.AddWithValue("@id", status.Id.ToString("D"));
+        await using var reader = await select.ExecuteReaderAsync();
+
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(status.Id.ToString("D"), reader.GetString(0));
+        Assert.Equal(status.OccurredAtUtc.ToUnixTimeMilliseconds(), reader.GetInt64(1));
+        Assert.Equal("device-1", reader.GetString(2));
+        Assert.Equal("ModbusStatus", reader.GetString(3));
+        Assert.Equal(3, reader.GetInt32(4));
+        Assert.Equal("Reconnecting/Faulted: client reconnecting server faulted", reader.GetString(5));
+
+        using var details = JsonDocument.Parse(reader.GetString(6));
+        Assert.Equal("Reconnecting", details.RootElement.GetProperty("clientState").GetString());
+        Assert.Equal("Faulted", details.RootElement.GetProperty("serverState").GetString());
+        Assert.Equal("socket closed", details.RootElement.GetProperty("lastError").GetString());
+    }
+
+    [Fact]
+    public async Task SqliteArchiveWriter_ModbusStatusTypeMismatch_ReturnsArchiveRecordTypeMismatch()
+    {
+        using var database = new TempArchiveDatabase();
+        var options = CreateOptions(database.DirectoryPath);
+        await using var writer = CreateWriter(options);
+        var envelope = new ArchiveEnvelope(
+            Guid.NewGuid(),
+            ArchiveRecordKind.ModbusStatus,
+            ArchivePriority.Normal,
+            new object(),
+            DateTimeOffset.UtcNow);
+
+        var result = await writer.WriteBatchAsync([envelope], CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ArchivePersistenceErrorCodes.ArchiveRecordTypeMismatch, result.ErrorCode);
         Assert.Empty(Directory.EnumerateFiles(database.DirectoryPath, "*.sqlite", SearchOption.TopDirectoryOnly));
     }
 
