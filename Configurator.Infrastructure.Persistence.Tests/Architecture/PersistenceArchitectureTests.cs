@@ -67,7 +67,7 @@ public sealed class PersistenceArchitectureTests
     }
 
     [Fact]
-    public void PersistenceArchive_DoesNotUseBinaryFormatterOrBitConverter()
+    public void PersistenceArchive_DoesNotUseBinaryFormatterWaitResultOrGlobalDropPolicy()
     {
         var repositoryRoot = FindRepositoryRoot();
         var archiveDirectories = new[]
@@ -81,7 +81,11 @@ public sealed class PersistenceArchitectureTests
         var forbidden = new[]
         {
             string.Concat("Binary", "Formatter"),
-            string.Concat("Bit", "Converter")
+            string.Concat("Bit", "Converter"),
+            ".Wait(",
+            ".Result",
+            string.Concat("BoundedChannelFullMode.", "DropOldest"),
+            string.Concat("BoundedChannelFullMode.", "DropNewest")
         };
 
         foreach (var file in files)
@@ -92,6 +96,25 @@ public sealed class PersistenceArchitectureTests
                 Assert.DoesNotContain(value, text, StringComparison.Ordinal);
             }
         }
+    }
+
+    [Fact]
+    public void PersistenceDependencyInjection_RegistersStage4ArchiveServices()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var dependencyInjectionPath = Path.Combine(
+            repositoryRoot,
+            "Configurator.Infrastructure.Persistence",
+            "DependencyInjection.cs");
+        var text = File.ReadAllText(dependencyInjectionPath);
+
+        Assert.Contains("ArchiveOptionsValidator", text);
+        Assert.Contains("ArchivePriorityBuffer", text);
+        Assert.Contains("ArchiveBackoffPolicy", text);
+        Assert.Contains("IArchiveHealthService", text);
+        Assert.Contains("IArchiveIngestor", text);
+        Assert.Contains("SqliteArchiveWriter", text);
+        Assert.Contains("IArchiveRuntime", text);
     }
 
     private static string FindRepositoryRoot()

@@ -16,7 +16,7 @@
 - [x] Stage 1 — Archive application contracts
 - [x] Stage 2 — SQLite foundation and migrations
 - [x] Stage 3 — Snapshot binary codec and partitioning
-- [ ] Stage 4 — Buffered archive writer
+- [x] Stage 4 — Buffered archive writer
 - [ ] Stage 5 — Modbus archive collector
 - [ ] Stage 6 — Command and physical write audit
 - [ ] Stage 7 — Query, export, retention and backup
@@ -30,9 +30,9 @@
 
 ## Current stage
 
-- Stage: `3`
+- Stage: `4`
 - Branch: `6-add-archive`
-- Goal: `Add deterministic snapshot BLOB codec and UTC monthly partition resolver without writer, query, UI or Boot wiring`
+- Goal: `Add prioritized bounded archive writer runtime without Modbus collector, query, UI or Boot wiring`
 - Status: `Completed`
 
 ## Current findings
@@ -81,7 +81,16 @@
 - Persistence DI now registers `ArchiveSnapshotBlobCodec` and `ArchivePartitionResolver` as singleton services; Boot/Desktop/appsettings remain unchanged.
 - Added Archive tests for codec roundtrip/corruption, deterministic register byte order, partition UTC boundaries/sanitization, and SQLite BLOB storage contract.
 - Added architecture coverage to keep the new archive codec away from forbidden serialization/endian helpers.
-- Stage 4 has not been started.
+- Stage 4 added a prioritized bounded single-writer archive pipeline in `Configurator.Infrastructure.Persistence.Archive`.
+- Added `ArchivePriorityBuffer` with bounded wait channels for critical/normal records and latest-slot telemetry coalescing with dropped telemetry counter.
+- Added `ArchiveIngestor`, `ArchiveHealthService`, `ArchiveBackoffPolicy`, stable persistence error codes and `ArchiveRuntime`.
+- Added `SqliteArchiveWriter` for `RawModbusSnapshotArchiveRecord` batches into `modbus_snapshot`, using Stage 3 snapshot BLOB codec and UTC monthly partition resolver.
+- Writer validates each batch before inserting, supports raw snapshot envelopes only, uses parameterized SQL and one transaction per partition group.
+- Runtime flushes by batch size, timer, explicit `FlushAsync`, `StopAsync` and partition changes; Start/Stop are idempotent and Dispose is terminal.
+- Persistence DI now registers `ArchiveOptionsValidator`, `IArchiveIngestor`, `IArchiveRuntime`, `IArchiveHealthService`, buffer, writer, health and backoff services as singletons.
+- Boot/Desktop/appsettings, Modbus runtime and SQLite migrations remain unchanged.
+- Added Stage 4 Persistence tests for priority buffering, telemetry coalescing, ingestor disabled no-op, health observation, backoff, writer insert/type failures, runtime batch/timer/flush/stop/partition lifecycle and transient write recovery.
+- Added architecture coverage for Stage 4 DI registrations and for avoiding forbidden dependencies, `BinaryFormatter`, `.Wait()`, `.Result` and global channel drop policies.
 
 ## Commands last executed
 
@@ -101,7 +110,7 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 dotnet test .\DesktopTemplate.slnx --no-restore
 rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Infrastructure.Persistence .\Configurator.Infrastructure.Persistence.Tests
 rg -n "Avalonia|ReactiveUI|Configurator\.Desktop|Configurator\.Infrastructure\.Modbus|Configurator\.Infrastructure\.OpcUa" .\Configurator.Infrastructure.Persistence
-rg -n "BinaryFormatter|BitConverter" .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence.Tests\Archive
+rg -n "BinaryFormatter|\.Wait\(|\.Result|BoundedChannelFullMode\.DropOldest|BoundedChannelFullMode\.DropNewest" .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence.Tests\Archive
 ```
 
 ## Test results
@@ -109,11 +118,11 @@ rg -n "BinaryFormatter|BitConverter" .\Configurator.Infrastructure.Persistence\A
 - Restore: `Passed; all projects up-to-date`
 - Application build: `Passed; 0 warnings, 0 errors`
 - Persistence build: `Passed; 1 NU1903 warning from transitive SQLitePCLRaw.lib.e_sqlite3`
-- Build: `Passed; 12 warnings, 0 errors in the final Stage 2 run`
+- Build: `Passed; 12 warnings, 0 errors in the final Stage 4 run`
 - Archiving unit tests: `Passed; 20 passed, 0 failed, 0 skipped`
-- Archive-focused Persistence tests: `Passed; 23 passed, 0 failed, 0 skipped`
-- Persistence tests: `Passed; 36 passed, 0 failed, 0 skipped`
-- Full tests: `Passed; 339 passed, 0 failed, 0 skipped`
+- Archive-focused Persistence tests: `Passed; 44 passed, 0 failed, 0 skipped`
+- Persistence tests: `Passed; 57 passed, 0 failed, 0 skipped`
+- Full tests: `Passed; 360 passed, 0 failed, 0 skipped`
 - Unit tests: `Passed; Configurator.Tests.Unit, 156 passed`
 - Modbus tests: `Passed as part of full solution test; Configurator.Infrastructure.Modbus.Tests, 85 passed`
 - OPC UA tests: `Passed as part of full solution test; Configurator.Infrastructure.OpcUa.Tests, 35 passed`
@@ -121,7 +130,7 @@ rg -n "BinaryFormatter|BitConverter" .\Configurator.Infrastructure.Persistence\A
 - Sensitive-material scan over new Archiving source and test files: `Passed`
 - Sensitive-material scan over new Persistence source and test files: `Passed`
 - Forbidden-dependency scan over new Persistence source files: `Passed`
-- BinaryFormatter/BitConverter scan over new archive codec/test files: `Passed`
+- BinaryFormatter/wait/result/global-drop scan over archive persistence/test files: `Passed`
 
 ## Known limitations
 
@@ -131,9 +140,13 @@ rg -n "BinaryFormatter|BitConverter" .\Configurator.Infrastructure.Persistence\A
 - Stage 2 did not wire Persistence into Boot/Desktop runtime.
 - Stage 3 did not implement archive buffering, writer connection rotation, Modbus collection, query execution, export, retention, backup, authorization, licensing or UI features.
 - Stage 3 did not change SQLite schema or create a new migration because Stage 2 `modbus_snapshot` already stores snapshot BLOB columns and counts.
+- Stage 4 did not implement Modbus collection, query execution, export, retention, backup, command/security audit persistence, authorization, licensing or UI features.
+- Stage 4 did not wire Persistence into Boot/Desktop runtime and did not change `appsettings.json`.
+- Stage 4 did not add a migration because Stage 2 `modbus_snapshot` already stores raw snapshot rows and Stage 3 defines the BLOB format.
+- Stage 4 writer persists only `RawModbusSnapshotArchiveRecord`; command/security/status persistence remains for later stages.
 - NuGet restore/build reports NU1903 for transitive `SQLitePCLRaw.lib.e_sqlite3` `2.1.11` through the plan-pinned `Microsoft.Data.Sqlite` `10.0.9`.
 - One full-suite run had a transient failure in existing `ModbusDemoViewModelTests.StopCommandCancelsActiveLifecycleWithoutModalError`; the targeted rerun and the final full rerun passed.
 
 ## Next action
 
-Stop here until Stage 4 is explicitly requested.
+Stop here until Stage 5 is explicitly requested.

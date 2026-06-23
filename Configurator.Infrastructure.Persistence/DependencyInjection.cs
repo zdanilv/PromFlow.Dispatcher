@@ -17,13 +17,23 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.Configure<ArchiveOptions>(configuration.GetSection(ArchiveOptions.SectionName));
+        services.AddSingleton<ArchiveOptionsValidator>();
         services.AddSingleton<IAppDataPathProvider, DefaultAppDataPathProvider>();
         services.AddSingleton<ArchiveSnapshotBlobCodec>();
         services.AddSingleton<ArchivePartitionResolver>();
+        services.AddSingleton<ArchivePriorityBuffer>();
+        services.AddSingleton<ArchiveBackoffPolicy>();
+        services.AddSingleton<ArchiveHealthService>();
+        services.AddSingleton<IArchiveHealthService>(serviceProvider => serviceProvider.GetRequiredService<ArchiveHealthService>());
+        services.AddSingleton<ArchiveIngestor>();
+        services.AddSingleton<IArchiveIngestor>(serviceProvider => serviceProvider.GetRequiredService<ArchiveIngestor>());
         services.AddSingleton<SqliteConnectionFactory>();
         services.AddSingleton<SqlitePragmaInitializer>();
         services.AddSingleton<SqliteMigrationCatalog>();
         services.AddSingleton<SqliteMigrationRunner>();
+        services.AddSingleton<SqliteArchiveWriter>();
+        services.AddSingleton<ArchiveRuntime>();
+        services.AddSingleton<IArchiveRuntime>(serviceProvider => serviceProvider.GetRequiredService<ArchiveRuntime>());
 
         return services;
     }
