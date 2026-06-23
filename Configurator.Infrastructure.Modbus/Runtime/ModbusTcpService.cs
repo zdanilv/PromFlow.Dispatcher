@@ -1,9 +1,11 @@
+using Configurator.Application.Services.Archiving;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Infrastructure.Modbus.Archiving;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Globalization;
@@ -20,6 +22,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     private readonly IModbusServerService _serverService;
     private readonly IOptionsMonitor<ModbusOptions> _optionsMonitor;
     private readonly IModbusDataMapValidator _dataMapValidator;
+    private readonly ModbusPhysicalWriteAuditSink _physicalWriteAuditSink;
     private readonly ILogger<ModbusTcpService> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _sync = new();
@@ -41,6 +44,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         IModbusServerService serverService,
         IOptionsMonitor<ModbusOptions> optionsMonitor,
         IModbusDataMapValidator dataMapValidator,
+        ModbusPhysicalWriteAuditSink physicalWriteAuditSink,
         ILogger<ModbusTcpService> logger)
     {
         _runtimeService = runtimeService;
@@ -48,6 +52,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         _serverService = serverService;
         _optionsMonitor = optionsMonitor;
         _dataMapValidator = dataMapValidator;
+        _physicalWriteAuditSink = physicalWriteAuditSink;
         _logger = logger;
         _currentOptions = _optionsMonitor.CurrentValue.Clone();
 
@@ -207,9 +212,16 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     /// <summary>
     /// Записывает значение в именованную точку карты данных с учетом ее прав доступа и типа.
     /// </summary>
+    public Task<ModbusOperationResult> SetAsync<T>(
+        string name,
+        T value,
+        CancellationToken ct = default)
+        => SetAsync(name, value, context: null, ct);
+
     public async Task<ModbusOperationResult> SetAsync<T>(
         string name,
         T value,
+        CommandExecutionContext? context,
         CancellationToken ct = default)
     {
         if (!TryGetPoint(name, out var point, out var pointFailure))
@@ -242,37 +254,93 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
                     "Modbus client or server must be running before writing data.");
             }
 
+            var writeThroughClient = ShouldWriteThroughClient(role);
+            var auditRole = writeThroughClient ? ModbusRuntimeRole.Client : ModbusRuntimeRole.Server;
+            var endpoint = writeThroughClient ? _currentOptions.Client : _currentOptions.Server;
+
             if (point.Area == ModbusDataArea.Coil)
             {
-                if (ShouldWriteThroughClient(role))
+                var physicalAddress = endpoint.CoilStartAddress + point.Address;
+                var payload = ModbusPhysicalWriteAuditSink.BuildCoilPayload(coilValue);
+                if (writeThroughClient)
                 {
-                    await _clientService.WriteCoilAsync(point.Address, coilValue, ct);
+                    await ExecutePhysicalWriteAsync(
+                        context,
+                        auditRole,
+                        ModbusDataArea.Coil,
+                        physicalAddress,
+                        quantity: 1,
+                        payloadBlob: payload,
+                        writeAsync: token => _clientService.WriteCoilAsync(point.Address, coilValue, token),
+                        cancellationToken: ct);
                 }
                 else
                 {
-                    await _serverService.SetCoilAsync(point.Address, coilValue, ct);
+                    await ExecutePhysicalWriteAsync(
+                        context,
+                        auditRole,
+                        ModbusDataArea.Coil,
+                        physicalAddress,
+                        quantity: 1,
+                        payloadBlob: payload,
+                        writeAsync: token => _serverService.SetCoilAsync(point.Address, coilValue, token),
+                        cancellationToken: ct);
                 }
             }
             else
             {
+                var physicalAddress = endpoint.HoldingRegisterStartAddress + point.Address;
+                var payload = ModbusPhysicalWriteAuditSink.BuildRegisterPayload(registers);
                 if (registers.Length == 1)
                 {
-                    if (ShouldWriteThroughClient(role))
+                    if (writeThroughClient)
                     {
-                        await _clientService.WriteRegisterAsync(point.Address, registers[0], ct);
+                        await ExecutePhysicalWriteAsync(
+                            context,
+                            auditRole,
+                            ModbusDataArea.HoldingRegister,
+                            physicalAddress,
+                            quantity: 1,
+                            payloadBlob: payload,
+                            writeAsync: token => _clientService.WriteRegisterAsync(point.Address, registers[0], token),
+                            cancellationToken: ct);
                     }
                     else
                     {
-                        await _serverService.SetRegisterAsync(point.Address, registers[0], ct);
+                        await ExecutePhysicalWriteAsync(
+                            context,
+                            auditRole,
+                            ModbusDataArea.HoldingRegister,
+                            physicalAddress,
+                            quantity: 1,
+                            payloadBlob: payload,
+                            writeAsync: token => _serverService.SetRegisterAsync(point.Address, registers[0], token),
+                            cancellationToken: ct);
                     }
                 }
-                else if (ShouldWriteThroughClient(role))
+                else if (writeThroughClient)
                 {
-                    await _clientService.WriteRegistersAsync(point.Address, registers, ct);
+                    await ExecutePhysicalWriteAsync(
+                        context,
+                        auditRole,
+                        ModbusDataArea.HoldingRegister,
+                        physicalAddress,
+                        quantity: registers.Length,
+                        payloadBlob: payload,
+                        writeAsync: token => _clientService.WriteRegistersAsync(point.Address, registers, token),
+                        cancellationToken: ct);
                 }
                 else
                 {
-                    await _serverService.SetRegistersAsync(point.Address, registers, ct);
+                    await ExecutePhysicalWriteAsync(
+                        context,
+                        auditRole,
+                        ModbusDataArea.HoldingRegister,
+                        physicalAddress,
+                        quantity: registers.Length,
+                        payloadBlob: payload,
+                        writeAsync: token => _serverService.SetRegistersAsync(point.Address, registers, token),
+                        cancellationToken: ct);
                 }
 
                 lock (_sync)
@@ -759,6 +827,71 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         return ModbusOperationResult.Failure(
             "ModbusWriteConfirmationTimeout",
             $"Write to Modbus data point '{point.Name}' was not confirmed by the next snapshot.");
+    }
+
+    private async Task ExecutePhysicalWriteAsync(
+        CommandExecutionContext? context,
+        ModbusRuntimeRole role,
+        ModbusDataArea area,
+        int address,
+        int quantity,
+        IReadOnlyList<byte> payloadBlob,
+        Func<CancellationToken, Task> writeAsync,
+        CancellationToken cancellationToken)
+    {
+        var attemptedAtUtc = DateTimeOffset.UtcNow;
+
+        try
+        {
+            await writeAsync(cancellationToken).ConfigureAwait(false);
+            await _physicalWriteAuditSink.RecordAsync(
+                context,
+                role,
+                area,
+                address,
+                quantity,
+                payloadBlob,
+                attemptedAtUtc,
+                DateTimeOffset.UtcNow,
+                succeeded: true,
+                errorCode: null,
+                errorMessage: null,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            await _physicalWriteAuditSink.RecordAsync(
+                context,
+                role,
+                area,
+                address,
+                quantity,
+                payloadBlob,
+                attemptedAtUtc,
+                DateTimeOffset.UtcNow,
+                succeeded: false,
+                "ModbusWriteCanceled",
+                "Modbus write was canceled.",
+                CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _physicalWriteAuditSink.RecordAsync(
+                context,
+                role,
+                area,
+                address,
+                quantity,
+                payloadBlob,
+                attemptedAtUtc,
+                DateTimeOffset.UtcNow,
+                succeeded: false,
+                "ModbusWriteFailed",
+                ex.Message,
+                CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
 
     /// <summary>

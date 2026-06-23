@@ -136,6 +136,56 @@ public sealed class ArchiveOptionsValidatorTests
         Assert.Contains(result.Errors, error => error.Code == "ArchivePartitionModeUnsupported");
     }
 
+    [Fact]
+    public void Validate_UnsupportedCommandAuditFailureMode_RejectsArchiveCommandAuditFailureModeUnsupported()
+    {
+        var options = CreateValidOptions();
+        options.CommandAuditFailureMode = (CommandAuditFailureMode)999;
+
+        var result = _validator.Validate(options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Code == "ArchiveCommandAuditFailureModeUnsupported");
+    }
+
+    [Fact]
+    public void Validate_InvalidCommandAuditTimeout_RejectsArchiveIntervalInvalid()
+    {
+        var options = CreateValidOptions();
+        options.CommandAuditEnqueueTimeoutMs = 0;
+
+        var result = _validator.Validate(options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error =>
+            error.Code == "ArchiveIntervalInvalid"
+            && error.PropertyName == nameof(ArchiveOptions.CommandAuditEnqueueTimeoutMs));
+    }
+
+    [Fact]
+    public void Validate_EmptyEmergencySignalIds_RejectsArchiveEmergencySignalIdsRequired()
+    {
+        var options = CreateValidOptions();
+        options.EmergencySignalIds.Clear();
+
+        var result = _validator.Validate(options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Code == "ArchiveEmergencySignalIdsRequired");
+    }
+
+    [Fact]
+    public void Validate_BlankEmergencySignalId_RejectsArchiveEmergencySignalIdsInvalid()
+    {
+        var options = CreateValidOptions();
+        options.EmergencySignalIds = ["system.emergency", " "];
+
+        var result = _validator.Validate(options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Code == "ArchiveEmergencySignalIdsInvalid");
+    }
+
     private static ArchiveOptions CreateValidOptions()
         => new()
         {

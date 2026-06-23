@@ -160,4 +160,49 @@ public sealed class ArchiveRecordContractTests
         Assert.Equal(TimeSpan.Zero, status.OccurredAtUtc.Offset);
         Assert.Equal(TimeSpan.Zero, security.OccurredAtUtc.Offset);
     }
+
+    [Fact]
+    public void CommandAudit_AllowsNullableWriteModeAndContextNormalizesUtc()
+    {
+        var requested = new DateTimeOffset(2026, 6, 22, 15, 0, 0, TimeSpan.FromHours(3));
+        var context = new CommandExecutionContext(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            requested,
+            sessionId: null,
+            userId: null,
+            username: null,
+            "device-01",
+            "missing.signal",
+            SignalValueType.Bool,
+            "true",
+            writeMode: null,
+            isEmergency: false,
+            schemaVersion: 1);
+        var record = new EquipmentCommandAuditRecord(
+            context.CommandId,
+            context.CorrelationId,
+            context.RequestedAtUtc,
+            completedAtUtc: requested.AddSeconds(1),
+            context.SessionId,
+            context.UserId,
+            context.Username,
+            context.DeviceId,
+            context.SignalId,
+            context.ValueType,
+            context.RequestedValueCanonical,
+            writeMode: null,
+            EquipmentCommandAuditResult.Failed,
+            "ModbusDataPointMissing",
+            "Missing signal.",
+            CommandConfirmationStatus.Rejected,
+            confirmedAtUtc: null,
+            schemaVersion: 1);
+
+        Assert.Null(context.WriteMode);
+        Assert.Null(record.WriteMode);
+        Assert.Equal(TimeSpan.Zero, context.RequestedAtUtc.Offset);
+        Assert.Equal(TimeSpan.Zero, record.RequestedAtUtc.Offset);
+        Assert.Equal(TimeSpan.Zero, record.CompletedAtUtc!.Value.Offset);
+    }
 }

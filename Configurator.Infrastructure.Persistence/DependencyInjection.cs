@@ -27,6 +27,8 @@ public static class DependencyInjection
         services.AddSingleton<IArchiveHealthService>(serviceProvider => serviceProvider.GetRequiredService<ArchiveHealthService>());
         services.AddSingleton<ArchiveIngestor>();
         services.AddSingleton<IArchiveIngestor>(serviceProvider => serviceProvider.GetRequiredService<ArchiveIngestor>());
+        services.AddSingleton<CommandAuditService>();
+        services.AddSingleton<ICommandAuditService>(serviceProvider => serviceProvider.GetRequiredService<CommandAuditService>());
         services.AddSingleton<SqliteConnectionFactory>();
         services.AddSingleton<SqlitePragmaInitializer>();
         services.AddSingleton<SqliteMigrationCatalog>();

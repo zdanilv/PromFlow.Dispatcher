@@ -115,6 +115,8 @@ public sealed class PersistenceArchitectureTests
         Assert.Contains("IArchiveIngestor", text);
         Assert.Contains("SqliteArchiveWriter", text);
         Assert.Contains("IArchiveRuntime", text);
+        Assert.Contains("CommandAuditService", text);
+        Assert.Contains("ICommandAuditService", text);
     }
 
     private static string FindRepositoryRoot()

@@ -13,12 +13,21 @@ public sealed class SqliteMigrationRunnerTests
     {
         var catalog = new SqliteMigrationCatalog();
 
-        var migration = Assert.Single(catalog.All);
+        Assert.Equal(2, catalog.All.Count);
+        var migration = catalog.All[0];
         Assert.Equal(1, migration.Version);
         Assert.Equal("archive_foundation", migration.Name);
         Assert.Contains("CREATE TABLE archive_partition_metadata", migration.Sql);
         Assert.Matches("^[0-9a-f]{64}$", migration.Checksum);
         Assert.Equal("f22e3f7e4088b4b84db230aa30219e4c5fa0e496999965720021a8df1095bb51", migration.Checksum);
+
+        var commandMigration = catalog.All[1];
+        Assert.Equal(2, commandMigration.Version);
+        Assert.Equal("command_write_audit", commandMigration.Name);
+        Assert.Contains("CREATE TABLE equipment_command", commandMigration.Sql);
+        Assert.Contains("CREATE TABLE modbus_write", commandMigration.Sql);
+        Assert.Matches("^[0-9a-f]{64}$", commandMigration.Checksum);
+        Assert.Equal("bd18b713b8ca073e0f908f2243ea7715b6774f61db5278aa470c74240305809d", commandMigration.Checksum);
     }
 
     [Fact]
@@ -35,10 +44,19 @@ public sealed class SqliteMigrationRunnerTests
         Assert.True(await ObjectExistsAsync(connection, "table", "archive_partition_metadata"));
         Assert.True(await ObjectExistsAsync(connection, "table", "modbus_snapshot"));
         Assert.True(await ObjectExistsAsync(connection, "table", "runtime_event"));
+        Assert.True(await ObjectExistsAsync(connection, "table", "equipment_command"));
+        Assert.True(await ObjectExistsAsync(connection, "table", "modbus_write"));
         Assert.True(await ObjectExistsAsync(connection, "index", "ux_modbus_snapshot_sequence"));
         Assert.True(await ObjectExistsAsync(connection, "index", "ix_modbus_snapshot_time"));
         Assert.True(await ObjectExistsAsync(connection, "index", "ix_runtime_event_time"));
+        Assert.True(await ObjectExistsAsync(connection, "index", "ix_equipment_command_requested_at"));
+        Assert.True(await ObjectExistsAsync(connection, "index", "ix_equipment_command_user"));
+        Assert.True(await ObjectExistsAsync(connection, "index", "ix_equipment_command_signal"));
+        Assert.True(await ObjectExistsAsync(connection, "index", "ix_equipment_command_result"));
+        Assert.True(await ObjectExistsAsync(connection, "index", "ix_modbus_write_attempted_at"));
+        Assert.True(await ObjectExistsAsync(connection, "index", "ix_modbus_write_command_id"));
         Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration WHERE version = 1;"));
+        Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration WHERE version = 2;"));
         Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT archive_schema_version FROM archive_partition_metadata WHERE id = 1;"));
         Assert.Equal("device-1", await ExecuteScalarAsync<string>(connection, "SELECT device_id FROM archive_partition_metadata WHERE id = 1;"));
     }
@@ -55,6 +73,7 @@ public sealed class SqliteMigrationRunnerTests
 
         using var connection = database.OpenConnection();
         Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration WHERE version = 1;"));
+        Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration WHERE version = 2;"));
         Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM archive_partition_metadata WHERE id = 1;"));
     }
 
@@ -72,7 +91,7 @@ public sealed class SqliteMigrationRunnerTests
 
         Assert.All(results, AssertSucceeded);
         using var connection = database.OpenConnection();
-        Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration WHERE version = 1;"));
+        Assert.Equal(2, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration;"));
     }
 
     [Fact]

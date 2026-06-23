@@ -72,3 +72,34 @@ application embeds only trusted public keys. Production private keys never enter
 - License files are tamper-evident but not confidential.
 - Key rotation is handled by `keyId`.
 - A separate issuer tool and test-only key material are required.
+
+---
+
+## ADR-004 - Command audit failure policy
+
+- Status: Proposed
+- Date: 2026-06-23
+
+### Context
+
+RouteMap commands must be auditable as semantic operator intent and as the exact physical
+Modbus writes sent through `IModbusTcpService.SetAsync`. Archive infrastructure can be
+temporarily unavailable, but emergency delivery must not be delayed by archive failures.
+
+### Decision
+
+Command audit uses an explicit `CommandExecutionContext` passed from
+`ModbusTcpCommandDispatcher` into `IModbusTcpService.SetAsync`; no ambient static context is
+used. `CommandAuditFailureMode.FailOpen` is the default. `FailClosed` may block ordinary
+commands only when the initial `CommandRequested` audit cannot be accepted, before the first
+Modbus write. Signals listed in `ArchiveOptions.EmergencySignalIds` always fail open.
+Physical Modbus write audit is best-effort, bounded by `CommandAuditEnqueueTimeoutMs`, and
+never retries or changes an already attempted PLC write result.
+
+### Consequences
+
+- Emergency commands remain deliverable when archive storage is unavailable.
+- Operators can configure fail-closed semantics for ordinary commands where audit capture is
+  mandatory.
+- Pulse commands use one `CommandId` across set and reset physical writes.
+- Persistence remains behind `ICommandAuditService`; Modbus code has no SQLite dependency.

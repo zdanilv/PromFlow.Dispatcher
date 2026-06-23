@@ -4,39 +4,14 @@ using Configurator.Application.Services.Signals;
 namespace Configurator.Application.Services.Archiving;
 
 /// <summary>
-/// Terminal result of a semantic equipment command.
+/// Explicit correlation context passed from semantic command handling to physical Modbus writes.
 /// </summary>
-public enum EquipmentCommandAuditResult
+public sealed record CommandExecutionContext
 {
-    Requested,
-    Succeeded,
-    Failed,
-    Cancelled
-}
-
-/// <summary>
-/// Readback confirmation status for a semantic command.
-/// </summary>
-public enum CommandConfirmationStatus
-{
-    NotApplicable,
-    Pending,
-    Confirmed,
-    TimedOut,
-    ConnectionLost,
-    Rejected
-}
-
-/// <summary>
-/// Operator command intent and terminal outcome.
-/// </summary>
-public sealed record EquipmentCommandAuditRecord
-{
-    public EquipmentCommandAuditRecord(
+    public CommandExecutionContext(
         Guid commandId,
         Guid correlationId,
         DateTimeOffset requestedAtUtc,
-        DateTimeOffset? completedAtUtc,
         string? sessionId,
         string? userId,
         string? username,
@@ -45,11 +20,7 @@ public sealed record EquipmentCommandAuditRecord
         SignalValueType valueType,
         string requestedValueCanonical,
         ModbusWriteMode? writeMode,
-        EquipmentCommandAuditResult result,
-        string? errorCode,
-        string? errorMessage,
-        CommandConfirmationStatus confirmationStatus,
-        DateTimeOffset? confirmedAtUtc,
+        bool isEmergency,
         int schemaVersion)
     {
         ArchiveContractGuards.NotEmpty(commandId, nameof(commandId));
@@ -59,14 +30,12 @@ public sealed record EquipmentCommandAuditRecord
         {
             ArchiveContractGuards.EnumDefined(writeMode.Value, nameof(writeMode));
         }
-        ArchiveContractGuards.EnumDefined(result, nameof(result));
-        ArchiveContractGuards.EnumDefined(confirmationStatus, nameof(confirmationStatus));
+
         ArchiveContractGuards.Positive(schemaVersion, nameof(schemaVersion));
 
         CommandId = commandId;
         CorrelationId = correlationId;
         RequestedAtUtc = ArchiveContractGuards.Utc(requestedAtUtc);
-        CompletedAtUtc = ArchiveContractGuards.Utc(completedAtUtc);
         SessionId = sessionId;
         UserId = userId;
         Username = username;
@@ -77,11 +46,7 @@ public sealed record EquipmentCommandAuditRecord
             requestedValueCanonical,
             nameof(requestedValueCanonical));
         WriteMode = writeMode;
-        Result = result;
-        ErrorCode = errorCode;
-        ErrorMessage = errorMessage;
-        ConfirmationStatus = confirmationStatus;
-        ConfirmedAtUtc = ArchiveContractGuards.Utc(confirmedAtUtc);
+        IsEmergency = isEmergency;
         SchemaVersion = schemaVersion;
     }
 
@@ -90,8 +55,6 @@ public sealed record EquipmentCommandAuditRecord
     public Guid CorrelationId { get; }
 
     public DateTimeOffset RequestedAtUtc { get; }
-
-    public DateTimeOffset? CompletedAtUtc { get; }
 
     public string? SessionId { get; }
 
@@ -109,15 +72,7 @@ public sealed record EquipmentCommandAuditRecord
 
     public ModbusWriteMode? WriteMode { get; }
 
-    public EquipmentCommandAuditResult Result { get; }
-
-    public string? ErrorCode { get; }
-
-    public string? ErrorMessage { get; }
-
-    public CommandConfirmationStatus ConfirmationStatus { get; }
-
-    public DateTimeOffset? ConfirmedAtUtc { get; }
+    public bool IsEmergency { get; }
 
     public int SchemaVersion { get; }
 }

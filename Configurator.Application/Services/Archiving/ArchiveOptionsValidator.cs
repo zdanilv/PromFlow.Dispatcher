@@ -21,6 +21,7 @@ public sealed class ArchiveOptionsValidator
         ValidateCapacity(options, errors);
         ValidateRetention(options, errors);
         ValidatePartitionMode(options, errors);
+        ValidateCommandAudit(options, errors);
         ValidatePath(options.BaseDirectory, nameof(options.BaseDirectory), errors);
         ValidatePath(options.ExportDirectory, nameof(options.ExportDirectory), errors);
 
@@ -113,6 +114,42 @@ public sealed class ArchiveOptionsValidator
                 "ArchivePartitionModeUnsupported",
                 $"Archive partition mode '{options.PartitionMode}' is unsupported.",
                 nameof(options.PartitionMode)));
+        }
+    }
+
+    private static void ValidateCommandAudit(ArchiveOptions options, List<ArchiveValidationError> errors)
+    {
+        if (!Enum.IsDefined(options.CommandAuditFailureMode))
+        {
+            errors.Add(new ArchiveValidationError(
+                "ArchiveCommandAuditFailureModeUnsupported",
+                $"Command audit failure mode '{options.CommandAuditFailureMode}' is unsupported.",
+                nameof(options.CommandAuditFailureMode)));
+        }
+
+        if (options.CommandAuditEnqueueTimeoutMs <= 0)
+        {
+            errors.Add(new ArchiveValidationError(
+                "ArchiveIntervalInvalid",
+                "Command audit enqueue timeout must be greater than zero.",
+                nameof(options.CommandAuditEnqueueTimeoutMs)));
+        }
+
+        if (options.EmergencySignalIds is null || options.EmergencySignalIds.Count == 0)
+        {
+            errors.Add(new ArchiveValidationError(
+                "ArchiveEmergencySignalIdsRequired",
+                "At least one emergency SignalId must be configured.",
+                nameof(options.EmergencySignalIds)));
+            return;
+        }
+
+        if (options.EmergencySignalIds.Any(string.IsNullOrWhiteSpace))
+        {
+            errors.Add(new ArchiveValidationError(
+                "ArchiveEmergencySignalIdsInvalid",
+                "Emergency SignalIds must not be empty.",
+                nameof(options.EmergencySignalIds)));
         }
     }
 

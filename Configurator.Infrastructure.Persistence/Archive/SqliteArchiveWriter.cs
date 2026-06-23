@@ -157,9 +157,39 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
                     continue;
                 }
 
+                if (envelope.Kind == ArchiveRecordKind.EquipmentCommandAudit)
+                {
+                    if (envelope.Record is not EquipmentCommandAuditRecord record)
+                    {
+                        return ArchiveOperationResult<IReadOnlyList<ArchiveWriteItem>>.Failure(
+                            ArchivePersistenceErrorCodes.ArchiveRecordTypeMismatch,
+                            "Archive envelope record type does not match equipment command audit kind.",
+                            envelope.Record.GetType().FullName);
+                    }
+
+                    var partition = _partitionResolver.GetWritablePartition(options, record.RequestedAtUtc);
+                    items.Add(ArchiveWriteItem.ForCommand(record, partition));
+                    continue;
+                }
+
+                if (envelope.Kind == ArchiveRecordKind.PhysicalModbusWriteAudit)
+                {
+                    if (envelope.Record is not PhysicalModbusWriteAuditRecord record)
+                    {
+                        return ArchiveOperationResult<IReadOnlyList<ArchiveWriteItem>>.Failure(
+                            ArchivePersistenceErrorCodes.ArchiveRecordTypeMismatch,
+                            "Archive envelope record type does not match physical Modbus write audit kind.",
+                            envelope.Record.GetType().FullName);
+                    }
+
+                    var partition = _partitionResolver.GetWritablePartition(options, record.AttemptedAtUtc);
+                    items.Add(ArchiveWriteItem.ForPhysicalWrite(record, partition));
+                    continue;
+                }
+
                 return ArchiveOperationResult<IReadOnlyList<ArchiveWriteItem>>.Failure(
                     ArchivePersistenceErrorCodes.ArchiveRecordKindUnsupported,
-                    "Archive writer supports only raw Modbus snapshot and Modbus status records.",
+                    "Archive writer does not support the supplied archive record kind.",
                     envelope.Kind.ToString());
             }
 
@@ -252,6 +282,14 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
                 {
                     await InsertStatusAsync(connection, transaction, item.StatusRecord, cancellationToken).ConfigureAwait(false);
                 }
+                else if (item.CommandRecord is not null)
+                {
+                    await UpsertCommandAsync(connection, transaction, item.CommandRecord, cancellationToken).ConfigureAwait(false);
+                }
+                else if (item.PhysicalWriteRecord is not null)
+                {
+                    await InsertPhysicalWriteAsync(connection, transaction, item.PhysicalWriteRecord, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             transaction.Commit();
@@ -299,6 +337,111 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
         insert.Parameters.AddWithValue("@coilsBlob", item.CoilsBlob ?? Array.Empty<byte>());
         insert.Parameters.AddWithValue("@holdingRegistersBlob", item.HoldingRegistersBlob ?? Array.Empty<byte>());
         insert.Parameters.AddWithValue("@configurationHash", record.ConfigurationHash);
+        insert.Parameters.AddWithValue("@archiveSchemaVersion", record.SchemaVersion);
+        insert.Parameters.AddWithValue("@createdAtUtcMs", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+        await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task UpsertCommandAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        EquipmentCommandAuditRecord record,
+        CancellationToken cancellationToken)
+    {
+        await using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO equipment_command
+            (command_id, correlation_id, requested_at_utc_ms, completed_at_utc_ms,
+             session_id, user_id, username, device_id, signal_id, value_type,
+             requested_value_canonical, write_mode, result, error_code, error_message,
+             confirmation_status, confirmed_at_utc_ms, archive_schema_version,
+             created_at_utc_ms, updated_at_utc_ms)
+            VALUES
+            (@commandId, @correlationId, @requestedAtUtcMs, @completedAtUtcMs,
+             @sessionId, @userId, @username, @deviceId, @signalId, @valueType,
+             @requestedValueCanonical, @writeMode, @result, @errorCode, @errorMessage,
+             @confirmationStatus, @confirmedAtUtcMs, @archiveSchemaVersion,
+             @createdAtUtcMs, @updatedAtUtcMs)
+            ON CONFLICT(command_id) DO UPDATE SET
+                correlation_id = excluded.correlation_id,
+                requested_at_utc_ms = excluded.requested_at_utc_ms,
+                completed_at_utc_ms = excluded.completed_at_utc_ms,
+                session_id = excluded.session_id,
+                user_id = excluded.user_id,
+                username = excluded.username,
+                device_id = excluded.device_id,
+                signal_id = excluded.signal_id,
+                value_type = excluded.value_type,
+                requested_value_canonical = excluded.requested_value_canonical,
+                write_mode = excluded.write_mode,
+                result = excluded.result,
+                error_code = excluded.error_code,
+                error_message = excluded.error_message,
+                confirmation_status = excluded.confirmation_status,
+                confirmed_at_utc_ms = excluded.confirmed_at_utc_ms,
+                archive_schema_version = excluded.archive_schema_version,
+                updated_at_utc_ms = excluded.updated_at_utc_ms;
+            """;
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        insert.Parameters.AddWithValue("@commandId", record.CommandId.ToString("D"));
+        insert.Parameters.AddWithValue("@correlationId", record.CorrelationId.ToString("D"));
+        insert.Parameters.AddWithValue("@requestedAtUtcMs", record.RequestedAtUtc.ToUnixTimeMilliseconds());
+        insert.Parameters.AddWithValue("@completedAtUtcMs", DbValue(record.CompletedAtUtc?.ToUnixTimeMilliseconds()));
+        insert.Parameters.AddWithValue("@sessionId", DbValue(record.SessionId));
+        insert.Parameters.AddWithValue("@userId", DbValue(record.UserId));
+        insert.Parameters.AddWithValue("@username", DbValue(record.Username));
+        insert.Parameters.AddWithValue("@deviceId", record.DeviceId);
+        insert.Parameters.AddWithValue("@signalId", record.SignalId);
+        insert.Parameters.AddWithValue("@valueType", (int)record.ValueType);
+        insert.Parameters.AddWithValue("@requestedValueCanonical", record.RequestedValueCanonical);
+        insert.Parameters.AddWithValue(
+            "@writeMode",
+            DbValue(record.WriteMode.HasValue ? (int?)record.WriteMode.Value : null));
+        var commandOutcome = record switch { { Result: var value } => value };
+        insert.Parameters.AddWithValue("@result", (int)commandOutcome);
+        insert.Parameters.AddWithValue("@errorCode", DbValue(record.ErrorCode));
+        insert.Parameters.AddWithValue("@errorMessage", DbValue(record.ErrorMessage));
+        insert.Parameters.AddWithValue("@confirmationStatus", (int)record.ConfirmationStatus);
+        insert.Parameters.AddWithValue("@confirmedAtUtcMs", DbValue(record.ConfirmedAtUtc?.ToUnixTimeMilliseconds()));
+        insert.Parameters.AddWithValue("@archiveSchemaVersion", record.SchemaVersion);
+        insert.Parameters.AddWithValue("@createdAtUtcMs", now);
+        insert.Parameters.AddWithValue("@updatedAtUtcMs", now);
+
+        await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task InsertPhysicalWriteAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        PhysicalModbusWriteAuditRecord record,
+        CancellationToken cancellationToken)
+    {
+        await using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO modbus_write
+            (write_id, command_id, attempted_at_utc_ms, completed_at_utc_ms,
+             runtime_role, area, address, quantity, payload_blob, succeeded,
+             error_code, error_message, archive_schema_version, created_at_utc_ms)
+            VALUES
+            (@writeId, @commandId, @attemptedAtUtcMs, @completedAtUtcMs,
+             @runtimeRole, @area, @address, @quantity, @payloadBlob, @succeeded,
+             @errorCode, @errorMessage, @archiveSchemaVersion, @createdAtUtcMs);
+            """;
+        insert.Parameters.AddWithValue("@writeId", record.WriteId.ToString("D"));
+        insert.Parameters.AddWithValue("@commandId", DbValue(record.CommandId?.ToString("D")));
+        insert.Parameters.AddWithValue("@attemptedAtUtcMs", record.AttemptedAtUtc.ToUnixTimeMilliseconds());
+        insert.Parameters.AddWithValue("@completedAtUtcMs", DbValue(record.CompletedAtUtc?.ToUnixTimeMilliseconds()));
+        insert.Parameters.AddWithValue("@runtimeRole", (int)record.Role);
+        insert.Parameters.AddWithValue("@area", (int)record.Area);
+        insert.Parameters.AddWithValue("@address", record.Address);
+        insert.Parameters.AddWithValue("@quantity", record.Quantity);
+        insert.Parameters.AddWithValue("@payloadBlob", record.PayloadBlob.ToArray());
+        insert.Parameters.AddWithValue("@succeeded", record.Succeeded ? 1 : 0);
+        insert.Parameters.AddWithValue("@errorCode", DbValue(record.ErrorCode));
+        insert.Parameters.AddWithValue("@errorMessage", DbValue(record.ErrorMessage));
         insert.Parameters.AddWithValue("@archiveSchemaVersion", record.SchemaVersion);
         insert.Parameters.AddWithValue("@createdAtUtcMs", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
 
@@ -374,9 +517,14 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
             lastError = record.LastError
         });
 
+    private static object DbValue<T>(T? value)
+        => value is null ? DBNull.Value : value;
+
     private sealed record ArchiveWriteItem(
         RawModbusSnapshotArchiveRecord? SnapshotRecord,
         ModbusStatusArchiveRecord? StatusRecord,
+        EquipmentCommandAuditRecord? CommandRecord,
+        PhysicalModbusWriteAuditRecord? PhysicalWriteRecord,
         ArchivePartitionInfo Partition,
         byte[]? CoilsBlob,
         byte[]? HoldingRegistersBlob)
@@ -386,11 +534,21 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
             ArchivePartitionInfo partition,
             byte[] coilsBlob,
             byte[] holdingRegistersBlob)
-            => new(record, null, partition, coilsBlob, holdingRegistersBlob);
+            => new(record, null, null, null, partition, coilsBlob, holdingRegistersBlob);
 
         public static ArchiveWriteItem ForStatus(
             ModbusStatusArchiveRecord record,
             ArchivePartitionInfo partition)
-            => new(null, record, partition, null, null);
+            => new(null, record, null, null, partition, null, null);
+
+        public static ArchiveWriteItem ForCommand(
+            EquipmentCommandAuditRecord record,
+            ArchivePartitionInfo partition)
+            => new(null, null, record, null, partition, null, null);
+
+        public static ArchiveWriteItem ForPhysicalWrite(
+            PhysicalModbusWriteAuditRecord record,
+            ArchivePartitionInfo partition)
+            => new(null, null, null, record, partition, null, null);
     }
 }

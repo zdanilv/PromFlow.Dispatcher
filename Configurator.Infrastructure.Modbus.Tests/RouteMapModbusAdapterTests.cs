@@ -1,8 +1,10 @@
+using Configurator.Application.Services.Archiving;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Signals;
+using Configurator.Infrastructure.Modbus.Archiving;
 using Configurator.Infrastructure.Modbus.RouteMap;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -17,7 +19,7 @@ public sealed class RouteMapModbusAdapterTests
     {
         var service = new FakeModbusService();
         var options = CreateOptions(CreatePoint("command", ModbusWriteMode.Latched));
-        var dispatcher = new ModbusTcpCommandDispatcher(service, new TestOptionsMonitor(options));
+        var dispatcher = CreateDispatcher(service, options);
 
         await dispatcher.DispatchAsync(new SignalWriteRequest("command", true, SignalValueType.Bool));
 
@@ -30,13 +32,33 @@ public sealed class RouteMapModbusAdapterTests
         var service = new FakeModbusService();
         var point = CreatePoint("pulse", ModbusWriteMode.Pulse);
         point.PulseDurationMs = 1;
-        var dispatcher = new ModbusTcpCommandDispatcher(
-            service,
-            new TestOptionsMonitor(CreateOptions(point)));
+        var dispatcher = CreateDispatcher(service, CreateOptions(point));
 
         await dispatcher.DispatchAsync(new SignalWriteRequest("pulse", true, SignalValueType.Bool));
 
         Assert.Equal([("pulse", true), ("pulse", false)], service.Writes);
+    }
+
+    [Fact]
+    public async Task Dispatcher_PulseCommand_UsesSingleCommandIdForSetAndReset()
+    {
+        var service = new FakeModbusService();
+        var audit = new FakeCommandAuditService();
+        var point = CreatePoint("pulse", ModbusWriteMode.Pulse);
+        point.PulseDurationMs = 1;
+        var dispatcher = CreateDispatcher(service, CreateOptions(point), audit);
+
+        await dispatcher.DispatchAsync(new SignalWriteRequest("pulse", true, SignalValueType.Bool));
+
+        Assert.Equal(2, service.CommandIds.Count);
+        Assert.NotNull(service.CommandIds[0]);
+        Assert.Equal(service.CommandIds[0], service.CommandIds[1]);
+        Assert.Contains(audit.Commands, record =>
+            record.CommandId == service.CommandIds[0]
+            && record.Result == EquipmentCommandAuditResult.Requested);
+        Assert.Contains(audit.Commands, record =>
+            record.CommandId == service.CommandIds[0]
+            && record.Result == EquipmentCommandAuditResult.Succeeded);
     }
 
     [Fact]
@@ -45,9 +67,7 @@ public sealed class RouteMapModbusAdapterTests
         var service = new FakeModbusService();
         var readOnly = CreatePoint("readonly", ModbusWriteMode.Latched);
         readOnly.Access = ModbusDataAccess.Read;
-        var dispatcher = new ModbusTcpCommandDispatcher(
-            service,
-            new TestOptionsMonitor(CreateOptions(readOnly)));
+        var dispatcher = CreateDispatcher(service, CreateOptions(readOnly));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             dispatcher.DispatchAsync(new SignalWriteRequest("missing", true, SignalValueType.Bool)));
@@ -124,6 +144,21 @@ public sealed class RouteMapModbusAdapterTests
     private static ModbusOptions CreateOptions(params ModbusDataPointOptions[] points)
         => new() { DataMap = points.ToList() };
 
+    private static ModbusTcpCommandDispatcher CreateDispatcher(
+        FakeModbusService service,
+        ModbusOptions options,
+        FakeCommandAuditService? auditService = null)
+    {
+        auditService ??= new FakeCommandAuditService();
+        return new ModbusTcpCommandDispatcher(
+            service,
+            new TestOptionsMonitor(options),
+            new CommandAuditRecorder(
+                auditService,
+                new TestArchiveOptionsMonitor(new ArchiveOptions()),
+                NullLogger<CommandAuditRecorder>.Instance));
+    }
+
     private static ModbusServiceState RunningState()
         => new(
             ModbusRunMode.Client,
@@ -139,6 +174,13 @@ public sealed class RouteMapModbusAdapterTests
         public ModbusOptions CurrentValue { get; } = value;
         public ModbusOptions Get(string? name) => CurrentValue;
         public IDisposable? OnChange(Action<ModbusOptions, string?> listener) => null;
+    }
+
+    private sealed class TestArchiveOptionsMonitor(ArchiveOptions value) : IOptionsMonitor<ArchiveOptions>
+    {
+        public ArchiveOptions CurrentValue { get; } = value;
+        public ArchiveOptions Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<ArchiveOptions, string?> listener) => null;
     }
 
     private sealed class FakeSnapshotSource : IModbusDataSnapshotSource
@@ -161,6 +203,7 @@ public sealed class RouteMapModbusAdapterTests
         }
 
         public List<(string SignalId, bool Value)> Writes { get; } = [];
+        public List<Guid?> CommandIds { get; } = [];
         public ModbusServiceState State { get; private set; }
         public event EventHandler<ModbusServiceState>? StateChanged;
 
@@ -183,8 +226,16 @@ public sealed class RouteMapModbusAdapterTests
             => Task.FromResult(ModbusOperationResult<T>.Failure("Unavailable", "Unavailable"));
 
         public Task<ModbusOperationResult> SetAsync<T>(string name, T value, CancellationToken ct = default)
+            => SetAsync(name, value, context: null, ct);
+
+        public Task<ModbusOperationResult> SetAsync<T>(
+            string name,
+            T value,
+            CommandExecutionContext? context,
+            CancellationToken ct = default)
         {
             Writes.Add((name, Convert.ToBoolean(value)));
+            CommandIds.Add(context?.CommandId);
             return Task.FromResult(ModbusOperationResult.Success());
         }
 
@@ -207,5 +258,23 @@ public sealed class RouteMapModbusAdapterTests
     private sealed class NoopDisposable : IDisposable
     {
         public void Dispose() { }
+    }
+
+    private sealed class FakeCommandAuditService : ICommandAuditService
+    {
+        public List<EquipmentCommandAuditRecord> Commands { get; } = [];
+
+        public Task<ArchiveOperationResult> RecordCommandAsync(
+            EquipmentCommandAuditRecord record,
+            CancellationToken cancellationToken = default)
+        {
+            Commands.Add(record);
+            return Task.FromResult(ArchiveOperationResult.Success());
+        }
+
+        public Task<ArchiveOperationResult> RecordPhysicalWriteAsync(
+            PhysicalModbusWriteAuditRecord record,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(ArchiveOperationResult.Success());
     }
 }

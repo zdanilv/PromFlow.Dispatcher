@@ -18,7 +18,7 @@
 - [x] Stage 3 — Snapshot binary codec and partitioning
 - [x] Stage 4 — Buffered archive writer
 - [x] Stage 5 — Modbus archive collector
-- [ ] Stage 6 — Command and physical write audit
+- [x] Stage 6 — Command and physical write audit
 - [ ] Stage 7 — Query, export, retention and backup
 - [ ] Stage 8 — Authentication/application foundation
 - [ ] Stage 9 — Login, RBAC and workspace enforcement
@@ -30,9 +30,9 @@
 
 ## Current stage
 
-- Stage: `5`
+- Stage: `6`
 - Branch: `6-add-archive`
-- Goal: `Archive raw Modbus runtime snapshots and meaningful status transitions without UI, SQL or blocking work in callbacks`
+- Goal: `Persist semantic RouteMap command audit and physical Modbus write audit`
 - Status: `Completed`
 
 ## Current findings
@@ -100,6 +100,16 @@
 - `Configurator.Infrastructure.Modbus` still has no Persistence/Desktop/Avalonia/ReactiveUI dependency and does not execute SQL.
 - `SqliteArchiveWriter` now also persists `ModbusStatusArchiveRecord` into existing `runtime_event` rows with parameterized SQL; no migration or schema change was added.
 - Added Stage 5 tests for fingerprint stability/order sensitivity, snapshot conversion, defensive copies, role start addresses, sequence, long-term sampling, status suppression, unsubscribe/idempotency, non-blocking enqueue observation, DI registration and status runtime-event persistence.
+- Stage 6 added application command-audit failure options, `CommandExecutionContext`, and a no-op `ICommandAuditService` fallback.
+- `EquipmentCommandAuditRecord.WriteMode` is now nullable so missing-signal/type validation failures can be audited without inventing a physical write mode.
+- `IModbusTcpService.SetAsync` now has an explicit `CommandExecutionContext?` overload; the existing overload delegates with `context: null`.
+- `Configurator.Infrastructure.Persistence` now registers `CommandAuditService` and persists `EquipmentCommandAuditRecord`/`PhysicalModbusWriteAuditRecord` through `SqliteArchiveWriter`.
+- Added embedded migration `002_command_write_audit.sql` for `equipment_command` and `modbus_write`, with command/search indexes and physical-write FK to command rows.
+- `ModbusTcpCommandDispatcher` records requested and terminal semantic audit for validation failures, ordinary writes, pulse set/reset and cancellation. Pulse uses one `CommandId` for both physical writes.
+- `ModbusTcpService` records each physical coil/register/register-array write after the low-level write attempt, including runtime role, configured physical start address, quantity, payload bytes and success/failure.
+- Command audit failure policy defaults to fail-open; fail-closed blocks only ordinary commands before the first Modbus write. Emergency SignalIds remain fail-open.
+- Added ADR-004 for command audit failure policy.
+- `Configurator.Infrastructure.Modbus` still has no Persistence/Desktop/Avalonia/ReactiveUI/SQLite dependency and does not execute SQL.
 
 ## Commands last executed
 
@@ -127,6 +137,16 @@ dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrast
 rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Infrastructure.Modbus\Archiving .\Configurator.Infrastructure.Modbus.Tests\Archiving .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence.Tests\Archive
 rg -n "Avalonia|ReactiveUI|Configurator\.Desktop|ViewModel|Configurator\.Infrastructure\.Persistence|Microsoft\.Data\.Sqlite|Sqlite|ExecuteNonQuery|ExecuteReader|Dispatcher" .\Configurator.Infrastructure.Modbus\Archiving
 rg -n "\.Wait\(|\.Result|Thread\.Sleep|Task\.Delay\(" .\Configurator.Infrastructure.Modbus\Archiving
+dotnet build .\Configurator.Infrastructure.Modbus\Configurator.Infrastructure.Modbus.csproj --no-restore
+dotnet build .\Configurator.Infrastructure.Persistence\Configurator.Infrastructure.Persistence.csproj --no-restore
+dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~Archiving"
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~RouteMap" -p:RouteMapOnly=true
+rg -n "Microsoft\.Data\.Sqlite|Configurator\.Infrastructure\.Persistence|Avalonia|ReactiveUI|Configurator\.Desktop|ExecuteNonQuery|ExecuteReader" .\Configurator.Infrastructure.Modbus\Archiving .\Configurator.Infrastructure.Modbus\RouteMap .\Configurator.Infrastructure.Modbus\Runtime
+rg -n "\.Wait\(|\.Result|Thread\.Sleep" .\Configurator.Infrastructure.Modbus\Archiving .\Configurator.Infrastructure.Modbus\RouteMap .\Configurator.Infrastructure.Modbus\Runtime
+rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Application\Services\Archiving .\Configurator.Infrastructure.Modbus\Archiving .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence\Migrations
+rg -n "\.Result|\.Wait\(|Thread\.Sleep" .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence\Migrations
 ```
 
 ## Test results
@@ -134,15 +154,15 @@ rg -n "\.Wait\(|\.Result|Thread\.Sleep|Task\.Delay\(" .\Configurator.Infrastruct
 - Restore: `Passed; all projects up-to-date`
 - Application build: `Passed; 0 warnings, 0 errors`
 - Persistence build: `Passed; 1 NU1903 warning from transitive SQLitePCLRaw.lib.e_sqlite3`
-- Build: `Passed; 2 warnings, 0 errors in the final Stage 5 run`
+- Build: `Passed; 2 NU1903 warnings, 0 errors in the final Stage 6 run`
 - Archiving unit tests: `Passed; 20 passed, 0 failed, 0 skipped`
 - Modbus archive-focused tests: `Passed; 20 passed, 0 failed, 0 skipped`
 - Archive-focused Persistence writer tests: `Passed; 5 passed, 0 failed, 0 skipped`
 - Archive-focused Persistence tests: `Passed; 44 passed, 0 failed, 0 skipped`
 - Persistence tests: `Passed; 59 passed, 0 failed, 0 skipped`
-- Full tests: `Passed; 382 passed, 0 failed, 0 skipped`
-- Unit tests: `Passed; Configurator.Tests.Unit, 156 passed`
-- Modbus tests: `Passed; Configurator.Infrastructure.Modbus.Tests, 105 passed`
+- Full tests: `Passed; 397 passed, 0 failed, 0 skipped`
+- Unit tests: `Passed; Configurator.Tests.Unit, 161 passed`
+- Modbus tests: `Passed; Configurator.Infrastructure.Modbus.Tests, 111 passed`
 - OPC UA tests: `Passed as part of full solution test; Configurator.Infrastructure.OpcUa.Tests, 35 passed`
 - RouteMap UI tests: `Passed as part of full solution test; Configurator.Tests.RouteMap.Ui, 27 passed`
 - Sensitive-material scan over new Archiving source and test files: `Passed`
@@ -152,6 +172,11 @@ rg -n "\.Wait\(|\.Result|Thread\.Sleep|Task\.Delay\(" .\Configurator.Infrastruct
 - Sensitive-material scan over Modbus archiving, Modbus archiving tests, Persistence archive and Persistence archive tests: `Passed`
 - Forbidden-dependency scan over Modbus archiving source files: `Passed`
 - Blocking-call scan over Modbus archiving source files: `Passed`
+- Application Archiving unit tests after Stage 6: `Passed; 25 passed, 0 failed, 0 skipped`
+- Persistence tests after Stage 6 migration/storage: `Passed; 63 passed, 0 failed, 0 skipped`
+- Modbus tests after Stage 6 command/physical audit: `Passed; 111 passed, 0 failed, 0 skipped`
+- RouteMap unit filter after Stage 6 dispatcher changes: `Passed; 136 passed, 0 failed, 0 skipped`
+- Stage 6 forbidden dependency, sensitive-material and blocking-call scans: `Passed`
 
 ## Known limitations
 
@@ -170,7 +195,11 @@ rg -n "\.Wait\(|\.Result|Thread\.Sleep|Task\.Delay\(" .\Configurator.Infrastruct
 - Stage 5 writer persists `RawModbusSnapshotArchiveRecord` and `ModbusStatusArchiveRecord`; command/security audit persistence remains for later stages.
 - NuGet restore/build reports NU1903 for transitive `SQLitePCLRaw.lib.e_sqlite3` `2.1.11` through the plan-pinned `Microsoft.Data.Sqlite` `10.0.9`.
 - One full-suite run had a transient failure in existing `ModbusDemoViewModelTests.StopCommandCancelsActiveLifecycleWithoutModalError`; the targeted rerun and the final full rerun passed.
+- Stage 6 did not wire or start `IArchiveRuntime`/`IModbusArchiveCollector` from Boot/Desktop; centralized lifecycle remains Stage 13.
+- Stage 6 did not implement query execution, export, retention, backup, Archive UI, authentication, RBAC, licensing or security audit persistence.
+- Stage 6 leaves `SessionId`, `UserId` and `Username` nullable until real auth stages.
+- Physical write audit is attached only to writes that pass through `IModbusTcpService.SetAsync` with a non-null `CommandExecutionContext`; direct low-level client/server writes remain out of scope.
 
 ## Next action
 
-Stop here until Stage 6 is explicitly requested.
+Stop here until Stage 7 is explicitly requested.

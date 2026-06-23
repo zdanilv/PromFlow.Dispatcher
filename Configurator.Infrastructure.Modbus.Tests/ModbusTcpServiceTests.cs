@@ -1,9 +1,12 @@
+using Configurator.Application.Services.Archiving;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Application.Services.Signals;
+using Configurator.Infrastructure.Modbus.Archiving;
 using Configurator.Infrastructure.Modbus.Client;
 using Configurator.Infrastructure.Modbus.Runtime;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -86,6 +89,42 @@ public sealed class ModbusTcpServiceTests
         Assert.Equal((1, (ushort)11), client.RegisterWrites[0]);
         Assert.Empty(server.CoilWrites);
         Assert.Empty(server.RegisterWrites);
+    }
+
+    [Fact]
+    public async Task SetAsync_WithCommandContext_AuditsPhysicalClientPayloads()
+    {
+        var options = CreateOptions();
+        options.WriteConfirmationTimeoutMs = 0;
+        options.Client.CoilStartAddress = 100;
+        options.Client.HoldingRegisterStartAddress = 400;
+        var runtime = new FakeRuntimeService();
+        var client = new NoopClientService();
+        var audit = new RecordingCommandAuditService();
+        await using var service = CreateService(runtime, client, new NoopServerService(), options, audit);
+        var context = CreateCommandContext("DemoButton", SignalValueType.Bool, "true", ModbusWriteMode.Latched);
+        runtime.PublishRunningRoles();
+
+        var coilResult = await service.SetAsync("DemoButton", true, context);
+        var registerResult = await service.SetAsync("DemoInput", (ushort)0x1234, context);
+
+        Assert.True(coilResult.Succeeded, coilResult.ErrorMessage);
+        Assert.True(registerResult.Succeeded, registerResult.ErrorMessage);
+        Assert.Equal(2, audit.PhysicalWrites.Count);
+        Assert.Equal((0, true), Assert.Single(client.CoilWrites));
+        Assert.Equal(context.CommandId, audit.PhysicalWrites[0].CommandId);
+        Assert.Equal(ModbusRuntimeRole.Client, audit.PhysicalWrites[0].Role);
+        Assert.Equal(ModbusDataArea.Coil, audit.PhysicalWrites[0].Area);
+        Assert.Equal(100, audit.PhysicalWrites[0].Address);
+        Assert.Equal(1, audit.PhysicalWrites[0].Quantity);
+        Assert.Equal([0x01], audit.PhysicalWrites[0].PayloadBlob);
+        Assert.True(audit.PhysicalWrites[0].Succeeded);
+        Assert.Equal(ModbusRuntimeRole.Client, audit.PhysicalWrites[1].Role);
+        Assert.Equal(ModbusDataArea.HoldingRegister, audit.PhysicalWrites[1].Area);
+        Assert.Equal(401, audit.PhysicalWrites[1].Address);
+        Assert.Equal(1, audit.PhysicalWrites[1].Quantity);
+        Assert.Equal([0x12, 0x34], audit.PhysicalWrites[1].PayloadBlob);
+        Assert.True(audit.PhysicalWrites[1].Succeeded);
     }
 
     [Fact]
@@ -298,14 +337,43 @@ public sealed class ModbusTcpServiceTests
         IModbusRuntimeService runtime,
         IModbusClientService client,
         IModbusServerService server,
-        ModbusOptions options)
+        ModbusOptions options,
+        ICommandAuditService? commandAuditService = null)
         => new(
             runtime,
             client,
             server,
             new TestOptionsMonitor(options),
             new ModbusDataMapValidator(),
+            CreatePhysicalWriteAuditSink(commandAuditService),
             NullLogger<ModbusTcpService>.Instance);
+
+    private static ModbusPhysicalWriteAuditSink CreatePhysicalWriteAuditSink(
+        ICommandAuditService? commandAuditService = null)
+        => new(
+            commandAuditService ?? new NoopCommandAuditService(),
+            new TestArchiveOptionsMonitor(new ArchiveOptions()),
+            NullLogger<ModbusPhysicalWriteAuditSink>.Instance);
+
+    private static CommandExecutionContext CreateCommandContext(
+        string signalId,
+        SignalValueType valueType,
+        string requestedValueCanonical,
+        ModbusWriteMode writeMode)
+        => new(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            DateTimeOffset.UtcNow,
+            sessionId: null,
+            userId: null,
+            username: null,
+            "device-1",
+            signalId,
+            valueType,
+            requestedValueCanonical,
+            writeMode,
+            isEmergency: false,
+            schemaVersion: 1);
 
     private static ModbusOptions CreateOptions(int? port = null)
     {
@@ -402,6 +470,35 @@ public sealed class ModbusTcpServiceTests
 
         public IDisposable? OnChange(Action<ModbusOptions, string?> listener)
             => null;
+    }
+
+    private sealed class TestArchiveOptionsMonitor(ArchiveOptions currentValue) : IOptionsMonitor<ArchiveOptions>
+    {
+        public ArchiveOptions CurrentValue { get; } = currentValue;
+
+        public ArchiveOptions Get(string? name)
+            => CurrentValue;
+
+        public IDisposable? OnChange(Action<ArchiveOptions, string?> listener)
+            => null;
+    }
+
+    private sealed class RecordingCommandAuditService : ICommandAuditService
+    {
+        public List<PhysicalModbusWriteAuditRecord> PhysicalWrites { get; } = [];
+
+        public Task<ArchiveOperationResult> RecordCommandAsync(
+            EquipmentCommandAuditRecord record,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(ArchiveOperationResult.Success());
+
+        public Task<ArchiveOperationResult> RecordPhysicalWriteAsync(
+            PhysicalModbusWriteAuditRecord record,
+            CancellationToken cancellationToken = default)
+        {
+            PhysicalWrites.Add(record);
+            return Task.FromResult(ArchiveOperationResult.Success());
+        }
     }
 
     private sealed class FakeRuntimeService : IModbusRuntimeService

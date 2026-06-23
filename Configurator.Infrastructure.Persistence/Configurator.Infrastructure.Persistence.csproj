@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Migrations\001_archive_foundation.sql" />
+    <EmbeddedResource Include="Migrations\002_command_write_audit.sql" />
   </ItemGroup>
 
 </Project>

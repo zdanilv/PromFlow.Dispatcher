@@ -1,3 +1,4 @@
+using Configurator.Application.Services.Archiving;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -11,6 +12,7 @@ using Configurator.Infrastructure.Modbus.Configuration;
 using Configurator.Infrastructure.Modbus.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -34,8 +36,11 @@ public static class DependencyInjection
             ModbusOptions.DemoSectionName,
             configuration.GetSection(ModbusOptions.DemoSectionName));
 
+        services.TryAddSingleton<ICommandAuditService, NoopCommandAuditService>();
         services.AddSingleton<IModbusClientService, ModbusClientService>();
         services.AddSingleton<IModbusServerService, ModbusServerService>();
+        services.AddSingleton<CommandAuditRecorder>();
+        services.AddSingleton<ModbusPhysicalWriteAuditSink>();
         services.AddSingleton(CreateSharedRuntimeService);
         services.AddSingleton(CreateRouteMapTcpService);
         services.AddSingleton<IModbusDataMapRuntime>(sp =>
@@ -79,6 +84,7 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<IModbusServerService>(),
             optionsMonitor,
             serviceProvider.GetRequiredService<IModbusDataMapValidator>(),
+            serviceProvider.GetRequiredService<ModbusPhysicalWriteAuditSink>(),
             loggerFactory.CreateLogger<ModbusTcpService>());
     }
 
@@ -95,6 +101,7 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<IModbusServerService>(),
             optionsMonitor,
             serviceProvider.GetRequiredService<IModbusDataMapValidator>(),
+            serviceProvider.GetRequiredService<ModbusPhysicalWriteAuditSink>(),
             loggerFactory.CreateLogger<ModbusTcpService>());
 
         return new ModbusDemoTcpService(facade);

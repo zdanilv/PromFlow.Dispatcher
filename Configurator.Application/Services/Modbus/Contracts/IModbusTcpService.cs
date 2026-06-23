@@ -4,6 +4,7 @@ using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Application.Services.Archiving;
 
 namespace Configurator.Application.Services.Modbus.Contracts;
 
@@ -63,6 +64,13 @@ public interface IModbusTcpService : IAsyncDisposable
     Task<ModbusOperationResult> SetAsync<T>(
         string name,
         T value,
+        CancellationToken ct = default)
+        => SetAsync(name, value, context: null, ct);
+
+    Task<ModbusOperationResult> SetAsync<T>(
+        string name,
+        T value,
+        CommandExecutionContext? context,
         CancellationToken ct = default);
 
     /// <summary>

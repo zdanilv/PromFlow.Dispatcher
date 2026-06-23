@@ -31,6 +31,12 @@ public sealed class ArchiveOptions
 
     public string ExportDirectory { get; set; } = string.Empty;
 
+    public CommandAuditFailureMode CommandAuditFailureMode { get; set; } = CommandAuditFailureMode.FailOpen;
+
+    public int CommandAuditEnqueueTimeoutMs { get; set; } = 100;
+
+    public List<string> EmergencySignalIds { get; set; } = ["system.emergency"];
+
     public ArchiveOptions Clone()
         => new()
         {
@@ -45,6 +51,9 @@ public sealed class ArchiveOptions
             BatchFlushIntervalMs = BatchFlushIntervalMs,
             BusyTimeoutMs = BusyTimeoutMs,
             PartitionMode = PartitionMode,
-            ExportDirectory = ExportDirectory
+            ExportDirectory = ExportDirectory,
+            CommandAuditFailureMode = CommandAuditFailureMode,
+            CommandAuditEnqueueTimeoutMs = CommandAuditEnqueueTimeoutMs,
+            EmergencySignalIds = EmergencySignalIds.ToList()
         };
 }

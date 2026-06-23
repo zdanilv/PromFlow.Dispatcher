@@ -1,3 +1,4 @@
+using Configurator.Application.Services.Archiving;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -58,6 +59,13 @@ internal sealed class ModbusDemoTcpService(
     /// </summary>
     public Task<ModbusOperationResult> SetAsync<T>(string name, T value, CancellationToken ct = default)
         => facade.SetAsync(name, value, ct);
+
+    public Task<ModbusOperationResult> SetAsync<T>(
+        string name,
+        T value,
+        CommandExecutionContext? context,
+        CancellationToken ct = default)
+        => facade.SetAsync(name, value, context, ct);
 
     /// <summary>
     /// Подписывается на изменения demo-точки через общий Modbus TCP facade.

@@ -1,4 +1,5 @@
 using Configurator.Application.Services;
+using Configurator.Application.Services.Archiving;
 using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
@@ -710,6 +711,13 @@ public sealed class ModbusDemoViewModelTests
             => Task.FromResult(ModbusOperationResult<T>.Failure("NotImplemented", "Not implemented."));
 
         public async Task<ModbusOperationResult> SetAsync<T>(string name, T value, CancellationToken ct = default)
+            => await SetAsync(name, value, context: null, ct);
+
+        public async Task<ModbusOperationResult> SetAsync<T>(
+            string name,
+            T value,
+            CommandExecutionContext? context,
+            CancellationToken ct = default)
         {
             SetCalls.Add((name, Convert.ToUInt16(value)));
             SetCallStarted?.TrySetResult(SetCalls.Count);
