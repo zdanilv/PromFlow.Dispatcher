@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 
@@ -35,7 +36,7 @@ public sealed class AuthorizedAppConfigService : IAppConfigService
         if (ProtectedSections.Contains(sectionName))
         {
             var decision = _accessDecisionService.Authorize(
-                new AccessRequirement(Permission.ConfigureModbus));
+                new AccessRequirement(Permission.ConfigureModbus, LicenseFeature.EngineeringTools));
             if (!decision.Succeeded)
             {
                 throw new UnauthorizedAccessException("Configure Modbus permission is required.");

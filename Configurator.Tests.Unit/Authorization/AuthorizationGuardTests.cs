@@ -2,6 +2,7 @@ using Configurator.Application.Services;
 using Configurator.Application.Services.Archiving;
 using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Configuration;
+using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Runtime;
@@ -17,18 +18,20 @@ public sealed class AuthorizationGuardTests
     public async Task EquipmentCommand_DeniedAccessDoesNotInvokeActiveDispatcher()
     {
         var dispatcher = new RecordingCommandDispatcher();
+        var access = new FixedAccessDecisionService(allow: false, "NotAuthenticated");
         using var runtime = new RouteMapSignalRuntime(
             new EmptySignalProvider(),
             dispatcher,
             new EmptySignalProvider(),
             new RecordingCommandDispatcher(),
-            new FixedAccessDecisionService(allow: false, "NotAuthenticated"),
+            access,
             RouteMapSignalSource.Mock);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
             runtime.DispatchAsync(new SignalWriteRequest("system.emergency", true, SignalValueType.Bool)));
 
         Assert.Empty(dispatcher.Requests);
+        Assert.Equal(LicenseFeature.RemoteControl, access.Requirements.Single().RequiredLicenseFeature);
     }
 
     [Fact]
@@ -52,15 +55,17 @@ public sealed class AuthorizationGuardTests
     public void ModbusDataMap_DeniedAccessDoesNotInvokeInnerRuntime()
     {
         var inner = new RecordingDataMapRuntime();
+        var access = new FixedAccessDecisionService(allow: false, "PermissionDenied");
         var runtime = new AuthorizedModbusDataMapRuntime(
             inner,
-            new FixedAccessDecisionService(allow: false, "PermissionDenied"));
+            access);
 
         var result = runtime.ApplyDataMap([new ModbusDataPointOptions { Name = "signal" }]);
 
         Assert.False(result.Succeeded);
         Assert.Equal("PermissionDenied", result.ErrorCode);
         Assert.Equal(0, inner.ApplyCount);
+        Assert.Equal(LicenseFeature.EngineeringTools, access.Requirements.Single().RequiredLicenseFeature);
     }
 
     [Fact]
@@ -81,9 +86,10 @@ public sealed class AuthorizationGuardTests
     public async Task ArchiveMaintenance_DeniedAccessDoesNotInvokeInnerService()
     {
         var inner = new RecordingArchiveMaintenanceService();
+        var access = new FixedAccessDecisionService(allow: false, "NotAuthenticated");
         var service = new AuthorizedArchiveMaintenanceService(
             inner,
-            new FixedAccessDecisionService(allow: false, "NotAuthenticated"));
+            access);
 
         var retention = await service.ApplyRetentionAsync(DateTimeOffset.UtcNow);
         var export = await service.ExportAsync(new ArchiveExportRequest(new ArchiveQuery()));
@@ -95,6 +101,9 @@ public sealed class AuthorizationGuardTests
         Assert.Equal(0, inner.ApplyRetentionCount);
         Assert.Equal(0, inner.ExportCount);
         Assert.Equal(0, inner.BackupCount);
+        Assert.Equal(
+            [LicenseFeature.Archive, LicenseFeature.ArchiveExport, LicenseFeature.Archive],
+            access.Requirements.Select(requirement => requirement.RequiredLicenseFeature!).ToArray());
     }
 
     [Fact]
@@ -149,10 +158,15 @@ public sealed class AuthorizationGuardTests
             Enum.GetValues<Permission>(),
             DateTimeOffset.UtcNow);
 
-        public AccessDecision Authorize(AccessRequirement requirement) =>
-            allow
+        public List<AccessRequirement> Requirements { get; } = [];
+
+        public AccessDecision Authorize(AccessRequirement requirement)
+        {
+            Requirements.Add(requirement);
+            return allow
                 ? AccessDecision.Allow(requirement, Session)
                 : AccessDecision.Deny(requirement, reasonCode, Session);
+        }
 
         public Task<AccessDecision> AuthorizeAsync(
             AccessRequirement requirement,

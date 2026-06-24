@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Runtime;
@@ -99,6 +100,7 @@ public sealed class LoginFlowViewModelTests
     {
         private readonly TestSessionAccessor _sessionAccessor = new();
         private readonly FakeAuthenticationService _authenticationService;
+        private readonly FakeLicenseService _licenseService = new();
         private readonly FakeUserManagementService _userManagementService = new();
 
         public FlowServices()
@@ -117,6 +119,7 @@ public sealed class LoginFlowViewModelTests
         public MainViewModel CreateMainViewModel() =>
             new(
                 _userManagementService,
+                _licenseService,
                 (screen, onSucceeded) => new AuthorizationViewModel(screen, _authenticationService, onSucceeded),
                 (screen, onSucceeded) => new AdminBootstrapViewModel(screen, _userManagementService, onSucceeded),
                 (screen, onLogout) =>
@@ -146,11 +149,45 @@ public sealed class LoginFlowViewModelTests
                 descriptors,
                 new FixedAccessDecisionService(allow: true),
                 _authenticationService,
+                _licenseService,
                 new NoopModbusRuntimeService(),
                 new StaticModbusOptionsProvider(),
                 NullLogger<WorkspaceViewModel>.Instance,
                 onLogout);
         }
+    }
+
+    private sealed class FakeLicenseService : ILicenseService
+    {
+        public int RefreshCount { get; private set; }
+
+        public Task<LicenseState> GetCurrentAsync(CancellationToken cancellationToken = default) =>
+            RefreshAsync(cancellationToken);
+
+        public Task<LicenseState> RefreshAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RefreshCount++;
+            return Task.FromResult(LicenseState.Missing(DateTimeOffset.UnixEpoch));
+        }
+
+        public Task<LicenseInstallResult> InstallAsync(
+            LicenseInstallRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(LicenseInstallResult.Failure(
+                LicenseState.Missing(DateTimeOffset.UnixEpoch),
+                LicenseValidationErrorCode.StoreUnavailable,
+                null,
+                null,
+                "Not supported."));
+
+        public Task<LicenseValidationResult> VerifyAsync(
+            byte[] licenseBytes,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(LicenseValidationResult.Failure(
+                LicenseStatus.Invalid,
+                LicenseValidationErrorCode.InvalidJson,
+                "Not supported."));
     }
 
     private sealed class TestScreen : IScreen

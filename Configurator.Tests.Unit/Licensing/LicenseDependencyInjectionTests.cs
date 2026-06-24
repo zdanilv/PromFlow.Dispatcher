@@ -10,7 +10,7 @@ namespace Configurator.Tests.Unit.Licensing;
 public sealed class LicenseDependencyInjectionTests
 {
     [Fact]
-    public void AddApplication_ResolvesLicenseCoreAndKeepsStage9FeatureGate()
+    public void AddApplication_ResolvesLicenseCoreAndStage11FeatureGate()
     {
         var services = new ServiceCollection().AddApplication();
         services.AddSingleton(new LicensingOptions
@@ -19,16 +19,24 @@ public sealed class LicenseDependencyInjectionTests
         });
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<LicensePathProvider>();
-        services.AddSingleton<ILicenseStore, FileLicenseStore>();
+        services.AddSingleton<FileLicenseStore>();
+        services.AddSingleton<ILicenseStore>(sp => sp.GetRequiredService<FileLicenseStore>());
+        services.AddSingleton<ILicenseWritableStore>(sp => sp.GetRequiredService<FileLicenseStore>());
+        services.AddSingleton<ILicenseRequestExportService, FileLicenseRequestExportService>();
         services.AddSingleton<IInstallationIdentityService, FileInstallationIdentityService>();
         services.AddSingleton<ITrustedTimeStateStore, FileTrustedTimeStateStore>();
 
         using var provider = services.BuildServiceProvider();
 
-        Assert.IsType<NoLicenseFeatureGate>(provider.GetRequiredService<ILicenseFeatureGate>());
+        Assert.IsType<LicenseFeatureGate>(provider.GetRequiredService<ILicenseFeatureGate>());
         Assert.IsType<OfflineLicenseVerifier>(provider.GetRequiredService<ILicenseVerifier>());
         Assert.IsType<DefaultLicenseService>(provider.GetRequiredService<ILicenseService>());
+        Assert.Same(
+            provider.GetRequiredService<ILicenseService>(),
+            provider.GetRequiredService<ILicenseStateAccessor>());
         Assert.NotNull(provider.GetRequiredService<ILicenseStore>());
+        Assert.NotNull(provider.GetRequiredService<ILicenseWritableStore>());
+        Assert.NotNull(provider.GetRequiredService<ILicenseRequestExportService>());
         Assert.NotNull(provider.GetRequiredService<IInstallationIdentityService>());
         Assert.NotNull(provider.GetRequiredService<ITrustedTimeStateStore>());
         Assert.Empty(provider.GetRequiredService<LicensingOptions>().TrustedPublicKeys);
@@ -43,7 +51,10 @@ public sealed class LicenseDependencyInjectionTests
         Assert.Contains("LicensingOptions.SectionName", text);
         Assert.Contains("LicensePathProvider", text);
         Assert.Contains("ILicenseStore", text);
+        Assert.Contains("ILicenseWritableStore", text);
+        Assert.Contains("ILicenseRequestExportService", text);
         Assert.Contains("FileLicenseStore", text);
+        Assert.Contains("FileLicenseRequestExportService", text);
         Assert.Contains("IInstallationIdentityService", text);
         Assert.Contains("FileInstallationIdentityService", text);
         Assert.Contains("ITrustedTimeStateStore", text);

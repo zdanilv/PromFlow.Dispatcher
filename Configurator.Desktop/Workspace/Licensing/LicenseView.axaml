@@ -1,0 +1,78 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Workspace.Licensing;assembly=Configurator.Desktop"
+             mc:Ignorable="d"
+             d:DesignWidth="960"
+             d:DesignHeight="640"
+             x:Class="Configurator.Desktop.Workspace.Licensing.LicenseView"
+             x:DataType="vm:LicenseViewModel">
+    <ScrollViewer>
+        <Grid RowDefinitions="Auto,Auto,*"
+              ColumnDefinitions="*"
+              Margin="18"
+              RowSpacing="14">
+            <DockPanel Grid.Row="0" LastChildFill="False">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="8"
+                            DockPanel.Dock="Right">
+                    <Button Content="Refresh"
+                            Command="{Binding RefreshCommand}"
+                            MinWidth="92"/>
+                    <Button Content="Install"
+                            Command="{Binding InstallCommand}"
+                            MinWidth="92"/>
+                    <Button Content="Export request"
+                            Command="{Binding ExportRequestCommand}"
+                            MinWidth="132"/>
+                </StackPanel>
+                <StackPanel Spacing="2">
+                    <TextBlock Text="License"
+                               FontSize="22"
+                               FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding StatusMessage}"
+                               Opacity="0.72"/>
+                </StackPanel>
+            </DockPanel>
+
+            <Border Grid.Row="1"
+                    IsVisible="{Binding HasError}"
+                    BorderBrush="#9B2C2C"
+                    BorderThickness="1"
+                    Padding="10">
+                <TextBlock Text="{Binding ErrorMessage}"
+                           TextWrapping="Wrap"/>
+            </Border>
+
+            <Grid Grid.Row="2"
+                  ColumnDefinitions="180,*"
+                  RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                  RowSpacing="8"
+                  ColumnSpacing="12">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Status" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Status}" TextWrapping="Wrap"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Reason" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ReasonCode}" TextWrapping="Wrap"/>
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="License ID" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LicenseId}" TextWrapping="Wrap"/>
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Edition" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Edition}" TextWrapping="Wrap"/>
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="Valid from UTC" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ValidFromUtc}" TextWrapping="Wrap"/>
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="Expires UTC" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding ExpiresAtUtc}" TextWrapping="Wrap"/>
+                <TextBlock Grid.Row="6" Grid.Column="0" Text="Organization" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Organization}" TextWrapping="Wrap"/>
+                <TextBlock Grid.Row="7" Grid.Column="0" Text="Site" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding Site}" TextWrapping="Wrap"/>
+                <TextBlock Grid.Row="8" Grid.Column="0" Text="Customer" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding Customer}" TextWrapping="Wrap"/>
+                <TextBlock Grid.Row="9" Grid.Column="0" Text="Product version" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding ProductVersion}" TextWrapping="Wrap"/>
+                <TextBlock Grid.Row="10" Grid.Column="0" Text="Features" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding Features}" TextWrapping="Wrap"/>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

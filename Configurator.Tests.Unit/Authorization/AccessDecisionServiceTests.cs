@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 using Xunit;
 
 namespace Configurator.Tests.Unit.Authorization;
@@ -36,16 +37,20 @@ public sealed class AccessDecisionServiceTests
     }
 
     [Fact]
-    public void Authorize_AllowsAdministratorPermissionButDeniesUnavailableLicenseFeature()
+    public void Authorize_AllowsAdministratorPermissionButDeniesMissingLicenseFeature()
     {
         var accessor = new TestSessionAccessor();
         accessor.SetCurrent(CreateSession(UserRole.Administrator, Enum.GetValues<Permission>()));
-        var service = new DefaultAccessDecisionService(accessor, new NoLicenseFeatureGate());
+        var service = new DefaultAccessDecisionService(
+            accessor,
+            new LicenseFeatureGate(new TestLicenseStateAccessor(ValidState(LicenseFeature.RouteMap))));
 
         var permissionAllowed = service.Authorize(new AccessRequirement(Permission.ManageUsers));
-        var featureDenied = service.Authorize(new AccessRequirement(Permission.ManageUsers, "CommercialFeature"));
+        var featureAllowed = service.Authorize(new AccessRequirement(Permission.ViewRouteMap, LicenseFeature.RouteMap));
+        var featureDenied = service.Authorize(new AccessRequirement(Permission.ViewModbusDiagnostics, LicenseFeature.Diagnostics));
 
         Assert.True(permissionAllowed.Succeeded);
+        Assert.True(featureAllowed.Succeeded);
         Assert.False(featureDenied.Succeeded);
         Assert.Equal("LicenseFeatureUnavailable", featureDenied.ReasonCode);
     }
@@ -68,4 +73,33 @@ public sealed class AccessDecisionServiceTests
 
         public void Clear() => Current = UserSessionSnapshot.Anonymous;
     }
+
+    private sealed class TestLicenseStateAccessor(LicenseState current) : ILicenseStateAccessor
+    {
+        public LicenseState Current { get; } = current;
+        public event EventHandler<LicenseStateChangedEventArgs>? StateChanged { add { } remove { } }
+    }
+
+    private static LicenseState ValidState(params string[] features)
+        => new(
+            LicenseStatus.Valid,
+            DateTimeOffset.UtcNow,
+            new LicensePayload
+            {
+                LicenseId = Guid.NewGuid(),
+                Product = LicenseConstants.Product,
+                IssuedAtUtc = DateTimeOffset.UtcNow.AddDays(-1),
+                ValidFromUtc = DateTimeOffset.UtcNow.AddDays(-1),
+                ExpiresAtUtc = DateTimeOffset.UtcNow.AddDays(1),
+                Edition = LicenseEdition.Professional,
+                LicenseVersion = LicenseConstants.LicenseVersion,
+                ProductVersion = new LicenseProductVersionRange(),
+                Features = [.. features],
+                Installation = new LicenseInstallationProfile
+                {
+                    BindingMode = LicenseInstallationBindingMode.InstallationId,
+                    InstallationId = "installation-1"
+                }
+            },
+            []);
 }

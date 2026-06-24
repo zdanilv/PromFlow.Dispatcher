@@ -6,12 +6,16 @@ public static class LicenseFeature
     public const string RemoteControl = "RemoteControl";
     public const string Archive = "Archive";
     public const string ArchiveExport = "ArchiveExport";
+    public const string EngineeringTools = "EngineeringTools";
+    public const string Diagnostics = "Diagnostics";
 
     public static readonly IReadOnlySet<string> Known = new HashSet<string>(StringComparer.Ordinal)
     {
         RouteMap,
         RemoteControl,
         Archive,
-        ArchiveExport
+        ArchiveExport,
+        EngineeringTools,
+        Diagnostics
     };
 }

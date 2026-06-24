@@ -11,9 +11,11 @@ namespace Configurator.Application
         {
             // MediatR/FluentValidation/Mapster can be added here later.
             //services.AddScoped<IGetRecentGroupCase, GetRecentGroupCase>();
-            services.AddSingleton<ILicenseFeatureGate, NoLicenseFeatureGate>();
+            services.AddSingleton<DefaultLicenseService>();
+            services.AddSingleton<ILicenseService>(sp => sp.GetRequiredService<DefaultLicenseService>());
+            services.AddSingleton<ILicenseStateAccessor>(sp => sp.GetRequiredService<DefaultLicenseService>());
+            services.AddSingleton<ILicenseFeatureGate, LicenseFeatureGate>();
             services.AddSingleton<ILicenseVerifier, OfflineLicenseVerifier>();
-            services.AddSingleton<ILicenseService, DefaultLicenseService>();
             services.AddSingleton<IAccessDecisionService, DefaultAccessDecisionService>();
             services.AddSingleton<IModbusDataMapValidator, ModbusDataMapValidator>();
             return services;

@@ -23,16 +23,16 @@
 - [x] Stage 8 — Authentication/application foundation
 - [x] Stage 9 — Login, RBAC and workspace enforcement
 - [x] Stage 10 — Offline license core and issuer
-- [ ] Stage 11 — License installation UI and feature policy
+- [x] Stage 11 — License installation UI and feature policy
 - [ ] Stage 12 — Archive UI
 - [ ] Stage 13 — Centralized lifecycle
 - [ ] Stage 14 — Hardening and production acceptance
 
 ## Current stage
 
-- Stage: `10`
+- Stage: `11`
 - Branch: `6-add-archive`
-- Goal: `Add signed offline license core, file-backed local license state and separate issuer CLI`
+- Goal: `Add atomic license installation UI and feature enforcement`
 - Status: `Completed`
 
 ## Current findings
@@ -140,6 +140,13 @@
 - Stage 10 added `Licensing` configuration with empty production `TrustedPublicKeys`; no production public/private key material is committed.
 - Stage 10 added the separate `Configurator.LicenseIssuer` CLI with `generate-key`, `issue`, `verify` and `inspect`; generated keys/licenses remain local artifacts and are ignored by git.
 - Stage 10 deliberately keeps `ILicenseFeatureGate` as `NoLicenseFeatureGate`; install UI and feature enforcement remain Stage 11.
+- Stage 11 added cached immutable license state via `ILicenseStateAccessor`, `ILicenseService.RefreshAsync` and atomic `ILicenseService.InstallAsync`.
+- Stage 11 extended `FileLicenseStore` with `ILicenseWritableStore.ReplaceCurrentAsync`, using temp-file write/flush and atomic replace/move so invalid licenses never replace the current file.
+- Stage 11 replaced the placeholder `NoLicenseFeatureGate` DI registration with `LicenseFeatureGate`; role permissions and product license features are now evaluated independently.
+- Stage 11 added `EngineeringTools` and `Diagnostics` license features and bound existing workspace/service surfaces to `RouteMap`, `RemoteControl`, `Archive`, `ArchiveExport`, `EngineeringTools` and `Diagnostics`.
+- Stage 11 added the Administrator License workspace tab, license file picker, installation request export and no-access workspace fallback.
+- Stage 11 keeps License/User recovery paths permission-only; Administrator can install/view a license without a valid commercial license but cannot bypass missing commercial features.
+- Stage 11 added best-effort sanitized security audit events for license install attempt/success/failure without storing the full license payload or signature.
 
 ## Commands last executed
 
@@ -276,6 +283,16 @@ git status --short
 - Stage 10 issuer CLI manual flow: `Passed; help, generate-key, issue, verify and inspect succeeded with generated temp artifacts removed`
 - Full tests after Stage 10: `Passed; 474 passed, 0 failed, 0 skipped`
 - Stage 10 private-key/blocking-call scan over new license/issuer paths: `Passed; no matches`
+- Full build after Stage 11: `Passed; 3 NU1903 warnings from SQLitePCLRaw.lib.e_sqlite3, 0 errors`
+- Stage 11 licensing/auth/workspace unit tests: `Passed; 61 passed, 0 failed, 0 skipped`
+- Stage 11 licensing unit tests after final install-byte copy cleanup: `Passed; 36 passed, 0 failed, 0 skipped`
+- Stage 11 RouteMap unit regression: `Passed; 138 passed, 0 failed, 0 skipped`
+- Stage 11 Modbus regression: `Passed; 111 passed, 0 failed, 0 skipped`
+- Stage 11 security-focused Persistence tests: `Passed; 14 passed, 0 failed, 0 skipped`
+- Stage 11 headless UI tests: `Passed; 30 passed, 0 failed, 0 skipped`
+- Full tests after Stage 11: `Passed on rerun; 490 passed, 0 failed, 0 skipped`
+- First full Stage 11 run had a transient existing `ArchiveRuntime_PartitionChange_WritesSeparateMonthlyDatabases` SQLite prepare failure; the targeted rerun passed, then the final full rerun passed.
+- Stage 11 private-key and blocking-call scans over new license paths: `Passed; no matches`
 
 ## Known limitations
 
@@ -311,7 +328,10 @@ git status --short
 - Stage 10 does not assign non-null license features to workspace descriptors or service guards; Stage 11 owns feature policy enforcement.
 - Stage 10 ships with an empty production trusted key ring in `appsettings.json`; deployment must supply trusted public keys before customer license validation can succeed.
 - Stage 10 clock rollback protection is local offline best-effort state, not a tamper-proof online time authority.
+- Stage 11 does not add Archive UI, User Management UI, online activation, migrations, packages or production key material.
+- Stage 11 still ships with an empty production trusted key ring; customer licenses require deployment-supplied trusted public keys.
+- Stage 11 request export writes local `.promrequest` artifacts only when invoked explicitly by an administrator.
 
 ## Next action
 
-Stop here until Stage 11 is explicitly requested.
+Stop here until Stage 12 is explicitly requested.

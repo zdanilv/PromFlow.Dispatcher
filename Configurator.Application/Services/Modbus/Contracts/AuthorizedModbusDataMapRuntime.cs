@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Runtime;
 
@@ -20,7 +21,7 @@ public sealed class AuthorizedModbusDataMapRuntime : IModbusDataMapRuntime
     public ModbusOperationResult ApplyDataMap(IReadOnlyList<ModbusDataPointOptions> dataMap)
     {
         var decision = _accessDecisionService.Authorize(
-            new AccessRequirement(Permission.ConfigureModbus));
+            new AccessRequirement(Permission.ConfigureModbus, LicenseFeature.EngineeringTools));
         return decision.Succeeded
             ? _inner.ApplyDataMap(dataMap)
             : ModbusOperationResult.Failure(

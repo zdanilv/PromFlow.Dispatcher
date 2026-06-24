@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Workspace;assembly=Configurator.Desktop"
+             mc:Ignorable="d"
+             d:DesignWidth="600"
+             d:DesignHeight="320"
+             x:Class="Configurator.Desktop.Workspace.WorkspaceAccessUnavailableView"
+             x:DataType="vm:WorkspaceAccessUnavailableViewModel">
+    <Grid RowDefinitions="*,Auto,*" ColumnDefinitions="*,520,*">
+        <StackPanel Grid.Row="1"
+                    Grid.Column="1"
+                    Spacing="8"
+                    HorizontalAlignment="Stretch">
+            <TextBlock Text="{Binding Title}"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding Detail}"
+                       TextWrapping="Wrap"
+                       Opacity="0.75"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

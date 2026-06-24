@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 using Configurator.Desktop.Workspace;
 using Configurator.Desktop.Workspace.Authorization;
 using ReactiveUI;
@@ -9,6 +10,7 @@ namespace Configurator.Desktop.Main;
 public sealed class MainViewModel : ViewModelBase, IScreen, IDisposable
 {
     private readonly IUserManagementService _userManagementService;
+    private readonly ILicenseService _licenseService;
     private readonly Func<IScreen, Func<CancellationToken, Task>, AuthorizationViewModel> _authorizationFactory;
     private readonly Func<IScreen, Func<CancellationToken, Task>, AdminBootstrapViewModel> _bootstrapFactory;
     private readonly Func<IScreen, Func<WorkspaceViewModel, CancellationToken, Task>, WorkspaceViewModel> _workspaceFactory;
@@ -19,11 +21,13 @@ public sealed class MainViewModel : ViewModelBase, IScreen, IDisposable
 
     public MainViewModel(
         IUserManagementService userManagementService,
+        ILicenseService licenseService,
         Func<IScreen, Func<CancellationToken, Task>, AuthorizationViewModel> authorizationFactory,
         Func<IScreen, Func<CancellationToken, Task>, AdminBootstrapViewModel> bootstrapFactory,
         Func<IScreen, Func<WorkspaceViewModel, CancellationToken, Task>, WorkspaceViewModel> workspaceFactory)
     {
         _userManagementService = userManagementService ?? throw new ArgumentNullException(nameof(userManagementService));
+        _licenseService = licenseService ?? throw new ArgumentNullException(nameof(licenseService));
         _authorizationFactory = authorizationFactory ?? throw new ArgumentNullException(nameof(authorizationFactory));
         _bootstrapFactory = bootstrapFactory ?? throw new ArgumentNullException(nameof(bootstrapFactory));
         _workspaceFactory = workspaceFactory ?? throw new ArgumentNullException(nameof(workspaceFactory));
@@ -87,6 +91,7 @@ public sealed class MainViewModel : ViewModelBase, IScreen, IDisposable
         var workspace = _workspaceFactory(this, OnWorkspaceLogoutAsync);
         try
         {
+            await _licenseService.RefreshAsync(cancellationToken);
             await workspace.InitializeAsync(cancellationToken);
         }
         catch

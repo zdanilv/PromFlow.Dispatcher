@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 
 namespace Configurator.Application.Services.Archiving;
 
@@ -19,7 +20,10 @@ public sealed class AuthorizedArchiveMaintenanceService : IArchiveMaintenanceSer
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default)
     {
-        var decision = await AuthorizeAsync(Permission.RunArchiveMaintenance, cancellationToken)
+        var decision = await AuthorizeAsync(
+                Permission.RunArchiveMaintenance,
+                LicenseFeature.Archive,
+                cancellationToken)
             .ConfigureAwait(false);
         return decision.Succeeded
             ? await _inner.ApplyRetentionAsync(nowUtc, cancellationToken).ConfigureAwait(false)
@@ -33,7 +37,10 @@ public sealed class AuthorizedArchiveMaintenanceService : IArchiveMaintenanceSer
         ArchiveExportRequest request,
         CancellationToken cancellationToken = default)
     {
-        var decision = await AuthorizeAsync(Permission.ExportArchive, cancellationToken)
+        var decision = await AuthorizeAsync(
+                Permission.ExportArchive,
+                LicenseFeature.ArchiveExport,
+                cancellationToken)
             .ConfigureAwait(false);
         return decision.Succeeded
             ? await _inner.ExportAsync(request, cancellationToken).ConfigureAwait(false)
@@ -47,7 +54,10 @@ public sealed class AuthorizedArchiveMaintenanceService : IArchiveMaintenanceSer
         string destinationDirectory,
         CancellationToken cancellationToken = default)
     {
-        var decision = await AuthorizeAsync(Permission.RunArchiveMaintenance, cancellationToken)
+        var decision = await AuthorizeAsync(
+                Permission.RunArchiveMaintenance,
+                LicenseFeature.Archive,
+                cancellationToken)
             .ConfigureAwait(false);
         return decision.Succeeded
             ? await _inner.CreateBackupAsync(destinationDirectory, cancellationToken).ConfigureAwait(false)
@@ -59,6 +69,9 @@ public sealed class AuthorizedArchiveMaintenanceService : IArchiveMaintenanceSer
 
     private Task<AccessDecision> AuthorizeAsync(
         Permission permission,
+        string licenseFeature,
         CancellationToken cancellationToken)
-        => _accessDecisionService.AuthorizeAsync(new AccessRequirement(permission), cancellationToken);
+        => _accessDecisionService.AuthorizeAsync(
+            new AccessRequirement(permission, licenseFeature),
+            cancellationToken);
 }

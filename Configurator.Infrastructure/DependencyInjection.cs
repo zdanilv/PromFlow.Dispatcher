@@ -23,7 +23,10 @@ namespace Configurator.Infrastructure
             }
 
             services.AddSingleton<LicensePathProvider>();
-            services.AddSingleton<ILicenseStore, FileLicenseStore>();
+            services.AddSingleton<FileLicenseStore>();
+            services.AddSingleton<ILicenseStore>(sp => sp.GetRequiredService<FileLicenseStore>());
+            services.AddSingleton<ILicenseWritableStore>(sp => sp.GetRequiredService<FileLicenseStore>());
+            services.AddSingleton<ILicenseRequestExportService, FileLicenseRequestExportService>();
             services.AddSingleton<IInstallationIdentityService, FileInstallationIdentityService>();
             services.AddSingleton<ITrustedTimeStateStore, FileTrustedTimeStateStore>();
             services.AddSingleton<Configurator.Infrastructure.Services.AppConfigService>();

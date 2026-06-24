@@ -8,6 +8,10 @@ public sealed record LicenseState(
 {
     public bool IsValid => Status == LicenseStatus.Valid;
 
+    public LicenseValidationErrorCode? PrimaryErrorCode => Errors.FirstOrDefault()?.Code;
+
+    public string? PrimaryErrorMessage => Errors.FirstOrDefault()?.Message;
+
     public static LicenseState FromValidation(LicenseValidationResult result, DateTimeOffset evaluatedAtUtc)
     {
         ArgumentNullException.ThrowIfNull(result);

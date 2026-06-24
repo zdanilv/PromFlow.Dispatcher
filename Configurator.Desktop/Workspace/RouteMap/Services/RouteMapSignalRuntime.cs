@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Signals;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Services;
@@ -106,7 +107,7 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
         }
 
         var decision = _accessDecisionService.Authorize(
-            new AccessRequirement(Permission.IssueEquipmentCommands));
+            new AccessRequirement(Permission.IssueEquipmentCommands, LicenseFeature.RemoteControl));
         if (!decision.Succeeded)
         {
             throw new UnauthorizedAccessException(

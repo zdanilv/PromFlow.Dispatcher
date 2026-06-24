@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Runtime;
@@ -29,7 +30,7 @@ public sealed class WorkspaceAuthorizationTests
     }
 
     [Fact]
-    public async Task AdministratorSessionCreatesAllExistingStage9Tabs()
+    public async Task AdministratorSessionCreatesAllExistingStage11Tabs()
     {
         var fixture = new WorkspaceFixture(Enum.GetValues<Permission>());
         using var workspace = fixture.CreateWorkspace();
@@ -37,11 +38,43 @@ public sealed class WorkspaceAuthorizationTests
         await workspace.InitializeAsync();
 
         Assert.Equal(
-            ["Route Map", "SignalId ↔ Modbus", "Modbus Demo"],
+            ["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "License"],
             workspace.Tabs.Select(tab => tab.Header).ToArray());
         Assert.Equal(1, fixture.RouteMapFactoryCalls);
         Assert.Equal(1, fixture.SignalMappingFactoryCalls);
         Assert.Equal(1, fixture.ModbusDemoFactoryCalls);
+        Assert.Equal(1, fixture.LicenseFactoryCalls);
+    }
+
+    [Fact]
+    public async Task UserWithoutLicensedRouteMapGetsFallbackAndNoFactories()
+    {
+        var fixture = new WorkspaceFixture(
+            Permission.ViewRouteMap,
+            Permission.IssueEquipmentCommands);
+        fixture.LicenseStateAccessor.Current = LicenseState.Missing(DateTimeOffset.UtcNow);
+        using var workspace = fixture.CreateWorkspace();
+
+        await workspace.InitializeAsync();
+
+        Assert.Empty(workspace.Tabs);
+        Assert.True(workspace.HasNoTabs);
+        Assert.NotNull(workspace.AccessUnavailable);
+        Assert.Equal(0, fixture.RouteMapFactoryCalls);
+    }
+
+    [Fact]
+    public async Task AdministratorWithoutCommercialLicenseCanOpenLicenseRecoveryTabOnly()
+    {
+        var fixture = new WorkspaceFixture(Enum.GetValues<Permission>());
+        fixture.LicenseStateAccessor.Current = LicenseState.Missing(DateTimeOffset.UtcNow);
+        using var workspace = fixture.CreateWorkspace();
+
+        await workspace.InitializeAsync();
+
+        Assert.Equal(["License"], workspace.Tabs.Select(tab => tab.Header).ToArray());
+        Assert.Equal(0, fixture.RouteMapFactoryCalls);
+        Assert.Equal(1, fixture.LicenseFactoryCalls);
     }
 
     [Fact]
@@ -78,6 +111,11 @@ public sealed class WorkspaceAuthorizationTests
         public WorkspaceFixture(params Permission[] permissions)
         {
             _permissions = permissions;
+            LicenseStateAccessor.Current = ValidState(
+                LicenseFeature.RouteMap,
+                LicenseFeature.RemoteControl,
+                LicenseFeature.EngineeringTools,
+                LicenseFeature.Diagnostics);
             SessionAccessor.SetCurrent(new UserSession(
                 Guid.NewGuid(),
                 Guid.NewGuid(),
@@ -88,17 +126,21 @@ public sealed class WorkspaceAuthorizationTests
         }
 
         public TestSessionAccessor SessionAccessor { get; } = new();
+        public TestLicenseStateAccessor LicenseStateAccessor { get; } = new();
         public FakeAuthenticationService AuthenticationService { get; } = new();
+        public FakeLicenseService LicenseService { get; private set; } = null!;
         public int RouteMapFactoryCalls { get; private set; }
         public int SignalMappingFactoryCalls { get; private set; }
         public int ModbusDemoFactoryCalls { get; private set; }
+        public int LicenseFactoryCalls { get; private set; }
         public int LogoutCallbackCount { get; private set; }
         public List<DisposableContent> CreatedContent { get; } = [];
 
         public WorkspaceViewModel CreateWorkspace()
         {
             AuthenticationService.SessionAccessor = SessionAccessor;
-            var access = new DefaultAccessDecisionService(SessionAccessor, new NoLicenseFeatureGate());
+            LicenseService = new FakeLicenseService(LicenseStateAccessor);
+            var access = new DefaultAccessDecisionService(SessionAccessor, new LicenseFeatureGate(LicenseStateAccessor));
             return new WorkspaceViewModel(
                 new TestScreen(),
                 new EmptyServiceProvider(),
@@ -106,6 +148,7 @@ public sealed class WorkspaceAuthorizationTests
                 CreateDescriptors(),
                 access,
                 AuthenticationService,
+                LicenseService,
                 new NoopModbusRuntimeService(),
                 new StaticModbusOptionsProvider(),
                 NullLogger<WorkspaceViewModel>.Instance,
@@ -122,7 +165,7 @@ public sealed class WorkspaceAuthorizationTests
                 "route-map",
                 "Route Map",
                 Permission.ViewRouteMap,
-                null,
+                LicenseFeature.RouteMap,
                 _ =>
                 {
                     RouteMapFactoryCalls++;
@@ -133,7 +176,7 @@ public sealed class WorkspaceAuthorizationTests
                 "signal-map",
                 "SignalId ↔ Modbus",
                 Permission.ViewSignalMapping,
-                null,
+                LicenseFeature.EngineeringTools,
                 _ =>
                 {
                     SignalMappingFactoryCalls++;
@@ -144,13 +187,24 @@ public sealed class WorkspaceAuthorizationTests
                 "modbus-demo",
                 "Modbus Demo",
                 Permission.ViewModbusDiagnostics,
-                null,
+                LicenseFeature.Diagnostics,
                 _ =>
                 {
                     ModbusDemoFactoryCalls++;
                     return CreateContent();
                 },
                 20),
+            new(
+                "license",
+                "License",
+                Permission.ViewLicense,
+                null,
+                _ =>
+                {
+                    LicenseFactoryCalls++;
+                    return CreateContent();
+                },
+                30),
         ];
 
         private DisposableContent CreateContent()
@@ -159,6 +213,74 @@ public sealed class WorkspaceAuthorizationTests
             CreatedContent.Add(content);
             return content;
         }
+
+        private static LicenseState ValidState(params string[] features)
+        {
+            var payload = new LicensePayload
+            {
+                LicenseId = Guid.NewGuid(),
+                Product = LicenseConstants.Product,
+                IssuedAtUtc = DateTimeOffset.UtcNow.AddDays(-1),
+                ValidFromUtc = DateTimeOffset.UtcNow.AddDays(-1),
+                ExpiresAtUtc = DateTimeOffset.UtcNow.AddDays(1),
+                Edition = LicenseEdition.Professional,
+                LicenseVersion = LicenseConstants.LicenseVersion,
+                ProductVersion = new LicenseProductVersionRange(),
+                Features = [.. features],
+                Installation = new LicenseInstallationProfile
+                {
+                    BindingMode = LicenseInstallationBindingMode.InstallationId,
+                    InstallationId = "installation-1"
+                }
+            };
+
+            return new LicenseState(LicenseStatus.Valid, DateTimeOffset.UtcNow, payload, []);
+        }
+    }
+
+    private sealed class TestLicenseStateAccessor : ILicenseStateAccessor
+    {
+        public LicenseState Current { get; set; } = LicenseState.Missing(DateTimeOffset.UnixEpoch);
+        public event EventHandler<LicenseStateChangedEventArgs>? StateChanged;
+
+        public void RaiseChanged(LicenseState previous, LicenseState current)
+        {
+            Current = current;
+            StateChanged?.Invoke(this, new LicenseStateChangedEventArgs(previous, current));
+        }
+    }
+
+    private sealed class FakeLicenseService(TestLicenseStateAccessor accessor) : ILicenseService
+    {
+        public int RefreshCount { get; private set; }
+
+        public Task<LicenseState> GetCurrentAsync(CancellationToken cancellationToken = default) =>
+            RefreshAsync(cancellationToken);
+
+        public Task<LicenseState> RefreshAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RefreshCount++;
+            return Task.FromResult(accessor.Current);
+        }
+
+        public Task<LicenseInstallResult> InstallAsync(
+            LicenseInstallRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(LicenseInstallResult.Failure(
+                accessor.Current,
+                LicenseValidationErrorCode.StoreUnavailable,
+                null,
+                null,
+                "Not supported."));
+
+        public Task<LicenseValidationResult> VerifyAsync(
+            byte[] licenseBytes,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(LicenseValidationResult.Failure(
+                LicenseStatus.Invalid,
+                LicenseValidationErrorCode.InvalidJson,
+                "Not supported."));
     }
 
     private sealed class DisposableContent : IDisposable

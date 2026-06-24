@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Runtime;
@@ -14,12 +15,16 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
     private readonly IReadOnlyList<WorkspaceTabDescriptor> _tabDescriptors;
     private readonly IAccessDecisionService _accessDecisionService;
     private readonly IAuthenticationService _authenticationService;
+    private readonly ILicenseService _licenseService;
     private readonly IModbusRuntimeService _modbusRuntime;
     private readonly IModbusDemoOptionsProvider _modbusOptions;
     private readonly ILogger<WorkspaceViewModel> _logger;
     private readonly Func<WorkspaceViewModel, CancellationToken, Task> _logoutRequested;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private bool _initialized;
+    private bool _hasTabs;
+    private bool _hasNoTabs;
+    private WorkspaceAccessUnavailableViewModel? _accessUnavailable;
     private bool _disposed;
 
     public WorkspaceViewModel(
@@ -29,6 +34,7 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
         IEnumerable<WorkspaceTabDescriptor> tabDescriptors,
         IAccessDecisionService accessDecisionService,
         IAuthenticationService authenticationService,
+        ILicenseService licenseService,
         IModbusRuntimeService modbusRuntime,
         IModbusDemoOptionsProvider modbusOptions,
         ILogger<WorkspaceViewModel> logger,
@@ -43,6 +49,7 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
             .ToArray();
         _accessDecisionService = accessDecisionService ?? throw new ArgumentNullException(nameof(accessDecisionService));
         _authenticationService = authenticationService ?? throw new ArgumentNullException(nameof(authenticationService));
+        _licenseService = licenseService ?? throw new ArgumentNullException(nameof(licenseService));
         _modbusRuntime = modbusRuntime ?? throw new ArgumentNullException(nameof(modbusRuntime));
         _modbusOptions = modbusOptions ?? throw new ArgumentNullException(nameof(modbusOptions));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -63,6 +70,24 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
 
     public ObservableCollection<WorkspaceTabViewModel> Tabs { get; } = [];
 
+    public WorkspaceAccessUnavailableViewModel? AccessUnavailable
+    {
+        get => _accessUnavailable;
+        private set => this.RaiseAndSetIfChanged(ref _accessUnavailable, value);
+    }
+
+    public bool HasTabs
+    {
+        get => _hasTabs;
+        private set => this.RaiseAndSetIfChanged(ref _hasTabs, value);
+    }
+
+    public bool HasNoTabs
+    {
+        get => _hasNoTabs;
+        private set => this.RaiseAndSetIfChanged(ref _hasNoTabs, value);
+    }
+
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> LogoutCommand { get; }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -72,6 +97,8 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
         {
             return;
         }
+
+        await _licenseService.RefreshAsync(cancellationToken);
 
         foreach (var descriptor in _tabDescriptors)
         {
@@ -94,9 +121,15 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
 
         if (Tabs.Count == 0)
         {
-            throw new UnauthorizedAccessException("Authenticated user has no workspace permissions.");
+            AccessUnavailable = new WorkspaceAccessUnavailableViewModel();
+            HasTabs = false;
+            HasNoTabs = true;
+            _initialized = true;
+            return;
         }
 
+        HasTabs = true;
+        HasNoTabs = false;
         _initialized = true;
 
         var options = _modbusOptions.CurrentValue.Clone();

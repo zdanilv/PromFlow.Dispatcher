@@ -72,6 +72,22 @@ public sealed class LicenseInfrastructureTests : IDisposable
         Assert.Equal(5, oversized.Bytes.Length);
     }
 
+    [Fact]
+    public async Task LicenseStore_ReplaceCurrent_WritesAndReplacesCurrentFile()
+    {
+        var options = Options();
+        var provider = new LicensePathProvider(options);
+        using var store = new FileLicenseStore(provider, options);
+
+        var first = await store.ReplaceCurrentAsync([1, 2, 3]);
+        var second = await store.ReplaceCurrentAsync([4, 5]);
+        var read = await store.ReadCurrentAsync();
+
+        Assert.True(first.Succeeded);
+        Assert.True(second.Succeeded);
+        Assert.Equal([4, 5], read.Bytes);
+    }
+
     public void Dispose()
     {
         try

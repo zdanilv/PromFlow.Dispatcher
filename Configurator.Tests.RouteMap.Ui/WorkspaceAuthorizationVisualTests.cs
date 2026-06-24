@@ -3,6 +3,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Runtime;
@@ -30,7 +31,7 @@ public sealed class WorkspaceAuthorizationVisualTests
     {
         using var fixture = await WorkspaceFixture.CreateAsync(Enum.GetValues<Permission>());
 
-        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Modbus Demo"], fixture.Headers());
+        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "License"], fixture.Headers());
     }
 
     private sealed class WorkspaceFixture : IDisposable
@@ -61,8 +62,9 @@ public sealed class WorkspaceAuthorizationVisualTests
                 new EmptyServiceProvider(),
                 sessionAccessor,
                 CreateDescriptors(),
-                new DefaultAccessDecisionService(sessionAccessor, new NoLicenseFeatureGate()),
+                new DefaultAccessDecisionService(sessionAccessor, new LicenseFeatureGate(new ValidLicenseStateAccessor())),
                 new FakeAuthenticationService(),
+                new FakeLicenseService(),
                 new NoopModbusRuntimeService(),
                 new StaticModbusOptionsProvider(),
                 NullLogger<WorkspaceViewModel>.Instance,
@@ -91,10 +93,66 @@ public sealed class WorkspaceAuthorizationVisualTests
 
         private static IReadOnlyList<WorkspaceTabDescriptor> CreateDescriptors() =>
         [
-            new("route-map", "Route Map", Permission.ViewRouteMap, null, _ => new object(), 0),
-            new("signal-map", "SignalId ↔ Modbus", Permission.ViewSignalMapping, null, _ => new object(), 10),
-            new("modbus-demo", "Modbus Demo", Permission.ViewModbusDiagnostics, null, _ => new object(), 20),
+            new("route-map", "Route Map", Permission.ViewRouteMap, LicenseFeature.RouteMap, _ => new object(), 0),
+            new("signal-map", "SignalId ↔ Modbus", Permission.ViewSignalMapping, LicenseFeature.EngineeringTools, _ => new object(), 10),
+            new("modbus-demo", "Modbus Demo", Permission.ViewModbusDiagnostics, LicenseFeature.Diagnostics, _ => new object(), 20),
+            new("license", "License", Permission.ViewLicense, null, _ => new object(), 30),
         ];
+    }
+
+    private sealed class ValidLicenseStateAccessor : ILicenseStateAccessor
+    {
+        public LicenseState Current { get; } = new(
+            LicenseStatus.Valid,
+            DateTimeOffset.UtcNow,
+            new LicensePayload
+            {
+                LicenseId = Guid.NewGuid(),
+                Product = LicenseConstants.Product,
+                IssuedAtUtc = DateTimeOffset.UtcNow.AddDays(-1),
+                ValidFromUtc = DateTimeOffset.UtcNow.AddDays(-1),
+                ExpiresAtUtc = DateTimeOffset.UtcNow.AddDays(1),
+                Edition = LicenseEdition.Professional,
+                LicenseVersion = LicenseConstants.LicenseVersion,
+                ProductVersion = new LicenseProductVersionRange(),
+                Features =
+                [
+                    LicenseFeature.RouteMap,
+                    LicenseFeature.RemoteControl,
+                    LicenseFeature.EngineeringTools,
+                    LicenseFeature.Diagnostics,
+                ],
+                Installation = new LicenseInstallationProfile
+                {
+                    BindingMode = LicenseInstallationBindingMode.InstallationId,
+                    InstallationId = "installation-1"
+                }
+            },
+            []);
+
+        public event EventHandler<LicenseStateChangedEventArgs>? StateChanged { add { } remove { } }
+    }
+
+    private sealed class FakeLicenseService : ILicenseService
+    {
+        public Task<LicenseState> GetCurrentAsync(CancellationToken cancellationToken = default) =>
+            RefreshAsync(cancellationToken);
+
+        public Task<LicenseState> RefreshAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new ValidLicenseStateAccessor().Current);
+        }
+
+        public Task<LicenseInstallResult> InstallAsync(
+            LicenseInstallRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<LicenseValidationResult> VerifyAsync(
+            byte[] licenseBytes,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class TestScreen : IScreen

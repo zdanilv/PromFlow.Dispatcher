@@ -2,6 +2,7 @@
 using Configurator.Application;
 using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Dialogs;
+using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop;
@@ -14,6 +15,7 @@ using Configurator.Desktop.Dialogs.OpcUaTagImportDialog;
 using Configurator.Desktop.Main;
 using Configurator.Desktop.Workspace;
 using Configurator.Desktop.Workspace.Authorization;
+using Configurator.Desktop.Workspace.Licensing;
 using Configurator.Desktop.Workspace.ModbusDemo;
 using Configurator.Desktop.Workspace.RouteMap;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
@@ -123,7 +125,9 @@ internal static class Program
                     services.AddTransient<AuthorizationViewModel>();
                     services.AddTransient<AdminBootstrapViewModel>();
                     services.AddTransient<WorkspaceViewModel>();
+                    services.AddTransient<LicenseViewModel>();
                     services.AddTransient<ModbusDemoViewModel>();
+                    services.AddSingleton<ILicenseFilePicker, LicenseFilePicker>();
                     services.AddTransient<Func<IScreen, Func<CancellationToken, Task>, AuthorizationViewModel>>(sp =>
                         (hostScreen, onSucceeded) => ActivatorUtilities.CreateInstance<AuthorizationViewModel>(
                             sp,
@@ -144,27 +148,35 @@ internal static class Program
                         "route-map",
                         "Route Map",
                         Permission.ViewRouteMap,
-                        null,
+                        LicenseFeature.RouteMap,
                         serviceProvider => serviceProvider.GetRequiredService<RouteMapDashboardViewModel>(),
                         0));
                     services.AddSingleton<WorkspaceTabDescriptor>(_ => new WorkspaceTabDescriptor(
                         "signal-map",
                         "SignalId ↔ Modbus",
                         Permission.ViewSignalMapping,
-                        null,
+                        LicenseFeature.EngineeringTools,
                         serviceProvider => serviceProvider.GetRequiredService<RouteMapSignalMappingViewModel>(),
                         10));
                     services.AddSingleton<WorkspaceTabDescriptor>(_ => new WorkspaceTabDescriptor(
                         "modbus-demo",
                         "Modbus Demo",
                         Permission.ViewModbusDiagnostics,
-                        null,
+                        LicenseFeature.Diagnostics,
                         serviceProvider => serviceProvider.GetRequiredService<ModbusDemoViewModel>(),
                         20));
+                    services.AddSingleton<WorkspaceTabDescriptor>(_ => new WorkspaceTabDescriptor(
+                        "license",
+                        "License",
+                        Permission.ViewLicense,
+                        null,
+                        serviceProvider => serviceProvider.GetRequiredService<LicenseViewModel>(),
+                        30));
 
                     services.AddTransient<IViewFor<WorkspaceViewModel>, WorkspaceView>();
                     services.AddTransient<IViewFor<AuthorizationViewModel>, AuthorizationView>();
                     services.AddTransient<IViewFor<AdminBootstrapViewModel>, AdminBootstrapView>();
+                    services.AddTransient<IViewFor<LicenseViewModel>, LicenseView>();
                     services.AddTransient<IViewFor<ModbusDemoViewModel>, ModbusDemoView>();
                     services.AddTransient<RouteMapDashboardView>();
                     services.AddTransient<RouteMapSignalMappingView>();

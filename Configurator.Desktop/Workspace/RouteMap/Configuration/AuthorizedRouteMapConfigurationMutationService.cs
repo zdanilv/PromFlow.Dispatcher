@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Configuration;
 
@@ -45,11 +46,12 @@ public sealed class AuthorizedRouteMapConfigurationMutationService : IRouteMapCo
     }
 
     private AccessDecision Authorize()
-        => _accessDecisionService.Authorize(new AccessRequirement(Permission.EditSignalMapping));
+        => _accessDecisionService.Authorize(
+            new AccessRequirement(Permission.EditSignalMapping, LicenseFeature.EngineeringTools));
 
     private Task<AccessDecision> AuthorizeAsync(CancellationToken cancellationToken)
         => _accessDecisionService.AuthorizeAsync(
-            new AccessRequirement(Permission.EditSignalMapping),
+            new AccessRequirement(Permission.EditSignalMapping, LicenseFeature.EngineeringTools),
             cancellationToken);
 
     private static RouteMapConfigurationOperationResult Denied(AccessDecision decision)

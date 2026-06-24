@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Configurator.Desktop.Workspace;assembly=Configurator.Desktop"
+             xmlns:licensing="using:Configurator.Desktop.Workspace.Licensing"
              xmlns:modbusDemo="using:Configurator.Desktop.Workspace.ModbusDemo"
              xmlns:routeMap="using:Configurator.Desktop.Workspace.RouteMap"
              xmlns:routeMapVm="using:Configurator.Desktop.Workspace.RouteMap.ViewModels"
@@ -22,6 +23,12 @@
         <DataTemplate DataType="modbusDemo:ModbusDemoViewModel">
             <modbusDemo:ModbusDemoView/>
         </DataTemplate>
+        <DataTemplate DataType="licensing:LicenseViewModel">
+            <licensing:LicenseView/>
+        </DataTemplate>
+        <DataTemplate DataType="vm:WorkspaceAccessUnavailableViewModel">
+            <vm:WorkspaceAccessUnavailableView/>
+        </DataTemplate>
     </UserControl.DataTemplates>
 
     <Grid RowDefinitions="Auto,*">
@@ -36,19 +43,23 @@
                        FontWeight="SemiBold"/>
         </DockPanel>
 
-        <TabControl Grid.Row="1"
-                    Padding="2"
-                    ItemsSource="{Binding Tabs}">
-            <TabControl.ItemTemplate>
-                <DataTemplate DataType="vm:WorkspaceTabViewModel">
-                    <TextBlock Text="{Binding Header}"/>
-                </DataTemplate>
-            </TabControl.ItemTemplate>
-            <TabControl.ContentTemplate>
-                <DataTemplate DataType="vm:WorkspaceTabViewModel">
-                    <ContentControl Content="{Binding Content}"/>
-                </DataTemplate>
-            </TabControl.ContentTemplate>
-        </TabControl>
+        <Grid Grid.Row="1">
+            <TabControl Padding="2"
+                        IsVisible="{Binding HasTabs}"
+                        ItemsSource="{Binding Tabs}">
+                <TabControl.ItemTemplate>
+                    <DataTemplate DataType="vm:WorkspaceTabViewModel">
+                        <TextBlock Text="{Binding Header}"/>
+                    </DataTemplate>
+                </TabControl.ItemTemplate>
+                <TabControl.ContentTemplate>
+                    <DataTemplate DataType="vm:WorkspaceTabViewModel">
+                        <ContentControl Content="{Binding Content}"/>
+                    </DataTemplate>
+                </TabControl.ContentTemplate>
+            </TabControl>
+            <ContentControl IsVisible="{Binding HasNoTabs}"
+                            Content="{Binding AccessUnavailable}"/>
+        </Grid>
     </Grid>
 </UserControl>
