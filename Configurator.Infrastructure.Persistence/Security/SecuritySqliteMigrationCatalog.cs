@@ -1,21 +1,18 @@
 using System.Reflection;
 using System.Text;
+using Configurator.Infrastructure.Persistence.Sqlite;
 
-namespace Configurator.Infrastructure.Persistence.Sqlite;
+namespace Configurator.Infrastructure.Persistence.Security;
 
-public sealed class SqliteMigrationCatalog
+public sealed class SecuritySqliteMigrationCatalog
 {
-    private const string FoundationMigrationResourceSuffix = "Migrations.001_archive_foundation.sql";
-    private const string CommandWriteAuditMigrationResourceSuffix = "Migrations.002_command_write_audit.sql";
-    private const string SecurityAuditMigrationResourceSuffix = "Migrations.003_security_audit.sql";
+    private const string UserAccountsMigrationResourceSuffix = "Security.Migrations.001_user_accounts.sql";
 
-    public SqliteMigrationCatalog()
+    public SecuritySqliteMigrationCatalog()
     {
         All =
         [
-            LoadMigration(1, "archive_foundation", FoundationMigrationResourceSuffix),
-            LoadMigration(2, "command_write_audit", CommandWriteAuditMigrationResourceSuffix),
-            LoadMigration(3, "security_audit", SecurityAuditMigrationResourceSuffix)
+            LoadMigration(1, "user_accounts", UserAccountsMigrationResourceSuffix)
         ];
     }
 
@@ -26,7 +23,7 @@ public sealed class SqliteMigrationCatalog
         string name,
         string resourceSuffix)
     {
-        var assembly = typeof(SqliteMigrationCatalog).Assembly;
+        var assembly = typeof(SecuritySqliteMigrationCatalog).Assembly;
         var resourceName = assembly
             .GetManifestResourceNames()
             .Single(candidate => candidate.EndsWith(resourceSuffix, StringComparison.Ordinal));

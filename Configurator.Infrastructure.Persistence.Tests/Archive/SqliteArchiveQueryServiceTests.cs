@@ -29,7 +29,8 @@ public sealed class SqliteArchiveQueryServiceTests
                 Envelope(ArchiveRecordKind.RawModbusSnapshot, Snapshot(february, sequenceNumber: 2)),
                 Envelope(ArchiveRecordKind.ModbusStatus, Status(january)),
                 Envelope(ArchiveRecordKind.EquipmentCommandAudit, Command(commandId, january)),
-                Envelope(ArchiveRecordKind.PhysicalModbusWriteAudit, PhysicalWrite(commandId, january))
+                Envelope(ArchiveRecordKind.PhysicalModbusWriteAudit, PhysicalWrite(commandId, january)),
+                Envelope(ArchiveRecordKind.SecurityAudit, SecurityAudit(january))
             ]);
         var queryService = CreateQueryService(options);
 
@@ -56,6 +57,8 @@ public sealed class SqliteArchiveQueryServiceTests
                 result: nameof(EquipmentCommandAuditResult.Succeeded)));
         var writes = await queryService.QueryPhysicalWritesAsync(
             new ArchiveQuery(role: ModbusRuntimeRole.Client));
+        var security = await queryService.QuerySecurityAuditAsync(
+            new ArchiveQuery(eventType: "AuthenticationSucceeded"));
 
         Assert.True(firstPage.Succeeded, FormatFailure(firstPage));
         Assert.True(firstPage.Value!.HasMore);
@@ -72,10 +75,12 @@ public sealed class SqliteArchiveQueryServiceTests
         Assert.Equal(EquipmentCommandAuditResult.Succeeded, commandOutcome);
         Assert.True(writes.Succeeded, FormatFailure(writes));
         Assert.Equal(new byte[] { 0x12, 0x34 }, Assert.Single(writes.Value!.Items).PayloadBlob);
+        Assert.True(security.Succeeded, FormatFailure(security));
+        Assert.Equal("operator", Assert.Single(security.Value!.Items).ActorUsername);
     }
 
     [Fact]
-    public async Task QuerySecurityAudit_MissingOptionalTable_ReturnsEmptyPage()
+    public async Task QuerySecurityAudit_EmptyTable_ReturnsEmptyPage()
     {
         using var database = new TempArchiveDatabase();
         var options = CreateOptions(database.DirectoryPath);
@@ -174,6 +179,21 @@ public sealed class SqliteArchiveQueryServiceTests
             succeeded: true,
             errorCode: null,
             errorMessage: null,
+            schemaVersion: 1);
+
+    private static SecurityAuditRecord SecurityAudit(DateTimeOffset occurredAtUtc)
+        => new(
+            Guid.NewGuid(),
+            occurredAtUtc,
+            "AuthenticationSucceeded",
+            SecurityAuditSeverity.Information,
+            actorUserId: "user-1",
+            actorUsername: "operator",
+            sessionId: "session-1",
+            targetUserId: null,
+            SecurityAuditResult.Succeeded,
+            reasonCode: null,
+            detailsJson: null,
             schemaVersion: 1);
 
     private static ArchiveEnvelope Envelope(ArchiveRecordKind kind, object record)

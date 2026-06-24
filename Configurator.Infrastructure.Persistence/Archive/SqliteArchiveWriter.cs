@@ -187,6 +187,21 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
                     continue;
                 }
 
+                if (envelope.Kind == ArchiveRecordKind.SecurityAudit)
+                {
+                    if (envelope.Record is not SecurityAuditRecord record)
+                    {
+                        return ArchiveOperationResult<IReadOnlyList<ArchiveWriteItem>>.Failure(
+                            ArchivePersistenceErrorCodes.ArchiveRecordTypeMismatch,
+                            "Archive envelope record type does not match security audit kind.",
+                            envelope.Record.GetType().FullName);
+                    }
+
+                    var partition = _partitionResolver.GetWritablePartition(options, record.OccurredAtUtc);
+                    items.Add(ArchiveWriteItem.ForSecurityAudit(record, partition));
+                    continue;
+                }
+
                 return ArchiveOperationResult<IReadOnlyList<ArchiveWriteItem>>.Failure(
                     ArchivePersistenceErrorCodes.ArchiveRecordKindUnsupported,
                     "Archive writer does not support the supplied archive record kind.",
@@ -289,6 +304,10 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
                 else if (item.PhysicalWriteRecord is not null)
                 {
                     await InsertPhysicalWriteAsync(connection, transaction, item.PhysicalWriteRecord, cancellationToken).ConfigureAwait(false);
+                }
+                else if (item.SecurityAuditRecord is not null)
+                {
+                    await InsertSecurityAuditAsync(connection, transaction, item.SecurityAuditRecord, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -448,6 +467,38 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
         await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    private static async Task InsertSecurityAuditAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        SecurityAuditRecord record,
+        CancellationToken cancellationToken)
+    {
+        await using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO security_audit
+            (id, occurred_at_utc_ms, event_type, severity, actor_user_id, actor_username,
+             session_id, target_user_id, result, reason_code, details_json)
+            VALUES
+            (@id, @occurredAtUtcMs, @eventType, @severity, @actorUserId, @actorUsername,
+             @sessionId, @targetUserId, @result, @reasonCode, @detailsJson);
+            """;
+        insert.Parameters.AddWithValue("@id", record.Id.ToString("D"));
+        insert.Parameters.AddWithValue("@occurredAtUtcMs", record.OccurredAtUtc.ToUnixTimeMilliseconds());
+        insert.Parameters.AddWithValue("@eventType", record.EventType);
+        insert.Parameters.AddWithValue("@severity", (int)record.Severity);
+        insert.Parameters.AddWithValue("@actorUserId", DbValue(record.ActorUserId));
+        insert.Parameters.AddWithValue("@actorUsername", DbValue(record.ActorUsername));
+        insert.Parameters.AddWithValue("@sessionId", DbValue(record.SessionId));
+        insert.Parameters.AddWithValue("@targetUserId", DbValue(record.TargetUserId));
+        var auditResult = record switch { { Result: var value } => value };
+        insert.Parameters.AddWithValue("@result", (int)auditResult);
+        insert.Parameters.AddWithValue("@reasonCode", DbValue(record.ReasonCode));
+        insert.Parameters.AddWithValue("@detailsJson", DbValue(record.DetailsJson));
+
+        await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task InsertStatusAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -525,6 +576,7 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
         ModbusStatusArchiveRecord? StatusRecord,
         EquipmentCommandAuditRecord? CommandRecord,
         PhysicalModbusWriteAuditRecord? PhysicalWriteRecord,
+        SecurityAuditRecord? SecurityAuditRecord,
         ArchivePartitionInfo Partition,
         byte[]? CoilsBlob,
         byte[]? HoldingRegistersBlob)
@@ -534,21 +586,26 @@ public sealed class SqliteArchiveWriter : IAsyncDisposable
             ArchivePartitionInfo partition,
             byte[] coilsBlob,
             byte[] holdingRegistersBlob)
-            => new(record, null, null, null, partition, coilsBlob, holdingRegistersBlob);
+            => new(record, null, null, null, null, partition, coilsBlob, holdingRegistersBlob);
 
         public static ArchiveWriteItem ForStatus(
             ModbusStatusArchiveRecord record,
             ArchivePartitionInfo partition)
-            => new(null, record, null, null, partition, null, null);
+            => new(null, record, null, null, null, partition, null, null);
 
         public static ArchiveWriteItem ForCommand(
             EquipmentCommandAuditRecord record,
             ArchivePartitionInfo partition)
-            => new(null, null, record, null, partition, null, null);
+            => new(null, null, record, null, null, partition, null, null);
 
         public static ArchiveWriteItem ForPhysicalWrite(
             PhysicalModbusWriteAuditRecord record,
             ArchivePartitionInfo partition)
-            => new(null, null, null, record, partition, null, null);
+            => new(null, null, null, record, null, partition, null, null);
+
+        public static ArchiveWriteItem ForSecurityAudit(
+            SecurityAuditRecord record,
+            ArchivePartitionInfo partition)
+            => new(null, null, null, null, record, partition, null, null);
     }
 }

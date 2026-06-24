@@ -20,7 +20,7 @@
 - [x] Stage 5 — Modbus archive collector
 - [x] Stage 6 — Command and physical write audit
 - [x] Stage 7 — Query, export, retention and backup
-- [ ] Stage 8 — Authentication/application foundation
+- [x] Stage 8 — Authentication/application foundation
 - [ ] Stage 9 — Login, RBAC and workspace enforcement
 - [ ] Stage 10 — Offline license core and issuer
 - [ ] Stage 11 — License installation UI and feature policy
@@ -30,9 +30,9 @@
 
 ## Current stage
 
-- Stage: `7`
+- Stage: `8`
 - Branch: `6-add-archive`
-- Goal: `Provide bounded archive query, export, retention and WAL-aware backup`
+- Goal: `Add local users, sessions, permissions, password hashing, lockout and bootstrap foundation`
 - Status: `Completed`
 
 ## Current findings
@@ -121,6 +121,13 @@
 - `ArchiveBackupPackageWriter` uses SQLite backup API per partition, verifies each backup copy with `PRAGMA quick_check`, computes SHA-256 checksums and packages verified copies into ZIP.
 - Persistence DI now registers query, maintenance, export, backup, partition catalog, runtime-event writer, CSV and checksum services as singletons.
 - Stage 7 did not add a migration, package, UI, auth/RBAC/license logic, Modbus runtime changes or lifecycle startup.
+- Stage 8 replaced demo `IAuthApp/AuthApp` with UI-independent Application authorization contracts for roles, permissions, local users, sessions, authentication requests/results, authorization decisions, password policy and lockout policy.
+- Stage 8 added `Microsoft.Extensions.Identity.Core` `10.0.6` for the `PasswordHasher<AppUser>` adapter, and aligned direct `Microsoft.Extensions.*` references to `10.0.6` to avoid NU1605 package downgrades.
+- Stage 8 added a stable file-backed security SQLite database for `app_user`, with a separate security migration ledger and transactional one-time administrator bootstrap.
+- Stage 8 added in-memory process session state, permission matrix services, authentication lockout/reset/signout behavior, user management foundation and best-effort sanitized security audit enqueueing.
+- Stage 8 added archive migration `003_security_audit.sql`; `SqliteArchiveWriter` now persists `SecurityAuditRecord` rows and existing archive query/retention paths operate against the real table.
+- Boot now references and registers Persistence DI so auth services resolve, but still does not start archive runtime/collector or enable login workspace flow.
+- Desktop constructors no longer depend on the removed demo auth service; `MainViewModel` continues opening the workspace directly.
 
 ## Commands last executed
 
@@ -167,6 +174,16 @@ dotnet test .\DesktopTemplate.slnx --no-restore
 rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Application\Services\Archiving .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence\Sqlite
 rg -n "Avalonia|ReactiveUI|Configurator\.Desktop|Configurator\.Infrastructure\.Modbus|Configurator\.Infrastructure\.OpcUa" .\Configurator.Infrastructure.Persistence
 rg -n "BinaryFormatter|\.Wait\(|\.Result|Thread\.Sleep|BoundedChannelFullMode\.DropOldest|BoundedChannelFullMode\.DropNewest" .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Infrastructure.Persistence\Sqlite .\Configurator.Infrastructure.Persistence.Tests\Archive
+dotnet restore .\DesktopTemplate.slnx
+dotnet build .\Configurator.Application\Configurator.Application.csproj --no-restore
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~Authorization"
+dotnet build .\Configurator.Infrastructure.Persistence\Configurator.Infrastructure.Persistence.csproj --no-restore
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore --filter "FullyQualifiedName~Security"
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore
+dotnet build .\DesktopTemplate.slnx --no-restore
+dotnet test .\DesktopTemplate.slnx --no-restore
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore --filter "FullyQualifiedName=Configurator.Infrastructure.Persistence.Tests.Archive.ArchiveRuntimeTests.ArchiveRuntime_TimerFlush_WritesPartialBatch|FullyQualifiedName=Configurator.Infrastructure.Persistence.Tests.Archive.ArchiveRuntimeTests.ArchiveRuntime_TransientWriteFailure_PublishesDegradedAndPersistsAfterRecovery"
+dotnet test .\DesktopTemplate.slnx --no-restore
 git diff --check
 git status --short
 ```
@@ -205,6 +222,15 @@ git status --short
 - Full tests after Stage 7: `Passed; 413 passed, 0 failed, 0 skipped`
 - Stage 7 sensitive-material, forbidden-dependency and blocking-call scans: `Passed`
 - Stage 7 diff whitespace check: `Passed`
+- Restore after Stage 8 package addition/alignment: `Passed; NU1903 warnings from SQLitePCLRaw.lib.e_sqlite3`
+- Application build after Stage 8 contracts: `Passed; 0 errors`
+- Authorization unit tests after Stage 8: `Passed; 4 passed, 0 failed, 0 skipped`
+- Persistence build after Stage 8 security services: `Passed; 1 NU1903 warning from SQLitePCLRaw.lib.e_sqlite3`
+- Security-focused Persistence tests after Stage 8: `Passed; 13 passed, 0 failed, 0 skipped`
+- Persistence tests after Stage 8 migrations/storage: `Passed; 83 passed, 0 failed, 0 skipped`
+- Full build after Stage 8: `Passed; 3 NU1903 warnings from SQLitePCLRaw.lib.e_sqlite3`
+- Full tests after Stage 8: `Passed on rerun; 429 passed, 0 failed, 0 skipped`
+- First full Stage 8 test run had transient SQLite failures in two existing `ArchiveRuntimeTests`; targeted rerun passed `2 passed`, then final full rerun passed.
 
 ## Known limitations
 
@@ -230,7 +256,10 @@ git status --short
 - Stage 7 did not add Archive UI, authentication/RBAC/license enforcement, security audit schema creation or centralized lifecycle startup.
 - Stage 7 backup/export APIs create operational ZIP artifacts only when called explicitly; Boot/Desktop still do not start archive runtime or collector until Stage 13.
 - Stage 7 treats missing `security_audit` as empty because the table is owned by a later stage.
+- Stage 8 did not enable login navigation, dynamic workspace/tab visibility, command enforcement, license checks, Archive UI or centralized lifecycle startup; those remain later stages.
+- Stage 8 security audit enqueueing is best-effort and depends on archive runtime startup in later lifecycle stages for background flushing.
+- Stage 8 stores users in a stable security database while security audit rows live in monthly archive partitions.
 
 ## Next action
 
-Stop here until Stage 8 is explicitly requested.
+Stop here until Stage 9 is explicitly requested.

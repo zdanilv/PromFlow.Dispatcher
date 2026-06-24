@@ -79,7 +79,7 @@ public sealed class SqliteArchiveWriterTests
         await using var writer = CreateWriter(options);
         var envelope = new ArchiveEnvelope(
             Guid.NewGuid(),
-            ArchiveRecordKind.SecurityAudit,
+            (ArchiveRecordKind)999,
             ArchivePriority.Critical,
             new object(),
             DateTimeOffset.UtcNow);
@@ -89,6 +89,62 @@ public sealed class SqliteArchiveWriterTests
         Assert.False(result.Succeeded);
         Assert.Equal(ArchivePersistenceErrorCodes.ArchiveRecordKindUnsupported, result.ErrorCode);
         Assert.Empty(Directory.EnumerateFiles(database.DirectoryPath, "*.sqlite", SearchOption.TopDirectoryOnly));
+    }
+
+    [Fact]
+    public async Task SqliteArchiveWriter_SecurityAudit_WritesSecurityAuditRow()
+    {
+        using var database = new TempArchiveDatabase();
+        var options = CreateOptions(database.DirectoryPath);
+        await using var writer = CreateWriter(options);
+        var occurredAtUtc = new DateTimeOffset(2026, 6, 22, 11, 45, 0, TimeSpan.Zero);
+        var securityAudit = new SecurityAuditRecord(
+            Guid.NewGuid(),
+            occurredAtUtc,
+            "AuthenticationSucceeded",
+            SecurityAuditSeverity.Information,
+            actorUserId: "user-1",
+            actorUsername: "operator",
+            sessionId: "session-1",
+            targetUserId: null,
+            SecurityAuditResult.Succeeded,
+            reasonCode: null,
+            detailsJson: "{\"kind\":\"test\"}",
+            schemaVersion: 1);
+        var envelope = new ArchiveEnvelope(
+            Guid.NewGuid(),
+            ArchiveRecordKind.SecurityAudit,
+            ArchivePriority.Critical,
+            securityAudit,
+            DateTimeOffset.UtcNow);
+
+        var result = await writer.WriteBatchAsync([envelope], CancellationToken.None);
+
+        Assert.True(result.Succeeded, FormatFailure(result.ErrorCode, result.ErrorMessage, result.ErrorDetails));
+        var partitionPath = Assert.Single(result.Value!.PartitionPaths);
+        using var connection = OpenConnection(partitionPath);
+        await using var select = connection.CreateCommand();
+        select.CommandText = """
+            SELECT id, occurred_at_utc_ms, event_type, severity, actor_user_id, actor_username,
+                   session_id, target_user_id, result, reason_code, details_json
+            FROM security_audit
+            WHERE id = @id;
+            """;
+        select.Parameters.AddWithValue("@id", securityAudit.Id.ToString("D"));
+        await using var reader = await select.ExecuteReaderAsync();
+
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(securityAudit.Id.ToString("D"), reader.GetString(0));
+        Assert.Equal(occurredAtUtc.ToUnixTimeMilliseconds(), reader.GetInt64(1));
+        Assert.Equal("AuthenticationSucceeded", reader.GetString(2));
+        Assert.Equal((int)SecurityAuditSeverity.Information, reader.GetInt32(3));
+        Assert.Equal("user-1", reader.GetString(4));
+        Assert.Equal("operator", reader.GetString(5));
+        Assert.Equal("session-1", reader.GetString(6));
+        Assert.True(reader.IsDBNull(7));
+        Assert.Equal((int)SecurityAuditResult.Succeeded, reader.GetInt32(8));
+        Assert.True(reader.IsDBNull(9));
+        Assert.Equal("{\"kind\":\"test\"}", reader.GetString(10));
     }
 
     [Fact]

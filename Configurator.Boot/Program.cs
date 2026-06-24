@@ -24,6 +24,7 @@ using Configurator.Infrastructure;
 using Configurator.Infrastructure.Modbus;
 using Configurator.Infrastructure.Modbus.RouteMap;
 using Configurator.Infrastructure.OpcUa;
+using Configurator.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -71,6 +72,7 @@ internal static class Program
                     services.AddLogging();
                     services.AddApplication();
                     services.AddInfrastructure(configuration);
+                    services.AddPersistenceInfrastructure(configuration);
                     // Modbus/OpcUa регистрируются в boot-слое, чтобы Desktop зависел только от application-контрактов.
                     services.AddModbusInfrastructure(configuration);
                     services.AddOpcUaInfrastructure(configuration);

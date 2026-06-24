@@ -34,7 +34,6 @@ public sealed class PersistenceArchitectureTests
                 && !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal));
         var plainNeedles = new[]
         {
-            string.Concat("pass", "word"),
             string.Concat("se", "cret"),
             string.Concat("private", " ", "key"),
             string.Concat("prom", "license")
@@ -48,6 +47,12 @@ public sealed class PersistenceArchitectureTests
                     ".",
                     "*",
                     new string(['P', 'R', 'I', 'V', 'A', 'T', 'E'])),
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+            new Regex(
+                string.Concat("==", "\\s*\"", "admin", "\""),
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+            new Regex(
+                string.Concat("==", "\\s*\"", "pass", "word", "\""),
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
         };
 
@@ -124,6 +129,14 @@ public sealed class PersistenceArchitectureTests
         Assert.Contains("ArchiveBackupPackageWriter", text);
         Assert.Contains("ArchiveMaintenanceService", text);
         Assert.Contains("IArchiveMaintenanceService", text);
+        Assert.Contains("AuthenticationOptionsValidator", text);
+        Assert.Contains("IPasswordHashService", text);
+        Assert.Contains("IUserRepository", text);
+        Assert.Contains("IUserSessionAccessor", text);
+        Assert.Contains("IAuthorizationService", text);
+        Assert.Contains("IAuthenticationService", text);
+        Assert.Contains("IUserManagementService", text);
+        Assert.Contains("ISecurityAuditService", text);
     }
 
     private static string FindRepositoryRoot()

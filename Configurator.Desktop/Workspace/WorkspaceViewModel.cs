@@ -26,7 +26,7 @@ namespace Configurator.Desktop.Workspace
 
         public WorkspaceViewModel(
             IScreen hostScreen,
-            IAuthApp authService,
+            IUserSessionAccessor sessionAccessor,
             ModbusDemoViewModel modbusDemo,
             RouteMapDashboardViewModel routeMapDashboard,
             RouteMapSignalMappingViewModel routeMapSignalMapping,
@@ -34,8 +34,10 @@ namespace Configurator.Desktop.Workspace
             IModbusDemoOptionsProvider modbusOptions,
             ILogger<WorkspaceViewModel> logger)
         {
+            ArgumentNullException.ThrowIfNull(sessionAccessor);
+
             HostScreen = hostScreen;
-            AuthToken = authService.IsAuthenticated.ToString();
+            AuthToken = sessionAccessor.Current.IsAuthenticated.ToString();
             ModbusDemo = modbusDemo;
             RouteMapDashboard = routeMapDashboard;
             RouteMapSignalMapping = routeMapSignalMapping;

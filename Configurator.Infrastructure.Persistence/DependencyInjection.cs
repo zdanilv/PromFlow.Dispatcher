@@ -1,6 +1,8 @@
 using Configurator.Application.Services.Archiving;
+using Configurator.Application.Services.Authorization;
 using Configurator.Infrastructure.Persistence.Archive;
 using Configurator.Infrastructure.Persistence.Common;
+using Configurator.Infrastructure.Persistence.Security;
 using Configurator.Infrastructure.Persistence.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,7 +19,9 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.Configure<ArchiveOptions>(configuration.GetSection(ArchiveOptions.SectionName));
+        services.Configure<AuthenticationOptions>(configuration.GetSection(AuthenticationOptions.SectionName));
         services.AddSingleton<ArchiveOptionsValidator>();
+        services.AddSingleton<AuthenticationOptionsValidator>();
         services.AddSingleton<IAppDataPathProvider, DefaultAppDataPathProvider>();
         services.AddSingleton<ArchiveSnapshotBlobCodec>();
         services.AddSingleton<ArchivePartitionResolver>();
@@ -33,6 +37,24 @@ public static class DependencyInjection
         services.AddSingleton<SqlitePragmaInitializer>();
         services.AddSingleton<SqliteMigrationCatalog>();
         services.AddSingleton<SqliteMigrationRunner>();
+        services.AddSingleton<SecurityDatabasePathProvider>();
+        services.AddSingleton<SecuritySqliteConnectionFactory>();
+        services.AddSingleton<SecuritySqliteMigrationCatalog>();
+        services.AddSingleton<SecuritySqliteMigrationRunner>();
+        services.AddSingleton<PasswordHashService>();
+        services.AddSingleton<IPasswordHashService>(serviceProvider => serviceProvider.GetRequiredService<PasswordHashService>());
+        services.AddSingleton<InMemoryUserSessionAccessor>();
+        services.AddSingleton<IUserSessionAccessor>(serviceProvider => serviceProvider.GetRequiredService<InMemoryUserSessionAccessor>());
+        services.AddSingleton<AuthorizationService>();
+        services.AddSingleton<IAuthorizationService>(serviceProvider => serviceProvider.GetRequiredService<AuthorizationService>());
+        services.AddSingleton<SqliteUserRepository>();
+        services.AddSingleton<IUserRepository>(serviceProvider => serviceProvider.GetRequiredService<SqliteUserRepository>());
+        services.AddSingleton<SecurityAuditService>();
+        services.AddSingleton<ISecurityAuditService>(serviceProvider => serviceProvider.GetRequiredService<SecurityAuditService>());
+        services.AddSingleton<AuthenticationService>();
+        services.AddSingleton<IAuthenticationService>(serviceProvider => serviceProvider.GetRequiredService<AuthenticationService>());
+        services.AddSingleton<UserManagementService>();
+        services.AddSingleton<IUserManagementService>(serviceProvider => serviceProvider.GetRequiredService<UserManagementService>());
         services.AddSingleton<ArchivePartitionCatalog>();
         services.AddSingleton<SqliteArchiveQueryService>();
         services.AddSingleton<IArchiveQueryService>(serviceProvider => serviceProvider.GetRequiredService<SqliteArchiveQueryService>());

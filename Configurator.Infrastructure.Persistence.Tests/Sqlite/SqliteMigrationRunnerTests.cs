@@ -13,7 +13,7 @@ public sealed class SqliteMigrationRunnerTests
     {
         var catalog = new SqliteMigrationCatalog();
 
-        Assert.Equal(2, catalog.All.Count);
+        Assert.Equal(3, catalog.All.Count);
         var migration = catalog.All[0];
         Assert.Equal(1, migration.Version);
         Assert.Equal("archive_foundation", migration.Name);
@@ -28,6 +28,13 @@ public sealed class SqliteMigrationRunnerTests
         Assert.Contains("CREATE TABLE modbus_write", commandMigration.Sql);
         Assert.Matches("^[0-9a-f]{64}$", commandMigration.Checksum);
         Assert.Equal("bd18b713b8ca073e0f908f2243ea7715b6774f61db5278aa470c74240305809d", commandMigration.Checksum);
+
+        var securityMigration = catalog.All[2];
+        Assert.Equal(3, securityMigration.Version);
+        Assert.Equal("security_audit", securityMigration.Name);
+        Assert.Contains("CREATE TABLE security_audit", securityMigration.Sql);
+        Assert.Matches("^[0-9a-f]{64}$", securityMigration.Checksum);
+        Assert.Equal("c5a9af1218ac73a82fc05e17954f18f9bdd2eedcedc23f1e6042d25ff6b86a35", securityMigration.Checksum);
     }
 
     [Fact]
@@ -46,6 +53,7 @@ public sealed class SqliteMigrationRunnerTests
         Assert.True(await ObjectExistsAsync(connection, "table", "runtime_event"));
         Assert.True(await ObjectExistsAsync(connection, "table", "equipment_command"));
         Assert.True(await ObjectExistsAsync(connection, "table", "modbus_write"));
+        Assert.True(await ObjectExistsAsync(connection, "table", "security_audit"));
         Assert.True(await ObjectExistsAsync(connection, "index", "ux_modbus_snapshot_sequence"));
         Assert.True(await ObjectExistsAsync(connection, "index", "ix_modbus_snapshot_time"));
         Assert.True(await ObjectExistsAsync(connection, "index", "ix_runtime_event_time"));
@@ -55,8 +63,13 @@ public sealed class SqliteMigrationRunnerTests
         Assert.True(await ObjectExistsAsync(connection, "index", "ix_equipment_command_result"));
         Assert.True(await ObjectExistsAsync(connection, "index", "ix_modbus_write_attempted_at"));
         Assert.True(await ObjectExistsAsync(connection, "index", "ix_modbus_write_command_id"));
+        Assert.True(await ObjectExistsAsync(connection, "index", "ix_security_audit_occurred_at"));
+        Assert.True(await ObjectExistsAsync(connection, "index", "ix_security_audit_actor"));
+        Assert.True(await ObjectExistsAsync(connection, "index", "ix_security_audit_target"));
+        Assert.True(await ObjectExistsAsync(connection, "index", "ix_security_audit_event_result"));
         Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration WHERE version = 1;"));
         Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration WHERE version = 2;"));
+        Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration WHERE version = 3;"));
         Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT archive_schema_version FROM archive_partition_metadata WHERE id = 1;"));
         Assert.Equal("device-1", await ExecuteScalarAsync<string>(connection, "SELECT device_id FROM archive_partition_metadata WHERE id = 1;"));
     }
@@ -74,6 +87,7 @@ public sealed class SqliteMigrationRunnerTests
         using var connection = database.OpenConnection();
         Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration WHERE version = 1;"));
         Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration WHERE version = 2;"));
+        Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration WHERE version = 3;"));
         Assert.Equal(1, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM archive_partition_metadata WHERE id = 1;"));
     }
 
@@ -91,7 +105,7 @@ public sealed class SqliteMigrationRunnerTests
 
         Assert.All(results, AssertSucceeded);
         using var connection = database.OpenConnection();
-        Assert.Equal(2, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration;"));
+        Assert.Equal(3, await ExecuteScalarAsync<long>(connection, "SELECT COUNT(*) FROM schema_migration;"));
     }
 
     [Fact]

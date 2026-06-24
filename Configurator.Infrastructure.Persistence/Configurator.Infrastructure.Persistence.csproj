@@ -9,8 +9,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.6" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
-    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Identity.Core" Version="10.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.6" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,6 +21,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Migrations\001_archive_foundation.sql" />
     <EmbeddedResource Include="Migrations\002_command_write_audit.sql" />
+    <EmbeddedResource Include="Migrations\003_security_audit.sql" />
+    <EmbeddedResource Include="Security\Migrations\001_user_accounts.sql" />
   </ItemGroup>
 
 </Project>
