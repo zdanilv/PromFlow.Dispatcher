@@ -22,7 +22,7 @@
 - [x] Stage 7 — Query, export, retention and backup
 - [x] Stage 8 — Authentication/application foundation
 - [x] Stage 9 — Login, RBAC and workspace enforcement
-- [ ] Stage 10 — Offline license core and issuer
+- [x] Stage 10 — Offline license core and issuer
 - [ ] Stage 11 — License installation UI and feature policy
 - [ ] Stage 12 — Archive UI
 - [ ] Stage 13 — Centralized lifecycle
@@ -30,9 +30,9 @@
 
 ## Current stage
 
-- Stage: `9`
+- Stage: `10`
 - Branch: `6-add-archive`
-- Goal: `Enable production login/bootstrap/logout, dynamic workspace tabs and RBAC service-boundary enforcement`
+- Goal: `Add signed offline license core, file-backed local license state and separate issuer CLI`
 - Status: `Completed`
 
 ## Current findings
@@ -134,6 +134,12 @@
 - Stage 9 tightened `UserRole.User` to `ViewRouteMap` and `IssueEquipmentCommands` only.
 - Stage 9 enforces permissions at direct service boundaries for equipment commands, RouteMap configuration mutation, Modbus configuration mutation, archive maintenance/export and existing user-management operations.
 - Stage 9 added unit and headless UI coverage for access decisions, denied direct service calls, login/bootstrap/logout and dynamic workspace composition.
+- Stage 10 added application license contracts and deterministic offline verification for `PromFlow.License` envelopes signed with ECDSA P-256/SHA-256 over exact UTF-8 payload bytes using IeeeP1363 signatures.
+- Stage 10 added typed validation statuses/errors for malformed envelopes, unknown keys, test-key rejection, signature tampering, product/version/installation mismatch, date windows, clock rollback and feature/edition inconsistency.
+- Stage 10 added file-backed infrastructure for current license reads, random 256-bit installation identity and trusted time state under the per-user license directory.
+- Stage 10 added `Licensing` configuration with empty production `TrustedPublicKeys`; no production public/private key material is committed.
+- Stage 10 added the separate `Configurator.LicenseIssuer` CLI with `generate-key`, `issue`, `verify` and `inspect`; generated keys/licenses remain local artifacts and are ignored by git.
+- Stage 10 deliberately keeps `ILicenseFeatureGate` as `NoLicenseFeatureGate`; install UI and feature enforcement remain Stage 11.
 
 ## Commands last executed
 
@@ -262,6 +268,14 @@ git status --short
 - Stage 9 sensitive-material scan found only expected auth/password identifiers and no hardcoded production secrets, private keys or license material.
 - Stage 9 blocking-call scan found one false positive on `RouteMapSettingsViewModel.Result` property access and no `.Wait()`, task `.Result` or `Thread.Sleep`.
 - Stage 9 diff whitespace check: `Passed; only CRLF normalization warnings`
+- Stage 10 issuer build with restore/assets generation: `Passed; 0 warnings, 0 errors`
+- Full build after Stage 10: `Passed; 3 NU1903 warnings from SQLitePCLRaw.lib.e_sqlite3, 0 errors`
+- Stage 10 licensing unit/integration tests: `Passed; 23 passed, 0 failed, 0 skipped`
+- Stage 9 auth/workspace regression after Stage 10: `Passed; 23 passed, 0 failed, 0 skipped`
+- Workspace authorization headless UI regression after Stage 10: `Passed; 2 passed, 0 failed, 0 skipped`
+- Stage 10 issuer CLI manual flow: `Passed; help, generate-key, issue, verify and inspect succeeded with generated temp artifacts removed`
+- Full tests after Stage 10: `Passed; 474 passed, 0 failed, 0 skipped`
+- Stage 10 private-key/blocking-call scan over new license/issuer paths: `Passed; no matches`
 
 ## Known limitations
 
@@ -293,7 +307,11 @@ git status --short
 - Stage 9 reserves `RequiredLicenseFeature` in access and tab descriptors, but all current descriptors use `null`; real license validation remains Stage 10/11.
 - Stage 9 does not add Archive/User/License workspace tabs because those UI surfaces belong to later stages.
 - Stage 9 does not start archive runtime/collector or centralized lifecycle; Stage 13 still owns that lifecycle work.
+- Stage 10 does not install or replace the current license file; atomic install and administrator UI remain Stage 11.
+- Stage 10 does not assign non-null license features to workspace descriptors or service guards; Stage 11 owns feature policy enforcement.
+- Stage 10 ships with an empty production trusted key ring in `appsettings.json`; deployment must supply trusted public keys before customer license validation can succeed.
+- Stage 10 clock rollback protection is local offline best-effort state, not a tamper-proof online time authority.
 
 ## Next action
 
-Stop here until Stage 10 is explicitly requested.
+Stop here until Stage 11 is explicitly requested.

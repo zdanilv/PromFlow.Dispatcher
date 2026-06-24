@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Modbus.Validation;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,6 +12,8 @@ namespace Configurator.Application
             // MediatR/FluentValidation/Mapster can be added here later.
             //services.AddScoped<IGetRecentGroupCase, GetRecentGroupCase>();
             services.AddSingleton<ILicenseFeatureGate, NoLicenseFeatureGate>();
+            services.AddSingleton<ILicenseVerifier, OfflineLicenseVerifier>();
+            services.AddSingleton<ILicenseService, DefaultLicenseService>();
             services.AddSingleton<IAccessDecisionService, DefaultAccessDecisionService>();
             services.AddSingleton<IModbusDataMapValidator, ModbusDataMapValidator>();
             return services;

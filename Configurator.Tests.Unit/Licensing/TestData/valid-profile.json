@@ -1,0 +1,32 @@
+{
+  "licenseId": "22222222-2222-2222-2222-222222222222",
+  "product": "PromFlow.Dispatcher",
+  "issuedAtUtc": "2026-06-24T12:00:00Z",
+  "validFromUtc": "2026-01-01T00:00:00Z",
+  "expiresAtUtc": "2030-01-01T00:00:00Z",
+  "edition": "Professional",
+  "licenseVersion": 1,
+  "productVersion": {
+    "minimum": "1.0.0",
+    "maximumExclusive": "2.0.0"
+  },
+  "features": [
+    "RouteMap",
+    "RemoteControl",
+    "Archive",
+    "ArchiveExport"
+  ],
+  "customer": {
+    "fullName": "Test Customer",
+    "phone": "+10000000000",
+    "email": "test@example.invalid"
+  },
+  "organization": {
+    "name": "Test Organization",
+    "siteAddress": "Test Site"
+  },
+  "installation": {
+    "bindingMode": "InstallationId",
+    "installationId": "issuer-verify"
+  }
+}

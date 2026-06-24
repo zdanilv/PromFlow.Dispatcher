@@ -19,6 +19,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Configurator.Application\Configurator.Application.csproj" />
     <ProjectReference Include="..\Configurator.Desktop\Configurator.Desktop.csproj" />
+    <ProjectReference Include="..\Configurator.Infrastructure\Configurator.Infrastructure.csproj" />
+    <ProjectReference Include="..\Configurator.LicenseIssuer\Configurator.LicenseIssuer.csproj" />
   </ItemGroup>
 
 </Project>
