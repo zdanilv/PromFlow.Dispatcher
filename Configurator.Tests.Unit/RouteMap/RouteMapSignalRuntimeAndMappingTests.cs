@@ -2,6 +2,7 @@ using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 using Avalonia.Media;
 using Configurator.Application.Services;
+using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -33,6 +34,7 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
             mockCommands,
             modbusProvider,
             modbusCommands,
+            new AllowAccessDecisionService(),
             RouteMapSignalSource.Mock);
         var received = new List<string>();
         using var subscription = runtime.Observe().Subscribe(snapshot => received.Add(
@@ -61,10 +63,12 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
             new RecordingCommandDispatcher(),
             modbusProvider,
             new RecordingCommandDispatcher(),
+            new AllowAccessDecisionService(),
             RouteMapSignalSource.Mock);
         var config = new RecordingAppConfigService();
         using var viewModel = new RouteMapSettingsViewModel(
             scope.Manager,
+            new AuthorizedRouteMapConfigurationMutationService(scope.Manager, new AllowAccessDecisionService()),
             scope.Storage,
             new NullFilePicker(),
             runtime,
@@ -176,6 +180,7 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
             new RecordingCommandDispatcher(),
             new ManualSignalProvider(),
             new RecordingCommandDispatcher(),
+            new AllowAccessDecisionService(),
             RouteMapSignalSource.Modbus);
         var logger = new CapturingLogger<RouteMapModbusBindingDiagnostics>();
 
@@ -818,6 +823,28 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         {
             Applied = dataMap.Select(point => point.Clone()).ToArray();
             return ModbusOperationResult.Success();
+        }
+    }
+
+    private sealed class AllowAccessDecisionService : IAccessDecisionService
+    {
+        private static readonly UserSession Session = new(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "admin",
+            UserRole.Administrator,
+            Enum.GetValues<Permission>(),
+            DateTimeOffset.UtcNow);
+
+        public AccessDecision Authorize(AccessRequirement requirement) =>
+            AccessDecision.Allow(requirement, Session);
+
+        public Task<AccessDecision> AuthorizeAsync(
+            AccessRequirement requirement,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Authorize(requirement));
         }
     }
 

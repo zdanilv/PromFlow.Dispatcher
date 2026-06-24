@@ -1,8 +1,6 @@
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.VisualTree;
-using Configurator.Desktop.Workspace.Authorization;
 using ReactiveUI;
 using ReactiveUI.Avalonia;
 using System.Reactive;
@@ -17,18 +15,27 @@ public partial class AuthorizationView : ReactiveUserControl<AuthorizationViewMo
         AvaloniaXamlLoader.Load(this);
         this.WhenActivated(disposables =>
         {
+            if (ViewModel is null)
+            {
+                return;
+            }
+
             ViewModel.ErrorInteraction.RegisterHandler(async interaction =>
             {
-                // Создаём окно сообщения
-                var dialog = new Window { Title = "Ошибка", Width = 300, Height = 150 };
-                dialog.Content = new TextBlock 
-                { 
-                    Text = interaction.Input, 
+                var dialog = new Window { Title = "Error", Width = 300, Height = 150 };
+                dialog.Content = new TextBlock
+                {
+                    Text = interaction.Input,
                     FontWeight = Avalonia.Media.FontWeight.Bold,
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, 
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 };
-                await dialog.ShowDialog(TopLevel.GetTopLevel(this) as Window);
+
+                if (TopLevel.GetTopLevel(this) is Window owner)
+                {
+                    await dialog.ShowDialog(owner);
+                }
+
                 interaction.SetOutput(Unit.Default);
             }).DisposeWith(disposables);
         });

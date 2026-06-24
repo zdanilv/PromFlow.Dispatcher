@@ -21,7 +21,7 @@
 - [x] Stage 6 — Command and physical write audit
 - [x] Stage 7 — Query, export, retention and backup
 - [x] Stage 8 — Authentication/application foundation
-- [ ] Stage 9 — Login, RBAC and workspace enforcement
+- [x] Stage 9 — Login, RBAC and workspace enforcement
 - [ ] Stage 10 — Offline license core and issuer
 - [ ] Stage 11 — License installation UI and feature policy
 - [ ] Stage 12 — Archive UI
@@ -30,9 +30,9 @@
 
 ## Current stage
 
-- Stage: `8`
+- Stage: `9`
 - Branch: `6-add-archive`
-- Goal: `Add local users, sessions, permissions, password hashing, lockout and bootstrap foundation`
+- Goal: `Enable production login/bootstrap/logout, dynamic workspace tabs and RBAC service-boundary enforcement`
 - Status: `Completed`
 
 ## Current findings
@@ -128,6 +128,12 @@
 - Stage 8 added archive migration `003_security_audit.sql`; `SqliteArchiveWriter` now persists `SecurityAuditRecord` rows and existing archive query/retention paths operate against the real table.
 - Boot now references and registers Persistence DI so auth services resolve, but still does not start archive runtime/collector or enable login workspace flow.
 - Desktop constructors no longer depend on the removed demo auth service; `MainViewModel` continues opening the workspace directly.
+- Stage 9 added `IAccessDecisionService`, access requirements/decisions, a placeholder license feature gate, and authorized wrappers for archive maintenance, Modbus DataMap runtime and protected app config sections.
+- Stage 9 routes startup to administrator bootstrap when no users exist, otherwise to login; workspace is created and initialized only after successful authentication.
+- Stage 9 replaced static workspace tabs with permission-filtered descriptors for existing `Route Map`, `SignalId ↔ Modbus` and `Modbus Demo` content.
+- Stage 9 tightened `UserRole.User` to `ViewRouteMap` and `IssueEquipmentCommands` only.
+- Stage 9 enforces permissions at direct service boundaries for equipment commands, RouteMap configuration mutation, Modbus configuration mutation, archive maintenance/export and existing user-management operations.
+- Stage 9 added unit and headless UI coverage for access decisions, denied direct service calls, login/bootstrap/logout and dynamic workspace composition.
 
 ## Commands last executed
 
@@ -186,6 +192,19 @@ dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrast
 dotnet test .\DesktopTemplate.slnx --no-restore
 git diff --check
 git status --short
+git status --short
+dotnet build .\DesktopTemplate.slnx --no-restore
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~Authorization|FullyQualifiedName~Workspace|FullyQualifiedName~RouteMapSignalRuntime"
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore --filter "FullyQualifiedName~Security"
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore
+dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~RouteMap" -p:RouteMapOnly=true
+dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.csproj --no-restore
+dotnet test .\DesktopTemplate.slnx --no-restore
+rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Application .\Configurator.Desktop .\Configurator.Infrastructure .\Configurator.Infrastructure.Persistence
+rg -n "\.Wait\(|\.Result|Thread\.Sleep" .\Configurator.Application\Services .\Configurator.Desktop\Main .\Configurator.Desktop\Workspace
+git diff --check
+git status --short
 ```
 
 ## Test results
@@ -231,6 +250,18 @@ git status --short
 - Full build after Stage 8: `Passed; 3 NU1903 warnings from SQLitePCLRaw.lib.e_sqlite3`
 - Full tests after Stage 8: `Passed on rerun; 429 passed, 0 failed, 0 skipped`
 - First full Stage 8 test run had transient SQLite failures in two existing `ArchiveRuntimeTests`; targeted rerun passed `2 passed`, then final full rerun passed.
+- Full build after Stage 9: `Passed; 8 warnings total: 3 NU1903 warnings from SQLitePCLRaw.lib.e_sqlite3 and 5 existing Desktop nullable/unreachable-code warnings`
+- Stage 9 targeted unit tests: `Passed; 47 passed, 0 failed, 0 skipped`
+- Stage 9 security-focused Persistence tests: `Passed; 14 passed, 0 failed, 0 skipped`
+- Persistence tests after Stage 9: `Passed on rerun; 84 passed, 0 failed, 0 skipped`
+- First full Persistence run after Stage 9 had a transient existing archive retention SQLite disposed-object failure; immediate rerun passed.
+- Modbus tests after Stage 9: `Passed; 111 passed, 0 failed, 0 skipped`
+- RouteMap unit filter after Stage 9: `Passed; 137 passed, 0 failed, 0 skipped`
+- RouteMap headless UI tests after Stage 9: `Passed; 29 passed, 0 failed, 0 skipped`
+- Full tests after Stage 9: `Passed; 451 passed, 0 failed, 0 skipped`
+- Stage 9 sensitive-material scan found only expected auth/password identifiers and no hardcoded production secrets, private keys or license material.
+- Stage 9 blocking-call scan found one false positive on `RouteMapSettingsViewModel.Result` property access and no `.Wait()`, task `.Result` or `Thread.Sleep`.
+- Stage 9 diff whitespace check: `Passed; only CRLF normalization warnings`
 
 ## Known limitations
 
@@ -259,7 +290,10 @@ git status --short
 - Stage 8 did not enable login navigation, dynamic workspace/tab visibility, command enforcement, license checks, Archive UI or centralized lifecycle startup; those remain later stages.
 - Stage 8 security audit enqueueing is best-effort and depends on archive runtime startup in later lifecycle stages for background flushing.
 - Stage 8 stores users in a stable security database while security audit rows live in monthly archive partitions.
+- Stage 9 reserves `RequiredLicenseFeature` in access and tab descriptors, but all current descriptors use `null`; real license validation remains Stage 10/11.
+- Stage 9 does not add Archive/User/License workspace tabs because those UI surfaces belong to later stages.
+- Stage 9 does not start archive runtime/collector or centralized lifecycle; Stage 13 still owns that lifecycle work.
 
 ## Next action
 
-Stop here until Stage 9 is explicitly requested.
+Stop here until Stage 10 is explicitly requested.

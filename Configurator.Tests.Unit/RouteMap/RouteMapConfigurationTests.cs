@@ -1,5 +1,6 @@
 using System.Reactive.Linq;
 using Avalonia.Media;
+using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -235,7 +236,11 @@ public sealed class RouteMapConfigurationTests
     {
         using var scope = new TempConfigurationScope();
         using var manager = scope.CreateManager();
-        using var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        using var viewModel = new RouteMapSettingsViewModel(
+            manager,
+            new AuthorizedRouteMapConfigurationMutationService(manager, new AllowAccessDecisionService()),
+            scope.Storage,
+            new NullFilePicker());
         var node = viewModel.Draft.Nodes.Single(x => x.Id == "bsu_1");
         viewModel.SelectedNode = node;
 
@@ -254,7 +259,11 @@ public sealed class RouteMapConfigurationTests
     {
         using var scope = new TempConfigurationScope();
         using var manager = scope.CreateManager();
-        using var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        using var viewModel = new RouteMapSettingsViewModel(
+            manager,
+            new AuthorizedRouteMapConfigurationMutationService(manager, new AllowAccessDecisionService()),
+            scope.Storage,
+            new NullFilePicker());
 
         viewModel.AddSegmentCommand.Execute().Subscribe();
 
@@ -270,7 +279,11 @@ public sealed class RouteMapConfigurationTests
     {
         using var scope = new TempConfigurationScope();
         using var manager = scope.CreateManager();
-        using var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        using var viewModel = new RouteMapSettingsViewModel(
+            manager,
+            new AuthorizedRouteMapConfigurationMutationService(manager, new AllowAccessDecisionService()),
+            scope.Storage,
+            new NullFilePicker());
 
         viewModel.AddNodeCommand.Execute().Subscribe();
         viewModel.SelectedNode!.MenuKind = RouteNodeMenuKind.SendAndReturn;
@@ -689,6 +702,28 @@ public sealed class RouteMapConfigurationTests
     {
         public Task<string?> PickImportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
         public Task<string?> PickExportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+    }
+
+    private sealed class AllowAccessDecisionService : IAccessDecisionService
+    {
+        private static readonly UserSession Session = new(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "admin",
+            UserRole.Administrator,
+            Enum.GetValues<Permission>(),
+            DateTimeOffset.UtcNow);
+
+        public AccessDecision Authorize(AccessRequirement requirement) =>
+            AccessDecision.Allow(requirement, Session);
+
+        public Task<AccessDecision> AuthorizeAsync(
+            AccessRequirement requirement,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Authorize(requirement));
+        }
     }
 
     private static Color BrushColor(IBrush brush) =>

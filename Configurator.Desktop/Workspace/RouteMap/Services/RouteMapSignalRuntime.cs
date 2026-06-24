@@ -1,3 +1,4 @@
+using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Signals;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Services;
@@ -8,6 +9,7 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
     private readonly IEquipmentCommandDispatcher _mockDispatcher;
     private readonly ISignalValueProvider _modbusProvider;
     private readonly IEquipmentCommandDispatcher _modbusDispatcher;
+    private readonly IAccessDecisionService _accessDecisionService;
     private readonly SignalSnapshotObservable _observable = new();
     private readonly object _sync = new();
     private IDisposable? _activeSubscription;
@@ -21,12 +23,14 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
         IEquipmentCommandDispatcher mockDispatcher,
         ISignalValueProvider modbusProvider,
         IEquipmentCommandDispatcher modbusDispatcher,
+        IAccessDecisionService accessDecisionService,
         RouteMapSignalSource initialSource)
     {
         _mockProvider = mockProvider;
         _mockDispatcher = mockDispatcher;
         _modbusProvider = modbusProvider;
         _modbusDispatcher = modbusDispatcher;
+        _accessDecisionService = accessDecisionService ?? throw new ArgumentNullException(nameof(accessDecisionService));
         SwitchSource(initialSource);
     }
 
@@ -92,11 +96,21 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
         SignalWriteRequest request,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         IEquipmentCommandDispatcher dispatcher;
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             dispatcher = DispatcherFor(_currentSource);
+        }
+
+        var decision = _accessDecisionService.Authorize(
+            new AccessRequirement(Permission.IssueEquipmentCommands));
+        if (!decision.Succeeded)
+        {
+            throw new UnauthorizedAccessException(
+                $"Issue equipment commands permission is required. Reason: {decision.ReasonCode}");
         }
 
         return dispatcher.DispatchAsync(request, cancellationToken);

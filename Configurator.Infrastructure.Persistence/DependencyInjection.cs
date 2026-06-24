@@ -64,7 +64,10 @@ public static class DependencyInjection
         services.AddSingleton<ArchiveExportPackageWriter>();
         services.AddSingleton<ArchiveBackupPackageWriter>();
         services.AddSingleton<ArchiveMaintenanceService>();
-        services.AddSingleton<IArchiveMaintenanceService>(serviceProvider => serviceProvider.GetRequiredService<ArchiveMaintenanceService>());
+        services.AddSingleton<IArchiveMaintenanceService>(serviceProvider =>
+            new AuthorizedArchiveMaintenanceService(
+                serviceProvider.GetRequiredService<ArchiveMaintenanceService>(),
+                serviceProvider.GetRequiredService<IAccessDecisionService>()));
         services.AddSingleton<SqliteArchiveWriter>();
         services.AddSingleton<ArchiveRuntime>();
         services.AddSingleton<IArchiveRuntime>(serviceProvider => serviceProvider.GetRequiredService<ArchiveRuntime>());

@@ -4,6 +4,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Configurator.Application.Services;
+using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -141,7 +142,14 @@ public sealed class RouteMapSettingsDialogVisualTests
         Dispatcher.UIThread.RunJobs();
 
         var tabs = view.GetVisualDescendants().OfType<TabControl>().Single();
-        var headers = tabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString() ?? string.Empty).ToArray();
+        tabs.ItemsSource = new[]
+        {
+            new WorkspaceTabViewModel("route-map", "Route Map", new object()),
+            new WorkspaceTabViewModel("signal-map", "SignalId ↔ Modbus", new object()),
+            new WorkspaceTabViewModel("modbus-demo", "Modbus Demo", new object()),
+        };
+        Dispatcher.UIThread.RunJobs();
+        var headers = tabs.Items.Cast<WorkspaceTabViewModel>().Select(item => item.Header).ToArray();
 
         Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Modbus Demo"], headers);
 
@@ -342,7 +350,11 @@ public sealed class RouteMapSettingsDialogVisualTests
                 mapper,
                 new RouteMapConfigurationValidator(),
                 new RouteMapConfigurationMigrator());
-            _viewModel = new RouteMapSettingsViewModel(_manager, storage, new NullFilePicker());
+            _viewModel = new RouteMapSettingsViewModel(
+                _manager,
+                new AuthorizedRouteMapConfigurationMutationService(_manager, new AllowAccessDecisionService()),
+                storage,
+                new NullFilePicker());
             Dialog = new RouteMapSettingsDialog { DataContext = _viewModel };
             Window = new Window { Width = width, Height = height, Content = Dialog };
             Window.Show();
@@ -452,5 +464,27 @@ public sealed class RouteMapSettingsDialogVisualTests
     {
         public Task<string?> PickImportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
         public Task<string?> PickExportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+    }
+
+    private sealed class AllowAccessDecisionService : IAccessDecisionService
+    {
+        private static readonly UserSession Session = new(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "admin",
+            UserRole.Administrator,
+            Enum.GetValues<Permission>(),
+            DateTimeOffset.UtcNow);
+
+        public AccessDecision Authorize(AccessRequirement requirement) =>
+            AccessDecision.Allow(requirement, Session);
+
+        public Task<AccessDecision> AuthorizeAsync(
+            AccessRequirement requirement,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Authorize(requirement));
+        }
     }
 }

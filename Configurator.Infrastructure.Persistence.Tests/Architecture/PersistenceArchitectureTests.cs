@@ -128,6 +128,7 @@ public sealed class PersistenceArchitectureTests
         Assert.Contains("ArchiveExportPackageWriter", text);
         Assert.Contains("ArchiveBackupPackageWriter", text);
         Assert.Contains("ArchiveMaintenanceService", text);
+        Assert.Contains("AuthorizedArchiveMaintenanceService", text);
         Assert.Contains("IArchiveMaintenanceService", text);
         Assert.Contains("AuthenticationOptionsValidator", text);
         Assert.Contains("IPasswordHashService", text);

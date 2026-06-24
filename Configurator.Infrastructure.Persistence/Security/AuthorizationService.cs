@@ -10,10 +10,7 @@ public sealed class AuthorizationService : IAuthorizationService
     private static readonly IReadOnlyList<Permission> UserPermissions = Array.AsReadOnly(
     [
         Permission.ViewRouteMap,
-        Permission.IssueEquipmentCommands,
-        Permission.ViewSignalMapping,
-        Permission.ViewModbusDiagnostics,
-        Permission.ViewLicense
+        Permission.IssueEquipmentCommands
     ]);
 
     private readonly IUserSessionAccessor _sessionAccessor;

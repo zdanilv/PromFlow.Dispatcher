@@ -1,8 +1,4 @@
-using Configurator.Application.Services.Modbus.Configuration;
-using Configurator.Application.Services.Modbus.Contracts;
-using Configurator.Application.Services.Modbus.Data;
-using Configurator.Application.Services.Modbus.Encoding;
-using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Modbus.Validation;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,6 +10,8 @@ namespace Configurator.Application
         {
             // MediatR/FluentValidation/Mapster can be added here later.
             //services.AddScoped<IGetRecentGroupCase, GetRecentGroupCase>();
+            services.AddSingleton<ILicenseFeatureGate, NoLicenseFeatureGate>();
+            services.AddSingleton<IAccessDecisionService, DefaultAccessDecisionService>();
             services.AddSingleton<IModbusDataMapValidator, ModbusDataMapValidator>();
             return services;
         }

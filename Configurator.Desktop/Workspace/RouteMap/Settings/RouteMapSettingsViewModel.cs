@@ -14,6 +14,7 @@ namespace Configurator.Desktop.Workspace.RouteMap.Settings;
 public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 {
     private readonly RouteMapConfigurationManager _manager;
+    private readonly IRouteMapConfigurationMutationService _mutationService;
     private readonly RouteMapConfigurationStorage _storage;
     private readonly IRouteMapSettingsFilePicker _filePicker;
     private readonly IRouteMapSignalRuntime? _signalRuntime;
@@ -36,12 +37,14 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     public RouteMapSettingsViewModel(
         RouteMapConfigurationManager manager,
+        IRouteMapConfigurationMutationService mutationService,
         RouteMapConfigurationStorage storage,
         IRouteMapSettingsFilePicker filePicker,
         IRouteMapSignalRuntime? signalRuntime = null,
         IAppConfigService? appConfigService = null)
     {
         _manager = manager;
+        _mutationService = mutationService;
         _storage = storage;
         _filePicker = filePicker;
         _signalRuntime = signalRuntime;
@@ -229,7 +232,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     internal void Apply()
     {
         EnsureDraftRequiredBindings();
-        var result = _manager.Apply(Draft);
+        var result = _mutationService.Apply(Draft);
         HandleResult(result, "Настройки применены без записи файла.");
         if (result.IsSuccess)
         {
@@ -240,7 +243,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     internal async Task SaveAsync()
     {
         EnsureDraftRequiredBindings();
-        var result = await _manager.SaveAndApplyAsync(Draft);
+        var result = await _mutationService.SaveAndApplyAsync(Draft);
         HandleResult(result, $"Настройки сохранены: {ActiveFilePath}");
         if (!result.IsSuccess)
         {
@@ -298,7 +301,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     {
         var path = await _filePicker.PickExportPathAsync();
         if (string.IsNullOrWhiteSpace(path)) return;
-        HandleResult(await _manager.ExportDraftAsync(path, Draft), $"Черновик экспортирован: {path}");
+        HandleResult(await _mutationService.ExportDraftAsync(path, Draft), $"Черновик экспортирован: {path}");
     }
 
     private void HandleResult(RouteMapConfigurationOperationResult result, string successMessage)

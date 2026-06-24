@@ -7,10 +7,13 @@
 			 xmlns:vm="clr-namespace:Configurator.Desktop.Workspace.Authorization;assembly=Configurator.Desktop"
 			 x:DataType="vm:AuthorizationViewModel">
 	<Grid>
-		<StackPanel Orientation="Vertical" Margin="20" Width="300">
+		<StackPanel Orientation="Vertical" Margin="20" Width="300" Spacing="6">
 			<TextBlock Text="Вход в систему" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
-			<TextBox Watermark="Имя пользователя" Text="{Binding Username}" Margin="0,0,0,5"/>
-			<TextBox Watermark="Пароль" Text="{Binding Password}" PasswordChar="●" Margin="0,0,0,10"/>
+			<TextBox PlaceholderText="Имя пользователя" Text="{Binding Username}"/>
+			<TextBox PlaceholderText="Пароль" Text="{Binding Password}" PasswordChar="●"/>
+			<TextBlock Text="{Binding ErrorMessage}"
+					   Foreground="#B3261E"
+					   TextWrapping="Wrap"/>
 			<Button Content="Войти" Command="{Binding AuthenticateCommand}"/>
 		</StackPanel>
 	</Grid>

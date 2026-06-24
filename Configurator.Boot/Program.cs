@@ -1,6 +1,8 @@
 ﻿using Avalonia;
 using Configurator.Application;
+using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Dialogs;
+using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop;
 using Configurator.Desktop.Dialogs;
@@ -27,6 +29,7 @@ using Configurator.Infrastructure.OpcUa;
 using Configurator.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
@@ -75,6 +78,10 @@ internal static class Program
                     services.AddPersistenceInfrastructure(configuration);
                     // Modbus/OpcUa регистрируются в boot-слое, чтобы Desktop зависел только от application-контрактов.
                     services.AddModbusInfrastructure(configuration);
+                    services.Replace(ServiceDescriptor.Singleton<IModbusDataMapRuntime>(sp =>
+                        new AuthorizedModbusDataMapRuntime(
+                            (IModbusDataMapRuntime)sp.GetRequiredService<IModbusTcpService>(),
+                            sp.GetRequiredService<IAccessDecisionService>())));
                     services.AddOpcUaInfrastructure(configuration);
 
                     services.AddSingleton(sp => new RouteMapConfigurationMapper(RouteMapSeed.Create()));
@@ -82,6 +89,7 @@ internal static class Program
                     services.AddSingleton<RouteMapConfigurationValidator>();
                     services.AddSingleton<RouteMapConfigurationMigrator>();
                     services.AddSingleton<RouteMapConfigurationManager>();
+                    services.AddSingleton<IRouteMapConfigurationMutationService, AuthorizedRouteMapConfigurationMutationService>();
                     services.AddSingleton<IRouteMapSettingsFilePicker, RouteMapSettingsFilePicker>();
                     services.AddSingleton<IRouteMapSettingsDialogService, RouteMapSettingsDialogService>();
                     services.AddTransient<RouteMapSettingsViewModel>();
@@ -103,6 +111,7 @@ internal static class Program
                         sp.GetRequiredService<MockEquipmentCommandDispatcher>(),
                         sp.GetRequiredService<ModbusTcpSignalValueProvider>(),
                         sp.GetRequiredService<ModbusTcpCommandDispatcher>(),
+                        sp.GetRequiredService<IAccessDecisionService>(),
                         routeMapRuntime.SignalSource));
                     services.AddSingleton<ISignalValueProvider>(sp => sp.GetRequiredService<IRouteMapSignalRuntime>());
                     services.AddSingleton<IEquipmentCommandDispatcher>(sp => sp.GetRequiredService<IRouteMapSignalRuntime>());
@@ -112,13 +121,50 @@ internal static class Program
                     services.AddSingleton<Configurator.Desktop.Main.MainViewModel>();
 
                     services.AddTransient<AuthorizationViewModel>();
+                    services.AddTransient<AdminBootstrapViewModel>();
                     services.AddTransient<WorkspaceViewModel>();
                     services.AddTransient<ModbusDemoViewModel>();
-                    services.AddTransient<Func<IScreen, WorkspaceViewModel>>(sp =>
-                        hostScreen => ActivatorUtilities.CreateInstance<WorkspaceViewModel>(sp, hostScreen));
+                    services.AddTransient<Func<IScreen, Func<CancellationToken, Task>, AuthorizationViewModel>>(sp =>
+                        (hostScreen, onSucceeded) => ActivatorUtilities.CreateInstance<AuthorizationViewModel>(
+                            sp,
+                            hostScreen,
+                            onSucceeded));
+                    services.AddTransient<Func<IScreen, Func<CancellationToken, Task>, AdminBootstrapViewModel>>(sp =>
+                        (hostScreen, onSucceeded) => ActivatorUtilities.CreateInstance<AdminBootstrapViewModel>(
+                            sp,
+                            hostScreen,
+                            onSucceeded));
+                    services.AddTransient<Func<IScreen, Func<WorkspaceViewModel, CancellationToken, Task>, WorkspaceViewModel>>(sp =>
+                        (hostScreen, onLogout) => ActivatorUtilities.CreateInstance<WorkspaceViewModel>(
+                            sp,
+                            hostScreen,
+                            onLogout));
+
+                    services.AddSingleton<WorkspaceTabDescriptor>(_ => new WorkspaceTabDescriptor(
+                        "route-map",
+                        "Route Map",
+                        Permission.ViewRouteMap,
+                        null,
+                        serviceProvider => serviceProvider.GetRequiredService<RouteMapDashboardViewModel>(),
+                        0));
+                    services.AddSingleton<WorkspaceTabDescriptor>(_ => new WorkspaceTabDescriptor(
+                        "signal-map",
+                        "SignalId ↔ Modbus",
+                        Permission.ViewSignalMapping,
+                        null,
+                        serviceProvider => serviceProvider.GetRequiredService<RouteMapSignalMappingViewModel>(),
+                        10));
+                    services.AddSingleton<WorkspaceTabDescriptor>(_ => new WorkspaceTabDescriptor(
+                        "modbus-demo",
+                        "Modbus Demo",
+                        Permission.ViewModbusDiagnostics,
+                        null,
+                        serviceProvider => serviceProvider.GetRequiredService<ModbusDemoViewModel>(),
+                        20));
 
                     services.AddTransient<IViewFor<WorkspaceViewModel>, WorkspaceView>();
                     services.AddTransient<IViewFor<AuthorizationViewModel>, AuthorizationView>();
+                    services.AddTransient<IViewFor<AdminBootstrapViewModel>, AdminBootstrapView>();
                     services.AddTransient<IViewFor<ModbusDemoViewModel>, ModbusDemoView>();
                     services.AddTransient<RouteMapDashboardView>();
                     services.AddTransient<RouteMapSignalMappingView>();

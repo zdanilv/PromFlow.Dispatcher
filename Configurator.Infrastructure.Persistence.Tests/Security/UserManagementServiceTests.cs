@@ -55,4 +55,17 @@ public sealed class UserManagementServiceTests
         Assert.True(allowed.Succeeded, allowed.ErrorMessage);
         Assert.Equal(UserRole.User, allowed.User!.Role);
     }
+
+    [Fact]
+    public void UserRolePermissions_AreLimitedToRouteMapAndCommands()
+    {
+        using var fixture = new SecurityTestFixture();
+        var permissions = fixture.CreateAuthorizationService().GetPermissions(UserRole.User);
+
+        Assert.Equal([Permission.ViewRouteMap, Permission.IssueEquipmentCommands], permissions);
+        Assert.DoesNotContain(Permission.ViewSignalMapping, permissions);
+        Assert.DoesNotContain(Permission.ViewModbusDiagnostics, permissions);
+        Assert.DoesNotContain(Permission.ViewLicense, permissions);
+        Assert.DoesNotContain(Permission.ManageUsers, permissions);
+    }
 }
