@@ -134,7 +134,8 @@ public sealed class ArchiveMaintenanceService : IArchiveMaintenanceService
 
     public async Task<ArchiveOperationResult<ArchiveExportResult>> ExportAsync(
         ArchiveExportRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<ArchiveExportProgress>? progress = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var options = _options.Value.Clone();
@@ -146,7 +147,7 @@ public sealed class ArchiveMaintenanceService : IArchiveMaintenanceService
                 "Archive options are invalid.");
         }
 
-        return await _exportPackageWriter.ExportAsync(request, options, cancellationToken).ConfigureAwait(false);
+        return await _exportPackageWriter.ExportAsync(request, options, cancellationToken, progress).ConfigureAwait(false);
     }
 
     public async Task<ArchiveOperationResult<ArchiveBackupResult>> CreateBackupAsync(

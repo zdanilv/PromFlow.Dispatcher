@@ -45,6 +45,117 @@ public sealed class SqliteArchiveQueryService : IArchiveQueryService
             ReadSnapshotsAsync,
             cancellationToken);
 
+    public Task<ArchiveOperationResult<ArchivePage<RawModbusSnapshotArchiveMetadataRecord>>> QueryRawSnapshotMetadataAsync(
+        ArchiveQuery query,
+        CancellationToken cancellationToken = default)
+        => QueryPartitionsAsync(
+            query,
+            ArchiveRecordKind.RawModbusSnapshot,
+            "modbus_snapshot",
+            CountSnapshotsAsync,
+            ReadSnapshotMetadataAsync,
+            cancellationToken);
+
+    public async Task<ArchiveOperationResult<RawModbusSnapshotArchiveRecord>> GetRawSnapshotAsync(
+        Guid id,
+        DateTimeOffset capturedAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (id == Guid.Empty)
+        {
+            return ArchiveOperationResult<RawModbusSnapshotArchiveRecord>.Failure(
+                ArchivePersistenceErrorCodes.ArchiveQueryInvalid,
+                "Archive snapshot identifier is required.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var capturedUtc = capturedAtUtc.ToUniversalTime();
+        var query = new ArchiveQuery(
+            fromUtc: capturedUtc,
+            toUtc: capturedUtc,
+            recordKind: ArchiveRecordKind.RawModbusSnapshot,
+            pageSize: 1);
+        var options = _options.Value.Clone();
+        var validation = ValidateQuery(query, ArchiveRecordKind.RawModbusSnapshot, options);
+        if (!validation.Succeeded)
+        {
+            return ArchiveOperationResult<RawModbusSnapshotArchiveRecord>.Failure(
+                validation.ErrorCode ?? ArchivePersistenceErrorCodes.ArchiveQueryInvalid,
+                validation.ErrorMessage ?? "Archive query is invalid.",
+                validation.ErrorDetails);
+        }
+
+        try
+        {
+            foreach (var partition in _partitionCatalog.GetExistingPartitions(options, query))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var connectionResult = await _connectionFactory
+                    .OpenReadOnlyAsync(partition.DatabasePath, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!connectionResult.Succeeded || connectionResult.Value is null)
+                {
+                    if (connectionResult.ErrorCode == ArchivePersistenceErrorCodes.ArchivePartitionMissing)
+                    {
+                        continue;
+                    }
+
+                    return ArchiveOperationResult<RawModbusSnapshotArchiveRecord>.Failure(
+                        connectionResult.ErrorCode ?? ArchivePersistenceErrorCodes.ArchiveQueryFailed,
+                        connectionResult.ErrorMessage ?? "Archive partition could not be opened.",
+                        connectionResult.ErrorDetails ?? partition.DatabasePath);
+                }
+
+                await using var connection = connectionResult.Value;
+                var pragmaResult = await _pragmaInitializer
+                    .ApplyReadOnlyAsync(connection, options.BusyTimeoutMs, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!pragmaResult.Succeeded)
+                {
+                    return ArchiveOperationResult<RawModbusSnapshotArchiveRecord>.Failure(
+                        pragmaResult.ErrorCode ?? ArchivePersistenceErrorCodes.ArchiveQueryFailed,
+                        pragmaResult.ErrorMessage ?? "Archive partition read-only PRAGMA failed.",
+                        pragmaResult.ErrorDetails ?? partition.DatabasePath);
+                }
+
+                if (!await TableExistsAsync(connection, "modbus_snapshot", cancellationToken).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                var snapshot = await ReadSnapshotByIdAsync(connection, id, capturedUtc, cancellationToken)
+                    .ConfigureAwait(false);
+                if (snapshot is not null)
+                {
+                    return ArchiveOperationResult<RawModbusSnapshotArchiveRecord>.Success(snapshot);
+                }
+            }
+
+            return ArchiveOperationResult<RawModbusSnapshotArchiveRecord>.Failure(
+                ArchivePersistenceErrorCodes.ArchiveQueryFailed,
+                "Archive snapshot was not found.",
+                id.ToString("D"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArchiveQueryMappingException ex)
+        {
+            return ArchiveOperationResult<RawModbusSnapshotArchiveRecord>.Failure(
+                ArchivePersistenceErrorCodes.ArchivePartitionCorrupt,
+                "Archive partition row could not be mapped.",
+                ex.Message);
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidOperationException or IOException or ArgumentException)
+        {
+            return ArchiveOperationResult<RawModbusSnapshotArchiveRecord>.Failure(
+                ArchivePersistenceErrorCodes.ArchiveQueryFailed,
+                "Archive query failed.",
+                ex.Message);
+        }
+    }
+
     public Task<ArchiveOperationResult<ArchivePage<ModbusStatusArchiveRecord>>> QueryModbusStatusesAsync(
         ArchiveQuery query,
         CancellationToken cancellationToken = default)
@@ -304,21 +415,41 @@ public sealed class SqliteArchiveQueryService : IArchiveQueryService
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var coilsBlob = (byte[])reader["coils_blob"];
-            var registersBlob = (byte[])reader["holding_registers_blob"];
-            var coils = _blobCodec.DecodeCoils(coilsBlob);
-            if (!coils.Succeeded || coils.Value is null)
-            {
-                throw new ArchiveQueryMappingException(coils.ErrorMessage ?? "Snapshot coil blob is invalid.");
-            }
+            rows.Add(ReadSnapshotRecord(reader));
+        }
 
-            var registers = _blobCodec.DecodeHoldingRegisters(registersBlob);
-            if (!registers.Succeeded || registers.Value is null)
-            {
-                throw new ArchiveQueryMappingException(registers.ErrorMessage ?? "Snapshot register blob is invalid.");
-            }
+        return rows;
+    }
 
-            rows.Add(new RawModbusSnapshotArchiveRecord(
+    private static async Task<IReadOnlyList<RawModbusSnapshotArchiveMetadataRecord>> ReadSnapshotMetadataAsync(
+        SqliteConnection connection,
+        ArchiveQuery query,
+        long offset,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        var where = new StringBuilder("WHERE 1 = 1");
+        AddTimeFilter(command, where, "captured_at_utc_ms", query);
+        AddStringFilter(command, where, "device_id", "@deviceId", query.DeviceId);
+        AddEnumFilter(command, where, "runtime_role", "@role", query.Role);
+        AddPaging(command, offset, limit);
+        var sort = GetSortSql(query);
+        command.CommandText = $"""
+            SELECT id, device_id, runtime_role, captured_at_utc_ms, sequence_number, resolution_class,
+                   coil_start_address, coil_count, holding_register_start_address, holding_register_count,
+                   configuration_hash, archive_schema_version
+            FROM modbus_snapshot
+            {where}
+            ORDER BY captured_at_utc_ms {sort}, sequence_number {sort}, id {sort}
+            LIMIT @limit OFFSET @offset;
+            """;
+
+        var rows = new List<RawModbusSnapshotArchiveMetadataRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            rows.Add(new RawModbusSnapshotArchiveMetadataRecord(
                 reader.GetGuidFromString(0),
                 reader.GetString(1),
                 (ModbusRuntimeRole)reader.GetInt32(2),
@@ -326,14 +457,69 @@ public sealed class SqliteArchiveQueryService : IArchiveQueryService
                 reader.GetUtcFromUnixMilliseconds(3),
                 reader.GetInt32(6),
                 reader.GetInt32(7),
-                coils.Value,
-                registers.Value,
+                reader.GetInt32(8),
+                reader.GetInt32(9),
                 reader.GetString(10),
                 (ArchiveResolution)reader.GetInt32(5),
                 reader.GetInt32(11)));
         }
 
         return rows;
+    }
+
+    private async Task<RawModbusSnapshotArchiveRecord?> ReadSnapshotByIdAsync(
+        SqliteConnection connection,
+        Guid id,
+        DateTimeOffset capturedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, device_id, runtime_role, captured_at_utc_ms, sequence_number, resolution_class,
+                   coil_start_address, holding_register_start_address, coils_blob, holding_registers_blob,
+                   configuration_hash, archive_schema_version
+            FROM modbus_snapshot
+            WHERE id = @id AND captured_at_utc_ms = @capturedAtUtcMs
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@id", id.ToString("D"));
+        command.Parameters.AddWithValue("@capturedAtUtcMs", capturedAtUtc.ToUnixTimeMilliseconds());
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadSnapshotRecord(reader)
+            : null;
+    }
+
+    private RawModbusSnapshotArchiveRecord ReadSnapshotRecord(SqliteDataReader reader)
+    {
+        var coilsBlob = (byte[])reader["coils_blob"];
+        var registersBlob = (byte[])reader["holding_registers_blob"];
+        var coils = _blobCodec.DecodeCoils(coilsBlob);
+        if (!coils.Succeeded || coils.Value is null)
+        {
+            throw new ArchiveQueryMappingException(coils.ErrorMessage ?? "Snapshot coil blob is invalid.");
+        }
+
+        var registers = _blobCodec.DecodeHoldingRegisters(registersBlob);
+        if (!registers.Succeeded || registers.Value is null)
+        {
+            throw new ArchiveQueryMappingException(registers.ErrorMessage ?? "Snapshot register blob is invalid.");
+        }
+
+        return new RawModbusSnapshotArchiveRecord(
+            reader.GetGuidFromString(0),
+            reader.GetString(1),
+            (ModbusRuntimeRole)reader.GetInt32(2),
+            reader.GetInt64(4),
+            reader.GetUtcFromUnixMilliseconds(3),
+            reader.GetInt32(6),
+            reader.GetInt32(7),
+            coils.Value,
+            registers.Value,
+            reader.GetString(10),
+            (ArchiveResolution)reader.GetInt32(5),
+            reader.GetInt32(11));
     }
 
     private static async Task<long> CountRuntimeEventsAsync(

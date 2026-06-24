@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Configurator.Desktop.Workspace;assembly=Configurator.Desktop"
+             xmlns:archive="using:Configurator.Desktop.Workspace.Archive"
              xmlns:licensing="using:Configurator.Desktop.Workspace.Licensing"
              xmlns:modbusDemo="using:Configurator.Desktop.Workspace.ModbusDemo"
              xmlns:routeMap="using:Configurator.Desktop.Workspace.RouteMap"
@@ -22,6 +23,9 @@
         </DataTemplate>
         <DataTemplate DataType="modbusDemo:ModbusDemoViewModel">
             <modbusDemo:ModbusDemoView/>
+        </DataTemplate>
+        <DataTemplate DataType="archive:ArchiveViewModel">
+            <archive:ArchiveView/>
         </DataTemplate>
         <DataTemplate DataType="licensing:LicenseViewModel">
             <licensing:LicenseView/>

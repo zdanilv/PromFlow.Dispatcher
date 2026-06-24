@@ -32,6 +32,7 @@ public sealed class ArchiveExportPackageWriterTests
             ]);
         var exportDirectory = Path.Combine(database.DirectoryPath, "exports");
         var writer = CreateExportWriter(options);
+        var progress = new RecordingProgress();
         var request = new ArchiveExportRequest(
             new ArchiveQuery(
                 fromUtc: new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero),
@@ -39,7 +40,7 @@ public sealed class ArchiveExportPackageWriterTests
                 sortDirection: ArchiveSortDirection.Ascending),
             exportDirectory);
 
-        var outcome = await writer.ExportAsync(request, options, CancellationToken.None);
+        var outcome = await writer.ExportAsync(request, options, CancellationToken.None, progress);
 
         Assert.True(outcome.Succeeded, FormatFailure(outcome));
         Assert.True(File.Exists(outcome.Value!.ExportPath));
@@ -66,6 +67,13 @@ public sealed class ArchiveExportPackageWriterTests
         Assert.Contains("\"coilCount\":2", snapshots, StringComparison.Ordinal);
         Assert.DoesNotContain("coils_blob", snapshots, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("holding_registers_blob", snapshots, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(ArchiveExportPhase.Preparing, progress.Values.Select(value => value.Phase));
+        Assert.Contains(ArchiveExportPhase.Commands, progress.Values.Select(value => value.Phase));
+        Assert.Contains(ArchiveExportPhase.PhysicalWrites, progress.Values.Select(value => value.Phase));
+        Assert.Contains(ArchiveExportPhase.RuntimeEvents, progress.Values.Select(value => value.Phase));
+        Assert.Contains(ArchiveExportPhase.Snapshots, progress.Values.Select(value => value.Phase));
+        Assert.Contains(ArchiveExportPhase.Packaging, progress.Values.Select(value => value.Phase));
+        Assert.Equal(ArchiveExportPhase.Completed, progress.Values.Last().Phase);
     }
 
     private static string ReadEntry(ZipArchive archive, string entryName)
@@ -201,5 +209,12 @@ public sealed class ArchiveExportPackageWriterTests
 
         public string GetArchiveExportDirectory(ArchiveOptions options)
             => Path.Combine(Path.GetFullPath(baseDirectory), "Exports");
+    }
+
+    private sealed class RecordingProgress : IProgress<ArchiveExportProgress>
+    {
+        public List<ArchiveExportProgress> Values { get; } = [];
+
+        public void Report(ArchiveExportProgress value) => Values.Add(value);
     }
 }

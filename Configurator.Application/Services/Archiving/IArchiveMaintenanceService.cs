@@ -11,7 +11,8 @@ public interface IArchiveMaintenanceService
 
     Task<ArchiveOperationResult<ArchiveExportResult>> ExportAsync(
         ArchiveExportRequest request,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IProgress<ArchiveExportProgress>? progress = null);
 
     Task<ArchiveOperationResult<ArchiveBackupResult>> CreateBackupAsync(
         string destinationDirectory,

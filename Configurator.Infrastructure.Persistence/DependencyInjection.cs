@@ -57,7 +57,8 @@ public static class DependencyInjection
         services.AddSingleton<IUserManagementService>(serviceProvider => serviceProvider.GetRequiredService<UserManagementService>());
         services.AddSingleton<ArchivePartitionCatalog>();
         services.AddSingleton<SqliteArchiveQueryService>();
-        services.AddSingleton<IArchiveQueryService>(serviceProvider => serviceProvider.GetRequiredService<SqliteArchiveQueryService>());
+        services.AddSingleton<AuthorizedArchiveQueryService>();
+        services.AddSingleton<IArchiveQueryService>(serviceProvider => serviceProvider.GetRequiredService<AuthorizedArchiveQueryService>());
         services.AddSingleton<ArchiveRuntimeEventWriter>();
         services.AddSingleton<ArchiveChecksum>();
         services.AddSingleton<ArchiveCsvWriter>();

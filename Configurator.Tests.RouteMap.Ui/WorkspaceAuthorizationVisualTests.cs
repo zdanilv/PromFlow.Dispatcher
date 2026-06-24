@@ -31,7 +31,7 @@ public sealed class WorkspaceAuthorizationVisualTests
     {
         using var fixture = await WorkspaceFixture.CreateAsync(Enum.GetValues<Permission>());
 
-        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "License"], fixture.Headers());
+        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "Archive", "License"], fixture.Headers());
     }
 
     private sealed class WorkspaceFixture : IDisposable
@@ -96,6 +96,7 @@ public sealed class WorkspaceAuthorizationVisualTests
             new("route-map", "Route Map", Permission.ViewRouteMap, LicenseFeature.RouteMap, _ => new object(), 0),
             new("signal-map", "SignalId ↔ Modbus", Permission.ViewSignalMapping, LicenseFeature.EngineeringTools, _ => new object(), 10),
             new("modbus-demo", "Modbus Demo", Permission.ViewModbusDiagnostics, LicenseFeature.Diagnostics, _ => new object(), 20),
+            new("archive", "Archive", Permission.ViewArchive, LicenseFeature.Archive, _ => new object(), 25),
             new("license", "License", Permission.ViewLicense, null, _ => new object(), 30),
         ];
     }
@@ -121,6 +122,8 @@ public sealed class WorkspaceAuthorizationVisualTests
                     LicenseFeature.RemoteControl,
                     LicenseFeature.EngineeringTools,
                     LicenseFeature.Diagnostics,
+                    LicenseFeature.Archive,
+                    LicenseFeature.ArchiveExport,
                 ],
                 Installation = new LicenseInstallationProfile
                 {

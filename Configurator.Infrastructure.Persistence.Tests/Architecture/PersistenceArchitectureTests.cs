@@ -124,6 +124,7 @@ public sealed class PersistenceArchitectureTests
         Assert.Contains("ICommandAuditService", text);
         Assert.Contains("ArchivePartitionCatalog", text);
         Assert.Contains("SqliteArchiveQueryService", text);
+        Assert.Contains("AuthorizedArchiveQueryService", text);
         Assert.Contains("IArchiveQueryService", text);
         Assert.Contains("ArchiveExportPackageWriter", text);
         Assert.Contains("ArchiveBackupPackageWriter", text);

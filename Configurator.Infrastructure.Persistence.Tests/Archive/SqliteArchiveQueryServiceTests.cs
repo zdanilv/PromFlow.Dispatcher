@@ -97,6 +97,34 @@ public sealed class SqliteArchiveQueryServiceTests
     }
 
     [Fact]
+    public async Task QueryRawSnapshotMetadataAndDetails_ReadsMetadataSeparatelyFromSnapshotPayload()
+    {
+        using var database = new TempArchiveDatabase();
+        var options = CreateOptions(database.DirectoryPath);
+        var snapshotId = Guid.NewGuid();
+        var capturedAtUtc = new DateTimeOffset(2026, 4, 5, 6, 0, 0, TimeSpan.Zero);
+        await WriteArchiveRowsAsync(
+            options,
+            [Envelope(ArchiveRecordKind.RawModbusSnapshot, Snapshot(capturedAtUtc, sequenceNumber: 7, snapshotId))]);
+        var queryService = CreateQueryService(options);
+
+        var metadata = await queryService.QueryRawSnapshotMetadataAsync(new ArchiveQuery(
+            fromUtc: capturedAtUtc.AddMinutes(-1),
+            toUtc: capturedAtUtc.AddMinutes(1),
+            sortDirection: ArchiveSortDirection.Ascending));
+        var details = await queryService.GetRawSnapshotAsync(snapshotId, capturedAtUtc);
+
+        Assert.True(metadata.Succeeded, FormatFailure(metadata));
+        var row = Assert.Single(metadata.Value!.Items);
+        Assert.Equal(snapshotId, row.Id);
+        Assert.Equal(2, row.CoilCount);
+        Assert.Equal(2, row.HoldingRegisterCount);
+        Assert.True(details.Succeeded, FormatFailure(details));
+        Assert.Equal([true, false], details.Value!.Coils);
+        Assert.Equal([10, 20], details.Value.HoldingRegisters);
+    }
+
+    [Fact]
     public async Task QueryService_PageSizeAboveConfiguredMaximum_ReturnsArchiveQueryInvalid()
     {
         using var database = new TempArchiveDatabase();
@@ -117,9 +145,12 @@ public sealed class SqliteArchiveQueryServiceTests
         Assert.True(outcome.Succeeded, FormatFailure(outcome));
     }
 
-    private static RawModbusSnapshotArchiveRecord Snapshot(DateTimeOffset capturedAtUtc, long sequenceNumber)
+    private static RawModbusSnapshotArchiveRecord Snapshot(
+        DateTimeOffset capturedAtUtc,
+        long sequenceNumber,
+        Guid? id = null)
         => new(
-            Guid.NewGuid(),
+            id ?? Guid.NewGuid(),
             "device-1",
             ModbusRuntimeRole.Client,
             sequenceNumber,

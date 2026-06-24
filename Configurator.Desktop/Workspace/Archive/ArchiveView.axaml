@@ -1,0 +1,290 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Workspace.Archive;assembly=Configurator.Desktop"
+             mc:Ignorable="d"
+             d:DesignWidth="1200"
+             d:DesignHeight="760"
+             x:Class="Configurator.Desktop.Workspace.Archive.ArchiveView"
+             x:DataType="vm:ArchiveViewModel">
+    <ScrollViewer>
+        <Grid RowDefinitions="Auto,Auto,Auto,*"
+              Margin="14"
+              RowSpacing="10">
+            <DockPanel Grid.Row="0" LastChildFill="False">
+                <StackPanel DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                    <Button Content="Refresh"
+                            Command="{Binding RefreshCommand}"
+                            MinWidth="88"/>
+                    <Button Content="Cancel"
+                            Command="{Binding CancelQueryCommand}"
+                            MinWidth="80"/>
+                    <Button Content="Export"
+                            Command="{Binding ExportCommand}"
+                            MinWidth="88"/>
+                </StackPanel>
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Archive"
+                               FontSize="22"
+                               FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding StatusMessage}"
+                               Opacity="0.72"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+            </DockPanel>
+
+            <Grid Grid.Row="1"
+                  ColumnDefinitions="120,160,88,160,88,130,120,96,*"
+                  RowDefinitions="Auto,Auto"
+                  ColumnSpacing="8"
+                  RowSpacing="8">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Section" FontWeight="SemiBold"/>
+                <ComboBox Grid.Row="1" Grid.Column="0"
+                          ItemsSource="{Binding Sections}"
+                          SelectedItem="{Binding SelectedSection}"/>
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="From local" FontWeight="SemiBold"/>
+                <TextBox Grid.Row="1" Grid.Column="1"
+                         Text="{Binding Filter.FromLocalText}"/>
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="To local" FontWeight="SemiBold"/>
+                <TextBox Grid.Row="1" Grid.Column="2"
+                         Text="{Binding Filter.ToLocalText}"/>
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="Device" FontWeight="SemiBold"/>
+                <TextBox Grid.Row="1" Grid.Column="3"
+                         Text="{Binding Filter.DeviceId}"/>
+                <TextBlock Grid.Row="0" Grid.Column="4" Text="Signal" FontWeight="SemiBold"/>
+                <TextBox Grid.Row="1" Grid.Column="4"
+                         Text="{Binding Filter.SignalId}"/>
+                <TextBlock Grid.Row="0" Grid.Column="5" Text="Event/result" FontWeight="SemiBold"/>
+                <StackPanel Grid.Row="1" Grid.Column="5" Orientation="Horizontal" Spacing="4">
+                    <TextBox Text="{Binding Filter.EventType}" Width="62"/>
+                    <TextBox Text="{Binding Filter.Outcome}" Width="62"/>
+                </StackPanel>
+                <TextBlock Grid.Row="0" Grid.Column="6" Text="User" FontWeight="SemiBold"/>
+                <TextBox Grid.Row="1" Grid.Column="6"
+                         Text="{Binding Filter.UserId}"/>
+                <TextBlock Grid.Row="0" Grid.Column="7" Text="Page size" FontWeight="SemiBold"/>
+                <NumericUpDown Grid.Row="1" Grid.Column="7"
+                               Minimum="1"
+                               Maximum="10000"
+                               Value="{Binding Filter.PageSize}"/>
+                <StackPanel Grid.Row="1" Grid.Column="8"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Spacing="8">
+                    <Button Content="Prev"
+                            Command="{Binding PreviousPageCommand}"
+                            MinWidth="70"/>
+                    <Button Content="Next"
+                            Command="{Binding NextPageCommand}"
+                            MinWidth="70"/>
+                    <TextBlock VerticalAlignment="Center"
+                               Text="{Binding PageNumber, StringFormat='Page {0}'}"/>
+                    <TextBlock VerticalAlignment="Center"
+                               Text="{Binding TotalCount, StringFormat='Total {0}'}"/>
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="2"
+                  ColumnDefinitions="220,*"
+                  ColumnSpacing="12">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="6">
+                    <TextBlock Text="Health:" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding HealthState}"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding HealthMessage}"
+                           TextWrapping="Wrap"
+                           Opacity="0.75"/>
+            </Grid>
+
+            <Border Grid.Row="3"
+                    IsVisible="{Binding HasError}"
+                    BorderBrush="#9B2C2C"
+                    BorderThickness="1"
+                    Padding="8"
+                    Margin="0,0,0,8">
+                <TextBlock Text="{Binding ErrorMessage}"
+                           TextWrapping="Wrap"/>
+            </Border>
+
+            <Grid Grid.Row="3"
+                  RowDefinitions="Auto,*"
+                  Margin="0,42,0,0">
+                <Grid IsVisible="{Binding ShowSnapshots}"
+                      RowDefinitions="260,Auto,220"
+                      RowSpacing="8">
+                    <ListBox Grid.Row="0"
+                             ItemsSource="{Binding Snapshots}"
+                             SelectedItem="{Binding SelectedSnapshot}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="vm:ArchiveSnapshotRowViewModel">
+                                <Grid ColumnDefinitions="150,120,70,90,120,120,*"
+                                      ColumnSpacing="8"
+                                      Margin="0,2">
+                                    <TextBlock Grid.Column="0" Text="{Binding CapturedAtUtc}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding DeviceId}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Role}"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding SequenceNumber}"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding Coils}"/>
+                                    <TextBlock Grid.Column="5" Text="{Binding Registers}"/>
+                                    <TextBlock Grid.Column="6" Text="{Binding ConfigurationHash}" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <StackPanel Grid.Row="1"
+                                Orientation="Horizontal"
+                                Spacing="8">
+                        <Button Content="Load details"
+                                Command="{Binding LoadSnapshotDetailsCommand}"
+                                MinWidth="110"/>
+                        <ComboBox ItemsSource="{Binding SnapshotAreas}"
+                                  SelectedItem="{Binding SnapshotDetails.Area}"
+                                  Width="150"/>
+                        <ComboBox ItemsSource="{Binding ValueDisplayModes}"
+                                  SelectedItem="{Binding SnapshotDetails.DisplayMode}"
+                                  Width="120"/>
+                        <NumericUpDown Minimum="0"
+                                       Maximum="100000"
+                                       Value="{Binding SnapshotDetails.StartAddress}"
+                                       Width="110"/>
+                        <NumericUpDown Minimum="0"
+                                       Maximum="1024"
+                                       Value="{Binding SnapshotDetails.Count}"
+                                       Width="90"/>
+                        <TextBlock Text="{Binding SnapshotDetails.Summary}"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <ListBox Grid.Row="2"
+                             ItemsSource="{Binding SnapshotDetails.Values}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="vm:ArchiveSnapshotValueRow">
+                                <Grid ColumnDefinitions="120,160,*"
+                                      ColumnSpacing="10">
+                                    <TextBlock Grid.Column="0" Text="{Binding Address}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding DisplayValue}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding RawValue}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+
+                <Grid IsVisible="{Binding ShowCommands}"
+                      RowDefinitions="Auto,*"
+                      RowSpacing="8">
+                    <ComboBox ItemsSource="{Binding CommandKinds}"
+                              SelectedItem="{Binding CommandAudit.Kind}"
+                              Width="210"/>
+                    <ListBox Grid.Row="1"
+                             IsVisible="{Binding CommandAudit.ShowEquipmentCommands}"
+                             ItemsSource="{Binding CommandAudit.EquipmentCommands}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="vm:ArchiveCommandAuditRowViewModel">
+                                <Grid ColumnDefinitions="150,120,120,150,90,110,110,*"
+                                      ColumnSpacing="8"
+                                      Margin="0,2">
+                                    <TextBlock Grid.Column="0" Text="{Binding RequestedAtUtc}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Username}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding DeviceId}"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding SignalId}"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding RequestedValue}"/>
+                                    <TextBlock Grid.Column="5" Text="{Binding Outcome}"/>
+                                    <TextBlock Grid.Column="6" Text="{Binding Confirmation}"/>
+                                    <TextBlock Grid.Column="7" Text="{Binding Error}" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <ListBox Grid.Row="1"
+                             IsVisible="{Binding CommandAudit.ShowPhysicalWrites}"
+                             ItemsSource="{Binding CommandAudit.PhysicalWrites}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="vm:ArchivePhysicalWriteRowViewModel">
+                                <Grid ColumnDefinitions="150,80,90,80,70,80,120,*"
+                                      ColumnSpacing="8"
+                                      Margin="0,2">
+                                    <TextBlock Grid.Column="0" Text="{Binding AttemptedAtUtc}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Role}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Area}"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding Address}"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding Quantity}"/>
+                                    <TextBlock Grid.Column="5" Text="{Binding Succeeded}"/>
+                                    <TextBlock Grid.Column="6" Text="{Binding PayloadHex}"/>
+                                    <TextBlock Grid.Column="7" Text="{Binding Error}" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+
+                <ListBox IsVisible="{Binding ShowEvents}"
+                         ItemsSource="{Binding RuntimeEvents.Events}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="vm:ArchiveRuntimeEventRowViewModel">
+                            <Grid ColumnDefinitions="150,120,160,70,260,*"
+                                  ColumnSpacing="8"
+                                  Margin="0,2">
+                                <TextBlock Grid.Column="0" Text="{Binding OccurredAtUtc}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding DeviceId}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding EventType}"/>
+                                <TextBlock Grid.Column="3" Text="{Binding Severity}"/>
+                                <TextBlock Grid.Column="4" Text="{Binding Message}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Grid.Column="5" Text="{Binding DetailsJson}" TextTrimming="CharacterEllipsis"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <ListBox IsVisible="{Binding ShowSecurityAudit}"
+                         ItemsSource="{Binding SecurityAudit.Records}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="vm:ArchiveSecurityAuditRowViewModel">
+                            <Grid ColumnDefinitions="150,170,100,150,90,130,*"
+                                  ColumnSpacing="8"
+                                  Margin="0,2">
+                                <TextBlock Grid.Column="0" Text="{Binding OccurredAtUtc}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding EventType}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Severity}"/>
+                                <TextBlock Grid.Column="3" Text="{Binding Actor}"/>
+                                <TextBlock Grid.Column="4" Text="{Binding Outcome}"/>
+                                <TextBlock Grid.Column="5" Text="{Binding ReasonCode}"/>
+                                <TextBlock Grid.Column="6" Text="{Binding DetailsJson}" TextTrimming="CharacterEllipsis"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <StackPanel IsVisible="{Binding ShowMaintenance}"
+                            Spacing="10"
+                            MaxWidth="780">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="8">
+                        <Button Content="Apply retention"
+                                Command="{Binding Maintenance.ApplyRetentionCommand}"
+                                MinWidth="132"/>
+                        <Button Content="Create backup"
+                                Command="{Binding Maintenance.CreateBackupCommand}"
+                                MinWidth="132"/>
+                    </StackPanel>
+                    <Border IsVisible="{Binding Maintenance.HasError}"
+                            BorderBrush="#9B2C2C"
+                            BorderThickness="1"
+                            Padding="8">
+                        <TextBlock Text="{Binding Maintenance.ErrorMessage}"
+                                   TextWrapping="Wrap"/>
+                    </Border>
+                    <TextBlock Text="{Binding Maintenance.StatusMessage}"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

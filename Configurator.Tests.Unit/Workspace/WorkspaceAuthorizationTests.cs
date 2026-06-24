@@ -38,11 +38,12 @@ public sealed class WorkspaceAuthorizationTests
         await workspace.InitializeAsync();
 
         Assert.Equal(
-            ["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "License"],
+            ["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "Archive", "License"],
             workspace.Tabs.Select(tab => tab.Header).ToArray());
         Assert.Equal(1, fixture.RouteMapFactoryCalls);
         Assert.Equal(1, fixture.SignalMappingFactoryCalls);
         Assert.Equal(1, fixture.ModbusDemoFactoryCalls);
+        Assert.Equal(1, fixture.ArchiveFactoryCalls);
         Assert.Equal(1, fixture.LicenseFactoryCalls);
     }
 
@@ -115,7 +116,9 @@ public sealed class WorkspaceAuthorizationTests
                 LicenseFeature.RouteMap,
                 LicenseFeature.RemoteControl,
                 LicenseFeature.EngineeringTools,
-                LicenseFeature.Diagnostics);
+                LicenseFeature.Diagnostics,
+                LicenseFeature.Archive,
+                LicenseFeature.ArchiveExport);
             SessionAccessor.SetCurrent(new UserSession(
                 Guid.NewGuid(),
                 Guid.NewGuid(),
@@ -132,6 +135,7 @@ public sealed class WorkspaceAuthorizationTests
         public int RouteMapFactoryCalls { get; private set; }
         public int SignalMappingFactoryCalls { get; private set; }
         public int ModbusDemoFactoryCalls { get; private set; }
+        public int ArchiveFactoryCalls { get; private set; }
         public int LicenseFactoryCalls { get; private set; }
         public int LogoutCallbackCount { get; private set; }
         public List<DisposableContent> CreatedContent { get; } = [];
@@ -194,6 +198,17 @@ public sealed class WorkspaceAuthorizationTests
                     return CreateContent();
                 },
                 20),
+            new(
+                "archive",
+                "Archive",
+                Permission.ViewArchive,
+                LicenseFeature.Archive,
+                _ =>
+                {
+                    ArchiveFactoryCalls++;
+                    return CreateContent();
+                },
+                25),
             new(
                 "license",
                 "License",

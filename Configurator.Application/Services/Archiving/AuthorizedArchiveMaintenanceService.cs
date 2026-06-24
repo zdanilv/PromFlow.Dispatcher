@@ -35,7 +35,8 @@ public sealed class AuthorizedArchiveMaintenanceService : IArchiveMaintenanceSer
 
     public async Task<ArchiveOperationResult<ArchiveExportResult>> ExportAsync(
         ArchiveExportRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<ArchiveExportProgress>? progress = null)
     {
         var decision = await AuthorizeAsync(
                 Permission.ExportArchive,
@@ -43,7 +44,7 @@ public sealed class AuthorizedArchiveMaintenanceService : IArchiveMaintenanceSer
                 cancellationToken)
             .ConfigureAwait(false);
         return decision.Succeeded
-            ? await _inner.ExportAsync(request, cancellationToken).ConfigureAwait(false)
+            ? await _inner.ExportAsync(request, cancellationToken, progress).ConfigureAwait(false)
             : ArchiveOperationResult<ArchiveExportResult>.Failure(
                 "PermissionDenied",
                 "Archive export permission is required.",

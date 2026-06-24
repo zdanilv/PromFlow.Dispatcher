@@ -26,13 +26,13 @@ public sealed class ArchiveExportPackageWriter
         ChecksumsEntryName
     ];
 
-    private readonly IArchiveQueryService _queryService;
+    private readonly SqliteArchiveQueryService _queryService;
     private readonly ArchiveCsvWriter _csvWriter;
     private readonly ArchiveChecksum _checksum;
     private readonly IAppDataPathProvider _pathProvider;
 
     public ArchiveExportPackageWriter(
-        IArchiveQueryService queryService,
+        SqliteArchiveQueryService queryService,
         ArchiveCsvWriter csvWriter,
         ArchiveChecksum checksum,
         IAppDataPathProvider pathProvider)
@@ -46,10 +46,15 @@ public sealed class ArchiveExportPackageWriter
     public async Task<ArchiveOperationResult<ArchiveExportResult>> ExportAsync(
         ArchiveExportRequest request,
         ArchiveOptions options,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<ArchiveExportProgress>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(options);
+        progress?.Report(new ArchiveExportProgress(
+            ArchiveExportPhase.Preparing,
+            0,
+            "Preparing archive export."));
 
         var validation = ValidateRequest(request, options);
         if (!validation.Succeeded)
@@ -72,10 +77,10 @@ public sealed class ArchiveExportPackageWriter
             Directory.CreateDirectory(packageDirectory);
             var context = new ExportContext(request.Query, options);
 
-            var commandCount = await WriteCommandsAsync(packageDirectory, context, cancellationToken).ConfigureAwait(false);
-            var physicalWriteCount = await WritePhysicalWritesAsync(packageDirectory, context, cancellationToken).ConfigureAwait(false);
-            var runtimeEventCount = await WriteRuntimeEventsAsync(packageDirectory, context, cancellationToken).ConfigureAwait(false);
-            var snapshotMetadataCount = await WriteSnapshotMetadataAsync(packageDirectory, context, cancellationToken).ConfigureAwait(false);
+            var commandCount = await WriteCommandsAsync(packageDirectory, context, cancellationToken, progress).ConfigureAwait(false);
+            var physicalWriteCount = await WritePhysicalWritesAsync(packageDirectory, context, cancellationToken, progress).ConfigureAwait(false);
+            var runtimeEventCount = await WriteRuntimeEventsAsync(packageDirectory, context, cancellationToken, progress).ConfigureAwait(false);
+            var snapshotMetadataCount = await WriteSnapshotMetadataAsync(packageDirectory, context, cancellationToken, progress).ConfigureAwait(false);
 
             var totalRecords = checked(commandCount + physicalWriteCount + runtimeEventCount + snapshotMetadataCount);
             if (totalRecords > options.ExportMaxRecords)
@@ -117,10 +122,18 @@ public sealed class ArchiveExportPackageWriter
                 cancellationToken).ConfigureAwait(false);
             checksums[ManifestEntryName] = await _checksum.ComputeSha256Async(manifestPath, cancellationToken).ConfigureAwait(false);
 
+            progress?.Report(new ArchiveExportProgress(
+                ArchiveExportPhase.Packaging,
+                totalRecords,
+                "Packaging archive export."));
             await WriteChecksumsAsync(packageDirectory, checksums, cancellationToken).ConfigureAwait(false);
             await CreateZipAsync(packageDirectory, tempZipPath, cancellationToken).ConfigureAwait(false);
             File.Move(tempZipPath, finalPath);
 
+            progress?.Report(new ArchiveExportProgress(
+                ArchiveExportPhase.Completed,
+                totalRecords,
+                "Archive export completed."));
             return ArchiveOperationResult<ArchiveExportResult>.Success(new ArchiveExportResult(
                 finalPath,
                 createdAtUtc,
@@ -164,8 +177,10 @@ public sealed class ArchiveExportPackageWriter
     private async Task<long> WriteCommandsAsync(
         string packageDirectory,
         ExportContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<ArchiveExportProgress>? progress)
     {
+        Report(progress, ArchiveExportPhase.Commands, 0, "Exporting equipment commands.");
         var path = Path.Combine(packageDirectory, CommandsEntryName);
         await using var stream = CreateTextFile(path);
         await using var writer = new StreamWriter(stream);
@@ -188,14 +203,18 @@ public sealed class ArchiveExportPackageWriter
             context,
             pageQuery => _queryService.QueryEquipmentCommandsAsync(pageQuery, cancellationToken),
             record => _csvWriter.WriteCommandAsync(writer, record, cancellationToken),
+            ArchiveExportPhase.Commands,
+            progress,
             cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<long> WritePhysicalWritesAsync(
         string packageDirectory,
         ExportContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<ArchiveExportProgress>? progress)
     {
+        Report(progress, ArchiveExportPhase.PhysicalWrites, 0, "Exporting physical writes.");
         var path = Path.Combine(packageDirectory, WritesEntryName);
         await using var stream = CreateTextFile(path);
         await using var writer = new StreamWriter(stream);
@@ -217,14 +236,18 @@ public sealed class ArchiveExportPackageWriter
             context,
             pageQuery => _queryService.QueryPhysicalWritesAsync(pageQuery, cancellationToken),
             record => _csvWriter.WritePhysicalWriteAsync(writer, record, cancellationToken),
+            ArchiveExportPhase.PhysicalWrites,
+            progress,
             cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<long> WriteRuntimeEventsAsync(
         string packageDirectory,
         ExportContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<ArchiveExportProgress>? progress)
     {
+        Report(progress, ArchiveExportPhase.RuntimeEvents, 0, "Exporting runtime events.");
         var path = Path.Combine(packageDirectory, EventsEntryName);
         await using var stream = CreateTextFile(path);
         await using var writer = new StreamWriter(stream);
@@ -242,14 +265,18 @@ public sealed class ArchiveExportPackageWriter
             context,
             pageQuery => _queryService.QueryRuntimeEventsAsync(pageQuery, cancellationToken),
             record => _csvWriter.WriteRuntimeEventAsync(writer, record, cancellationToken),
+            ArchiveExportPhase.RuntimeEvents,
+            progress,
             cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<long> WriteSnapshotMetadataAsync(
         string packageDirectory,
         ExportContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<ArchiveExportProgress>? progress)
     {
+        Report(progress, ArchiveExportPhase.Snapshots, 0, "Exporting snapshot metadata.");
         var path = Path.Combine(packageDirectory, SnapshotsEntryName);
         await using var stream = CreateTextFile(path);
         await using var writer = new StreamWriter(stream);
@@ -281,6 +308,8 @@ public sealed class ArchiveExportPackageWriter
                 });
                 return writer.WriteLineAsync(json.AsMemory(), cancellationToken);
             },
+            ArchiveExportPhase.Snapshots,
+            progress,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -288,6 +317,8 @@ public sealed class ArchiveExportPackageWriter
         ExportContext context,
         Func<ArchiveQuery, Task<ArchiveOperationResult<ArchivePage<T>>>> queryPageAsync,
         Func<T, Task> writeRecordAsync,
+        ArchiveExportPhase phase,
+        IProgress<ArchiveExportProgress>? progress,
         CancellationToken cancellationToken)
     {
         var pageNumber = 1;
@@ -317,6 +348,8 @@ public sealed class ArchiveExportPackageWriter
                 await writeRecordAsync(item).ConfigureAwait(false);
             }
 
+            Report(progress, phase, count, $"Exported {count.ToString(CultureInfo.InvariantCulture)} records.");
+
             if (!pageOutcome.Value.HasMore)
             {
                 return count;
@@ -325,6 +358,13 @@ public sealed class ArchiveExportPackageWriter
             pageNumber++;
         }
     }
+
+    private static void Report(
+        IProgress<ArchiveExportProgress>? progress,
+        ArchiveExportPhase phase,
+        long processedRecords,
+        string message)
+        => progress?.Report(new ArchiveExportProgress(phase, processedRecords, message));
 
     private static ArchiveOperationResult ValidateRequest(ArchiveExportRequest request, ArchiveOptions options)
     {

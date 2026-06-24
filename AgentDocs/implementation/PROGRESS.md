@@ -24,15 +24,15 @@
 - [x] Stage 9 — Login, RBAC and workspace enforcement
 - [x] Stage 10 — Offline license core and issuer
 - [x] Stage 11 — License installation UI and feature policy
-- [ ] Stage 12 — Archive UI
+- [x] Stage 12 — Archive UI
 - [ ] Stage 13 — Centralized lifecycle
 - [ ] Stage 14 — Hardening and production acceptance
 
 ## Current stage
 
-- Stage: `11`
+- Stage: `12`
 - Branch: `6-add-archive`
-- Goal: `Add atomic license installation UI and feature enforcement`
+- Goal: `Add paged archive and audit workspace UI`
 - Status: `Completed`
 
 ## Current findings
@@ -147,6 +147,13 @@
 - Stage 11 added the Administrator License workspace tab, license file picker, installation request export and no-access workspace fallback.
 - Stage 11 keeps License/User recovery paths permission-only; Administrator can install/view a license without a valid commercial license but cannot bypass missing commercial features.
 - Stage 11 added best-effort sanitized security audit events for license install attempt/success/failure without storing the full license payload or signature.
+- Stage 12 added `AuthorizedArchiveQueryService` so archive read/query boundaries enforce `Permission.ViewArchive` or `Permission.ViewSecurityAudit` plus `LicenseFeature.Archive`.
+- Stage 12 added raw Modbus snapshot metadata and details queries; the Archive UI lists scalar metadata first and decodes coils/registers only for the selected snapshot details request.
+- Stage 12 added phase/count archive export progress and preserved existing export/maintenance API call sites through an optional progress parameter.
+- Stage 12 added the Administrator Archive workspace tab, gated by `Permission.ViewArchive` and `LicenseFeature.Archive`, ordered before the existing License tab.
+- Stage 12 added paged/cancelable Archive UI sections for snapshots, command audit, runtime events, security audit and maintenance actions.
+- Stage 12 uses existing Avalonia controls with bounded list rows rather than adding the unavailable `Avalonia.Controls.DataGrid` package.
+- Stage 12 did not start `IArchiveRuntime` or `IModbusArchiveCollector`; centralized lifecycle remains Stage 13.
 
 ## Commands last executed
 
@@ -218,6 +225,20 @@ rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.A
 rg -n "\.Wait\(|\.Result|Thread\.Sleep" .\Configurator.Application\Services .\Configurator.Desktop\Main .\Configurator.Desktop\Workspace
 git diff --check
 git status --short
+git status --short --branch
+dotnet build .\DesktopTemplate.slnx --no-restore
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~Archive"
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~Authorization|FullyQualifiedName~Workspace|FullyQualifiedName~Licensing"
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore --filter "FullyQualifiedName~Archive"
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore --filter "FullyQualifiedName~Architecture"
+dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.csproj --no-restore --filter "FullyQualifiedName~Archive|FullyQualifiedName~WorkspaceAuthorization"
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore --filter "FullyQualifiedName~Security"
+dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore
+dotnet test .\DesktopTemplate.slnx --no-restore
+rg -n "BinaryFormatter|\.Wait\(|\.Result|Thread\.Sleep|async void" .\Configurator.Application\Services\Archiving .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Desktop\Workspace\Archive .\Configurator.Tests.Unit\Archiving
+rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Application\Services\Archiving .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Desktop\Workspace\Archive .\Configurator.Tests.Unit\Archiving
+git diff --check
+git status --short --branch
 ```
 
 ## Test results
@@ -293,6 +314,18 @@ git status --short
 - Full tests after Stage 11: `Passed on rerun; 490 passed, 0 failed, 0 skipped`
 - First full Stage 11 run had a transient existing `ArchiveRuntime_PartitionChange_WritesSeparateMonthlyDatabases` SQLite prepare failure; the targeted rerun passed, then the final full rerun passed.
 - Stage 11 private-key and blocking-call scans over new license paths: `Passed; no matches`
+- Full build after Stage 12: `Passed; 3 NU1903 warnings from SQLitePCLRaw.lib.e_sqlite3, 0 errors`
+- Stage 12 archive unit tests: `Passed; 48 passed, 0 failed, 0 skipped`
+- Stage 12 authorization/workspace/licensing regression tests: `Passed; 64 passed, 0 failed, 0 skipped`
+- Stage 12 archive-focused Persistence tests: `Passed; 60 passed, 0 failed, 0 skipped`
+- Stage 12 Persistence architecture tests: `Passed; 4 passed, 0 failed, 0 skipped`
+- Stage 12 security-focused Persistence tests: `Passed; 14 passed, 0 failed, 0 skipped`
+- Stage 12 Modbus regression: `Passed; 111 passed, 0 failed, 0 skipped`
+- Stage 12 headless Archive/Workspace UI tests: `Passed; 3 passed, 0 failed, 0 skipped`
+- Full tests after Stage 12: `Passed on rerun; 505 passed, 0 failed, 0 skipped`
+- First final full Stage 12 run had a transient existing `ModbusDemoViewModelTests.StopCommandCancelsActiveLifecycleWithoutModalError` failure; the targeted rerun passed, then the final full rerun passed.
+- Stage 12 sensitive-material and blocking-call scans over new archive UI/query paths: `Passed; no matches`
+- Stage 12 diff whitespace check: `Passed; only CRLF normalization warnings`
 
 ## Known limitations
 
@@ -331,7 +364,11 @@ git status --short
 - Stage 11 does not add Archive UI, User Management UI, online activation, migrations, packages or production key material.
 - Stage 11 still ships with an empty production trusted key ring; customer licenses require deployment-supplied trusted public keys.
 - Stage 11 request export writes local `.promrequest` artifacts only when invoked explicitly by an administrator.
+- Stage 12 does not start archive runtime/collector or centralize application lifecycle; Stage 13 remains responsible for that.
+- Stage 12 does not add a DataGrid package; Archive UI uses bounded, paged `ListBox`-based rows with server-side paging.
+- Stage 12 does not add an `Archive` config section; UI respects existing `ArchiveOptions` defaults unless deployment supplies configuration.
+- Production trusted license keys remain empty by default, so the Archive tab appears only when deployment/test configuration supplies a valid `Archive` feature license.
 
 ## Next action
 
-Stop here until Stage 12 is explicitly requested.
+Stop here until Stage 13 is explicitly requested.

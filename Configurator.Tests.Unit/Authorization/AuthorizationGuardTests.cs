@@ -224,9 +224,11 @@ public sealed class AuthorizationGuardTests
 
         public Task<ArchiveOperationResult<ArchiveExportResult>> ExportAsync(
             ArchiveExportRequest request,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            IProgress<ArchiveExportProgress>? progress = null)
         {
             ExportCount++;
+            progress?.Report(new ArchiveExportProgress(ArchiveExportPhase.Completed, 0, "Done."));
             return Task.FromResult(ArchiveOperationResult<ArchiveExportResult>.Success(
                 new ArchiveExportResult("export.zip", DateTimeOffset.UtcNow, 0, 0, 0, 0, new Dictionary<string, string>())));
         }

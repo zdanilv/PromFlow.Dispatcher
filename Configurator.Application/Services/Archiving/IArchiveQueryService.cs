@@ -5,8 +5,17 @@ namespace Configurator.Application.Services.Archiving;
 /// </summary>
 public interface IArchiveQueryService
 {
+    Task<ArchiveOperationResult<ArchivePage<RawModbusSnapshotArchiveMetadataRecord>>> QueryRawSnapshotMetadataAsync(
+        ArchiveQuery query,
+        CancellationToken cancellationToken = default);
+
     Task<ArchiveOperationResult<ArchivePage<RawModbusSnapshotArchiveRecord>>> QueryRawSnapshotsAsync(
         ArchiveQuery query,
+        CancellationToken cancellationToken = default);
+
+    Task<ArchiveOperationResult<RawModbusSnapshotArchiveRecord>> GetRawSnapshotAsync(
+        Guid id,
+        DateTimeOffset capturedAtUtc,
         CancellationToken cancellationToken = default);
 
     Task<ArchiveOperationResult<ArchivePage<ModbusStatusArchiveRecord>>> QueryModbusStatusesAsync(

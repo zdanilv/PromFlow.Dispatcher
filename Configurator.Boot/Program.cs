@@ -14,6 +14,7 @@ using Configurator.Desktop.Dialogs.OpcUaTagEditorDialog;
 using Configurator.Desktop.Dialogs.OpcUaTagImportDialog;
 using Configurator.Desktop.Main;
 using Configurator.Desktop.Workspace;
+using Configurator.Desktop.Workspace.Archive;
 using Configurator.Desktop.Workspace.Authorization;
 using Configurator.Desktop.Workspace.Licensing;
 using Configurator.Desktop.Workspace.ModbusDemo;
@@ -125,8 +126,10 @@ internal static class Program
                     services.AddTransient<AuthorizationViewModel>();
                     services.AddTransient<AdminBootstrapViewModel>();
                     services.AddTransient<WorkspaceViewModel>();
+                    services.AddTransient<ArchiveViewModel>();
                     services.AddTransient<LicenseViewModel>();
                     services.AddTransient<ModbusDemoViewModel>();
+                    services.AddSingleton<IArchiveFilePicker, ArchiveFilePicker>();
                     services.AddSingleton<ILicenseFilePicker, LicenseFilePicker>();
                     services.AddTransient<Func<IScreen, Func<CancellationToken, Task>, AuthorizationViewModel>>(sp =>
                         (hostScreen, onSucceeded) => ActivatorUtilities.CreateInstance<AuthorizationViewModel>(
@@ -166,6 +169,13 @@ internal static class Program
                         serviceProvider => serviceProvider.GetRequiredService<ModbusDemoViewModel>(),
                         20));
                     services.AddSingleton<WorkspaceTabDescriptor>(_ => new WorkspaceTabDescriptor(
+                        "archive",
+                        "Archive",
+                        Permission.ViewArchive,
+                        LicenseFeature.Archive,
+                        serviceProvider => serviceProvider.GetRequiredService<ArchiveViewModel>(),
+                        25));
+                    services.AddSingleton<WorkspaceTabDescriptor>(_ => new WorkspaceTabDescriptor(
                         "license",
                         "License",
                         Permission.ViewLicense,
@@ -176,6 +186,7 @@ internal static class Program
                     services.AddTransient<IViewFor<WorkspaceViewModel>, WorkspaceView>();
                     services.AddTransient<IViewFor<AuthorizationViewModel>, AuthorizationView>();
                     services.AddTransient<IViewFor<AdminBootstrapViewModel>, AdminBootstrapView>();
+                    services.AddTransient<IViewFor<ArchiveViewModel>, ArchiveView>();
                     services.AddTransient<IViewFor<LicenseViewModel>, LicenseView>();
                     services.AddTransient<IViewFor<ModbusDemoViewModel>, ModbusDemoView>();
                     services.AddTransient<RouteMapDashboardView>();
