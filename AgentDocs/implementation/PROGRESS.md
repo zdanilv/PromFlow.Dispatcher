@@ -26,13 +26,13 @@
 - [x] Stage 11 — License installation UI and feature policy
 - [x] Stage 12 — Archive UI
 - [x] Stage 13 — Centralized lifecycle
-- [ ] Stage 14 — Hardening and production acceptance
+- [x] Stage 14 — Hardening and production acceptance
 
 ## Current stage
 
-- Stage: `13`
+- Stage: `14`
 - Branch: `6-add-archive`
-- Goal: `Centralize application startup/shutdown lifecycle`
+- Goal: `Hardening and production acceptance`
 - Status: `Completed`
 
 ## Current findings
@@ -162,6 +162,13 @@
 - Stage 13 added `RuntimeCommandDeliveryGate` to reject non-emergency equipment commands during `ShuttingDown` while preserving emergency command delivery.
 - Stage 13 added `PersistenceInitializer`; security migrations are fatal during startup, while archive migration/start failures remain non-fatal and are reported in lifecycle step results.
 - Stage 13 added file-backed single-instance locking with an OS mutex and per-user lock file under the runtime app-data directory.
+- Stage 14 added `IUserSessionAccessor.ClearIfCurrent(Guid)` and clears the in-process current session when `UserManagementService.SetUserEnabledAsync(false)` successfully disables that same user.
+- Stage 14 keeps audit best-effort: disabling the current user clears the session before audit completion, so audit failure cannot leave a disabled user authenticated.
+- Stage 14 added production acceptance tests for session revocation, license expiry during an active session, archive load/queue/transaction/corruption/export failure cases, and command audit connection-loss/shutdown cases.
+- Stage 14 removed production blocking-call scan hits from `ModbusClientService` by avoiding synchronous semaphore/task result observation, and renamed the RouteMap settings dialog completion observable to avoid `.Result` false positives.
+- Stage 14 added automated source scans for blocking calls, private key material, generated license artifacts and debug bypasses.
+- Stage 14 added EN/RU guides for archive, authorization, offline license, operations/recovery, refreshed architecture/coding/testing docs, and added `STAGE14-ACCEPTANCE.md`.
+- Stage 14 did not add product features, UI surfaces, packages, migrations, production keys, license artifacts or Stage 15 work.
 
 ## Commands last executed
 
@@ -245,6 +252,20 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 dotnet test .\DesktopTemplate.slnx --no-restore
 rg -n "BinaryFormatter|\.Wait\(|\.Result|Thread\.Sleep|async void" .\Configurator.Application\Services\Archiving .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Desktop\Workspace\Archive .\Configurator.Tests.Unit\Archiving
 rg -n "password|secret|private key|BEGIN .*PRIVATE|promlicense" .\Configurator.Application\Services\Archiving .\Configurator.Infrastructure.Persistence\Archive .\Configurator.Desktop\Workspace\Archive .\Configurator.Tests.Unit\Archiving
+git diff --check
+git status --short --branch
+git status --short --branch
+dotnet build .\DesktopTemplate.slnx --no-restore
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~Hardening|FullyQualifiedName~Documentation|FullyQualifiedName~LicenseSessionExpiry|FullyQualifiedName~Licensing|FullyQualifiedName~Authorization|FullyQualifiedName~Workspace|FullyQualifiedName~Runtime"
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore --filter "FullyQualifiedName~ArchiveProductionAcceptance|FullyQualifiedName~SessionRevocation|FullyQualifiedName~Archive|FullyQualifiedName~Security"
+dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore --filter "FullyQualifiedName~ModbusCommandAudit|FullyQualifiedName~ModbusArchive|FullyQualifiedName~Runtime"
+dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.csproj --no-restore --filter "FullyQualifiedName~Archive|FullyQualifiedName~License|FullyQualifiedName~WorkspaceAuthorization"
+dotnet test .\Configurator.Infrastructure.Persistence.Tests\Configurator.Infrastructure.Persistence.Tests.csproj --no-restore
+dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore
+dotnet test .\DesktopTemplate.slnx --no-restore
+rg -n "BinaryFormatter|\.Wait\(|\.Result|Thread\.Sleep" .\Configurator.Application .\Configurator.Infrastructure .\Configurator.Infrastructure.Persistence .\Configurator.Infrastructure.Modbus .\Configurator.Desktop\Main .\Configurator.Desktop\Runtime .\Configurator.Desktop\Workspace
+rg -n "BEGIN .*PRIVATE|PRIVATE KEY-----|AllowTestKeys\s*=\s*true|debug bypass|hardcoded password" .\Configurator.Application .\Configurator.Infrastructure .\Configurator.Infrastructure.Persistence .\Configurator.Infrastructure.Modbus .\Configurator.Desktop .\Configurator.Boot
+Get-ChildItem -Path . -Recurse -File -Include *.pem,*.promlicense,*.promrequest | Where-Object { $_.FullName -notmatch '\\(bin|obj|\.git)\\' }
 git diff --check
 git status --short --branch
 ```
@@ -342,6 +363,16 @@ git status --short --branch
 - First Stage 13 Modbus run hit the previously observed transient `ModbusDemoViewModelTests.StopCommandCancelsActiveLifecycleWithoutModalError`; targeted rerun passed, then the full Modbus rerun passed.
 - Stage 13 sensitive-material and blocking-call scans over new lifecycle/runtime paths: `Passed; no matches`
 - Full tests after Stage 13: `Passed; 512 passed, 0 failed, 0 skipped`
+- Full build after Stage 14: `Passed; 3 NU1903 warnings from SQLitePCLRaw.lib.e_sqlite3, 0 errors`
+- Stage 14 Unit hardening/documentation/license/auth/workspace/runtime focused tests: `Passed; 124 passed, 0 failed, 0 skipped`
+- Stage 14 Persistence archive/session/security focused tests: `Passed; 80 passed, 0 failed, 0 skipped`
+- Stage 14 Modbus command-audit/archive/runtime focused tests: `Passed; 45 passed, 0 failed, 0 skipped`
+- Stage 14 headless Archive/License/Workspace UI smoke tests: `Passed; 4 passed, 0 failed, 0 skipped`
+- Full Persistence tests after Stage 14: `Passed; 93 passed, 0 failed, 0 skipped`
+- Full Modbus tests after Stage 14: `Passed; 115 passed, 0 failed, 0 skipped`
+- Full tests after Stage 14: `Passed; 528 passed, 0 failed, 0 skipped`
+- Stage 14 blocking-call, private-key/debug-bypass and generated artifact scans: `Passed; no matches/no files`
+- Stage 14 diff whitespace check: `Passed; only CRLF normalization warnings`
 
 ## Known limitations
 
@@ -386,8 +417,11 @@ git status --short --branch
 - Production trusted license keys remain empty by default, so the Archive tab appears only when deployment/test configuration supplies a valid `Archive` feature license.
 - Stage 13 does not add WAL checkpoint/connection-pool shutdown hooks; existing SQLite services still own their own connection lifetimes.
 - Stage 13 single-instance protection is per-user local app-data plus OS mutex; it is not a distributed lock.
-- Stage 13 does not add Stage 14 production hardening, deployment packaging, or acceptance-run automation.
+- Stage 14 does not add deployment packaging, installer automation, new product features, new UI surfaces, migrations, packages or production key material.
+- Stage 14 represents 24-hour production load with accelerated deterministic tests plus a manual runbook, not a mandatory CI wall-clock wait.
+- Stage 14 session revocation covers in-process `SetUserEnabledAsync(false)`; direct external database edits remain an operational recovery risk.
+- Stage 14 production scans intentionally cover source and generated artifact classes; deployment-supplied public keys remain out of repository scope.
 
 ## Next action
 
-Stop here until Stage 14 is explicitly requested.
+Stop here; Stage 14 is complete and Stage 15 has not been started.

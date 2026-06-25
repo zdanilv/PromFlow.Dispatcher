@@ -174,13 +174,20 @@ public sealed class UserManagementService : IUserManagementService
         };
         var result = await _userRepository.UpdateAsync(updated, request.ExpectedRowVersion, cancellationToken)
             .ConfigureAwait(false);
+        var auditSession = _sessionAccessor.Current.Session;
+        if (result.Succeeded && !request.IsEnabled)
+        {
+            _sessionAccessor.ClearIfCurrent(user.Id);
+        }
+
         await AuditAsync(
             request.IsEnabled ? "UserEnabled" : "UserDisabled",
             result.Succeeded ? SecurityAuditResult.Succeeded : SecurityAuditResult.Failed,
             user.Id,
             user.Username,
             result.ErrorCode,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            auditSession).ConfigureAwait(false);
 
         return result.Succeeded && result.Value is not null
             ? UserManagementResult.Success(result.Value)
@@ -253,9 +260,10 @@ public sealed class UserManagementService : IUserManagementService
         Guid? targetUserId,
         string? targetUsername,
         string? reasonCode,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        UserSession? auditSession = null)
     {
-        var session = _sessionAccessor.Current.Session;
+        var session = auditSession ?? _sessionAccessor.Current.Session;
         var record = new SecurityAuditRecord(
             Guid.NewGuid(),
             DateTimeOffset.UtcNow,

@@ -7,4 +7,6 @@ public interface IUserSessionAccessor
     void SetCurrent(UserSession session);
 
     void Clear();
+
+    bool ClearIfCurrent(Guid userId);
 }

@@ -1,56 +1,74 @@
-# Правила написания кода
+# Правила разработки
 
-Эти правила описывают текущую архитектурную линию проекта. Следуйте им при изменениях
-RouteMap, Modbus TCP, SignalId mapping и UI.
+Следуйте этим правилам при изменении RouteMap, Modbus TCP, SignalId mapping, archive,
+authorization, licensing или lifecycle code.
 
-## Архитектурные правила
+## Architecture
 
-- Не добавляйте Modbus-адреса в XAML, ViewModel, `RouteMapControl` или `route-map.json`.
-- UI работает с `SignalId`; физическая адресация остается в `Modbus.DataMap`.
+- Не помещайте Modbus addresses в XAML, ViewModels, `RouteMapControl` или `route-map.json`.
+- Физическая PLC mapping живет в `Modbus.DataMap`.
 - Не смешивайте `Modbus.DataMap` и `ModbusDemo.DataMap`.
-- Не переносите TCP endpoint/lifecycle из `ModbusDemo` в RouteMap.
+- TCP endpoint settings остаются в `ModbusDemo`; startup/shutdown остаются в centralized lifecycle.
 - Не регистрируйте `RouteMapDefinition` как immutable singleton.
-- Не обновляйте Avalonia UI напрямую из Modbus callback.
-- Не переносите interlock, safety и окончательное разрешение команд из PLC в UI.
+- Не обновляйте Avalonia UI напрямую из Modbus callbacks.
+- Interlocks, safety и final actuator permissions остаются в PLC logic.
+
+## Authorization и license
+
+- UI visibility не является authorization.
+- Direct service boundaries защищаются через `IAccessDecisionService` или dedicated authorized wrapper.
+- Role permission и license feature checks независимы.
+- Administrator не обходит commercial license features.
+- При отключении текущего пользователя через application service active session должна очищаться.
+- Не добавляйте hardcoded passwords, private keys, generated licenses или debug bypasses.
+
+## Archive
+
+- Archive code не зависит от Avalonia, ReactiveUI или ViewModels.
+- Не выполняйте SQL в Modbus callbacks.
+- Archive queues bounded, shutdown deterministic.
+- Не сериализуйте каждый Modbus register как отдельную hot-path SQL row.
+- Operator views используют paged/cancelable queries.
+- Raw snapshot BLOB values декодируются только для explicit details request.
+- Emergency command delivery не блокируется недоступностью архива.
 
 ## RouteMap
 
-- Топология и визуальные параметры должны жить в definition/seed/configuration, а не в
-  ad hoc XAML-линиях и эллипсах.
-- `RouteMapControl` должен рисовать и отдавать UI-команды, а не хранить бизнес-логику.
-- Runtime-состояния должны проходить через `RouteMapRuntimeMapper`.
-- Новые bindings должны валидироваться через `RouteMapConfigurationValidator`.
-- Любые изменения schema требуют миграции в `RouteMapConfigurationMigrator` и тестов.
-- Не возвращайте старые rails, sensors, item-list, vehicles или bottom panel без отдельного требования.
+- Topology и visual settings принадлежат definition/seed/configuration.
+- `RouteMapControl` рисует и поднимает UI commands, но не владеет business logic.
+- Runtime states проходят через `RouteMapRuntimeMapper`.
+- Новые bindings проверяются `RouteMapConfigurationValidator`.
+- Schema changes требуют migrator updates и tests.
+- Не возвращайте старые rails, sensors, item lists, vehicles или bottom panels без отдельного product requirement.
 
 ## SignalId
 
-- Имена должны быть стабильными и доменными.
+- Names стабильны и domain-oriented.
 - Не кодируйте transport details в SignalId.
-- Не меняйте SignalId при изменении PLC address.
-- Обязательные command bindings должны оставаться `Bool` и обычно `ReadWrite`.
+- Не переименовывайте SignalId, если меняется только PLC address.
+- Required command bindings обычно `Bool` и `ReadWrite`.
 - `ActiveRouteFragment` всегда `Read` + `Bool`.
 
 ## Modbus
 
 - RouteMap facade использует `Modbus.DataMap`; demo facade использует `ModbusDemo.DataMap`.
-- Register-bit запись должна сохранять соседние биты через shadow/read-modify-write.
-- Не делайте automatic retry для неидемпотентных команд.
-- `Pulse` назначайте только по подтвержденному PLC-контракту.
-- При bad/stale connection не завершайте UI аварийно; отдавайте quality/stale состояние.
+- Register-bit writes должны сохранять соседние bits через shadow/read-modify-write.
+- Не делайте automatic retry для non-idempotent commands.
+- Используйте `Pulse` только для подтвержденных PLC contracts.
+- Потеря связи превращается в quality/stale state и terminal audit evidence, а не UI crash.
 
 ## UI и threading
 
-- Все обновления Avalonia observable state должны возвращаться на UI thread.
-- Подписки ViewModel должны освобождаться в `Dispose`.
-- Runtime readback не должен повторно отправлять команды.
-- Optimistic UI state допустим только как временное состояние до readback.
+- Observable Avalonia state возвращается на UI thread.
+- ViewModel subscriptions dispose.
+- Runtime readback не отправляет commands обратно.
+- Не блокируйте `.Wait()`, task `.Result`, `Thread.Sleep`, SQL или file I/O на UI path.
+- Избегайте `async void`, кроме framework event handlers.
+- Передавайте cancellation tokens через service calls.
 
 ## Visual Studio visibility
 
-- Новые проекты добавляйте в `DesktopTemplate.slnx` со стабильным `Id`.
-- Для документации используйте явные `None Include/Update`, чтобы файлы были видны.
-- Для новых папок добавляйте `<Folder Include="...\" />`, если Solution Explorer иначе
-  может показать структуру неоднозначно.
-- Для новых Avalonia `.axaml` соблюдайте локальный паттерн `<None Update="..."><SubType>Designer</SubType></None>`.
-
+- Новые projects добавляйте в `DesktopTemplate.slnx` со stable IDs.
+- Documentation files попадают через `AgentDocs/AgentDocs.csproj`.
+- Folder entries добавляйте, когда это улучшает структуру.
+- Для новых Avalonia `.axaml` используйте локальный designer metadata pattern.

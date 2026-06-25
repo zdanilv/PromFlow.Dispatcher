@@ -512,7 +512,7 @@ internal sealed class ModbusClientService : IModbusClientService
         {
             await ResetConnectionAsync(CancellationToken.None);
         }
-        else if (_ioGate.Wait(0))
+        else if (await _ioGate.WaitAsync(0, CancellationToken.None))
         {
             try
             {
@@ -625,36 +625,19 @@ internal sealed class ModbusClientService : IModbusClientService
     }
 
     private static void ObserveAndDisposeLateTcpClient(Task<TcpClient> connectTask)
+        => _ = ObserveAndDisposeLateTcpClientAsync(connectTask);
+
+    private static async Task ObserveAndDisposeLateTcpClientAsync(Task<TcpClient> connectTask)
     {
-        if (connectTask.IsCompleted)
+        try
         {
-            if (connectTask.IsCompletedSuccessfully)
-            {
-                connectTask.Result.Dispose();
-            }
-            else
-            {
-                _ = connectTask.Exception;
-            }
-
-            return;
+            var tcpClient = await connectTask.ConfigureAwait(false);
+            tcpClient.Dispose();
         }
-
-        _ = connectTask.ContinueWith(
-            task =>
-            {
-                if (task.IsCompletedSuccessfully)
-                {
-                    task.Result.Dispose();
-                }
-                else
-                {
-                    _ = task.Exception;
-                }
-            },
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
+        catch
+        {
+            // The timeout path only needs to observe the late connect task.
+        }
     }
 
     private static ModbusEndpointOptions NormalizeOptions(ModbusEndpointOptions options)

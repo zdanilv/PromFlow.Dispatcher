@@ -1,29 +1,50 @@
 # Architecture Overview
 
 `PromFlow.Dispatcher` is an Avalonia desktop application split into Boot, Desktop,
-Application, and Infrastructure layers. RouteMap is implemented in the desktop layer,
-while signal contracts and Modbus runtime integration are exposed through application and
-infrastructure services.
+Application, Infrastructure, Persistence and Modbus infrastructure layers. Application
+defines contracts and policy. Infrastructure owns adapters and storage. Desktop owns
+ViewModels, views and lifecycle coordination.
 
-## Workspace
+## Startup Route
 
-The current `WorkspaceView` has three tabs:
+Startup is not a direct jump into workspace. `MainViewModel` routes to administrator
+bootstrap when no users exist, otherwise to login. After successful authentication,
+`ApplicationRuntimeCoordinator` starts application runtime services and refreshes license
+state before `WorkspaceViewModel` creates any tab content.
+
+## Dynamic Workspace
+
+Workspace tabs are descriptor-driven. Each `WorkspaceTabDescriptor` contains an id,
+header, required permission, optional required license feature, factory and order.
+`WorkspaceViewModel` filters descriptors through `IAccessDecisionService` before invoking
+factories. Unauthorized ViewModels are never created.
+
+The current product surfaces are:
 
 ```text
 Route Map
-SignalId ↔ Modbus
+SignalId <-> Modbus
 Modbus Demo
+Archive
+License
 ```
 
-`WorkspaceViewModel` owns `RouteMapDashboardViewModel`,
-`RouteMapSignalMappingViewModel`, and `ModbusDemoViewModel`. It may autostart the shared
-Modbus runtime using `ModbusDemo.AutostartOnWorkspaceOpen` and `StartupMode`.
+The exact visible set depends on the authenticated role and current license state.
+Administrator can open the License tab for recovery without a commercial license, but
+does not bypass licensed feature gates.
+
+## Lifecycle Ownership
+
+`ApplicationRuntimeCoordinator` owns startup of persistence, installation identity,
+license refresh, archive runtime, Modbus archive collector subscription and Modbus
+autostart policy. `DesktopShutdownCoordinator` owns deterministic shutdown. Workspace
+ViewModels do not start or stop archive runtime or collector.
 
 ## Read Flow
 
 ```text
-ModbusDemo endpoint/lifecycle
-  -> shared ModbusRuntimeService
+ModbusDemo endpoint settings
+  -> centralized Modbus runtime lifecycle
   -> RouteMap IModbusTcpService facade
   -> IModbusDataSnapshotSource
   -> ModbusTcpSignalValueProvider
@@ -34,13 +55,15 @@ ModbusDemo endpoint/lifecycle
 ```
 
 RouteMap receives `SignalValue` objects keyed by `SignalId`, not raw coils or registers.
-The mapper converts values, quality, and stale state into `RouteMapRuntimeState`.
+The mapper converts values, quality and stale state into `RouteMapRuntimeState`.
 
 ## Write Flow
 
 ```text
 TopBar / node menu / equipment card
   -> SignalWriteRequest
+  -> IAccessDecisionService
+  -> RuntimeCommandDeliveryGate
   -> IEquipmentCommandDispatcher
   -> ModbusTcpCommandDispatcher
   -> IModbusTcpService.SetAsync
@@ -48,33 +71,23 @@ TopBar / node menu / equipment card
   -> poll/readback
 ```
 
-The UI may apply optimistic checked state, but readback is the source of truth. Incoming
+The UI may show temporary optimistic state, but readback is the source of truth. Incoming
 `ReadWrite` values must not trigger another write.
 
-## Ownership
+## Archive And Audit
 
-- `Configurator.Boot/Program.cs` assembles desktop DI and the switchable `IRouteMapSignalRuntime`.
-- `Configurator.Infrastructure.Modbus/DependencyInjection.cs` registers the shared runtime,
-  RouteMap facade, and demo facade.
-- `RouteMapConfigurationManager` owns `CurrentDocument` and `CurrentDefinition`.
-- `RouteMapConfigurationStorage`, `Migrator`, `Validator`, and `Mapper` handle JSON
-  loading, migration, validation, and mapping.
+Archive storage is in Persistence and has no dependency on Desktop, Avalonia, ReactiveUI
+or Modbus infrastructure. Modbus callbacks enqueue records through application contracts;
+they do not execute SQL. Archive UI uses paged/cancelable queries and decodes snapshot
+details only on demand.
 
-## Modbus Runtime
+## Authorization And License
 
-`ModbusRuntimeService` coordinates client/server roles. `ModbusDemo` owns endpoint,
-UnitId, port, start addresses, autostart, and lifecycle. RouteMap uses the same runtime
-through a separate facade and separate data map.
-
-```text
-ModbusDemo.DataMap -> demo UI facade
-Modbus.DataMap     -> RouteMap facade and SignalId mapping tab
-```
-
-Do not move endpoint or lifecycle ownership into RouteMap.
+Permissions and license features are independent inputs. UI visibility is not
+authorization. Service boundaries enforce role permissions and, where required, license
+features through `IAccessDecisionService` and `LicenseFeatureGate`.
 
 ## Safety Boundary
 
 The UI is not a functional safety layer. Interlocks, emergency behavior, actuator
-permissions, and final command acceptance must remain in the PLC.
-
+permissions and final command acceptance must remain in the PLC.

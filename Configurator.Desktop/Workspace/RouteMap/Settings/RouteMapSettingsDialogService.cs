@@ -24,7 +24,7 @@ public sealed class RouteMapSettingsDialogService(
         view.DataContext = viewModel;
         try
         {
-            await dialogCoordinator.ShowAsync(new DialogViewContext<bool>(view, viewModel.Result), cancellationToken);
+            await dialogCoordinator.ShowAsync(new DialogViewContext<bool>(view, viewModel.Completion), cancellationToken);
         }
         finally
         {

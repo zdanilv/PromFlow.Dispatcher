@@ -1,46 +1,45 @@
-# Master: контекст RouteMap/Modbus для агентов
+# Master: контекст PromFlow.Dispatcher для агентов
 
-Этот каталог хранит рабочий контекст для агентов, которые меняют `PromFlow.Dispatcher`.
-Читайте документы из `AgentDocs/ru` как актуальную краткую карту архитектуры и правил.
-Файлы в `AgentDocs/source/ru` — перенесенные исходные гайды с более подробными деталями.
+Этот каталог хранит рабочий контекст для изменений в `PromFlow.Dispatcher`.
+Используйте `AgentDocs/ru` как актуальную русскую карту, `AgentDocs/en` как
+английскую карту и `AgentDocs/source/ru` как исторические перенесенные guides.
 
 ## Что читать
 
 | Задача | Основные документы | Дополнительно |
 |---|---|---|
-| Меняю RouteMap UI | `02-route-map-guide.ru.md`, `05-coding-rules.ru.md` | `source/ru/route_map_programmer_guide.ru.md` |
-| Подключаю PLC или Modbus TCP | `03-modbus-tcp-guide.ru.md`, `04-signal-id-guide.ru.md` | `source/ru/route_map_modbus_tcp_full_guide.ru.md` |
-| Добавляю новый сигнал | `04-signal-id-guide.ru.md`, `03-modbus-tcp-guide.ru.md` | `source/ru/signal_id_modbus_tcp_mapping_guide.ru.md` |
-| Чиню runtime, DI или lifecycle | `01-architecture-overview.ru.md`, `05-coding-rules.ru.md` | `source/ru/modbus_tcp_integration_guide.ru.md` |
-| Проверяю перед PR или commit | `06-testing-and-diagnostics.ru.md` | профильные source-гайды |
+| Менять RouteMap UI | `02-route-map-guide.ru.md`, `05-coding-rules.ru.md` | `source/ru/route_map_programmer_guide.ru.md` |
+| Подключать PLC или Modbus TCP | `03-modbus-tcp-guide.ru.md`, `04-signal-id-guide.ru.md` | `source/ru/route_map_modbus_tcp_full_guide.ru.md` |
+| Добавлять новый сигнал | `04-signal-id-guide.ru.md`, `03-modbus-tcp-guide.ru.md` | `source/ru/signal_id_modbus_tcp_mapping_guide.ru.md` |
+| Чинить runtime, DI или lifecycle | `01-architecture-overview.ru.md`, `10-operations-and-recovery.ru.md` | `source/ru/modbus_tcp_integration_guide.ru.md` |
+| Работать с архивом | `07-archive-guide.ru.md`, `06-testing-and-diagnostics.ru.md` | implementation progress |
+| Работать с авторизацией | `08-authorization-guide.ru.md`, `05-coding-rules.ru.md` | implementation progress |
+| Работать с offline license | `09-offline-license-guide.ru.md`, `08-authorization-guide.ru.md` | implementation progress |
+| Проверять перед PR или commit | `06-testing-and-diagnostics.ru.md`, `10-operations-and-recovery.ru.md` | профильные source-guides |
 
 ## Актуальные документы
 
-- `01-architecture-overview.ru.md` — общий поток данных, Workspace, DI, RouteMap, SignalId, Modbus runtime.
-- `02-route-map-guide.ru.md` — RouteMap definition, schema v10, редактор, миграции, validation, runtime state.
-- `03-modbus-tcp-guide.ru.md` — общий TCP runtime, `ModbusDemo`, `Modbus.DataMap`, snapshots, запись команд.
-- `04-signal-id-guide.ru.md` — правила SignalId, роли, направления, типы и mapping.
-- `05-coding-rules.ru.md` — правила разработки с учетом текущей архитектуры.
-- `06-testing-and-diagnostics.ru.md` — команды проверки, диагностика и production checklist.
-
-## Исходные гайды
-
-- `source/ru/signal_id_modbus_tcp_mapping_guide.ru.md` — подробное описание SignalId и вкладки `SignalId ↔ Modbus`.
-- `source/ru/route_map_programmer_guide.ru.md` — подробности RouteMap UI, geometry, editor и manager.
-- `source/ru/route_map_modbus_tcp_full_guide.ru.md` — полный объединенный гайд по RouteMap и Modbus TCP.
-- `source/ru/modbus_tcp_integration_guide.ru.md` — краткая интеграционная схема Modbus TCP.
-- `source/ru/modbus_demo_controls.ru.md` — как добавлять demo controls и точки `ModbusDemo.DataMap`.
-- `source/ru/modbus_demo_description.ru.md` — устройство экрана `Modbus Demo`.
-- `source/ru/route_map_signal_binding_roles.ru.md` — справочник ролей `SignalBindingRole`.
-- `source/ru/promflow_dispatcher_route_map_ui_merge_recommendations.ru.md` — исторический контекст слияния RouteMap UI.
+- `01-architecture-overview.ru.md` - слои, dynamic workspace, authorization, license, archive и lifecycle ownership.
+- `02-route-map-guide.ru.md` - RouteMap definition, schema v10, editor, migrations, validation и runtime state.
+- `03-modbus-tcp-guide.ru.md` - shared TCP runtime, `ModbusDemo`, `Modbus.DataMap`, snapshots и writes.
+- `04-signal-id-guide.ru.md` - SignalId naming, roles, directions, types и mapping.
+- `05-coding-rules.ru.md` - правила разработки для текущей архитектуры.
+- `06-testing-and-diagnostics.ru.md` - verification commands, diagnostics и Stage 14 acceptance checks.
+- `07-archive-guide.ru.md` - archive runtime, query, health, export, backup и retention operations.
+- `08-authorization-guide.ru.md` - login, session revocation, permissions и recovery authorization.
+- `09-offline-license-guide.ru.md` - offline license verification, installation и feature policy.
+- `10-operations-and-recovery.ru.md` - lifecycle operations, recovery checklist и manual endurance runbook.
 
 ## Главные инварианты
 
-- RouteMap UI работает только с доменными `SignalId`, не с Modbus-адресами.
-- Физическая адресация PLC живет в `Modbus.DataMap`; `ModbusDemo.DataMap` не смешивается с RouteMap.
-- `ModbusDemo` владеет TCP endpoint и lifecycle общего runtime.
-- `RouteMapConfigurationManager` владеет актуальной definition; не регистрируйте `RouteMapDefinition` как immutable singleton.
-- UI не обновляется напрямую из Modbus callback: поток идет через provider, mapper и ViewModel.
-- `ПУСК`, `СТОП`, `АВАРИЯ`, loader/target и modes — toggle/readback-команды.
-- Legacy `State` и `*OffFeedback` не возвращаются в актуальное поведение.
-
+- RouteMap UI работает с доменными `SignalId`, а не с Modbus addresses.
+- Физическая адресация PLC живет в `Modbus.DataMap`; не смешивать ее с `ModbusDemo.DataMap`.
+- `ModbusDemo` владеет настройками TCP endpoint; centralized lifecycle владеет startup/shutdown runtime.
+- `RouteMapConfigurationManager` владеет active definition; не регистрировать `RouteMapDefinition` как immutable singleton.
+- Modbus callbacks не обновляют Avalonia UI напрямую; поток идет через provider, mapper и ViewModel.
+- UI visibility не является authorization. Permissions и license features проверяются на service boundary.
+- User role и product license независимы; Administrator не обходит commercial features.
+- Archive code не зависит от Avalonia, ReactiveUI или ViewModels.
+- Timestamps хранятся в UTC, queues bounded, shutdown deterministic.
+- Emergency command delivery не блокируется недоступностью архива.
+- Safety interlocks, emergency behavior и final command acceptance остаются в PLC.

@@ -35,4 +35,23 @@ public sealed class InMemoryUserSessionAccessor : IUserSessionAccessor
             _current = UserSessionSnapshot.Anonymous;
         }
     }
+
+    public bool ClearIfCurrent(Guid userId)
+    {
+        if (userId == Guid.Empty)
+        {
+            throw new ArgumentException("User id must not be empty.", nameof(userId));
+        }
+
+        lock (_gate)
+        {
+            if (_current.Session?.UserId != userId)
+            {
+                return false;
+            }
+
+            _current = UserSessionSnapshot.Anonymous;
+            return true;
+        }
+    }
 }

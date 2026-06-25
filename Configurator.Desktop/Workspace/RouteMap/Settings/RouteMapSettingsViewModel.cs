@@ -87,6 +87,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     }
 
     public IObservable<bool> Result => _result;
+    public IObservable<bool> Completion => _result;
     public RouteMapConfigurationDocument Draft => _draft;
     public string ActiveFilePath => _manager.ActiveFilePath;
     public IReadOnlyList<RouteNodeKind> NodeKinds { get; } = Enum.GetValues<RouteNodeKind>();

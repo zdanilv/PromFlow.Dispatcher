@@ -142,6 +142,54 @@ public sealed class ModbusCommandAuditTests
     }
 
     [Fact]
+    public async Task Dispatcher_ConnectionLossDuringCommand_AuditsFailedConnectionLost()
+    {
+        var service = new RecordingModbusTcpService
+        {
+            NextSetResult = ModbusOperationResult.Failure("SocketClosed", "Connection was lost.")
+        };
+        var audit = new RecordingCommandAuditService();
+        var dispatcher = CreateDispatcher(
+            service,
+            CreateModbusOptions(CreatePoint("ordinary.command")),
+            new ArchiveOptions(),
+            audit);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.DispatchAsync(new SignalWriteRequest("ordinary.command", true, SignalValueType.Bool)));
+
+        Assert.Single(service.Writes);
+        var terminal = Assert.Single(audit.Commands, record =>
+            record.Result == EquipmentCommandAuditResult.Failed);
+        Assert.Equal("SocketClosed", terminal.ErrorCode);
+        Assert.Equal(CommandConfirmationStatus.ConnectionLost, terminal.ConfirmationStatus);
+    }
+
+    [Fact]
+    public async Task Dispatcher_ShutdownGateRejectsPulseBeforePhysicalWrite()
+    {
+        var service = new RecordingModbusTcpService();
+        var audit = new RecordingCommandAuditService();
+        var point = CreatePoint("pulse.command");
+        point.WriteMode = ModbusWriteMode.Pulse;
+        var dispatcher = CreateDispatcher(
+            service,
+            CreateModbusOptions(point),
+            new ArchiveOptions(),
+            audit,
+            new DenyOrdinaryCommandGate());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.DispatchAsync(new SignalWriteRequest("pulse.command", true, SignalValueType.Bool)));
+
+        Assert.Empty(service.Writes);
+        var terminal = Assert.Single(audit.Commands, record =>
+            record.Result == EquipmentCommandAuditResult.Failed);
+        Assert.Equal(RuntimeCommandDeliveryGate.ShuttingDownErrorCode, terminal.ErrorCode);
+        Assert.Equal(CommandConfirmationStatus.Rejected, terminal.ConfirmationStatus);
+    }
+
+    [Fact]
     public async Task Dispatcher_PulseResetCancellationWithoutCallerCancellation_AuditsFailed()
     {
         var service = new RecordingModbusTcpService { CancelFalseWrites = true };
@@ -251,6 +299,8 @@ public sealed class ModbusCommandAuditTests
 
         public bool CancelFalseWrites { get; init; }
 
+        public ModbusOperationResult? NextSetResult { get; init; }
+
         public ModbusServiceState State { get; } = ModbusServiceState.Stopped;
 
         public event EventHandler<ModbusServiceState>? StateChanged
@@ -286,7 +336,7 @@ public sealed class ModbusCommandAuditTests
             }
 
             Writes.Add((name, value, context?.CommandId));
-            return Task.FromResult(ModbusOperationResult.Success());
+            return Task.FromResult(NextSetResult ?? ModbusOperationResult.Success());
         }
 
         public IDisposable Subscribe(string name, Action<ModbusDataValue> onChanged)

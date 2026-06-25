@@ -315,6 +315,22 @@ public sealed class WorkspaceAuthorizationTests
             Current = UserSessionSnapshot.Authenticated(session);
 
         public void Clear() => Current = UserSessionSnapshot.Anonymous;
+
+        public bool ClearIfCurrent(Guid userId)
+        {
+            if (userId == Guid.Empty)
+            {
+                throw new ArgumentException("User id must not be empty.", nameof(userId));
+            }
+
+            if (Current.Session?.UserId != userId)
+            {
+                return false;
+            }
+
+            Current = UserSessionSnapshot.Anonymous;
+            return true;
+        }
     }
 
     private sealed class FakeAuthenticationService : IAuthenticationService
