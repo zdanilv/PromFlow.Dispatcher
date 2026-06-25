@@ -2,7 +2,9 @@ using Configurator.Application.Services;
 using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Configuration;
 using Configurator.Application.Services.Licensing;
+using Configurator.Application.Services.Runtime;
 using Configurator.Infrastructure.Licensing;
+using Configurator.Infrastructure.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,14 +16,19 @@ namespace Configurator.Infrastructure
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
         {
             // Services.
+            var lifecycleOptions = configuration.GetSection(ApplicationLifecycleOptions.SectionName).Get<ApplicationLifecycleOptions>()
+                ?? new ApplicationLifecycleOptions();
             var licensingOptions = configuration.GetSection(LicensingOptions.SectionName).Get<LicensingOptions>()
                 ?? new LicensingOptions();
+            services.AddSingleton(lifecycleOptions);
             services.AddSingleton(licensingOptions);
             if (!services.Any(service => service.ServiceType == typeof(TimeProvider)))
             {
                 services.AddSingleton(TimeProvider.System);
             }
 
+            services.AddSingleton<ApplicationRuntimePathProvider>();
+            services.AddSingleton<IApplicationInstanceGuard, FileApplicationInstanceGuard>();
             services.AddSingleton<LicensePathProvider>();
             services.AddSingleton<FileLicenseStore>();
             services.AddSingleton<ILicenseStore>(sp => sp.GetRequiredService<FileLicenseStore>());

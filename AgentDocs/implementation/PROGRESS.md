@@ -25,14 +25,14 @@
 - [x] Stage 10 — Offline license core and issuer
 - [x] Stage 11 — License installation UI and feature policy
 - [x] Stage 12 — Archive UI
-- [ ] Stage 13 — Centralized lifecycle
+- [x] Stage 13 — Centralized lifecycle
 - [ ] Stage 14 — Hardening and production acceptance
 
 ## Current stage
 
-- Stage: `12`
+- Stage: `13`
 - Branch: `6-add-archive`
-- Goal: `Add paged archive and audit workspace UI`
+- Goal: `Centralize application startup/shutdown lifecycle`
 - Status: `Completed`
 
 ## Current findings
@@ -154,6 +154,14 @@
 - Stage 12 added paged/cancelable Archive UI sections for snapshots, command audit, runtime events, security audit and maintenance actions.
 - Stage 12 uses existing Avalonia controls with bounded list rows rather than adding the unavailable `Avalonia.Controls.DataGrid` package.
 - Stage 12 did not start `IArchiveRuntime` or `IModbusArchiveCollector`; centralized lifecycle remains Stage 13.
+- Stage 13 added application runtime lifecycle contracts, runtime state snapshots, startup/shutdown step results and a command delivery gate under `Configurator.Application.Services.Runtime`.
+- Stage 13 moved `IModbusArchiveCollector` to the Application archiving contracts so Desktop lifecycle coordination does not reference Modbus infrastructure types.
+- Stage 13 added `ApplicationRuntimeCoordinator` in Desktop and routes startup through single-instance guard, persistence initialization, installation identity, license refresh, archive runtime start, Modbus archive collector subscription and existing Modbus autostart policy.
+- Stage 13 removed Modbus autostart from `WorkspaceViewModel`; workspace initialization now only filters/creates authorized UI tabs.
+- Stage 13 added deterministic shutdown through `DesktopShutdownCoordinator`: dispose current workspace, stop Modbus facade/runtime, unsubscribe collector, flush/stop archive runtime and release the single-instance lease.
+- Stage 13 added `RuntimeCommandDeliveryGate` to reject non-emergency equipment commands during `ShuttingDown` while preserving emergency command delivery.
+- Stage 13 added `PersistenceInitializer`; security migrations are fatal during startup, while archive migration/start failures remain non-fatal and are reported in lifecycle step results.
+- Stage 13 added file-backed single-instance locking with an OS mutex and per-user lock file under the runtime app-data directory.
 
 ## Commands last executed
 
@@ -326,6 +334,14 @@ git status --short --branch
 - First final full Stage 12 run had a transient existing `ModbusDemoViewModelTests.StopCommandCancelsActiveLifecycleWithoutModalError` failure; the targeted rerun passed, then the final full rerun passed.
 - Stage 12 sensitive-material and blocking-call scans over new archive UI/query paths: `Passed; no matches`
 - Stage 12 diff whitespace check: `Passed; only CRLF normalization warnings`
+- Full build after Stage 13 implementation: `Passed; 3 NU1903 warnings from SQLitePCLRaw.lib.e_sqlite3, 0 errors`
+- Stage 13 Runtime/Authorization/Workspace/Licensing unit regression: `Passed; 118 passed, 0 failed, 0 skipped`
+- Stage 13 Persistence Archive/Security/Architecture regression: `Passed; 74 passed, 0 failed, 0 skipped`
+- Stage 13 headless Workspace/Archive/License UI regression: `Passed; 4 passed, 0 failed, 0 skipped`
+- Stage 13 Modbus regression: `Passed on rerun; 113 passed, 0 failed, 0 skipped`
+- First Stage 13 Modbus run hit the previously observed transient `ModbusDemoViewModelTests.StopCommandCancelsActiveLifecycleWithoutModalError`; targeted rerun passed, then the full Modbus rerun passed.
+- Stage 13 sensitive-material and blocking-call scans over new lifecycle/runtime paths: `Passed; no matches`
+- Full tests after Stage 13: `Passed; 512 passed, 0 failed, 0 skipped`
 
 ## Known limitations
 
@@ -364,11 +380,14 @@ git status --short --branch
 - Stage 11 does not add Archive UI, User Management UI, online activation, migrations, packages or production key material.
 - Stage 11 still ships with an empty production trusted key ring; customer licenses require deployment-supplied trusted public keys.
 - Stage 11 request export writes local `.promrequest` artifacts only when invoked explicitly by an administrator.
-- Stage 12 does not start archive runtime/collector or centralize application lifecycle; Stage 13 remains responsible for that.
+- Stage 13 starts archive runtime and collector from centralized lifecycle, not from workspace UI.
 - Stage 12 does not add a DataGrid package; Archive UI uses bounded, paged `ListBox`-based rows with server-side paging.
 - Stage 12 does not add an `Archive` config section; UI respects existing `ArchiveOptions` defaults unless deployment supplies configuration.
 - Production trusted license keys remain empty by default, so the Archive tab appears only when deployment/test configuration supplies a valid `Archive` feature license.
+- Stage 13 does not add WAL checkpoint/connection-pool shutdown hooks; existing SQLite services still own their own connection lifetimes.
+- Stage 13 single-instance protection is per-user local app-data plus OS mutex; it is not a distributed lock.
+- Stage 13 does not add Stage 14 production hardening, deployment packaging, or acceptance-run automation.
 
 ## Next action
 
-Stop here until Stage 13 is explicitly requested.
+Stop here until Stage 14 is explicitly requested.

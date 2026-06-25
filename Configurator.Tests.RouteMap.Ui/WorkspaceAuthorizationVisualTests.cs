@@ -4,11 +4,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Licensing;
-using Configurator.Application.Services.Modbus.Configuration;
-using Configurator.Application.Services.Modbus.Contracts;
-using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Desktop.Workspace;
-using Microsoft.Extensions.Logging.Abstractions;
 using ReactiveUI;
 using Xunit;
 
@@ -65,9 +61,6 @@ public sealed class WorkspaceAuthorizationVisualTests
                 new DefaultAccessDecisionService(sessionAccessor, new LicenseFeatureGate(new ValidLicenseStateAccessor())),
                 new FakeAuthenticationService(),
                 new FakeLicenseService(),
-                new NoopModbusRuntimeService(),
-                new StaticModbusOptionsProvider(),
-                NullLogger<WorkspaceViewModel>.Instance,
                 (_, _) => Task.CompletedTask);
             await viewModel.InitializeAsync();
 
@@ -185,28 +178,4 @@ public sealed class WorkspaceAuthorizationVisualTests
         public Task SignOutAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class StaticModbusOptionsProvider : IModbusDemoOptionsProvider
-    {
-        public ModbusOptions CurrentValue { get; } = new() { StartupMode = ModbusRunMode.None };
-    }
-
-    private sealed class NoopModbusRuntimeService : IModbusRuntimeService
-    {
-        public ModbusStatus Status => throw new NotSupportedException();
-        public ModbusSnapshot ClientSnapshot => throw new NotSupportedException();
-        public ModbusSnapshot ServerSnapshot => throw new NotSupportedException();
-        public ModbusOptions CurrentOptions => new();
-        public event EventHandler<ModbusStatus>? StatusChanged { add { } remove { } }
-        public event EventHandler<ModbusSnapshot>? SnapshotChanged { add { } remove { } }
-        public Task StartAsync(ModbusRunMode mode = ModbusRunMode.Both, ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task RestartAsync(ModbusRunMode mode = ModbusRunMode.Both, ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StartClientAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StopClientAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task RestartClientAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StartServerAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StopServerAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task RestartServerAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    }
 }

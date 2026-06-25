@@ -1,10 +1,6 @@
 using System.Collections.ObjectModel;
 using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Licensing;
-using Configurator.Application.Services.Modbus.Configuration;
-using Configurator.Application.Services.Modbus.Contracts;
-using Configurator.Application.Services.Modbus.Runtime;
-using Microsoft.Extensions.Logging;
 using ReactiveUI;
 
 namespace Configurator.Desktop.Workspace;
@@ -16,9 +12,6 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
     private readonly IAccessDecisionService _accessDecisionService;
     private readonly IAuthenticationService _authenticationService;
     private readonly ILicenseService _licenseService;
-    private readonly IModbusRuntimeService _modbusRuntime;
-    private readonly IModbusDemoOptionsProvider _modbusOptions;
-    private readonly ILogger<WorkspaceViewModel> _logger;
     private readonly Func<WorkspaceViewModel, CancellationToken, Task> _logoutRequested;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private bool _initialized;
@@ -35,9 +28,6 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
         IAccessDecisionService accessDecisionService,
         IAuthenticationService authenticationService,
         ILicenseService licenseService,
-        IModbusRuntimeService modbusRuntime,
-        IModbusDemoOptionsProvider modbusOptions,
-        ILogger<WorkspaceViewModel> logger,
         Func<WorkspaceViewModel, CancellationToken, Task> logoutRequested)
     {
         ArgumentNullException.ThrowIfNull(sessionAccessor);
@@ -50,9 +40,6 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
         _accessDecisionService = accessDecisionService ?? throw new ArgumentNullException(nameof(accessDecisionService));
         _authenticationService = authenticationService ?? throw new ArgumentNullException(nameof(authenticationService));
         _licenseService = licenseService ?? throw new ArgumentNullException(nameof(licenseService));
-        _modbusRuntime = modbusRuntime ?? throw new ArgumentNullException(nameof(modbusRuntime));
-        _modbusOptions = modbusOptions ?? throw new ArgumentNullException(nameof(modbusOptions));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _logoutRequested = logoutRequested ?? throw new ArgumentNullException(nameof(logoutRequested));
         AuthToken = sessionAccessor.Current.IsAuthenticated.ToString();
 
@@ -131,12 +118,6 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
         HasTabs = true;
         HasNoTabs = false;
         _initialized = true;
-
-        var options = _modbusOptions.CurrentValue.Clone();
-        if (options.AutostartOnWorkspaceOpen && options.StartupMode != ModbusRunMode.None)
-        {
-            _ = StartModbusAsync(_modbusRuntime, options, _logger, _lifetimeCancellation.Token);
-        }
     }
 
     public void Dispose()
@@ -164,25 +145,4 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
         await _logoutRequested(this, cancellationToken);
     }
 
-    private static async Task StartModbusAsync(
-        IModbusRuntimeService runtime,
-        ModbusOptions options,
-        ILogger<WorkspaceViewModel> logger,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await runtime.StartAsync(options.StartupMode, options, cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception)
-        {
-            logger.LogError(
-                exception,
-                "Failed to autostart Modbus in {StartupMode} mode.",
-                options.StartupMode);
-        }
-    }
 }

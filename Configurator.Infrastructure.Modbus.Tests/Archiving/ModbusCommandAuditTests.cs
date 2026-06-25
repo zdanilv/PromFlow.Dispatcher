@@ -3,6 +3,7 @@ using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Application.Services.Runtime;
 using Configurator.Application.Services.Signals;
 using Configurator.Infrastructure.Modbus.Archiving;
 using Configurator.Infrastructure.Modbus.RouteMap;
@@ -100,6 +101,47 @@ public sealed class ModbusCommandAuditTests
     }
 
     [Fact]
+    public async Task Dispatcher_ShutdownGateRejectsOrdinaryCommandBeforeModbusWrite()
+    {
+        var service = new RecordingModbusTcpService();
+        var audit = new RecordingCommandAuditService();
+        var dispatcher = CreateDispatcher(
+            service,
+            CreateModbusOptions(CreatePoint("ordinary.command")),
+            new ArchiveOptions(),
+            audit,
+            new DenyOrdinaryCommandGate());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.DispatchAsync(new SignalWriteRequest("ordinary.command", true, SignalValueType.Bool)));
+
+        Assert.Empty(service.Writes);
+        Assert.Contains(audit.Commands, record =>
+            record.Result == EquipmentCommandAuditResult.Failed
+            && record.ErrorCode == RuntimeCommandDeliveryGate.ShuttingDownErrorCode
+            && record.ConfirmationStatus == CommandConfirmationStatus.Rejected);
+    }
+
+    [Fact]
+    public async Task Dispatcher_ShutdownGateAllowsEmergencyCommand()
+    {
+        var service = new RecordingModbusTcpService();
+        var audit = new RecordingCommandAuditService();
+        var archiveOptions = new ArchiveOptions { EmergencySignalIds = ["system.emergency"] };
+        var dispatcher = CreateDispatcher(
+            service,
+            CreateModbusOptions(CreatePoint("system.emergency")),
+            archiveOptions,
+            audit,
+            new DenyOrdinaryCommandGate());
+
+        await dispatcher.DispatchAsync(new SignalWriteRequest("system.emergency", true, SignalValueType.Bool));
+
+        Assert.Single(service.Writes);
+        Assert.Contains(audit.Commands, record => record.Result == EquipmentCommandAuditResult.Succeeded);
+    }
+
+    [Fact]
     public async Task Dispatcher_PulseResetCancellationWithoutCallerCancellation_AuditsFailed()
     {
         var service = new RecordingModbusTcpService { CancelFalseWrites = true };
@@ -127,14 +169,16 @@ public sealed class ModbusCommandAuditTests
         IModbusTcpService service,
         ModbusOptions modbusOptions,
         ArchiveOptions archiveOptions,
-        RecordingCommandAuditService audit)
+        RecordingCommandAuditService audit,
+        ICommandDeliveryGate? deliveryGate = null)
         => new(
             service,
             new TestOptionsMonitor<ModbusOptions>(modbusOptions),
             new CommandAuditRecorder(
                 audit,
                 new TestOptionsMonitor<ArchiveOptions>(archiveOptions),
-                NullLogger<CommandAuditRecorder>.Instance));
+                NullLogger<CommandAuditRecorder>.Instance),
+            deliveryGate ?? new AllowCommandDeliveryGate());
 
     private static ModbusOptions CreateModbusOptions(ModbusDataPointOptions point)
         => new() { DataMap = [point] };
@@ -183,6 +227,22 @@ public sealed class ModbusCommandAuditTests
             PhysicalModbusWriteAuditRecord record,
             CancellationToken cancellationToken = default)
             => Task.FromResult(ArchiveOperationResult.Success());
+    }
+
+    private sealed class AllowCommandDeliveryGate : ICommandDeliveryGate
+    {
+        public CommandDeliveryDecision Evaluate(CommandExecutionContext context)
+            => CommandDeliveryDecision.Allow();
+    }
+
+    private sealed class DenyOrdinaryCommandGate : ICommandDeliveryGate
+    {
+        public CommandDeliveryDecision Evaluate(CommandExecutionContext context)
+            => context.IsEmergency
+                ? CommandDeliveryDecision.Allow()
+                : CommandDeliveryDecision.Deny(
+                    RuntimeCommandDeliveryGate.ShuttingDownErrorCode,
+                    "Application is shutting down; non-emergency commands are rejected.");
     }
 
     private sealed class RecordingModbusTcpService : IModbusTcpService

@@ -1,6 +1,4 @@
-using Configurator.Application.Services.Archiving;
-
-namespace Configurator.Infrastructure.Modbus.Archiving;
+namespace Configurator.Application.Services.Archiving;
 
 public interface IModbusArchiveCollector : IAsyncDisposable
 {

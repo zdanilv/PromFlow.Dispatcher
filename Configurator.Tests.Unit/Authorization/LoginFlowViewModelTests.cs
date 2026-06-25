@@ -1,12 +1,9 @@
 using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Licensing;
-using Configurator.Application.Services.Modbus.Configuration;
-using Configurator.Application.Services.Modbus.Contracts;
-using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Application.Services.Runtime;
 using Configurator.Desktop.Main;
 using Configurator.Desktop.Workspace;
 using Configurator.Desktop.Workspace.Authorization;
-using Microsoft.Extensions.Logging.Abstractions;
 using ReactiveUI;
 using System.Reactive;
 using System.Reactive.Threading.Tasks;
@@ -35,6 +32,7 @@ public sealed class LoginFlowViewModelTests
 
         await main.StartupTask;
 
+        Assert.Equal(1, services.RuntimeCoordinator.StartCount);
         Assert.IsType<AuthorizationViewModel>(main.CurrentViewModel);
     }
 
@@ -116,10 +114,13 @@ public sealed class LoginFlowViewModelTests
 
         public int WorkspaceCreateCount { get; private set; }
 
+        public FakeRuntimeCoordinator RuntimeCoordinator { get; } = new();
+
         public MainViewModel CreateMainViewModel() =>
             new(
                 _userManagementService,
                 _licenseService,
+                RuntimeCoordinator,
                 (screen, onSucceeded) => new AuthorizationViewModel(screen, _authenticationService, onSucceeded),
                 (screen, onSucceeded) => new AdminBootstrapViewModel(screen, _userManagementService, onSucceeded),
                 (screen, onLogout) =>
@@ -150,10 +151,26 @@ public sealed class LoginFlowViewModelTests
                 new FixedAccessDecisionService(allow: true),
                 _authenticationService,
                 _licenseService,
-                new NoopModbusRuntimeService(),
-                new StaticModbusOptionsProvider(),
-                NullLogger<WorkspaceViewModel>.Instance,
                 onLogout);
+        }
+    }
+
+    private sealed class FakeRuntimeCoordinator : IApplicationRuntimeCoordinator
+    {
+        public int StartCount { get; private set; }
+
+        public int StopCount { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            StartCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken = default)
+        {
+            StopCount++;
+            return Task.CompletedTask;
         }
     }
 
@@ -291,31 +308,6 @@ public sealed class LoginFlowViewModelTests
             AccessRequirement requirement,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(Authorize(requirement));
-    }
-
-    private sealed class StaticModbusOptionsProvider : IModbusDemoOptionsProvider
-    {
-        public ModbusOptions CurrentValue { get; } = new() { StartupMode = ModbusRunMode.None };
-    }
-
-    private sealed class NoopModbusRuntimeService : IModbusRuntimeService
-    {
-        public ModbusStatus Status => throw new NotSupportedException();
-        public ModbusSnapshot ClientSnapshot => throw new NotSupportedException();
-        public ModbusSnapshot ServerSnapshot => throw new NotSupportedException();
-        public ModbusOptions CurrentOptions => new();
-        public event EventHandler<ModbusStatus>? StatusChanged { add { } remove { } }
-        public event EventHandler<ModbusSnapshot>? SnapshotChanged { add { } remove { } }
-        public Task StartAsync(ModbusRunMode mode = ModbusRunMode.Both, ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task RestartAsync(ModbusRunMode mode = ModbusRunMode.Both, ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StartClientAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StopClientAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task RestartClientAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StartServerAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StopServerAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task RestartServerAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private static UserSession CreateSession() =>

@@ -4,6 +4,7 @@ using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Modbus.Contracts;
+using Configurator.Application.Services.Runtime;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop;
 using Configurator.Desktop.Dialogs;
@@ -13,6 +14,7 @@ using Configurator.Desktop.Dialogs.ModbusSettingsDialog;
 using Configurator.Desktop.Dialogs.OpcUaTagEditorDialog;
 using Configurator.Desktop.Dialogs.OpcUaTagImportDialog;
 using Configurator.Desktop.Main;
+using Configurator.Desktop.Runtime;
 using Configurator.Desktop.Workspace;
 using Configurator.Desktop.Workspace.Archive;
 using Configurator.Desktop.Workspace.Authorization;
@@ -122,6 +124,10 @@ internal static class Program
 
                     services.AddSingleton<Configurator.Desktop.Main.MainWindow>();
                     services.AddSingleton<Configurator.Desktop.Main.MainViewModel>();
+                    services.AddSingleton<ApplicationRuntimeCoordinator>();
+                    services.AddSingleton<IApplicationRuntimeCoordinator>(sp => sp.GetRequiredService<ApplicationRuntimeCoordinator>());
+                    services.AddSingleton<IApplicationRuntimeStateAccessor>(sp => sp.GetRequiredService<ApplicationRuntimeCoordinator>());
+                    services.AddSingleton<IDesktopShutdownCoordinator, DesktopShutdownCoordinator>();
 
                     services.AddTransient<AuthorizationViewModel>();
                     services.AddTransient<AdminBootstrapViewModel>();
@@ -186,6 +192,7 @@ internal static class Program
                     services.AddTransient<IViewFor<WorkspaceViewModel>, WorkspaceView>();
                     services.AddTransient<IViewFor<AuthorizationViewModel>, AuthorizationView>();
                     services.AddTransient<IViewFor<AdminBootstrapViewModel>, AdminBootstrapView>();
+                    services.AddTransient<IViewFor<StartupFailureViewModel>, StartupFailureView>();
                     services.AddTransient<IViewFor<ArchiveViewModel>, ArchiveView>();
                     services.AddTransient<IViewFor<LicenseViewModel>, LicenseView>();
                     services.AddTransient<IViewFor<ModbusDemoViewModel>, ModbusDemoView>();

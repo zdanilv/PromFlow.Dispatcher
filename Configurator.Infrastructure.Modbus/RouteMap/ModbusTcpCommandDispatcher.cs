@@ -3,6 +3,7 @@ using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Application.Services.Runtime;
 using Configurator.Application.Services.Signals;
 using Configurator.Infrastructure.Modbus.Archiving;
 using Microsoft.Extensions.Options;
@@ -12,7 +13,8 @@ namespace Configurator.Infrastructure.Modbus.RouteMap;
 public sealed class ModbusTcpCommandDispatcher(
     IModbusTcpService modbusService,
     IOptionsMonitor<ModbusOptions> optionsMonitor,
-    CommandAuditRecorder auditRecorder) : IEquipmentCommandDispatcher
+    CommandAuditRecorder auditRecorder,
+    ICommandDeliveryGate deliveryGate) : IEquipmentCommandDispatcher
 {
     public async Task DispatchAsync(
         SignalWriteRequest request,
@@ -39,6 +41,16 @@ public sealed class ModbusTcpCommandDispatcher(
                 requestedAuditResult.ErrorCode ?? "CommandAuditUnavailable",
                 requestedAuditResult.ErrorMessage ?? "Command audit is unavailable.").ConfigureAwait(false);
             throw new InvalidOperationException("Command audit is unavailable.");
+        }
+
+        var deliveryDecision = deliveryGate.Evaluate(context);
+        if (!deliveryDecision.Allowed)
+        {
+            await RecordRejectedAsync(
+                context,
+                deliveryDecision.ErrorCode ?? RuntimeCommandDeliveryGate.ShuttingDownErrorCode,
+                deliveryDecision.ErrorMessage ?? "Command delivery is not allowed.").ConfigureAwait(false);
+            throw new InvalidOperationException(deliveryDecision.ErrorMessage ?? "Command delivery is not allowed.");
         }
 
         if (point is null)

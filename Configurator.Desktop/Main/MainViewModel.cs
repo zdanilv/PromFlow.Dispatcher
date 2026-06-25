@@ -1,5 +1,6 @@
 using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Licensing;
+using Configurator.Application.Services.Runtime;
 using Configurator.Desktop.Workspace;
 using Configurator.Desktop.Workspace.Authorization;
 using ReactiveUI;
@@ -11,10 +12,12 @@ public sealed class MainViewModel : ViewModelBase, IScreen, IDisposable
 {
     private readonly IUserManagementService _userManagementService;
     private readonly ILicenseService _licenseService;
+    private readonly IApplicationRuntimeCoordinator _runtimeCoordinator;
     private readonly Func<IScreen, Func<CancellationToken, Task>, AuthorizationViewModel> _authorizationFactory;
     private readonly Func<IScreen, Func<CancellationToken, Task>, AdminBootstrapViewModel> _bootstrapFactory;
     private readonly Func<IScreen, Func<WorkspaceViewModel, CancellationToken, Task>, WorkspaceViewModel> _workspaceFactory;
     private readonly CompositeDisposable _navigationSubscriptions = new();
+    private readonly CancellationTokenSource _startupCancellation = new();
     private IRoutableViewModel? _currentViewModel;
     private WorkspaceViewModel? _workspace;
     private bool _disposed;
@@ -22,17 +25,19 @@ public sealed class MainViewModel : ViewModelBase, IScreen, IDisposable
     public MainViewModel(
         IUserManagementService userManagementService,
         ILicenseService licenseService,
+        IApplicationRuntimeCoordinator runtimeCoordinator,
         Func<IScreen, Func<CancellationToken, Task>, AuthorizationViewModel> authorizationFactory,
         Func<IScreen, Func<CancellationToken, Task>, AdminBootstrapViewModel> bootstrapFactory,
         Func<IScreen, Func<WorkspaceViewModel, CancellationToken, Task>, WorkspaceViewModel> workspaceFactory)
     {
         _userManagementService = userManagementService ?? throw new ArgumentNullException(nameof(userManagementService));
         _licenseService = licenseService ?? throw new ArgumentNullException(nameof(licenseService));
+        _runtimeCoordinator = runtimeCoordinator ?? throw new ArgumentNullException(nameof(runtimeCoordinator));
         _authorizationFactory = authorizationFactory ?? throw new ArgumentNullException(nameof(authorizationFactory));
         _bootstrapFactory = bootstrapFactory ?? throw new ArgumentNullException(nameof(bootstrapFactory));
         _workspaceFactory = workspaceFactory ?? throw new ArgumentNullException(nameof(workspaceFactory));
 
-        StartupTask = NavigateStartupAsync(CancellationToken.None);
+        StartupTask = StartAndNavigateAsync(_startupCancellation.Token);
     }
 
     public RoutingState Router { get; } = new();
@@ -52,9 +57,39 @@ public sealed class MainViewModel : ViewModelBase, IScreen, IDisposable
             return;
         }
 
+        _startupCancellation.Cancel();
         _disposed = true;
         DisposeCurrentViewModel();
         _navigationSubscriptions.Dispose();
+        _startupCancellation.Dispose();
+    }
+
+    public Task ShutdownAsync(CancellationToken cancellationToken = default)
+    {
+        if (_disposed)
+        {
+            return Task.CompletedTask;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        Dispose();
+        return Task.CompletedTask;
+    }
+
+    private async Task StartAndNavigateAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _runtimeCoordinator.StartAsync(cancellationToken);
+            await NavigateStartupAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            NavigateTo(new StartupFailureViewModel(this, ex.Message));
+        }
     }
 
     private async Task NavigateStartupAsync(CancellationToken cancellationToken)

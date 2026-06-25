@@ -1,7 +1,9 @@
 using Configurator.Application.Services.Archiving;
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Runtime;
 using Configurator.Infrastructure.Persistence.Archive;
 using Configurator.Infrastructure.Persistence.Common;
+using Configurator.Infrastructure.Persistence.Runtime;
 using Configurator.Infrastructure.Persistence.Security;
 using Configurator.Infrastructure.Persistence.Sqlite;
 using Microsoft.Extensions.Configuration;
@@ -41,6 +43,7 @@ public static class DependencyInjection
         services.AddSingleton<SecuritySqliteConnectionFactory>();
         services.AddSingleton<SecuritySqliteMigrationCatalog>();
         services.AddSingleton<SecuritySqliteMigrationRunner>();
+        services.AddSingleton<IPersistenceInitializer, PersistenceInitializer>();
         services.AddSingleton<PasswordHashService>();
         services.AddSingleton<IPasswordHashService>(serviceProvider => serviceProvider.GetRequiredService<PasswordHashService>());
         services.AddSingleton<InMemoryUserSessionAccessor>();

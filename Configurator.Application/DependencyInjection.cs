@@ -1,6 +1,7 @@
 using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Application.Services.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Configurator.Application
@@ -17,6 +18,7 @@ namespace Configurator.Application
             services.AddSingleton<ILicenseFeatureGate, LicenseFeatureGate>();
             services.AddSingleton<ILicenseVerifier, OfflineLicenseVerifier>();
             services.AddSingleton<IAccessDecisionService, DefaultAccessDecisionService>();
+            services.AddSingleton<ICommandDeliveryGate, RuntimeCommandDeliveryGate>();
             services.AddSingleton<IModbusDataMapValidator, ModbusDataMapValidator>();
             return services;
         }

@@ -3,6 +3,7 @@ using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Application.Services.Runtime;
 using Configurator.Application.Services.Signals;
 using Configurator.Infrastructure.Modbus.Archiving;
 using Configurator.Infrastructure.Modbus.RouteMap;
@@ -156,7 +157,8 @@ public sealed class RouteMapModbusAdapterTests
             new CommandAuditRecorder(
                 auditService,
                 new TestArchiveOptionsMonitor(new ArchiveOptions()),
-                NullLogger<CommandAuditRecorder>.Instance));
+                NullLogger<CommandAuditRecorder>.Instance),
+            new AllowCommandDeliveryGate());
     }
 
     private static ModbusServiceState RunningState()
@@ -276,5 +278,11 @@ public sealed class RouteMapModbusAdapterTests
             PhysicalModbusWriteAuditRecord record,
             CancellationToken cancellationToken = default)
             => Task.FromResult(ArchiveOperationResult.Success());
+    }
+
+    private sealed class AllowCommandDeliveryGate : ICommandDeliveryGate
+    {
+        public CommandDeliveryDecision Evaluate(CommandExecutionContext context)
+            => CommandDeliveryDecision.Allow();
     }
 }
