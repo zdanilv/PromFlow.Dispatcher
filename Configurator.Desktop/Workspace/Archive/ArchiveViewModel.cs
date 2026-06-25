@@ -14,6 +14,7 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
     private readonly IArchiveQueryService _queryService;
     private readonly IArchiveMaintenanceService _maintenanceService;
     private readonly IArchiveFilePicker _filePicker;
+    private readonly object _exportProgressLock = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly IDisposable _healthSubscription;
     private CancellationTokenSource? _activeQueryCancellation;
@@ -376,8 +377,7 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
                 return;
             }
 
-            CompleteExportProgress(progressGeneration);
-            StatusMessage = $"Archive export created: {outcome.Value.ExportPath}";
+            CompleteExportProgress(progressGeneration, $"Archive export created: {outcome.Value.ExportPath}");
         }
         catch (Exception exception) when (exception is FormatException or InvalidOperationException or ArgumentException)
         {
@@ -427,17 +427,27 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
 
     private void UpdateExportProgress(ArchiveExportProgress progress, int generation)
     {
-        if (Volatile.Read(ref _exportProgressGeneration) != generation)
+        lock (_exportProgressLock)
         {
-            return;
-        }
+            if (Volatile.Read(ref _exportProgressGeneration) != generation)
+            {
+                return;
+            }
 
-        StatusMessage = $"{progress.Phase}: {progress.Message}";
+            StatusMessage = $"{progress.Phase}: {progress.Message}";
+        }
     }
 
-    private void CompleteExportProgress(int generation)
+    private void CompleteExportProgress(int generation, string? finalStatusMessage = null)
     {
-        Interlocked.CompareExchange(ref _exportProgressGeneration, generation + 1, generation);
+        lock (_exportProgressLock)
+        {
+            if (Interlocked.CompareExchange(ref _exportProgressGeneration, generation + 1, generation) == generation
+                && finalStatusMessage is not null)
+            {
+                StatusMessage = finalStatusMessage;
+            }
+        }
     }
 
     private void ApplyHealth(ArchiveHealth health)

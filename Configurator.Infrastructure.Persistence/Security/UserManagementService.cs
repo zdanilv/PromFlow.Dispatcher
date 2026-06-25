@@ -66,6 +66,18 @@ public sealed class UserManagementService : IUserManagementService
                 result.ErrorMessage ?? "Administrator bootstrap failed.");
     }
 
+    public async Task<UserListResult> ListUsersAsync(CancellationToken cancellationToken = default)
+    {
+        var permission = await RequireManageUsersAsync(cancellationToken).ConfigureAwait(false);
+        if (!permission.Succeeded)
+        {
+            return UserListResult.Failure(permission.ReasonCode ?? SecurityErrorCodes.PermissionDenied, "Manage users permission is required.");
+        }
+
+        var users = await _userRepository.ListAsync(cancellationToken).ConfigureAwait(false);
+        return UserListResult.Success(users.Select(ToSummary).ToArray());
+    }
+
     public async Task<UserManagementResult> CreateUserAsync(
         CreateUserRequest request,
         CancellationToken cancellationToken = default)
@@ -253,6 +265,20 @@ public sealed class UserManagementService : IUserManagementService
             nowUtc,
             lastLoginAtUtc: null,
             rowVersion: 0);
+
+    private static UserSummary ToSummary(AppUser user)
+        => new(
+            user.Id,
+            user.Username,
+            user.Role,
+            user.IsEnabled,
+            user.FailedLoginCount,
+            user.LockoutUntilUtc,
+            user.CreatedAtUtc,
+            user.UpdatedAtUtc,
+            user.PasswordChangedAtUtc,
+            user.LastLoginAtUtc,
+            user.RowVersion);
 
     private async Task AuditAsync(
         string eventType,

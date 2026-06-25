@@ -1,0 +1,135 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Workspace.Users;assembly=Configurator.Desktop"
+             mc:Ignorable="d"
+             d:DesignWidth="1100"
+             d:DesignHeight="700"
+             x:Class="Configurator.Desktop.Workspace.Users.UserManagementView"
+             x:DataType="vm:UserManagementViewModel">
+    <Grid RowDefinitions="Auto,Auto,*"
+          Margin="18"
+          RowSpacing="12">
+        <DockPanel Grid.Row="0" LastChildFill="True">
+            <StackPanel Orientation="Horizontal"
+                        DockPanel.Dock="Right"
+                        Spacing="8">
+                <Button Content="Refresh"
+                        Command="{Binding RefreshCommand}"
+                        MinWidth="92"/>
+                <Button Content="Enable"
+                        Command="{Binding EnableSelectedCommand}"
+                        MinWidth="92"/>
+                <Button Content="Disable"
+                        Command="{Binding DisableSelectedCommand}"
+                        MinWidth="92"/>
+            </StackPanel>
+            <StackPanel Spacing="2">
+                <TextBlock Text="Users"
+                           FontSize="22"
+                           FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding StatusMessage}"
+                           Opacity="0.72"/>
+            </StackPanel>
+        </DockPanel>
+
+        <Border Grid.Row="1"
+                IsVisible="{Binding HasError}"
+                BorderBrush="#9B2C2C"
+                BorderThickness="1"
+                Padding="10">
+            <TextBlock Text="{Binding ErrorMessage}"
+                       TextWrapping="Wrap"/>
+        </Border>
+
+        <Grid Grid.Row="2"
+              ColumnDefinitions="2*,*"
+              ColumnSpacing="14">
+            <Border Grid.Column="0"
+                    BorderBrush="#D0D7DE"
+                    BorderThickness="1"
+                    Padding="8">
+                <Grid RowDefinitions="Auto,*"
+                      RowSpacing="8">
+                    <Grid Grid.Row="0"
+                          ColumnDefinitions="2*,*,*,*,*"
+                          ColumnSpacing="8">
+                        <TextBlock Text="Username" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="1" Text="Role" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="2" Text="Enabled" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="3" Text="Failed" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="4" Text="Last login UTC" FontWeight="SemiBold"/>
+                    </Grid>
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding Users}"
+                             SelectedItem="{Binding SelectedUser}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="vm:UserRowViewModel">
+                                <Grid ColumnDefinitions="2*,*,*,*,*"
+                                      ColumnSpacing="8"
+                                      MinHeight="30">
+                                    <TextBlock Text="{Binding Username}" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Role}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding IsEnabled}"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding FailedLoginCount}"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding LastLoginAtUtc}" TextWrapping="Wrap"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Column="1"
+                  RowDefinitions="Auto,Auto"
+                  RowSpacing="14">
+                <Border BorderBrush="#D0D7DE"
+                        BorderThickness="1"
+                        Padding="12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Create user"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"/>
+                        <TextBox PlaceholderText="Username"
+                                 Text="{Binding NewUsername}"/>
+                        <ComboBox ItemsSource="{Binding UserRoles}"
+                                  SelectedItem="{Binding NewRole}"/>
+                        <CheckBox Content="Enabled"
+                                  IsChecked="{Binding NewUserEnabled}"/>
+                        <TextBox PlaceholderText="Password"
+                                 PasswordChar="*"
+                                 Text="{Binding NewPassword}"/>
+                        <Button Content="Create"
+                                Command="{Binding CreateUserCommand}"
+                                HorizontalAlignment="Right"
+                                MinWidth="92"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1"
+                        BorderBrush="#D0D7DE"
+                        BorderThickness="1"
+                        Padding="12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Selected user"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding SelectedUser.Username}"
+                                   TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding SelectedUser.Role}"/>
+                        <TextBlock Text="{Binding SelectedUser.UpdatedAtUtc}"
+                                   TextWrapping="Wrap"/>
+                        <TextBox PlaceholderText="New password"
+                                 PasswordChar="*"
+                                 Text="{Binding SelectedNewPassword}"/>
+                        <Button Content="Change password"
+                                Command="{Binding ChangePasswordCommand}"
+                                HorizontalAlignment="Right"
+                                MinWidth="132"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

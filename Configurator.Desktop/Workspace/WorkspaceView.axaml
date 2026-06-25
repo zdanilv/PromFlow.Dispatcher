@@ -9,6 +9,7 @@
              xmlns:routeMap="using:Configurator.Desktop.Workspace.RouteMap"
              xmlns:routeMapVm="using:Configurator.Desktop.Workspace.RouteMap.ViewModels"
              xmlns:signalMapping="using:Configurator.Desktop.Workspace.RouteMap.SignalMapping"
+             xmlns:users="using:Configurator.Desktop.Workspace.Users"
              mc:Ignorable="d"
              d:DesignWidth="1200"
              d:DesignHeight="760"
@@ -29,6 +30,9 @@
         </DataTemplate>
         <DataTemplate DataType="licensing:LicenseViewModel">
             <licensing:LicenseView/>
+        </DataTemplate>
+        <DataTemplate DataType="users:UserManagementViewModel">
+            <users:UserManagementView/>
         </DataTemplate>
         <DataTemplate DataType="vm:WorkspaceAccessUnavailableViewModel">
             <vm:WorkspaceAccessUnavailableView/>

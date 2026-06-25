@@ -57,6 +57,68 @@ public sealed class UserManagementServiceTests
     }
 
     [Fact]
+    public async Task ListUsers_RequiresManageUsersAndReturnsSummariesWithoutPasswordHash()
+    {
+        using var fixture = new SecurityTestFixture();
+        var service = fixture.CreateUserManagementService();
+        var admin = await service.BootstrapAdministratorAsync(
+            new BootstrapAdministratorRequest("admin", "ValidPass123"),
+            CancellationToken.None);
+        var denied = await service.ListUsersAsync(CancellationToken.None);
+        fixture.SessionAccessor.SetCurrent(new UserSession(
+            Guid.NewGuid(),
+            admin.User!.Id,
+            admin.User.Username,
+            admin.User.Role,
+            fixture.CreateAuthorizationService().GetPermissions(admin.User.Role),
+            DateTimeOffset.UtcNow));
+        await service.CreateUserAsync(
+            new CreateUserRequest("operator", "ValidPass123", UserRole.User),
+            CancellationToken.None);
+
+        var allowed = await service.ListUsersAsync(CancellationToken.None);
+
+        Assert.False(denied.Succeeded);
+        Assert.Equal("NotAuthenticated", denied.ErrorCode);
+        Assert.True(allowed.Succeeded, allowed.ErrorMessage);
+        Assert.Equal(["admin", "operator"], allowed.Users.Select(user => user.Username).ToArray());
+        Assert.DoesNotContain(allowed.Users, user => user.GetType().GetProperty("PasswordHash") is not null);
+    }
+
+    [Fact]
+    public async Task ListUsers_ReflectsPasswordAndEnabledStateChanges()
+    {
+        using var fixture = new SecurityTestFixture();
+        var service = fixture.CreateUserManagementService();
+        var admin = await service.BootstrapAdministratorAsync(
+            new BootstrapAdministratorRequest("admin", "ValidPass123"),
+            CancellationToken.None);
+        fixture.SessionAccessor.SetCurrent(new UserSession(
+            Guid.NewGuid(),
+            admin.User!.Id,
+            admin.User.Username,
+            admin.User.Role,
+            fixture.CreateAuthorizationService().GetPermissions(admin.User.Role),
+            DateTimeOffset.UtcNow));
+        var created = await service.CreateUserAsync(
+            new CreateUserRequest("operator", "ValidPass123", UserRole.User),
+            CancellationToken.None);
+        var changed = await service.ChangePasswordAsync(
+            new ChangePasswordRequest(created.User!.Id, "AnotherPass123", created.User.RowVersion),
+            CancellationToken.None);
+        await service.SetUserEnabledAsync(
+            new SetUserEnabledRequest(created.User.Id, false, changed.User!.RowVersion),
+            CancellationToken.None);
+
+        var users = await service.ListUsersAsync(CancellationToken.None);
+        var user = Assert.Single(users.Users, summary => summary.Username == "operator");
+
+        Assert.False(user.IsEnabled);
+        Assert.True(user.PasswordChangedAtUtc >= created.User.PasswordChangedAtUtc);
+        Assert.True(user.RowVersion > created.User.RowVersion);
+    }
+
+    [Fact]
     public void UserRolePermissions_AreLimitedToRouteMapAndCommands()
     {
         using var fixture = new SecurityTestFixture();

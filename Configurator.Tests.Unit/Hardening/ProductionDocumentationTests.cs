@@ -10,10 +10,12 @@ public sealed class ProductionDocumentationTests
         Path.Combine("AgentDocs", "en", "08-authorization-guide.en.md"),
         Path.Combine("AgentDocs", "en", "09-offline-license-guide.en.md"),
         Path.Combine("AgentDocs", "en", "10-operations-and-recovery.en.md"),
+        Path.Combine("AgentDocs", "en", "11-operator-user-guide.en.md"),
         Path.Combine("AgentDocs", "ru", "07-archive-guide.ru.md"),
         Path.Combine("AgentDocs", "ru", "08-authorization-guide.ru.md"),
         Path.Combine("AgentDocs", "ru", "09-offline-license-guide.ru.md"),
-        Path.Combine("AgentDocs", "ru", "10-operations-and-recovery.ru.md")
+        Path.Combine("AgentDocs", "ru", "10-operations-and-recovery.ru.md"),
+        Path.Combine("AgentDocs", "ru", "11-operator-user-guide.ru.md")
     ];
 
     [Fact]
@@ -35,10 +37,36 @@ public sealed class ProductionDocumentationTests
         Assert.Contains("08-authorization-guide.en.md", englishMaster, StringComparison.Ordinal);
         Assert.Contains("09-offline-license-guide.en.md", englishMaster, StringComparison.Ordinal);
         Assert.Contains("10-operations-and-recovery.en.md", englishMaster, StringComparison.Ordinal);
+        Assert.Contains("11-operator-user-guide.en.md", englishMaster, StringComparison.Ordinal);
         Assert.Contains("07-archive-guide.ru.md", russianMaster, StringComparison.Ordinal);
         Assert.Contains("08-authorization-guide.ru.md", russianMaster, StringComparison.Ordinal);
         Assert.Contains("09-offline-license-guide.ru.md", russianMaster, StringComparison.Ordinal);
         Assert.Contains("10-operations-and-recovery.ru.md", russianMaster, StringComparison.Ordinal);
+        Assert.Contains("11-operator-user-guide.ru.md", russianMaster, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ImplementationDocs_DoNotReferenceMissingRussianProgressFiles()
+    {
+        var root = FindRepositoryRoot();
+        var files = Directory
+            .EnumerateFiles(Path.Combine(root, "AgentDocs"), "*.md", SearchOption.AllDirectories)
+            .Concat([Path.Combine(root, "AGENTS.md")])
+            .ToArray();
+
+        var failures = files
+            .Select(path => new
+            {
+                Path = Path.GetRelativePath(root, path),
+                Text = File.ReadAllText(path)
+            })
+            .Where(file =>
+                file.Text.Contains("00-implementation-master.ru.md", StringComparison.Ordinal)
+                || file.Text.Contains("PROGRESS.ru.md", StringComparison.Ordinal))
+            .Select(file => file.Path)
+            .ToArray();
+
+        Assert.Empty(failures);
     }
 
     [Fact]

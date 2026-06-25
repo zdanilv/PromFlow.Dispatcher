@@ -15,6 +15,7 @@
 | Работать с архивом | `07-archive-guide.ru.md`, `06-testing-and-diagnostics.ru.md` | implementation progress |
 | Работать с авторизацией | `08-authorization-guide.ru.md`, `05-coding-rules.ru.md` | implementation progress |
 | Работать с offline license | `09-offline-license-guide.ru.md`, `08-authorization-guide.ru.md` | implementation progress |
+| Использовать приложение после Stage 14 | `11-operator-user-guide.ru.md`, `10-operations-and-recovery.ru.md` | implementation progress |
 | Проверять перед PR или commit | `06-testing-and-diagnostics.ru.md`, `10-operations-and-recovery.ru.md` | профильные source-guides |
 
 ## Актуальные документы
@@ -29,6 +30,7 @@
 - `08-authorization-guide.ru.md` - login, session revocation, permissions и recovery authorization.
 - `09-offline-license-guide.ru.md` - offline license verification, installation и feature policy.
 - `10-operations-and-recovery.ru.md` - lifecycle operations, recovery checklist и manual endurance runbook.
+- `11-operator-user-guide.ru.md` - сквозное руководство оператора: bootstrap, users, license, RouteMap, archive и troubleshooting.
 
 ## Главные инварианты
 

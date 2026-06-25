@@ -8,6 +8,8 @@ public interface IUserManagementService
         BootstrapAdministratorRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<UserListResult> ListUsersAsync(CancellationToken cancellationToken = default);
+
     Task<UserManagementResult> CreateUserAsync(
         CreateUserRequest request,
         CancellationToken cancellationToken = default);

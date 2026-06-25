@@ -8,6 +8,41 @@ public sealed record ChangePasswordRequest(Guid UserId, string NewPassword, long
 
 public sealed record SetUserEnabledRequest(Guid UserId, bool IsEnabled, long ExpectedRowVersion);
 
+public sealed record UserSummary(
+    Guid Id,
+    string Username,
+    UserRole Role,
+    bool IsEnabled,
+    int FailedLoginCount,
+    DateTimeOffset? LockoutUntilUtc,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc,
+    DateTimeOffset PasswordChangedAtUtc,
+    DateTimeOffset? LastLoginAtUtc,
+    long RowVersion);
+
+public sealed record UserListResult(
+    bool Succeeded,
+    IReadOnlyList<UserSummary> Users,
+    string? ErrorCode,
+    string? ErrorMessage)
+{
+    public static UserListResult Success(IReadOnlyList<UserSummary> users)
+    {
+        ArgumentNullException.ThrowIfNull(users);
+
+        return new UserListResult(true, users, null, null);
+    }
+
+    public static UserListResult Failure(string errorCode, string errorMessage)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(errorCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(errorMessage);
+
+        return new UserListResult(false, [], errorCode, errorMessage);
+    }
+}
+
 public sealed record UserManagementResult(
     bool Succeeded,
     AppUser? User,

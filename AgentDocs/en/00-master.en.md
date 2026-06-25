@@ -15,6 +15,7 @@ guidance and `AgentDocs/source/ru` for migrated historical source guides.
 | Work on archive | `07-archive-guide.en.md`, `06-testing-and-diagnostics.en.md` | implementation progress |
 | Work on authorization | `08-authorization-guide.en.md`, `05-coding-rules.en.md` | implementation progress |
 | Work on offline license | `09-offline-license-guide.en.md`, `08-authorization-guide.en.md` | implementation progress |
+| Use the application after Stage 14 | `11-operator-user-guide.en.md`, `10-operations-and-recovery.en.md` | implementation progress |
 | Verify before PR or commit | `06-testing-and-diagnostics.en.md`, `10-operations-and-recovery.en.md` | related source guides |
 
 ## Current Documents
@@ -29,6 +30,7 @@ guidance and `AgentDocs/source/ru` for migrated historical source guides.
 - `08-authorization-guide.en.md` - login, session revocation, permissions and recovery authorization.
 - `09-offline-license-guide.en.md` - offline license verification, installation and feature policy.
 - `10-operations-and-recovery.en.md` - lifecycle operations, recovery checklist and manual endurance runbook.
+- `11-operator-user-guide.en.md` - end-to-end operator guide for bootstrap, users, license, RouteMap, archive and troubleshooting.
 
 ## Core Invariants
 

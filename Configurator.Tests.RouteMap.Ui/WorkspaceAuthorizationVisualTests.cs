@@ -23,11 +23,11 @@ public sealed class WorkspaceAuthorizationVisualTests
     }
 
     [AvaloniaFact]
-    public async Task AdminWorkspaceRendersExistingStage9Headers()
+    public async Task AdminWorkspaceRendersAuthorizedHeaders()
     {
         using var fixture = await WorkspaceFixture.CreateAsync(Enum.GetValues<Permission>());
 
-        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "Archive", "License"], fixture.Headers());
+        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "Archive", "License", "Users"], fixture.Headers());
     }
 
     private sealed class WorkspaceFixture : IDisposable
@@ -91,6 +91,7 @@ public sealed class WorkspaceAuthorizationVisualTests
             new("modbus-demo", "Modbus Demo", Permission.ViewModbusDiagnostics, LicenseFeature.Diagnostics, _ => new object(), 20),
             new("archive", "Archive", Permission.ViewArchive, LicenseFeature.Archive, _ => new object(), 25),
             new("license", "License", Permission.ViewLicense, null, _ => new object(), 30),
+            new("users", "Users", Permission.ManageUsers, null, _ => new object(), 40),
         ];
     }
 
@@ -192,5 +193,4 @@ public sealed class WorkspaceAuthorizationVisualTests
 
         public Task SignOutAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
-
 }

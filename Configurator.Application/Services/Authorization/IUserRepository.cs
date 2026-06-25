@@ -10,6 +10,8 @@ public interface IUserRepository
         string normalizedUsername,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<AppUser>> ListAsync(CancellationToken cancellationToken = default);
+
     Task<UserRepositoryResult<AppUser>> CreateAsync(
         AppUser user,
         CancellationToken cancellationToken = default);

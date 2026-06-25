@@ -8,8 +8,8 @@ ReactiveUI, Microsoft DI, Modbus TCP, and OPC UA.
 For archive, authorization, or licensing work, read:
 
 1. `AgentDocs/en/00-master.en.md`
-2. `AgentDocs/implementation/00-implementation-master.ru.md`
-3. `AgentDocs/implementation/PROGRESS.ru.md`
+2. `AgentDocs/implementation/00-implementation-master.md`
+3. `AgentDocs/implementation/PROGRESS.md`
 4. Task-specific documents referenced by the selected implementation stage.
 
 Work on exactly one implementation stage at a time.
@@ -91,6 +91,6 @@ A stage is complete only when:
 - relevant build/tests pass;
 - the diff is reviewed;
 - no secret is present;
-- `AgentDocs/implementation/PROGRESS.ru.md` is updated;
+- `AgentDocs/implementation/PROGRESS.md` is updated;
 - the next stage has not been started;
 - the final response includes files, commands, results, limitations, and a commit message.

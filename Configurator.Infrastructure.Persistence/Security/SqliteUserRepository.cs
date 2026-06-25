@@ -55,6 +55,22 @@ public sealed class SqliteUserRepository : IUserRepository
         return await ReadSingleAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<AppUser>> ListAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenInitializedConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = SelectUserSql + " ORDER BY normalized_username;";
+
+        var users = new List<AppUser>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            users.Add(ReadUser(reader));
+        }
+
+        return users;
+    }
+
     public async Task<UserRepositoryResult<AppUser>> CreateAsync(
         AppUser user,
         CancellationToken cancellationToken = default)
@@ -255,7 +271,11 @@ public sealed class SqliteUserRepository : IUserRepository
             return null;
         }
 
-        return new AppUser(
+        return ReadUser(reader);
+    }
+
+    private static AppUser ReadUser(SqliteDataReader reader)
+        => new(
             reader.GetGuidFromString(0),
             reader.GetString(1),
             reader.GetString(2),
@@ -269,7 +289,6 @@ public sealed class SqliteUserRepository : IUserRepository
             reader.GetUtcFromUnixMilliseconds(10),
             reader.GetNullableUtcFromUnixMilliseconds(11),
             reader.GetInt64(12));
-    }
 
     private static void AddUserParameters(SqliteCommand command, AppUser user)
     {

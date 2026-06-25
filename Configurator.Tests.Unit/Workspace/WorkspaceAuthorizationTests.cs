@@ -23,10 +23,11 @@ public sealed class WorkspaceAuthorizationTests
         Assert.Equal(1, fixture.RouteMapFactoryCalls);
         Assert.Equal(0, fixture.SignalMappingFactoryCalls);
         Assert.Equal(0, fixture.ModbusDemoFactoryCalls);
+        Assert.Equal(0, fixture.UsersFactoryCalls);
     }
 
     [Fact]
-    public async Task AdministratorSessionCreatesAllExistingStage11Tabs()
+    public async Task AdministratorSessionCreatesAllExistingTabs()
     {
         var fixture = new WorkspaceFixture(Enum.GetValues<Permission>());
         using var workspace = fixture.CreateWorkspace();
@@ -34,13 +35,14 @@ public sealed class WorkspaceAuthorizationTests
         await workspace.InitializeAsync();
 
         Assert.Equal(
-            ["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "Archive", "License"],
+            ["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "Archive", "License", "Users"],
             workspace.Tabs.Select(tab => tab.Header).ToArray());
         Assert.Equal(1, fixture.RouteMapFactoryCalls);
         Assert.Equal(1, fixture.SignalMappingFactoryCalls);
         Assert.Equal(1, fixture.ModbusDemoFactoryCalls);
         Assert.Equal(1, fixture.ArchiveFactoryCalls);
         Assert.Equal(1, fixture.LicenseFactoryCalls);
+        Assert.Equal(1, fixture.UsersFactoryCalls);
     }
 
     [Fact]
@@ -61,7 +63,7 @@ public sealed class WorkspaceAuthorizationTests
     }
 
     [Fact]
-    public async Task AdministratorWithoutCommercialLicenseCanOpenLicenseRecoveryTabOnly()
+    public async Task AdministratorWithoutCommercialLicenseCanOpenRecoveryTabsOnly()
     {
         var fixture = new WorkspaceFixture(Enum.GetValues<Permission>());
         fixture.LicenseStateAccessor.Current = LicenseState.Missing(DateTimeOffset.UtcNow);
@@ -69,9 +71,10 @@ public sealed class WorkspaceAuthorizationTests
 
         await workspace.InitializeAsync();
 
-        Assert.Equal(["License"], workspace.Tabs.Select(tab => tab.Header).ToArray());
+        Assert.Equal(["License", "Users"], workspace.Tabs.Select(tab => tab.Header).ToArray());
         Assert.Equal(0, fixture.RouteMapFactoryCalls);
         Assert.Equal(1, fixture.LicenseFactoryCalls);
+        Assert.Equal(1, fixture.UsersFactoryCalls);
     }
 
     [Fact]
@@ -133,6 +136,7 @@ public sealed class WorkspaceAuthorizationTests
         public int ModbusDemoFactoryCalls { get; private set; }
         public int ArchiveFactoryCalls { get; private set; }
         public int LicenseFactoryCalls { get; private set; }
+        public int UsersFactoryCalls { get; private set; }
         public int LogoutCallbackCount { get; private set; }
         public List<DisposableContent> CreatedContent { get; } = [];
 
@@ -213,6 +217,17 @@ public sealed class WorkspaceAuthorizationTests
                     return CreateContent();
                 },
                 30),
+            new(
+                "users",
+                "Users",
+                Permission.ManageUsers,
+                null,
+                _ =>
+                {
+                    UsersFactoryCalls++;
+                    return CreateContent();
+                },
+                40),
         ];
 
         private DisposableContent CreateContent()
@@ -350,5 +365,4 @@ public sealed class WorkspaceAuthorizationTests
             return Task.CompletedTask;
         }
     }
-
 }

@@ -14,7 +14,7 @@
 1. `AGENTS.md`;
 2. `AgentDocs/en/00-master.en.md`;
 3. этот документ;
-4. `AgentDocs/implementation/PROGRESS.ru.md`;
+4. `AgentDocs/implementation/PROGRESS.md`;
 5. файлы, перечисленные в конкретном этапе.
 
 Codex обязан сначала выполнить read-only анализ и назвать предполагаемые файлы. Нельзя начинать следующий этап до сборки, тестов, review и обновления progress.
@@ -138,8 +138,8 @@ tools/PromFlow.LicenseIssuer/
 3. Добавить:
    ```text
    AGENTS.md
-   AgentDocs/implementation/00-implementation-master.ru.md
-   AgentDocs/implementation/PROGRESS.ru.md
+   AgentDocs/implementation/00-implementation-master.md
+   AgentDocs/implementation/PROGRESS.md
    AgentDocs/implementation/DECISIONS.ru.md
    ```
 4. Добавить ссылки в master docs.
@@ -1438,7 +1438,7 @@ Commit: `test: harden archive auth and offline licensing workflows`
 - [ ] Cancellation/lifecycle обработаны.
 - [ ] DI lifetime обоснован.
 - [ ] Migration idempotent при schema change.
-- [ ] `PROGRESS.ru.md` обновлён.
+- [ ] `PROGRESS.md` обновлён.
 - [ ] Diff review выполнен.
 - [ ] Commit message указан.
 - [ ] Следующий этап не начат.
@@ -1480,8 +1480,8 @@ Commit: `test: harden archive auth and offline licensing workflows`
 Прочитай:
 - AGENTS.md
 - AgentDocs/en/00-master.en.md
-- AgentDocs/implementation/00-implementation-master.ru.md
-- AgentDocs/implementation/PROGRESS.ru.md
+- AgentDocs/implementation/00-implementation-master.md
+- AgentDocs/implementation/PROGRESS.md
 - файлы, перечисленные в этапе <N>.
 
 Выполни только этап <N>: <название>.
@@ -1495,7 +1495,7 @@ Commit: `test: harden archive auth and offline licensing workflows`
 
 Сохрани Modbus/RouteMap invariants и PLC safety boundary.
 Не добавляй secrets и scope creep.
-Добавь tests, запусти проверки и обнови PROGRESS.ru.md.
+Добавь tests, запусти проверки и обнови PROGRESS.md.
 В конце выдай files, commands, results, limitations и commit message.
 ```
 
@@ -1614,7 +1614,7 @@ Invalid не заменяет valid; admin role не bypass features.
 Сначала перечисли findings по severity с файлами/строками.
 Проверь scope, dependencies, security, concurrency, cancellation, lifecycle,
 SQLite/WAL, authorization bypass, key handling, Modbus semantics, PLC safety и tests.
-Исправь только подтверждённые проблемы, затем повтори tests и обнови PROGRESS.ru.md.
+Исправь только подтверждённые проблемы, затем повтори tests и обнови PROGRESS.md.
 ```
 
 # 13. Формат handoff

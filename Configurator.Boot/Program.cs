@@ -27,6 +27,7 @@ using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
+using Configurator.Desktop.Workspace.Users;
 using Configurator.Infrastructure;
 using Configurator.Infrastructure.Modbus;
 using Configurator.Infrastructure.Modbus.RouteMap;
@@ -134,6 +135,7 @@ internal static class Program
                     services.AddTransient<WorkspaceViewModel>();
                     services.AddTransient<ArchiveViewModel>();
                     services.AddTransient<LicenseViewModel>();
+                    services.AddTransient<UserManagementViewModel>();
                     services.AddTransient<ModbusDemoViewModel>();
                     services.AddSingleton<IArchiveFilePicker, ArchiveFilePicker>();
                     services.AddSingleton<ILicenseFilePicker, LicenseFilePicker>();
@@ -188,6 +190,13 @@ internal static class Program
                         null,
                         serviceProvider => serviceProvider.GetRequiredService<LicenseViewModel>(),
                         30));
+                    services.AddSingleton<WorkspaceTabDescriptor>(_ => new WorkspaceTabDescriptor(
+                        "users",
+                        "Users",
+                        Permission.ManageUsers,
+                        null,
+                        serviceProvider => serviceProvider.GetRequiredService<UserManagementViewModel>(),
+                        40));
 
                     services.AddTransient<IViewFor<WorkspaceViewModel>, WorkspaceView>();
                     services.AddTransient<IViewFor<AuthorizationViewModel>, AuthorizationView>();
@@ -195,6 +204,7 @@ internal static class Program
                     services.AddTransient<IViewFor<StartupFailureViewModel>, StartupFailureView>();
                     services.AddTransient<IViewFor<ArchiveViewModel>, ArchiveView>();
                     services.AddTransient<IViewFor<LicenseViewModel>, LicenseView>();
+                    services.AddTransient<IViewFor<UserManagementViewModel>, UserManagementView>();
                     services.AddTransient<IViewFor<ModbusDemoViewModel>, ModbusDemoView>();
                     services.AddTransient<RouteMapDashboardView>();
                     services.AddTransient<RouteMapSignalMappingView>();

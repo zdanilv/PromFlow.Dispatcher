@@ -297,6 +297,9 @@ public sealed class LoginFlowViewModelTests
             return Task.FromResult(UserManagementResult.Success(CreateUser(request.Username, UserRole.Administrator)));
         }
 
+        public Task<UserListResult> ListUsersAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(UserListResult.Success([]));
+
         public Task<UserManagementResult> CreateUserAsync(
             CreateUserRequest request,
             CancellationToken cancellationToken = default) =>
