@@ -11,11 +11,15 @@ public sealed class ProductionDocumentationTests
         Path.Combine("AgentDocs", "en", "09-offline-license-guide.en.md"),
         Path.Combine("AgentDocs", "en", "10-operations-and-recovery.en.md"),
         Path.Combine("AgentDocs", "en", "11-operator-user-guide.en.md"),
+        Path.Combine("AgentDocs", "en", "12-license-issuer-guide.en.md"),
+        Path.Combine("AgentDocs", "en", "13-database-guide.en.md"),
         Path.Combine("AgentDocs", "ru", "07-archive-guide.ru.md"),
         Path.Combine("AgentDocs", "ru", "08-authorization-guide.ru.md"),
         Path.Combine("AgentDocs", "ru", "09-offline-license-guide.ru.md"),
         Path.Combine("AgentDocs", "ru", "10-operations-and-recovery.ru.md"),
-        Path.Combine("AgentDocs", "ru", "11-operator-user-guide.ru.md")
+        Path.Combine("AgentDocs", "ru", "11-operator-user-guide.ru.md"),
+        Path.Combine("AgentDocs", "ru", "12-license-issuer-guide.ru.md"),
+        Path.Combine("AgentDocs", "ru", "13-database-guide.ru.md")
     ];
 
     [Fact]
@@ -38,11 +42,15 @@ public sealed class ProductionDocumentationTests
         Assert.Contains("09-offline-license-guide.en.md", englishMaster, StringComparison.Ordinal);
         Assert.Contains("10-operations-and-recovery.en.md", englishMaster, StringComparison.Ordinal);
         Assert.Contains("11-operator-user-guide.en.md", englishMaster, StringComparison.Ordinal);
+        Assert.Contains("12-license-issuer-guide.en.md", englishMaster, StringComparison.Ordinal);
+        Assert.Contains("13-database-guide.en.md", englishMaster, StringComparison.Ordinal);
         Assert.Contains("07-archive-guide.ru.md", russianMaster, StringComparison.Ordinal);
         Assert.Contains("08-authorization-guide.ru.md", russianMaster, StringComparison.Ordinal);
         Assert.Contains("09-offline-license-guide.ru.md", russianMaster, StringComparison.Ordinal);
         Assert.Contains("10-operations-and-recovery.ru.md", russianMaster, StringComparison.Ordinal);
         Assert.Contains("11-operator-user-guide.ru.md", russianMaster, StringComparison.Ordinal);
+        Assert.Contains("12-license-issuer-guide.ru.md", russianMaster, StringComparison.Ordinal);
+        Assert.Contains("13-database-guide.ru.md", russianMaster, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -67,6 +75,136 @@ public sealed class ProductionDocumentationTests
             .ToArray();
 
         Assert.Empty(failures);
+    }
+
+    [Fact]
+    public void LicenseIssuerGuide_DocumentsCommandsProfilesAndFeatureRules()
+    {
+        var root = FindRepositoryRoot();
+        var english = File.ReadAllText(Path.Combine(root, "AgentDocs", "en", "12-license-issuer-guide.en.md"));
+        var russian = File.ReadAllText(Path.Combine(root, "AgentDocs", "ru", "12-license-issuer-guide.ru.md"));
+
+        AssertGuideContainsAll(
+            english,
+            [
+                "dotnet run --project .\\Configurator.LicenseIssuer\\Configurator.LicenseIssuer.csproj -- --help",
+                "generate-key --key-id",
+                "issue --profile",
+                "verify --license",
+                "inspect --license",
+                "--test-key",
+                "--allow-test-key",
+                "Exit Codes",
+                "customer-profile.json",
+                "\"maximumExclusive\"",
+                "\"bindingMode\": \"InstallationId\"",
+                "\"bindingMode\": \"None\"",
+                "Community",
+                "Professional",
+                "RouteMap",
+                "RemoteControl",
+                "ArchiveExport",
+                "EngineeringTools",
+                "Diagnostics",
+                "full-package-1-day",
+                "$durationDays = 30",
+                "full-package-1-year",
+                "TrustedPublicKeys"
+            ]);
+
+        AssertGuideContainsAll(
+            russian,
+            [
+                "Configurator.LicenseIssuer",
+                "generate-key --key-id",
+                "issue --profile",
+                "verify --license",
+                "inspect --license",
+                "--allow-test-key",
+                "customer-profile.json",
+                "\"maximumExclusive\"",
+                "\"bindingMode\": \"InstallationId\"",
+                "\"bindingMode\": \"None\"",
+                "Community",
+                "Professional",
+                "RouteMap",
+                "RemoteControl",
+                "ArchiveExport",
+                "EngineeringTools",
+                "Diagnostics",
+                "full-package-1-day",
+                "$durationDays = 30",
+                "full-package-1-year",
+                "TrustedPublicKeys"
+            ]);
+    }
+
+    [Fact]
+    public void DatabaseGuide_DocumentsSqlitePathsSnapshotQueriesAndBlobFormat()
+    {
+        var root = FindRepositoryRoot();
+        var english = File.ReadAllText(Path.Combine(root, "AgentDocs", "en", "13-database-guide.en.md"));
+        var russian = File.ReadAllText(Path.Combine(root, "AgentDocs", "ru", "13-database-guide.ru.md"));
+
+        AssertGuideContainsAll(
+            english,
+            [
+                "sqlite3 -readonly",
+                "DB Browser for SQLite",
+                "promflow-security.sqlite",
+                "Authentication.SecurityDatabasePath",
+                "Archive.BaseDirectory",
+                "promflow-{sanitizedDeviceId}-{yyyy-MM}.sqlite",
+                ".sqlite-wal",
+                ".sqlite-shm",
+                "PRAGMA integrity_check;",
+                "BEGIN IMMEDIATE;",
+                "app_user",
+                "archive_partition_metadata",
+                "modbus_snapshot",
+                "runtime_event",
+                "equipment_command",
+                "modbus_write",
+                "security_audit",
+                "hex(coils_blob)",
+                "hex(holding_registers_blob)",
+                "PFS1",
+                "12-byte header",
+                "Item type: `1` coils, `2` holding registers",
+                "coil_start_address + index",
+                "holding_register_start_address + n",
+                "snapshots.ndjson"
+            ]);
+
+        AssertGuideContainsAll(
+            russian,
+            [
+                "sqlite3 -readonly",
+                "DB Browser for SQLite",
+                "promflow-security.sqlite",
+                "Authentication.SecurityDatabasePath",
+                "Archive.BaseDirectory",
+                "promflow-{sanitizedDeviceId}-{yyyy-MM}.sqlite",
+                ".sqlite-wal",
+                ".sqlite-shm",
+                "PRAGMA integrity_check;",
+                "BEGIN IMMEDIATE;",
+                "app_user",
+                "archive_partition_metadata",
+                "modbus_snapshot",
+                "runtime_event",
+                "equipment_command",
+                "modbus_write",
+                "security_audit",
+                "hex(coils_blob)",
+                "hex(holding_registers_blob)",
+                "PFS1",
+                "12-byte header",
+                "Item type: `1` coils, `2` holding registers",
+                "coil_start_address + index",
+                "holding_register_start_address + n",
+                "snapshots.ndjson"
+            ]);
     }
 
     [Fact]
@@ -126,6 +264,14 @@ public sealed class ProductionDocumentationTests
         }
 
         Assert.Contains("Stage 15: not started", report, StringComparison.Ordinal);
+    }
+
+    private static void AssertGuideContainsAll(string text, IReadOnlyList<string> requiredFragments)
+    {
+        foreach (var fragment in requiredFragments)
+        {
+            Assert.Contains(fragment, text, StringComparison.Ordinal);
+        }
     }
 
     private static string FindRepositoryRoot()

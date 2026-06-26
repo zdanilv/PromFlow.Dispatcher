@@ -16,6 +16,8 @@ guidance and `AgentDocs/source/ru` for migrated historical source guides.
 | Work on authorization | `08-authorization-guide.en.md`, `05-coding-rules.en.md` | implementation progress |
 | Work on offline license | `09-offline-license-guide.en.md`, `08-authorization-guide.en.md` | implementation progress |
 | Use the application after Stage 14 | `11-operator-user-guide.en.md`, `10-operations-and-recovery.en.md` | implementation progress |
+| Issue or change licenses | `12-license-issuer-guide.en.md`, `09-offline-license-guide.en.md` | implementation progress |
+| Inspect built-in SQLite databases or archive snapshots | `13-database-guide.en.md`, `07-archive-guide.en.md` | implementation progress |
 | Verify before PR or commit | `06-testing-and-diagnostics.en.md`, `10-operations-and-recovery.en.md` | related source guides |
 
 ## Current Documents
@@ -31,6 +33,8 @@ guidance and `AgentDocs/source/ru` for migrated historical source guides.
 - `09-offline-license-guide.en.md` - offline license verification, installation and feature policy.
 - `10-operations-and-recovery.en.md` - lifecycle operations, recovery checklist and manual endurance runbook.
 - `11-operator-user-guide.en.md` - end-to-end operator guide for bootstrap, users, license, RouteMap, archive and troubleshooting.
+- `12-license-issuer-guide.en.md` - exact LicenseIssuer commands, profile variants, feature rules and key handling.
+- `13-database-guide.en.md` - SQLite database locations, safe inspection, archive snapshot queries and BLOB decoding.
 
 ## Core Invariants
 
