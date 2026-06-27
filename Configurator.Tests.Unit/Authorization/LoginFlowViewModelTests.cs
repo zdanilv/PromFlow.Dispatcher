@@ -91,6 +91,7 @@ public sealed class LoginFlowViewModelTests
         var workspace = Assert.IsType<WorkspaceViewModel>(main.CurrentViewModel);
         Assert.Equal(1, services.WorkspaceCreateCount);
         Assert.Equal(["Route Map"], workspace.Tabs.Select(tab => tab.Header).ToArray());
+        Assert.All(workspace.Tabs, tab => Assert.False(tab.IsLoaded));
         Assert.Empty(login.Password);
     }
 

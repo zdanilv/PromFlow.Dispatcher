@@ -13,6 +13,7 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
     private readonly IAuthenticationService _authenticationService;
     private readonly ILicenseService _licenseService;
     private readonly Func<WorkspaceViewModel, CancellationToken, Task> _logoutRequested;
+    private readonly WorkspaceShellContext _shellContext;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private bool _initialized;
     private bool _hasTabs;
@@ -45,6 +46,9 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
 
         LogoutCommand = ReactiveCommand.CreateFromTask(
             () => LogoutAsync(_lifetimeCancellation.Token));
+        _shellContext = new WorkspaceShellContext(
+            NormalizeUsername(sessionAccessor.Current.Session?.Username),
+            LogoutCommand);
     }
 
     public string Name { get; set; } = "Work Page";
@@ -103,7 +107,7 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
             Tabs.Add(new WorkspaceTabViewModel(
                 descriptor.Id,
                 descriptor.Header,
-                descriptor.Factory(_serviceProvider)));
+                () => CreateTabContent(descriptor)));
         }
 
         if (Tabs.Count == 0)
@@ -131,12 +135,27 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
         _lifetimeCancellation.Cancel();
         _lifetimeCancellation.Dispose();
 
-        foreach (var content in Tabs.Select(tab => tab.Content).OfType<IDisposable>().ToArray())
+        foreach (var content in Tabs
+                     .Where(tab => tab.IsLoaded)
+                     .Select(tab => tab.Content)
+                     .OfType<IDisposable>()
+                     .ToArray())
         {
             content.Dispose();
         }
 
         Tabs.Clear();
+    }
+
+    private object CreateTabContent(WorkspaceTabDescriptor descriptor)
+    {
+        var content = descriptor.Factory(_serviceProvider);
+        if (content is IWorkspaceShellContextConsumer consumer)
+        {
+            consumer.ApplyWorkspaceShellContext(_shellContext);
+        }
+
+        return content;
     }
 
     private async Task LogoutAsync(CancellationToken cancellationToken)
@@ -145,4 +164,6 @@ public sealed class WorkspaceViewModel : ViewModelBase, IRoutableViewModel, IDis
         await _logoutRequested(this, cancellationToken);
     }
 
+    private static string NormalizeUsername(string? username)
+        => string.IsNullOrWhiteSpace(username) ? "User" : username.Trim();
 }

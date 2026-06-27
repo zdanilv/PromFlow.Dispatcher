@@ -5,7 +5,6 @@
              xmlns:vm="clr-namespace:Configurator.Desktop.Workspace;assembly=Configurator.Desktop"
              xmlns:archive="using:Configurator.Desktop.Workspace.Archive"
              xmlns:licensing="using:Configurator.Desktop.Workspace.Licensing"
-             xmlns:modbus="using:Configurator.Desktop.Workspace.Modbus"
              xmlns:modbusDemo="using:Configurator.Desktop.Workspace.ModbusDemo"
              xmlns:routeMap="using:Configurator.Desktop.Workspace.RouteMap"
              xmlns:routeMapVm="using:Configurator.Desktop.Workspace.RouteMap.ViewModels"
@@ -22,9 +21,6 @@
         </DataTemplate>
         <DataTemplate DataType="signalMapping:RouteMapSignalMappingViewModel">
             <signalMapping:RouteMapSignalMappingView/>
-        </DataTemplate>
-        <DataTemplate DataType="modbus:ModbusViewModel">
-            <modbus:ModbusView/>
         </DataTemplate>
         <DataTemplate DataType="modbusDemo:ModbusDemoViewModel">
             <modbusDemo:ModbusDemoView/>
@@ -43,35 +39,22 @@
         </DataTemplate>
     </UserControl.DataTemplates>
 
-    <Grid RowDefinitions="Auto,*">
-        <DockPanel Grid.Row="0" LastChildFill="True" Margin="8,6">
-            <Button DockPanel.Dock="Right"
-                    Content="Logout"
-                    Command="{Binding LogoutCommand}"
-                    MinWidth="88"/>
-            <TextBlock Text="PromFlow Dispatcher"
-                       VerticalAlignment="Center"
-                       FontSize="14"
-                       FontWeight="SemiBold"/>
-        </DockPanel>
-
-        <Grid Grid.Row="1">
-            <TabControl Padding="2"
-                        IsVisible="{Binding HasTabs}"
-                        ItemsSource="{Binding Tabs}">
-                <TabControl.ItemTemplate>
-                    <DataTemplate DataType="vm:WorkspaceTabViewModel">
-                        <TextBlock Text="{Binding Header}"/>
-                    </DataTemplate>
-                </TabControl.ItemTemplate>
-                <TabControl.ContentTemplate>
-                    <DataTemplate DataType="vm:WorkspaceTabViewModel">
-                        <ContentControl Content="{Binding Content}"/>
-                    </DataTemplate>
-                </TabControl.ContentTemplate>
-            </TabControl>
-            <ContentControl IsVisible="{Binding HasNoTabs}"
-                            Content="{Binding AccessUnavailable}"/>
-        </Grid>
+    <Grid>
+        <TabControl Padding="2"
+                    IsVisible="{Binding HasTabs}"
+                    ItemsSource="{Binding Tabs}">
+            <TabControl.ItemTemplate>
+                <DataTemplate DataType="vm:WorkspaceTabViewModel">
+                    <TextBlock Text="{Binding Header}"/>
+                </DataTemplate>
+            </TabControl.ItemTemplate>
+            <TabControl.ContentTemplate>
+                <DataTemplate DataType="vm:WorkspaceTabViewModel">
+                    <ContentControl Content="{Binding Content}"/>
+                </DataTemplate>
+            </TabControl.ContentTemplate>
+        </TabControl>
+        <ContentControl IsVisible="{Binding HasNoTabs}"
+                        Content="{Binding AccessUnavailable}"/>
     </Grid>
 </UserControl>

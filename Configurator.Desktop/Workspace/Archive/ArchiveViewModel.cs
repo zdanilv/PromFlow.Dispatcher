@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Reactive;
+using System.Reactive.Disposables;
 using Avalonia.Threading;
 using Configurator.Application.Services.Archiving;
 using Configurator.Desktop;
@@ -17,7 +18,10 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
     private readonly object _exportProgressLock = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly IDisposable _healthSubscription;
+    private readonly CompositeDisposable _commandErrorSubscriptions = new();
+    private readonly TimeSpan _queryTimeout;
     private CancellationTokenSource? _activeQueryCancellation;
+    private bool _activeQueryCanceledByUser;
     private ArchiveSection _selectedSection = ArchiveSection.Snapshots;
     private ArchiveSnapshotRowViewModel? _selectedSnapshot;
     private bool _isBusy;
@@ -26,7 +30,7 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
     private long _totalCount;
     private bool _hasMore;
     private string? _errorMessage;
-    private string? _statusMessage;
+    private string? _statusMessage = "Archive ready. Press Refresh to load records.";
     private string _healthState = ArchiveHealthState.Stopped.ToString();
     private string _healthMessage = ArchiveHealth.Stopped.Message;
     private bool _initialized;
@@ -38,7 +42,8 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
         IArchiveHealthService healthService,
         IArchiveMaintenanceService maintenanceService,
         IArchiveFilePicker filePicker,
-        IOptions<ArchiveOptions> options)
+        IOptions<ArchiveOptions> options,
+        TimeSpan? queryTimeout = null)
     {
         _queryService = queryService ?? throw new ArgumentNullException(nameof(queryService));
         ArgumentNullException.ThrowIfNull(healthService);
@@ -47,6 +52,7 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
         ArgumentNullException.ThrowIfNull(options);
 
         var archiveOptions = options.Value.Clone();
+        _queryTimeout = queryTimeout ?? TimeSpan.FromSeconds(10);
         Filter = new ArchiveFilterViewModel(archiveOptions.QueryMaxPageSize);
         CommandAudit = new CommandAuditViewModel(queryService);
         RuntimeEvents = new RuntimeEventsViewModel(queryService);
@@ -60,6 +66,13 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
         CancelQueryCommand = ReactiveCommand.Create(CancelQuery);
         LoadSnapshotDetailsCommand = ReactiveCommand.CreateFromTask(LoadSnapshotDetailsAsync);
         ExportCommand = ReactiveCommand.CreateFromTask(ExportAsync);
+        SubscribeCommandErrors(
+            InitializeCommand,
+            RefreshCommand,
+            NextPageCommand,
+            PreviousPageCommand,
+            LoadSnapshotDetailsCommand,
+            ExportCommand);
 
         ApplyHealth(healthService.Current);
         _healthSubscription = healthService.Observe().Subscribe(new HealthObserver(this));
@@ -204,7 +217,8 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
         }
 
         _initialized = true;
-        await LoadPageAsync(1).ConfigureAwait(true);
+        StatusMessage = "Archive ready. Press Refresh to load records.";
+        await Task.CompletedTask;
     }
 
     public void Dispose()
@@ -220,6 +234,7 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
         _activeQueryCancellation?.Dispose();
         _lifetimeCancellation.Dispose();
         _healthSubscription.Dispose();
+        _commandErrorSubscriptions.Dispose();
         Maintenance.Dispose();
     }
 
@@ -253,7 +268,14 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
         }
         catch (OperationCanceledException) when (queryCancellation.IsCancellationRequested)
         {
-            StatusMessage = "Archive query canceled.";
+            if (_activeQueryCanceledByUser || _lifetimeCancellation.IsCancellationRequested)
+            {
+                StatusMessage = "Archive query canceled.";
+            }
+            else
+            {
+                SetError("Archive query timed out. Adjust filters or try again.");
+            }
         }
         catch (Exception exception) when (exception is FormatException or InvalidOperationException or ArgumentException)
         {
@@ -268,6 +290,7 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
 
             queryCancellation.Dispose();
             IsBusy = false;
+            _activeQueryCanceledByUser = false;
         }
     }
 
@@ -393,6 +416,7 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
 
     private void CancelQuery()
     {
+        _activeQueryCanceledByUser = true;
         _activeQueryCancellation?.Cancel();
     }
 
@@ -401,7 +425,17 @@ public sealed class ArchiveViewModel : ViewModelBase, IDisposable
         _activeQueryCancellation?.Cancel();
         _activeQueryCancellation?.Dispose();
         _activeQueryCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCancellation.Token);
+        _activeQueryCancellation.CancelAfter(_queryTimeout);
+        _activeQueryCanceledByUser = false;
         return _activeQueryCancellation;
+    }
+
+    private void SubscribeCommandErrors(params ReactiveCommand<Unit, Unit>[] commands)
+    {
+        foreach (var command in commands)
+        {
+            _commandErrorSubscriptions.Add(command.ThrownExceptions.Subscribe(ex => SetError(ex.Message)));
+        }
     }
 
     private ArchiveRecordKind? CommandRecordKind()

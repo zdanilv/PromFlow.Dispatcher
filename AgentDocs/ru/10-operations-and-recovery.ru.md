@@ -1,8 +1,8 @@
-# Operations and recovery
+# Эксплуатация и восстановление
 
 Этот документ собирает production acceptance практики Stage 14. Это не installer и не
-deployment automation guide; он фиксирует проверки для operators и maintainers перед
-production handoff.
+автоматизация deployment; это список проверок, которые operator или maintainer выполняет
+перед передачей системы в эксплуатацию.
 
 ## Startup и shutdown
 
@@ -11,7 +11,7 @@ shutdown. Не запускайте `IArchiveRuntime`, `IModbusArchiveCollector`
 из workspace ViewModel. Для диагностики startup используйте runtime state и archive
 health.
 
-Lifecycle timeouts зависят от deployment. Они должны быть достаточно короткими для
+Timeouts lifecycle зависят от deployment. Они должны быть достаточно короткими для
 deterministic shutdown и достаточно длинными для SQLite flush/Modbus disconnect:
 
 ```json
@@ -27,8 +27,8 @@ deterministic shutdown и достаточно длинными для SQLite fl
 ## Recovery checklist
 
 1. Если пользователей нет, выполните administrator bootstrap локально.
-2. Если license missing или expired, войдите как Administrator и используйте License tab.
-3. Экспортируйте installation request, когда license должна быть bound к installation.
+2. Если license missing или expired, войдите как Administrator и используйте вкладку `License`.
+3. Экспортируйте installation request, если license должна быть привязана к этой installation.
 4. Установите signed license и проверьте feature list и validity dates.
 5. Проверьте, что Archive health healthy или degraded с понятной причиной.
 6. Проверьте RouteMap readback перед включением equipment commands.
@@ -48,3 +48,25 @@ audit samples. В конце выполните bounded archive queries и од�
 Поддерживаемый evidence file:
 `AgentDocs/implementation/STAGE14-ACCEPTANCE.md`. В нем перечислены automated scenarios,
 verification commands, known limitations и статус `Stage 15: not started`.
+
+## Восстановление Visual Studio Avalonia Preview
+
+Если Visual Studio показывает ошибку вида
+`AvaloniaUI.VisualStudio.Extension.Views.AvaloniaEditorWithPreview` или пишет, что
+`/AvaloniaUI.VisualStudio.Extension;component/views/avaloniaeditorwithpreview.axaml`
+не найден, это проблема расширения Avalonia для Visual Studio или его cache. Этот URI
+относится к Visual Studio extension, а не к `.axaml` файлам PromFlow Dispatcher.
+
+Что сделать:
+
+1. Полностью закройте все окна Visual Studio.
+2. Обновите или переустановите расширение Avalonia for Visual Studio.
+3. Удалите cache компонентов Visual Studio:
+   `%LOCALAPPDATA%\Microsoft\VisualStudio\*\ComponentModelCache`.
+4. Снова откройте `DesktopTemplate.slnx`.
+5. Если designer всё ещё не открывается, проверяйте XAML из командной строки:
+   `dotnet build .\DesktopTemplate.slnx --no-restore` и headless UI tests.
+
+Приложение не зависит от Visual Studio designer во время работы. Если build и headless
+UI tests проходят, значит XAML проекта компилируется и рендерится, даже если preview в
+IDE сломан.

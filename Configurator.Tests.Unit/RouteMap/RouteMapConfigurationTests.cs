@@ -2,6 +2,7 @@ using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 using Avalonia.Media;
 using Configurator.Application.Services.Authorization;
+using Configurator.Desktop.Workspace;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -401,6 +402,26 @@ public sealed class RouteMapConfigurationTests
             () => viewModel.OpenSettingsCommand.Execute().ToTask());
 
         Assert.Contains("RouteMap settings failed", viewModel.SettingsErrorMessage);
+    }
+
+    [Fact]
+    public async Task Top_bar_shell_context_sets_username_and_logout_command()
+    {
+        var logoutCount = 0;
+        var logoutCommand = ReactiveUI.ReactiveCommand.CreateFromTask(() =>
+        {
+            logoutCount++;
+            return Task.CompletedTask;
+        });
+        var viewModel = new TopBarViewModel(settingsDialogService: null);
+
+        viewModel.ApplyShellContext(new WorkspaceShellContext("operator-1", logoutCommand));
+
+        Assert.Equal("operator-1", viewModel.Username);
+        Assert.True(viewModel.HasUsername);
+        Assert.Same(logoutCommand, viewModel.LogoutCommand);
+        await viewModel.LogoutCommand!.Execute().ToTask();
+        Assert.Equal(1, logoutCount);
     }
 
     [Fact]

@@ -6,13 +6,14 @@ using Configurator.Desktop.Workspace.RouteMap.Services;
 using Avalonia.Threading;
 using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Licensing;
+using Configurator.Desktop.Workspace;
 using ReactiveUI;
 using System.Collections.ObjectModel;
 using System.Reactive.Linq;
 
 namespace Configurator.Desktop.Workspace.RouteMap.ViewModels;
 
-public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
+public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable, IWorkspaceShellContextConsumer
 {
     private readonly IDisposable _signalSubscription;
     private readonly IDisposable _definitionSubscription;
@@ -139,6 +140,11 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         _definitionSubscription.Dispose();
         TopBar.Dispose();
         _bindingDiagnostics?.Dispose();
+    }
+
+    public void ApplyWorkspaceShellContext(WorkspaceShellContext context)
+    {
+        TopBar.ApplyShellContext(context);
     }
 
     private void ApplyDefinition(RouteMapDefinition definition)

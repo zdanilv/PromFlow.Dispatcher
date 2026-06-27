@@ -10,7 +10,7 @@ namespace Configurator.Tests.Unit.Workspace;
 public sealed class WorkspaceAuthorizationTests
 {
     [Fact]
-    public async Task UserSessionCreatesOnlyRouteMapTabAndSkipsUnauthorizedFactories()
+    public async Task UserSessionCreatesOnlyRouteMapTabWithoutEagerContent()
     {
         var fixture = new WorkspaceFixture(
             Permission.ViewRouteMap,
@@ -20,15 +20,18 @@ public sealed class WorkspaceAuthorizationTests
         await workspace.InitializeAsync();
 
         Assert.Equal(["Route Map"], workspace.Tabs.Select(tab => tab.Header).ToArray());
+        Assert.All(workspace.Tabs, tab => Assert.False(tab.IsLoaded));
+        workspace.Tabs.Single().EnsureContentCreated();
+        var routeMap = Assert.IsType<DisposableContent>(workspace.Tabs.Single().Content);
+        Assert.Equal("operator", routeMap.AppliedContext?.CurrentUsername);
         Assert.Equal(1, fixture.RouteMapFactoryCalls);
         Assert.Equal(0, fixture.SignalMappingFactoryCalls);
-        Assert.Equal(0, fixture.ModbusTcpFactoryCalls);
         Assert.Equal(0, fixture.ModbusDemoFactoryCalls);
         Assert.Equal(0, fixture.UsersFactoryCalls);
     }
 
     [Fact]
-    public async Task AdministratorSessionCreatesAllExistingTabs()
+    public async Task AdministratorSessionCreatesAuthorizedHeadersWithoutEagerContent()
     {
         var fixture = new WorkspaceFixture(Enum.GetValues<Permission>());
         using var workspace = fixture.CreateWorkspace();
@@ -36,15 +39,35 @@ public sealed class WorkspaceAuthorizationTests
         await workspace.InitializeAsync();
 
         Assert.Equal(
-            ["Route Map", "SignalId ↔ Modbus", "Modbus TCP", "Modbus Demo", "Archive", "License", "Users"],
+            ["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "Archive", "License", "Users"],
             workspace.Tabs.Select(tab => tab.Header).ToArray());
+        Assert.DoesNotContain(workspace.Tabs, tab => tab.Header == "Modbus TCP");
+        Assert.All(workspace.Tabs, tab => Assert.False(tab.IsLoaded));
+        Assert.Equal(0, fixture.RouteMapFactoryCalls);
+        Assert.Equal(0, fixture.SignalMappingFactoryCalls);
+        Assert.Equal(0, fixture.ModbusDemoFactoryCalls);
+        Assert.Equal(0, fixture.ArchiveFactoryCalls);
+        Assert.Equal(0, fixture.LicenseFactoryCalls);
+        Assert.Equal(0, fixture.UsersFactoryCalls);
+    }
+
+    [Fact]
+    public async Task SelectingTabsCreatesContentOnce()
+    {
+        var fixture = new WorkspaceFixture(Enum.GetValues<Permission>());
+        using var workspace = fixture.CreateWorkspace();
+        await workspace.InitializeAsync();
+
+        workspace.Tabs.Single(tab => tab.Id == "route-map").EnsureContentCreated();
+        workspace.Tabs.Single(tab => tab.Id == "archive").EnsureContentCreated();
+        workspace.Tabs.Single(tab => tab.Id == "archive").EnsureContentCreated();
+
         Assert.Equal(1, fixture.RouteMapFactoryCalls);
-        Assert.Equal(1, fixture.SignalMappingFactoryCalls);
-        Assert.Equal(1, fixture.ModbusTcpFactoryCalls);
-        Assert.Equal(1, fixture.ModbusDemoFactoryCalls);
         Assert.Equal(1, fixture.ArchiveFactoryCalls);
-        Assert.Equal(1, fixture.LicenseFactoryCalls);
-        Assert.Equal(1, fixture.UsersFactoryCalls);
+        Assert.Equal(0, fixture.SignalMappingFactoryCalls);
+        Assert.Equal(0, fixture.ModbusDemoFactoryCalls);
+        Assert.Equal(0, fixture.LicenseFactoryCalls);
+        Assert.Equal(0, fixture.UsersFactoryCalls);
     }
 
     [Fact]
@@ -74,20 +97,24 @@ public sealed class WorkspaceAuthorizationTests
         await workspace.InitializeAsync();
 
         Assert.Equal(["License", "Users"], workspace.Tabs.Select(tab => tab.Header).ToArray());
+        Assert.All(workspace.Tabs, tab => Assert.False(tab.IsLoaded));
         Assert.Equal(0, fixture.RouteMapFactoryCalls);
-        Assert.Equal(1, fixture.LicenseFactoryCalls);
-        Assert.Equal(1, fixture.UsersFactoryCalls);
+        Assert.Equal(0, fixture.LicenseFactoryCalls);
+        Assert.Equal(0, fixture.UsersFactoryCalls);
     }
 
     [Fact]
-    public async Task DisposeDisposesCreatedTabContent()
+    public async Task DisposeDisposesOnlyLoadedTabContent()
     {
         var fixture = new WorkspaceFixture(Enum.GetValues<Permission>());
         var workspace = fixture.CreateWorkspace();
         await workspace.InitializeAsync();
+        workspace.Tabs.Single(tab => tab.Id == "route-map").EnsureContentCreated();
+        workspace.Tabs.Single(tab => tab.Id == "archive").EnsureContentCreated();
 
         workspace.Dispose();
 
+        Assert.Equal(2, fixture.CreatedContent.Count);
         Assert.All(fixture.CreatedContent, content => Assert.True(content.IsDisposed));
         Assert.Empty(workspace.Tabs);
     }
@@ -135,7 +162,6 @@ public sealed class WorkspaceAuthorizationTests
         public FakeLicenseService LicenseService { get; private set; } = null!;
         public int RouteMapFactoryCalls { get; private set; }
         public int SignalMappingFactoryCalls { get; private set; }
-        public int ModbusTcpFactoryCalls { get; private set; }
         public int ModbusDemoFactoryCalls { get; private set; }
         public int ArchiveFactoryCalls { get; private set; }
         public int LicenseFactoryCalls { get; private set; }
@@ -187,17 +213,6 @@ public sealed class WorkspaceAuthorizationTests
                     return CreateContent();
                 },
                 10),
-            new(
-                "modbus-tcp",
-                "Modbus TCP",
-                Permission.ConfigureModbus,
-                LicenseFeature.Diagnostics,
-                _ =>
-                {
-                    ModbusTcpFactoryCalls++;
-                    return CreateContent();
-                },
-                15),
             new(
                 "modbus-demo",
                 "Modbus Demo",
@@ -320,9 +335,14 @@ public sealed class WorkspaceAuthorizationTests
                 "Not supported."));
     }
 
-    private sealed class DisposableContent : IDisposable
+    private sealed class DisposableContent : IDisposable, IWorkspaceShellContextConsumer
     {
         public bool IsDisposed { get; private set; }
+        public WorkspaceShellContext? AppliedContext { get; private set; }
+
+        public void ApplyWorkspaceShellContext(WorkspaceShellContext context) =>
+            AppliedContext = context;
+
         public void Dispose() => IsDisposed = true;
     }
 

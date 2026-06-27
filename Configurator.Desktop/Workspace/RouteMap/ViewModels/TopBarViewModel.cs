@@ -1,5 +1,6 @@
 using Avalonia.Media;
 using Configurator.Application.Services.Signals;
+using Configurator.Desktop.Workspace;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
@@ -24,6 +25,8 @@ public sealed class TopBarViewModel : ViewModelBase, IDisposable
     private bool _isEmergencyPressed;
     private bool _canOpenSettings;
     private string? _settingsErrorMessage;
+    private string _username = "User";
+    private ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit>? _logoutCommand;
     private string _connectionStatusText = "Ожидание";
 
     public TopBarViewModel(
@@ -89,6 +92,24 @@ public sealed class TopBarViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _settingsErrorMessage, value);
     }
 
+    public string Username
+    {
+        get => _username;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _username, string.IsNullOrWhiteSpace(value) ? "User" : value.Trim());
+            this.RaisePropertyChanged(nameof(HasUsername));
+        }
+    }
+
+    public bool HasUsername => !string.IsNullOrWhiteSpace(Username);
+
+    public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit>? LogoutCommand
+    {
+        get => _logoutCommand;
+        private set => this.RaiseAndSetIfChanged(ref _logoutCommand, value);
+    }
+
     public string AutomaticText => _settings.Automatic.Text;
     public string ManualText => _settings.Manual.Text;
     public string EmergencyText => _settings.Emergency.Text;
@@ -105,6 +126,13 @@ public sealed class TopBarViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> OpenSettingsCommand { get; }
 
     public void SetCanOpenSettings(bool canOpenSettings) => CanOpenSettings = canOpenSettings;
+
+    public void ApplyShellContext(WorkspaceShellContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        Username = context.CurrentUsername;
+        LogoutCommand = context.LogoutCommand;
+    }
 
     public void Dispose() => _disposables.Dispose();
 

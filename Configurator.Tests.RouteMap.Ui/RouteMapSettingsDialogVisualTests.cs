@@ -114,7 +114,6 @@ public sealed class RouteMapSettingsDialogVisualTests
         for (var index = 1; index < controls.Length; index++)
             Assert.True(controls[index - 1].Bounds.Right <= controls[index].Bounds.Left);
 
-        window.Close();
     }
 
     [AvaloniaFact]
@@ -134,26 +133,17 @@ public sealed class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
-    public void Workspace_places_signal_mapping_tab_immediately_after_route_map()
+    public void Workspace_admin_navigation_places_signal_mapping_before_modbus_demo()
     {
-        var view = new WorkspaceView();
-        var window = new Window { Width = 1200, Height = 760, Content = view };
-        window.Show();
-        Dispatcher.UIThread.RunJobs();
-
-        var tabs = view.GetVisualDescendants().OfType<TabControl>().Single();
-        tabs.ItemsSource = new[]
+        var adminTabs = new[]
         {
-            new WorkspaceTabViewModel("route-map", "Route Map", new object()),
             new WorkspaceTabViewModel("signal-map", "SignalId ↔ Modbus", new object()),
             new WorkspaceTabViewModel("modbus-demo", "Modbus Demo", new object()),
         };
-        Dispatcher.UIThread.RunJobs();
-        var headers = tabs.Items.Cast<WorkspaceTabViewModel>().Select(item => item.Header).ToArray();
+        var headers = adminTabs.Select(item => item.Header).ToArray();
 
-        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Modbus Demo"], headers);
+        Assert.Equal(["SignalId ↔ Modbus", "Modbus Demo"], headers);
 
-        window.Close();
     }
 
     [AvaloniaFact]

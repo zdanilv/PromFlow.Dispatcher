@@ -46,3 +46,25 @@ At the end, run bounded archive queries and one bounded export; do not query ful
 The maintained evidence file is
 `AgentDocs/implementation/STAGE14-ACCEPTANCE.md`. It records automated scenarios,
 verification commands, known limitations and the status that Stage 15 has not started.
+
+## Visual Studio Avalonia Preview Recovery
+
+If Visual Studio shows an error such as
+`AvaloniaUI.VisualStudio.Extension.Views.AvaloniaEditorWithPreview` or says that
+`/AvaloniaUI.VisualStudio.Extension;component/views/avaloniaeditorwithpreview.axaml`
+cannot be found, treat it as a Visual Studio extension/cache problem. That URI belongs
+to the Avalonia Visual Studio extension, not to a PromFlow Dispatcher view.
+
+Use this recovery sequence:
+
+1. Close every Visual Studio window.
+2. Update or reinstall the Avalonia for Visual Studio extension.
+3. Delete the Visual Studio component cache:
+   `%LOCALAPPDATA%\Microsoft\VisualStudio\*\ComponentModelCache`.
+4. Reopen `DesktopTemplate.slnx`.
+5. If the designer still fails, validate project XAML with the command line:
+   `dotnet build .\DesktopTemplate.slnx --no-restore` and the headless UI tests.
+
+The desktop application does not require the Visual Studio designer to run. A passing
+build plus passing headless UI tests is the repository-level signal that the project
+views compile and render.

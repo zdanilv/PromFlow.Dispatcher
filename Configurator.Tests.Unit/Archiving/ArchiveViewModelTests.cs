@@ -10,12 +10,25 @@ namespace Configurator.Tests.Unit.Archiving;
 public sealed class ArchiveViewModelTests
 {
     [Fact]
-    public async Task InitializeAsync_LoadsOnlyFirstSnapshotMetadataPage()
+    public async Task InitializeAsync_DoesNotQueryArchiveUntilRefresh()
     {
         var query = new RecordingArchiveQueryService();
         using var viewModel = CreateViewModel(query);
 
         await viewModel.InitializeAsync();
+
+        Assert.Equal(0, query.MetadataQueryCount);
+        Assert.Empty(viewModel.Snapshots);
+        Assert.Contains("Archive ready", viewModel.StatusMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RefreshCommand_LoadsOnlyFirstSnapshotMetadataPage()
+    {
+        var query = new RecordingArchiveQueryService();
+        using var viewModel = CreateViewModel(query);
+
+        await viewModel.RefreshCommand.Execute().ToTask();
 
         Assert.Equal(1, query.MetadataQueryCount);
         Assert.Equal(0, query.RawSnapshotQueryCount);
@@ -29,7 +42,7 @@ public sealed class ArchiveViewModelTests
     {
         var query = new RecordingArchiveQueryService();
         using var viewModel = CreateViewModel(query);
-        await viewModel.InitializeAsync();
+        await viewModel.RefreshCommand.Execute().ToTask();
 
         viewModel.SelectedSnapshot = viewModel.Snapshots.Single();
         await viewModel.LoadSnapshotDetailsCommand.Execute().ToTask();
@@ -54,16 +67,78 @@ public sealed class ArchiveViewModelTests
         Assert.Contains("export.zip", viewModel.StatusMessage, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task RefreshCommand_TimesOutAndClearsBusyState()
+    {
+        using var viewModel = CreateViewModel(
+            new HangingArchiveQueryService(),
+            queryTimeout: TimeSpan.FromMilliseconds(10));
+
+        await viewModel.RefreshCommand.Execute().ToTask();
+
+        Assert.False(viewModel.IsBusy);
+        Assert.Contains("timed out", viewModel.ErrorMessage, StringComparison.Ordinal);
+    }
+
     private static ArchiveViewModel CreateViewModel(
-        RecordingArchiveQueryService query,
+        IArchiveQueryService query,
         IArchiveMaintenanceService? maintenance = null,
-        IArchiveFilePicker? picker = null)
+        IArchiveFilePicker? picker = null,
+        TimeSpan? queryTimeout = null)
         => new(
             query,
             new RecordingArchiveHealthService(),
             maintenance ?? new RecordingArchiveMaintenanceService(),
             picker ?? new RecordingArchiveFilePicker(),
-            Options.Create(new ArchiveOptions { QueryMaxPageSize = 10 }));
+            Options.Create(new ArchiveOptions { QueryMaxPageSize = 10 }),
+            queryTimeout);
+
+    private sealed class HangingArchiveQueryService : IArchiveQueryService
+    {
+        public async Task<ArchiveOperationResult<ArchivePage<RawModbusSnapshotArchiveMetadataRecord>>> QueryRawSnapshotMetadataAsync(
+            ArchiveQuery query,
+            CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("The hanging query completed unexpectedly.");
+        }
+
+        public Task<ArchiveOperationResult<ArchivePage<RawModbusSnapshotArchiveRecord>>> QueryRawSnapshotsAsync(
+            ArchiveQuery query,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ArchiveOperationResult<RawModbusSnapshotArchiveRecord>> GetRawSnapshotAsync(
+            Guid id,
+            DateTimeOffset capturedAtUtc,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ArchiveOperationResult<ArchivePage<ModbusStatusArchiveRecord>>> QueryModbusStatusesAsync(
+            ArchiveQuery query,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ArchiveOperationResult<ArchivePage<ArchiveRuntimeEventRecord>>> QueryRuntimeEventsAsync(
+            ArchiveQuery query,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ArchiveOperationResult<ArchivePage<EquipmentCommandAuditRecord>>> QueryEquipmentCommandsAsync(
+            ArchiveQuery query,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ArchiveOperationResult<ArchivePage<PhysicalModbusWriteAuditRecord>>> QueryPhysicalWritesAsync(
+            ArchiveQuery query,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ArchiveOperationResult<ArchivePage<SecurityAuditRecord>>> QuerySecurityAuditAsync(
+            ArchiveQuery query,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
 
     private sealed class RecordingArchiveQueryService : IArchiveQueryService
     {
