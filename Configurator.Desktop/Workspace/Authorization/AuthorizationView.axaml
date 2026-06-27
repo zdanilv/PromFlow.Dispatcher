@@ -11,6 +11,11 @@
 			<TextBlock Text="Вход в систему" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
 			<TextBox PlaceholderText="Имя пользователя" Text="{Binding Username}"/>
 			<TextBox PlaceholderText="Пароль" Text="{Binding Password}" PasswordChar="●"/>
+			<CheckBox Content="Запомнить пароль"
+					  IsChecked="{Binding RememberPassword}"/>
+			<CheckBox Content="Автоматический вход"
+					  IsChecked="{Binding AutoLogin}"
+					  IsEnabled="{Binding CanUseAutoLogin}"/>
 			<TextBlock Text="{Binding ErrorMessage}"
 					   Foreground="#B3261E"
 					   TextWrapping="Wrap"/>

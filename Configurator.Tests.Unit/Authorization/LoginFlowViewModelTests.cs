@@ -94,6 +94,94 @@ public sealed class LoginFlowViewModelTests
         Assert.Empty(login.Password);
     }
 
+    [Fact]
+    public async Task LoginSuccessWithRememberPasswordSavesEncryptedPreferencesAndClearsPassword()
+    {
+        var auth = new FakeAuthenticationService();
+        var store = new RecordingLoginCredentialStore();
+        var successCount = 0;
+        using var viewModel = new AuthorizationViewModel(
+            new TestScreen(),
+            auth,
+            _ =>
+            {
+                successCount++;
+                return Task.CompletedTask;
+            },
+            store)
+        {
+            Username = "operator",
+            Password = "ValidPass123",
+            RememberPassword = true,
+            AutoLogin = true
+        };
+
+        await viewModel.AuthenticateCommand.Execute().ToTask();
+
+        Assert.Equal(1, successCount);
+        Assert.Equal("operator", store.SavedPreferences?.Username);
+        Assert.Equal("ValidPass123", store.SavedPreferences?.Password);
+        Assert.True(store.SavedPreferences?.RememberPassword);
+        Assert.True(store.SavedPreferences?.AutoLogin);
+        Assert.Empty(viewModel.Password);
+    }
+
+    [Fact]
+    public async Task InitializeWithAutoLoginUsesSavedCredentialsOnce()
+    {
+        var auth = new FakeAuthenticationService();
+        var store = new RecordingLoginCredentialStore
+        {
+            Preferences = new LoginCredentialPreferences("operator", "ValidPass123", true, true)
+        };
+        var successCount = 0;
+        using var viewModel = new AuthorizationViewModel(
+            new TestScreen(),
+            auth,
+            _ =>
+            {
+                successCount++;
+                return Task.CompletedTask;
+            },
+            store);
+
+        await viewModel.InitializeAsync();
+        await viewModel.TryAutoLoginAsync();
+
+        Assert.Equal(1, successCount);
+        Assert.Equal("operator", viewModel.Username);
+        Assert.True(viewModel.RememberPassword);
+        Assert.True(viewModel.AutoLogin);
+        Assert.Empty(viewModel.Password);
+    }
+
+    [Fact]
+    public async Task FailedAutoLoginClearsStoredCredentialsAndStaysOnLogin()
+    {
+        var auth = new FakeAuthenticationService { Result = AuthenticationResult.InvalidCredentials() };
+        var store = new RecordingLoginCredentialStore
+        {
+            Preferences = new LoginCredentialPreferences("operator", "stale", true, true)
+        };
+        using var viewModel = new AuthorizationViewModel(
+            new TestScreen(),
+            auth,
+            _ => throw new InvalidOperationException("Should not navigate."),
+            store);
+        using var interaction = viewModel.ErrorInteraction.RegisterHandler(context =>
+        {
+            context.SetOutput(System.Reactive.Unit.Default);
+        });
+
+        await viewModel.InitializeAsync();
+
+        Assert.Equal("Invalid username or password.", viewModel.ErrorMessage);
+        Assert.Equal(1, store.ClearCount);
+        Assert.False(viewModel.RememberPassword);
+        Assert.False(viewModel.AutoLogin);
+        Assert.Empty(viewModel.Password);
+    }
+
     private sealed class FlowServices
     {
         private readonly TestSessionAccessor _sessionAccessor = new();
@@ -220,6 +308,32 @@ public sealed class LoginFlowViewModelTests
     private sealed class DisposableContent : IDisposable
     {
         public void Dispose() { }
+    }
+
+    private sealed class RecordingLoginCredentialStore : ILoginCredentialStore
+    {
+        public LoginCredentialPreferences Preferences { get; set; } = LoginCredentialPreferences.Empty;
+
+        public LoginCredentialPreferences? SavedPreferences { get; private set; }
+
+        public int ClearCount { get; private set; }
+
+        public Task<LoginCredentialPreferences> LoadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Preferences);
+
+        public Task SaveAsync(LoginCredentialPreferences preferences, CancellationToken cancellationToken = default)
+        {
+            SavedPreferences = preferences;
+            Preferences = preferences;
+            return Task.CompletedTask;
+        }
+
+        public Task ClearAsync(CancellationToken cancellationToken = default)
+        {
+            ClearCount++;
+            Preferences = LoginCredentialPreferences.Empty;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class TestSessionAccessor : IUserSessionAccessor

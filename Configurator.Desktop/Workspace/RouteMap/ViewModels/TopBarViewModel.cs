@@ -4,12 +4,17 @@ using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using ReactiveUI;
+using System.Reactive.Disposables;
+using System.Reactive.Subjects;
 
 namespace Configurator.Desktop.Workspace.RouteMap.ViewModels;
 
-public sealed class TopBarViewModel : ViewModelBase
+public sealed class TopBarViewModel : ViewModelBase, IDisposable
 {
     private readonly IEquipmentCommandDispatcher? _commandDispatcher;
+    private readonly IRouteMapSettingsDialogService? _settingsDialogService;
+    private readonly CompositeDisposable _disposables = new();
+    private readonly BehaviorSubject<bool> _canOpenSettingsChanged;
     private RouteTopBarSettings _settings;
     private bool _isAutomaticMode;
     private bool _isManualMode = true;
@@ -17,21 +22,31 @@ public sealed class TopBarViewModel : ViewModelBase
     private bool _isAutomaticPressed;
     private bool _isManualPressed;
     private bool _isEmergencyPressed;
+    private bool _canOpenSettings;
+    private string? _settingsErrorMessage;
     private string _connectionStatusText = "Ожидание";
 
     public TopBarViewModel(
         IRouteMapSettingsDialogService? settingsDialogService = null,
         IEquipmentCommandDispatcher? commandDispatcher = null,
-        RouteTopBarSettings? settings = null)
+        RouteTopBarSettings? settings = null,
+        bool canOpenSettings = true)
     {
+        _settingsDialogService = settingsDialogService;
         _commandDispatcher = commandDispatcher;
         _settings = settings ?? CreateDefaultSettings();
+        _canOpenSettings = canOpenSettings;
+        _canOpenSettingsChanged = new BehaviorSubject<bool>(canOpenSettings);
 
         SwitchToAutomaticCommand = ReactiveCommand.CreateFromTask(SwitchToAutomaticAsync);
         SwitchToManualCommand = ReactiveCommand.CreateFromTask(SwitchToManualAsync);
         EmergencyCommand = ReactiveCommand.CreateFromTask(ExecuteEmergencyAsync);
-        OpenSettingsCommand = ReactiveCommand.CreateFromTask(() =>
-            settingsDialogService?.ShowAsync() ?? Task.CompletedTask);
+        OpenSettingsCommand = ReactiveCommand.CreateFromTask(
+            OpenSettingsAsync,
+            _canOpenSettingsChanged);
+        _disposables.Add(_canOpenSettingsChanged);
+        _disposables.Add(OpenSettingsCommand.ThrownExceptions.Subscribe(ex =>
+            SettingsErrorMessage = $"RouteMap settings failed: {ex.Message}"));
     }
 
     public bool IsAutomaticMode
@@ -58,6 +73,22 @@ public sealed class TopBarViewModel : ViewModelBase
         private set => this.RaiseAndSetIfChanged(ref _connectionStatusText, value);
     }
 
+    public bool CanOpenSettings
+    {
+        get => _canOpenSettings;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _canOpenSettings, value);
+            _canOpenSettingsChanged.OnNext(value);
+        }
+    }
+
+    public string? SettingsErrorMessage
+    {
+        get => _settingsErrorMessage;
+        private set => this.RaiseAndSetIfChanged(ref _settingsErrorMessage, value);
+    }
+
     public string AutomaticText => _settings.Automatic.Text;
     public string ManualText => _settings.Manual.Text;
     public string EmergencyText => _settings.Emergency.Text;
@@ -72,6 +103,10 @@ public sealed class TopBarViewModel : ViewModelBase
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SwitchToManualCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> EmergencyCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> OpenSettingsCommand { get; }
+
+    public void SetCanOpenSettings(bool canOpenSettings) => CanOpenSettings = canOpenSettings;
+
+    public void Dispose() => _disposables.Dispose();
 
     public void ApplySettings(RouteTopBarSettings? settings)
     {
@@ -141,6 +176,17 @@ public sealed class TopBarViewModel : ViewModelBase
         HasEmergency = !HasEmergency;
         RaiseButtonProperties();
         await DispatchAsync(_settings.Emergency.Binding, HasEmergency);
+    }
+
+    private async Task OpenSettingsAsync()
+    {
+        SettingsErrorMessage = null;
+        if (_settingsDialogService is null)
+        {
+            return;
+        }
+
+        await _settingsDialogService.ShowAsync();
     }
 
     private Task DispatchAsync(SignalBinding binding, bool value)

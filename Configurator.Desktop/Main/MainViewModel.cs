@@ -112,11 +112,12 @@ public sealed class MainViewModel : ViewModelBase, IScreen, IDisposable
         return Task.CompletedTask;
     }
 
-    private Task ShowLoginAsync(CancellationToken cancellationToken)
+    private async Task ShowLoginAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        NavigateTo(_authorizationFactory(this, ShowWorkspaceAsync));
-        return Task.CompletedTask;
+        var viewModel = _authorizationFactory(this, ShowWorkspaceAsync);
+        NavigateTo(viewModel);
+        await viewModel.InitializeAsync(_startupCancellation.Token);
     }
 
     private async Task ShowWorkspaceAsync(CancellationToken cancellationToken)

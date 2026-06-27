@@ -101,6 +101,7 @@
                           Command="{Binding EmergencyCommand}"/>
             <Button Classes="settings"
                     Content="НАСТРОЙКИ"
+                    IsVisible="{Binding CanOpenSettings}"
                     Command="{Binding OpenSettingsCommand}"/>
         </StackPanel>
 

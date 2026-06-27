@@ -22,6 +22,7 @@ public sealed class WorkspaceAuthorizationTests
         Assert.Equal(["Route Map"], workspace.Tabs.Select(tab => tab.Header).ToArray());
         Assert.Equal(1, fixture.RouteMapFactoryCalls);
         Assert.Equal(0, fixture.SignalMappingFactoryCalls);
+        Assert.Equal(0, fixture.ModbusTcpFactoryCalls);
         Assert.Equal(0, fixture.ModbusDemoFactoryCalls);
         Assert.Equal(0, fixture.UsersFactoryCalls);
     }
@@ -35,10 +36,11 @@ public sealed class WorkspaceAuthorizationTests
         await workspace.InitializeAsync();
 
         Assert.Equal(
-            ["Route Map", "SignalId ↔ Modbus", "Modbus Demo", "Archive", "License", "Users"],
+            ["Route Map", "SignalId ↔ Modbus", "Modbus TCP", "Modbus Demo", "Archive", "License", "Users"],
             workspace.Tabs.Select(tab => tab.Header).ToArray());
         Assert.Equal(1, fixture.RouteMapFactoryCalls);
         Assert.Equal(1, fixture.SignalMappingFactoryCalls);
+        Assert.Equal(1, fixture.ModbusTcpFactoryCalls);
         Assert.Equal(1, fixture.ModbusDemoFactoryCalls);
         Assert.Equal(1, fixture.ArchiveFactoryCalls);
         Assert.Equal(1, fixture.LicenseFactoryCalls);
@@ -133,6 +135,7 @@ public sealed class WorkspaceAuthorizationTests
         public FakeLicenseService LicenseService { get; private set; } = null!;
         public int RouteMapFactoryCalls { get; private set; }
         public int SignalMappingFactoryCalls { get; private set; }
+        public int ModbusTcpFactoryCalls { get; private set; }
         public int ModbusDemoFactoryCalls { get; private set; }
         public int ArchiveFactoryCalls { get; private set; }
         public int LicenseFactoryCalls { get; private set; }
@@ -184,6 +187,17 @@ public sealed class WorkspaceAuthorizationTests
                     return CreateContent();
                 },
                 10),
+            new(
+                "modbus-tcp",
+                "Modbus TCP",
+                Permission.ConfigureModbus,
+                LicenseFeature.Diagnostics,
+                _ =>
+                {
+                    ModbusTcpFactoryCalls++;
+                    return CreateContent();
+                },
+                15),
             new(
                 "modbus-demo",
                 "Modbus Demo",

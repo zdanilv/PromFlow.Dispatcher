@@ -1,4 +1,5 @@
 using System.Reactive.Linq;
+using System.Reactive.Threading.Tasks;
 using Avalonia.Media;
 using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Signals;
@@ -379,6 +380,30 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
+    public async Task Top_bar_settings_command_is_disabled_when_permission_is_missing()
+    {
+        var service = new RecordingSettingsDialogService();
+        var viewModel = new TopBarViewModel(service, canOpenSettings: false);
+
+        var canExecute = await viewModel.OpenSettingsCommand.CanExecute.FirstAsync();
+
+        Assert.False(viewModel.CanOpenSettings);
+        Assert.False(canExecute);
+        Assert.Equal(0, service.CallCount);
+    }
+
+    [Fact]
+    public async Task Top_bar_settings_exception_is_reported_on_view_model()
+    {
+        var viewModel = new TopBarViewModel(new ThrowingSettingsDialogService());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => viewModel.OpenSettingsCommand.Execute().ToTask());
+
+        Assert.Contains("RouteMap settings failed", viewModel.SettingsErrorMessage);
+    }
+
+    [Fact]
     public void Top_bar_button_colors_resolve_pressed_checked_normal_priority()
     {
         var viewModel = new TopBarViewModel(settingsDialogService: null, settings: RouteMapSeed.Create().TopBar);
@@ -733,6 +758,12 @@ public sealed class RouteMapConfigurationTests
     {
         public int CallCount { get; private set; }
         public Task ShowAsync(CancellationToken cancellationToken = default) { CallCount++; return Task.CompletedTask; }
+    }
+
+    private sealed class ThrowingSettingsDialogService : IRouteMapSettingsDialogService
+    {
+        public Task ShowAsync(CancellationToken cancellationToken = default) =>
+            Task.FromException(new InvalidOperationException("dialog failed"));
     }
 
     private sealed class CapturingDispatcher : IEquipmentCommandDispatcher

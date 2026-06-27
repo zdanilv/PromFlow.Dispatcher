@@ -5,6 +5,7 @@
              xmlns:vm="clr-namespace:Configurator.Desktop.Workspace;assembly=Configurator.Desktop"
              xmlns:archive="using:Configurator.Desktop.Workspace.Archive"
              xmlns:licensing="using:Configurator.Desktop.Workspace.Licensing"
+             xmlns:modbus="using:Configurator.Desktop.Workspace.Modbus"
              xmlns:modbusDemo="using:Configurator.Desktop.Workspace.ModbusDemo"
              xmlns:routeMap="using:Configurator.Desktop.Workspace.RouteMap"
              xmlns:routeMapVm="using:Configurator.Desktop.Workspace.RouteMap.ViewModels"
@@ -21,6 +22,9 @@
         </DataTemplate>
         <DataTemplate DataType="signalMapping:RouteMapSignalMappingViewModel">
             <signalMapping:RouteMapSignalMappingView/>
+        </DataTemplate>
+        <DataTemplate DataType="modbus:ModbusViewModel">
+            <modbus:ModbusView/>
         </DataTemplate>
         <DataTemplate DataType="modbusDemo:ModbusDemoViewModel">
             <modbusDemo:ModbusDemoView/>

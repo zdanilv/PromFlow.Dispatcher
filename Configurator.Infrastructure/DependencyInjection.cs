@@ -5,6 +5,7 @@ using Configurator.Application.Services.Licensing;
 using Configurator.Application.Services.Runtime;
 using Configurator.Infrastructure.Licensing;
 using Configurator.Infrastructure.Runtime;
+using Configurator.Infrastructure.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -36,6 +37,9 @@ namespace Configurator.Infrastructure
             services.AddSingleton<ILicenseRequestExportService, FileLicenseRequestExportService>();
             services.AddSingleton<IInstallationIdentityService, FileInstallationIdentityService>();
             services.AddSingleton<ITrustedTimeStateStore, FileTrustedTimeStateStore>();
+            services.AddSingleton<LoginCredentialPathProvider>();
+            services.AddSingleton<ICredentialProtector, WindowsCredentialProtector>();
+            services.AddSingleton<ILoginCredentialStore, FileLoginCredentialStore>();
             services.AddSingleton<Configurator.Infrastructure.Services.AppConfigService>();
             services.AddSingleton<IAppConfigService>(serviceProvider =>
                 new AuthorizedAppConfigService(

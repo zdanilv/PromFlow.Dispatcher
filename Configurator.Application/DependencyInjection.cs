@@ -18,6 +18,7 @@ namespace Configurator.Application
             services.AddSingleton<ILicenseFeatureGate, LicenseFeatureGate>();
             services.AddSingleton<ILicenseVerifier, OfflineLicenseVerifier>();
             services.AddSingleton<IAccessDecisionService, DefaultAccessDecisionService>();
+            services.AddSingleton<ILoginCredentialStore, NullLoginCredentialStore>();
             services.AddSingleton<ICommandDeliveryGate, RuntimeCommandDeliveryGate>();
             services.AddSingleton<IModbusDataMapValidator, ModbusDataMapValidator>();
             return services;

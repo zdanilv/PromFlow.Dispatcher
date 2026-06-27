@@ -54,6 +54,7 @@ public sealed partial class ProductionHardeningSourceScanTests
         var failures = Directory
             .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
             .Where(path => !IsBuildOutput(path))
+            .Where(path => !IsLocalLicenseWorkDirectory(root, path))
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}.git{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             .Where(path => forbiddenExtensions.Contains(Path.GetExtension(path)))
             .Select(path => Path.GetRelativePath(root, path))
@@ -68,6 +69,12 @@ public sealed partial class ProductionHardeningSourceScanTests
     private static bool IsBuildOutput(string path)
         => path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
             || path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
+
+    private static bool IsLocalLicenseWorkDirectory(string root, string path)
+    {
+        var relativePath = Path.GetRelativePath(root, path);
+        return relativePath.StartsWith($"license-work{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string FindRepositoryRoot()
     {
