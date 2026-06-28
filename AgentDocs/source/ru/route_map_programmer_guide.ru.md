@@ -5,9 +5,15 @@
 `RouteMap` - операторская мнемосхема маршрута бетонной линии и первая вкладка
 `WorkspaceView` в `PromFlow.Dispatcher`.
 
-В Workspace сейчас подключены только вкладки `Route Map`, `SignalId ↔ Modbus` и
-`Modbus Demo`. Экраны `Modbus TCP` и `OPC UA` остаются в кодовой базе, но не подключаются
-к основному Workspace.
+В `Application.WorkMode=admin` Workspace подключает вкладки `Route Map`,
+`SignalId ↔ Modbus` и `Modbus Demo`. В `Application.WorkMode=user` Workspace показывает
+только `Route Map` на всю рабочую область. Экраны `Modbus TCP` и `OPC UA` остаются в
+кодовой базе, но не подключаются к основному Workspace.
+
+`Application.WorkMode` является launch-only режимом оболочки. Рабочие настройки
+`RouteMapRuntime`, `Modbus` и `ModbusDemo` накладываются поверх defaults из общего
+`%LOCALAPPDATA%\Configurator\appsettings.json`; скрытые в user режиме `SignalId ↔ Modbus`
+и `Modbus Demo` продолжают существовать как VM/runtime и использовать те же настройки.
 
 Экран состоит из:
 
@@ -504,7 +510,9 @@ route.active_bsu1_bsu2.active
 ```
 
 `ModbusTcpSignalValueProvider` получает heartbeat snapshots через
-`IModbusDataSnapshotSource`, формирует quality/stale и синтезирует `connection.status`.
+`IModbusDataSnapshotSource`, формирует quality/stale и синтезирует `connection.status` и
+`connection.connected`. При `connection.connected=false` mapper переводит все узлы и
+линии в `Offline`, а UI-команды блокируются, кроме кнопки `НАСТРОЙКИ`.
 `ModbusTcpCommandDispatcher` проверяет тип и доступ, затем выполняет latched или pulse
 запись через `IModbusTcpService`. Bool внутри Holding Register записывается защищенным
 read-modify-write. UI при этом не меняется: он продолжает получать `SignalValue` и
@@ -523,7 +531,8 @@ read-modify-write. UI при этом не меняется: он продолж
 ```
 
 `ПРИМЕНИТЬ` меняет источник только для текущей сессии. `СОХРАНИТЬ` также обновляет
-секцию `RouteMapRuntime`. Переключение на Modbus само по себе не запускает соединение.
+секцию `RouteMapRuntime` в общем `%LOCALAPPDATA%\Configurator\appsettings.json`.
+Переключение на Modbus само по себе не запускает соединение.
 
 Подробности находятся в `modbus_tcp_integration_guide.md`.
 
@@ -597,9 +606,10 @@ dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.cspr
 
 ## Редактор Настроек RouteMap
 
-В `TopBarView` справа от кнопки `АВАРИЯ` находится кнопка `НАСТРОЙКИ`. Команда
+В `TopBarView` рядом с кнопкой `АВАРИЯ` находится кнопка `НАСТРОЙКИ`. Команда
 `TopBarViewModel.OpenSettingsCommand` открывает `RouteMapSettingsDialog` поверх корневого
-`DialogHost`. Доступ к редактору не ограничивается ролью пользователя.
+`DialogHost`. В `Application.WorkMode=user` кнопка скрыта; в `admin` видна и остается
+доступной даже при недоступной Modbus-связи.
 
 Диалог содержит семь вкладок:
 

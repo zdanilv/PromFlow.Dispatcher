@@ -93,6 +93,7 @@ public sealed class RouteMapModbusAdapterTests
         Assert.True(connected[point.Name].IsQualityGood);
         Assert.False(connected[point.Name].IsStale);
         Assert.Equal(true, connected[point.Name].Value);
+        Assert.Equal(true, connected[RouteMapSystemSignalIds.ConnectionConnected].Value);
 
         service.PublishState(running with
         {
@@ -102,11 +103,13 @@ public sealed class RouteMapModbusAdapterTests
         });
 
         Assert.False(observer.Latest[point.Name].IsQualityGood);
-        Assert.Equal("Reconnecting", observer.Latest["connection.status"].Value);
+        Assert.Equal("Reconnecting", observer.Latest[RouteMapSystemSignalIds.ConnectionStatus].Value);
+        Assert.Equal(false, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
 
         service.PublishState(running);
         source.Publish(source.CurrentSnapshot with { Timestamp = DateTimeOffset.Now.AddSeconds(-1), State = running });
         Assert.True(observer.Latest[point.Name].IsStale);
+        Assert.Equal(false, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
     }
 
     private static ModbusDataPointOptions CreatePoint(string name, ModbusWriteMode writeMode)

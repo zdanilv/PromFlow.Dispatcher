@@ -20,7 +20,7 @@ namespace Configurator.Infrastructure.Services
         private const string UserSettingsFile = "user_settings.json";
 
         public AppConfigService(IConfiguration configuration)
-            : this(configuration, Path.Combine(AppContext.BaseDirectory, "appsettings.json"))
+            : this(configuration, ApplicationConfigPaths.SharedAppSettingsPath)
         {
         }
 
@@ -61,13 +61,18 @@ namespace Configurator.Infrastructure.Services
             await _saveGate.WaitAsync(ct);
             try
             {
-                if (!File.Exists(_configFilePath))
+                var directory = Path.GetDirectoryName(_configFilePath);
+                if (!string.IsNullOrWhiteSpace(directory))
+                    Directory.CreateDirectory(directory);
+
+                var root = new JsonObject();
+                if (File.Exists(_configFilePath))
                 {
-                    throw new FileNotFoundException("Application configuration file was not found.", _configFilePath);
+                    var json = await File.ReadAllTextAsync(_configFilePath, ct);
+                    if (!string.IsNullOrWhiteSpace(json))
+                        root = JsonNode.Parse(json)?.AsObject() ?? new JsonObject();
                 }
 
-                var json = await File.ReadAllTextAsync(_configFilePath, ct);
-                var root = JsonNode.Parse(json)?.AsObject() ?? new JsonObject();
                 root[sectionName] = JsonSerializer.SerializeToNode(value, JsonOptions);
                 await File.WriteAllTextAsync(_configFilePath, root.ToJsonString(JsonOptions), ct);
 

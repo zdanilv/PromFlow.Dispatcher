@@ -114,6 +114,8 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         Assert.Equal(
             RouteMapSignalElementCategory.System,
             inventory.Single(item => item.SignalId == "connection.status").Category);
+        Assert.True(inventory.Single(item => item.SignalId == "connection.connected").IsSystem);
+        Assert.Equal(SignalValueType.Bool, inventory.Single(item => item.SignalId == "connection.connected").ExpectedType);
         Assert.Equal(inventory.Count, inventory.Select(item => item.SignalId).Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 

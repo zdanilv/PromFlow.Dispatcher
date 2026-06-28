@@ -41,8 +41,9 @@ public sealed class MockSignalProvider : ISignalValueProvider
         var now = DateTimeOffset.Now;
         var signals = new Dictionary<string, SignalValue>
         {
-            ["queue.running"] = Bool("queue.running", tick % 8 is >= 3 and <= 5, now),
-            ["connection.status"] = String("connection.status", "Ожидание", now),
+            [RouteMapSystemSignalIds.QueueRunning] = Bool(RouteMapSystemSignalIds.QueueRunning, tick % 8 is >= 3 and <= 5, now),
+            [RouteMapSystemSignalIds.ConnectionStatus] = String(RouteMapSystemSignalIds.ConnectionStatus, "Ожидание", now),
+            [RouteMapSystemSignalIds.ConnectionConnected] = Bool(RouteMapSystemSignalIds.ConnectionConnected, true, now),
         };
 
         var definition = _configurationManager?.CurrentDefinition ?? _fixedDefinition

@@ -7,7 +7,19 @@ infrastructure services.
 
 ## Workspace
 
-The current `WorkspaceView` has three tabs:
+`Application.WorkMode` is a launch-shell mode, not an equipment runtime setting. It is
+read from the exe-local `Configurator.Boot/appsettings.json`. Mutable runtime sections
+`RouteMapRuntime`, `Modbus`, and `ModbusDemo` are overlaid from the shared writable
+`%LOCALAPPDATA%\Configurator\appsettings.json`, so admin and user launches use the same
+RouteMap source, SignalId mapping, and Modbus TCP settings.
+
+`Configurator.Boot/appsettings.json` contains `Application.WorkMode`:
+
+- `admin` shows the `Route Map`, `SignalId ↔ Modbus`, and `Modbus Demo` tabs;
+- `user` shows only `Route Map` across the Workspace area, without tabs.
+
+Missing or invalid values are treated as `admin`. In admin mode, `WorkspaceView` has
+three tabs:
 
 ```text
 Route Map
@@ -18,6 +30,9 @@ Modbus Demo
 `WorkspaceViewModel` owns `RouteMapDashboardViewModel`,
 `RouteMapSignalMappingViewModel`, and `ModbusDemoViewModel`. It may autostart the shared
 Modbus runtime using `ModbusDemo.AutostartOnWorkspaceOpen` and `StartupMode`.
+
+In user mode the `SignalId ↔ Modbus` and `Modbus Demo` tabs are hidden only visually:
+their view models and the shared runtime remain part of Workspace.
 
 ## Read Flow
 

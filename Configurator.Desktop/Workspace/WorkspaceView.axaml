@@ -32,7 +32,9 @@
             </MenuItem>
         </Menu>
 
-        <TabControl Grid.Row="1" Padding="2">
+        <TabControl Grid.Row="1"
+                    Padding="2"
+                    IsVisible="{Binding IsAdminMode}">
             <TabItem Header="Route Map">
                 <routeMap:RouteMapDashboardView DataContext="{Binding RouteMapDashboard}"/>
             </TabItem>
@@ -43,5 +45,11 @@
                 <modbusDemo:ModbusDemoView DataContext="{Binding ModbusDemo}"/>
             </TabItem>
         </TabControl>
+
+        <Grid x:Name="UserRouteMapHost"
+              Grid.Row="1"
+              IsVisible="{Binding IsUserMode}">
+            <routeMap:RouteMapDashboardView DataContext="{Binding RouteMapDashboard}"/>
+        </Grid>
     </Grid>
 </UserControl>

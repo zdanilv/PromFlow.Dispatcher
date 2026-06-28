@@ -6,7 +6,19 @@ Application и Infrastructure. RouteMap находится в desktop-слое, 
 
 ## Workspace
 
-Актуальный `WorkspaceView` содержит три вкладки:
+`Application.WorkMode` — режим запуска оболочки, а не рабочая настройка оборудования.
+Он читается из локального `Configurator.Boot/appsettings.json`. Изменяемые секции
+`RouteMapRuntime`, `Modbus` и `ModbusDemo` читаются поверх defaults из общего файла
+`%LOCALAPPDATA%\Configurator\appsettings.json`, поэтому admin и user используют одну
+и ту же конфигурацию маршрута, SignalId mapping и Modbus TCP.
+
+`Configurator.Boot/appsettings.json` содержит `Application.WorkMode`:
+
+- `admin` — Workspace показывает вкладки `Route Map`, `SignalId ↔ Modbus`, `Modbus Demo`;
+- `user` — Workspace показывает только `Route Map` на всю рабочую область, без вкладок.
+
+Неверное или отсутствующее значение трактуется как `admin`. Актуальный admin-режим
+`WorkspaceView` содержит три вкладки:
 
 ```text
 Route Map
@@ -22,6 +34,10 @@ Modbus Demo
 
 `ModbusDemo.AutostartOnWorkspaceOpen` и `StartupMode` могут запускать общий runtime при
 открытии Workspace.
+
+В `user` режиме вкладки `SignalId ↔ Modbus` и `Modbus Demo` скрыты только визуально:
+их view model и общий Modbus runtime остаются частью Workspace, поэтому сохраненные
+admin-настройки продолжают применяться для управления оборудованием.
 
 ## Поток чтения
 

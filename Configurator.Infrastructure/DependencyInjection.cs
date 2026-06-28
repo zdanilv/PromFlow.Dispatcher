@@ -1,4 +1,5 @@
 ﻿using Configurator.Application.Services.Authorization;
+using Configurator.Infrastructure.Services;
 using Configurator.Infrastructure.Services.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,8 +18,10 @@ namespace Configurator.Infrastructure
             // Сервисы
             //services.AddSingleton<IProjectService, ProjectService>();
             services.AddSingleton<IAuthApp, AuthApp>();
-            services.AddSingleton<Configurator.Application.Services.IAppConfigService, Configurator.Infrastructure.Services.AppConfigService>();
             services.AddSingleton<IConfiguration>(configuration);
+            services.AddSingleton<Configurator.Application.Services.IAppConfigService>(sp => new AppConfigService(
+                sp.GetRequiredService<IConfiguration>(),
+                ApplicationConfigPaths.SharedAppSettingsPath));
             return services;
         }
     }

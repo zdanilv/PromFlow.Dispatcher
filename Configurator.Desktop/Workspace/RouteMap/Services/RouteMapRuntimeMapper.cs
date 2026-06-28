@@ -24,9 +24,18 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         var objects = new Dictionary<string, RouteObjectRuntimeState>();
         var definition = _configurationManager?.CurrentDefinition ?? _fixedDefinition
             ?? throw new InvalidOperationException("RouteMap definition is unavailable.");
+        var isConnectionAvailable = ReadConnectionAvailable(signals);
 
         foreach (var node in definition.Nodes)
-            objects[node.Id] = MapObject(node.Id, node.State, node.Bindings, signals, canStartFallback: false, canStopFallback: false, activeAsState: false);
+            objects[node.Id] = MapObject(
+                node.Id,
+                node.State,
+                node.Bindings,
+                signals,
+                canStartFallback: false,
+                canStopFallback: false,
+                activeAsState: false,
+                forceOffline: !isConnectionAvailable);
 
         foreach (var segment in definition.Segments)
             objects[segment.Id] = MapObject(
@@ -37,7 +46,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 canStartFallback: false,
                 canStopFallback: false,
                 activeAsState: true,
-                activeFragments: segment.ActiveFragments);
+                activeFragments: segment.ActiveFragments,
+                forceOffline: !isConnectionAvailable);
 
         foreach (var vehicle in definition.Vehicles)
             objects[vehicle.Id] = MapObject(vehicle.Id, vehicle.State, vehicle.Bindings, signals, canStartFallback: false, canStopFallback: false);
@@ -51,7 +61,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 signals,
                 equipment.CanStart,
                 equipment.CanStop,
-                equipment.StatusText);
+                equipment.StatusText,
+                forceCommandsDisabled: !isConnectionAvailable);
         }
 
         return new RouteMapRuntimeState(
@@ -59,8 +70,9 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             IsAutomaticMode: ReadTopBarBool(signals, definition.TopBar?.Automatic, fallback: false),
             IsManualMode: ReadTopBarBool(signals, definition.TopBar?.Manual, fallback: true),
             HasEmergency: ReadTopBarBool(signals, definition.TopBar?.Emergency, fallback: false),
-            IsQueueRunning: ReadBool(signals, "queue.running"),
-            ConnectionStatusText: ReadString(signals, "connection.status") ?? "Ожидание");
+            IsQueueRunning: ReadBool(signals, RouteMapSystemSignalIds.QueueRunning),
+            ConnectionStatusText: ReadString(signals, RouteMapSystemSignalIds.ConnectionStatus) ?? "Ожидание",
+            IsConnectionAvailable: isConnectionAvailable);
     }
 
     private static RouteObjectRuntimeState MapObject(
@@ -72,7 +84,9 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         bool canStopFallback,
         string? textFallback = null,
         bool activeAsState = true,
-        IReadOnlyList<RouteSegmentActiveFragment>? activeFragments = null)
+        IReadOnlyList<RouteSegmentActiveFragment>? activeFragments = null,
+        bool forceOffline = false,
+        bool forceCommandsDisabled = false)
     {
         var text = textFallback;
         string? valueText = null;
@@ -183,7 +197,7 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             }
         }
 
-        var state = isOffline
+        var state = forceOffline || isOffline
             ? RouteObjectState.Offline
             : hasFault
                 ? RouteObjectState.Fault
@@ -191,9 +205,10 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                     ? RouteObjectState.ActiveRoute
                     : fallbackState;
 
-        var commandsAllowed = state is not RouteObjectState.Offline
-            and not RouteObjectState.Fault
-            and not RouteObjectState.Disabled;
+        var commandsAllowed = !forceCommandsDisabled
+            && state is not RouteObjectState.Offline
+            && state is not RouteObjectState.Fault
+            && state is not RouteObjectState.Disabled;
 
         return new RouteObjectRuntimeState(
             objectId,
@@ -234,6 +249,17 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             return fallback;
 
         return signal.Value is bool value ? value : fallback;
+    }
+
+    private static bool ReadConnectionAvailable(IReadOnlyDictionary<string, SignalValue> signals)
+    {
+        if (!signals.TryGetValue(RouteMapSystemSignalIds.ConnectionConnected, out var signal))
+            return true;
+
+        if (!signal.IsQualityGood || signal.IsStale)
+            return false;
+
+        return signal.Value is bool value && value;
     }
 
     private static bool ReadBool(SignalValue signal, bool fallback)

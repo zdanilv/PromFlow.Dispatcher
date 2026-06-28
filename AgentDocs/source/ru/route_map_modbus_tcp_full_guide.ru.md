@@ -10,9 +10,16 @@ RouteMap является первой вкладкой Workspace и экран�
 оборудования, TopBar и команды оператора. Источником данных может быть встроенный Mock
 или общий Modbus Demo TCP runtime.
 
-В Workspace остаются вкладки `Route Map`, `SignalId ↔ Modbus` и `Modbus Demo`. Экран
-`Modbus Demo` владеет запуском, остановкой и настройкой TCP endpoint. RouteMap работает
-через тот же runtime, но декодирует snapshot по отдельной RouteMap-карте `Modbus.DataMap`.
+В `Application.WorkMode=admin` Workspace показывает вкладки `Route Map`,
+`SignalId ↔ Modbus` и `Modbus Demo`. В `Application.WorkMode=user` остается только
+RouteMap на всю рабочую область, а кнопка `НАСТРОЙКИ` скрыта. Экран `Modbus Demo`
+владеет запуском, остановкой и настройкой TCP endpoint. RouteMap работает через тот же
+runtime, но декодирует snapshot по отдельной RouteMap-карте `Modbus.DataMap`.
+
+`Application.WorkMode` читается из launch-конфига как режим оболочки. Рабочие секции
+`RouteMapRuntime`, `Modbus` и `ModbusDemo` накладываются поверх defaults из общего
+`%LOCALAPPDATA%\Configurator\appsettings.json`, поэтому admin и user используют одну
+конфигурацию оборудования.
 
 UI не является контуром функциональной безопасности. Блокировки, interlock, аварийная
 логика и окончательное разрешение исполнительных команд должны оставаться в PLC.
@@ -115,7 +122,7 @@ RouteMap не знает IP-адресов, UnitId, номеров регист�
 | Modbus adapters RouteMap | `Configurator.Infrastructure.Modbus/RouteMap` |
 | Shared Modbus facade/runtime | `Configurator.Infrastructure.Modbus/Runtime/ModbusTcpService.cs` |
 | DI и выбор источника | `Configurator.Boot/Program.cs` |
-| Runtime-конфигурация | `Configurator.Boot/appsettings.json` |
+| Runtime-конфигурация | defaults: `Configurator.Boot/appsettings.json`; overrides: `%LOCALAPPDATA%\Configurator\appsettings.json` |
 | RouteMap unit-тесты | `Configurator.Tests.Unit/RouteMap` |
 | RouteMap headless UI-тесты | `Configurator.Tests.RouteMap.Ui` |
 | Modbus-тесты | `Configurator.Infrastructure.Modbus.Tests` |
@@ -325,6 +332,7 @@ system.mode.automatic
 system.mode.manual
 system.emergency
 connection.status
+connection.connected
 route.node.<nodeId>.active
 route.node.<nodeId>.target
 route.node.<nodeId>.loader
@@ -355,7 +363,8 @@ Dashboard получает целый словарь сигналов, прео�
 
 ## 8. Конфигурация Modbus TCP
 
-В `Configurator.Boot/appsettings.json` используются две секции:
+В `Configurator.Boot/appsettings.json` лежат defaults, а изменяемые значения сохраняются
+в `%LOCALAPPDATA%\Configurator\appsettings.json`. Используются две рабочие секции:
 
 - `ModbusDemo` задает endpoint, lifecycle и карту данных для экрана `Modbus Demo`;
 - `Modbus` хранит RouteMap `DataMap` и `WriteConfirmationTimeoutMs`.
@@ -510,7 +519,11 @@ timestamp и состояние Modbus.
 - помечает значение плохим, если ни Client, ни Server не находятся в `Running`;
 - помечает значение stale, если нет точки в snapshot или snapshot старше порога;
 - периодически пересчитывает stale даже при отсутствии новых событий;
-- добавляет синтетический строковый сигнал `connection.status`.
+- добавляет синтетические системные сигналы `connection.status` и `connection.connected`.
+
+`connection.connected=false` означает, что runtime не running или snapshot stale. В этом
+состоянии RouteMap блокирует команды и рисует все узлы/линии offline-цветом, кроме
+визуального выделения текущих `IsTarget`/`IsLoader` ролей.
 
 `StaleAfterMs` ограничивается диапазоном `250..60000 ms`. Практически порог должен быть
 больше `PollIntervalMs` с запасом на задержки сети и планировщика.
@@ -627,6 +640,7 @@ warning-логах так же, как обычный `ActiveRoute`.
 | Симптом | Проверка |
 |---|---|
 | UI работает только в Mock | `RouteMapRuntime.SignalSource` |
+| User сбрасывает admin-настройки | Общий `%LOCALAPPDATA%\Configurator\appsettings.json` и overlay runtime config |
 | Все значения offline/stale | Состояние Client/Server и poll interval |
 | Один сигнал отсутствует | Точное совпадение `Name == SignalId` |
 | Неверное значение бита | `Address`, `BitIndex`, word layout PLC |
@@ -659,7 +673,7 @@ warning-логах так же, как обычный `ActiveRoute`.
 2. Назначьте уникальный `SignalId`, `Direction=Read`, `ValueType=Bool`.
 3. Добавьте точку с тем же `Name` в `Modbus.DataMap`.
 4. Укажите `Access=Read` и физическую область.
-5. Перезапустите приложение, если изменялся `appsettings.json`.
+5. Перезапустите приложение, если изменялся default/shared `appsettings.json`.
 6. Проверьте warning-логи и значение в UI.
 
 Для отрезка линии используйте секцию `Линии` → `Отрезки`; роль фиксирована как

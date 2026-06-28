@@ -4,6 +4,12 @@ RouteMap — первая вкладка Workspace и операторская �
 топологию, визуальные параметры и bindings в RouteMap definition, но не хранит
 физические Modbus-адреса.
 
+Пользовательский RouteMap definition хранится общим файлом
+`%LOCALAPPDATA%\Configurator\RouteMap\route-map.json`. Runtime-выбор источника
+`RouteMapRuntime.SignalSource` сохраняется в общем
+`%LOCALAPPDATA%\Configurator\appsettings.json`, поэтому настройка mock/Modbus,
+сделанная в admin, применяется и при следующем запуске в user.
+
 ## Основные файлы
 
 | Область | Где лежит |
@@ -71,6 +77,10 @@ Offline -> Fault -> ActiveRoute -> static fallback
 `Visible=false` скрывает объект. `Fault=true` перекрывает active route. Bad quality или
 stale по активному сигналу переводят объект в `Offline`.
 
+Системный `connection.connected=false` означает недоступную Modbus-связь: mapper
+форсирует `Offline` для всех узлов и линий, а команды карточек становятся недоступны.
+Выбранные роли `IsTarget`/`IsLoader` продолжают визуально выделять узел до снятия роли.
+
 ## Команды
 
 `ПУСК`, `СТОП`, `АВАРИЯ`, `АВТОМАТ`, `РУЧНОЙ`, `TargetCommand` и `LoaderCommand` работают
@@ -82,7 +92,11 @@ Legacy `Momentary`, `State` и `*OffFeedback` остаются только дл
 
 ## Редактор
 
-Кнопка `НАСТРОЙКИ` открывает `RouteMapSettingsDialog`. Вкладки:
+Кнопка `НАСТРОЙКИ` открывает `RouteMapSettingsDialog`. В режиме
+`Application.WorkMode=user` кнопка скрыта, а Workspace показывает только RouteMap.
+При этом скрытие настроек не меняет сохраненную конфигурацию: user продолжает читать
+общие `RouteMapRuntime`, `Modbus` и `ModbusDemo`, но не показывает вкладки настройки.
+Вкладки:
 
 - `Источник данных`;
 - `Карта и маршруты`;
@@ -102,4 +116,3 @@ schema version, уникальность ID, ссылки, роли bindings, о
 цвета, fragment bindings, placeholder rules и toggle-семантику команд.
 
 Не обходите manager и validator прямыми изменениями UI state.
-

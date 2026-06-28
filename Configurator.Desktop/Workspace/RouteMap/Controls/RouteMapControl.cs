@@ -34,6 +34,9 @@ public sealed class RouteMapControl : Control
     public static readonly StyledProperty<ICommand?> ToggleNodeLoaderCommandProperty =
         AvaloniaProperty.Register<RouteMapControl, ICommand?>(nameof(ToggleNodeLoaderCommand));
 
+    public static readonly StyledProperty<bool> AreCommandsEnabledProperty =
+        AvaloniaProperty.Register<RouteMapControl, bool>(nameof(AreCommandsEnabled), defaultValue: true);
+
     private MenuFlyout? _activeNodeFlyout;
 
     static RouteMapControl()
@@ -86,6 +89,12 @@ public sealed class RouteMapControl : Control
     {
         get => GetValue(ToggleNodeLoaderCommandProperty);
         set => SetValue(ToggleNodeLoaderCommandProperty, value);
+    }
+
+    public bool AreCommandsEnabled
+    {
+        get => GetValue(AreCommandsEnabledProperty);
+        set => SetValue(AreCommandsEnabledProperty, value);
     }
 
     public override void Render(DrawingContext context)
@@ -529,13 +538,14 @@ public sealed class RouteMapControl : Control
         flyout.ShowAt(this, showAtPointer: true);
     }
 
-    private MenuItem CreateNodeMenuItem(string header, string objectId, bool isChecked, ICommand? command)
+    internal MenuItem CreateNodeMenuItem(string header, string objectId, bool isChecked, ICommand? command)
     {
         var item = new MenuItem
         {
             Header = header,
             ToggleType = MenuItemToggleType.CheckBox,
             IsChecked = isChecked,
+            IsEnabled = AreCommandsEnabled,
             Command = command,
             CommandParameter = objectId,
         };

@@ -17,7 +17,9 @@ read-only fragment-сигналы линий вида `route.<segmentId>.fragmen
 
 ## Новая точка DataMap
 
-Добавьте точку в `Configurator.Boot/appsettings.json`, секция `ModbusDemo/DataMap`.
+Для default-профиля добавьте точку в `Configurator.Boot/appsettings.json`, секция
+`ModbusDemo/DataMap`. Рабочие изменения, сохраненные из UI, попадают в общий
+`%LOCALAPPDATA%\Configurator\appsettings.json`.
 Не добавляйте сюда RouteMap SignalId: для них предназначена секция `Modbus/DataMap`.
 Для одного 16-битного регистра используйте:
 

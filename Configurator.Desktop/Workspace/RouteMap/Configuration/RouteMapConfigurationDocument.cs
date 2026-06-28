@@ -69,7 +69,7 @@ public sealed class RouteMapPaletteConfiguration
     public string Running { get; set; } = "#2563EB";
     public string Warning { get; set; } = "#D99B22";
     public string Fault { get; set; } = "#D95D4E";
-    public string Offline { get; set; } = "#68717A";
+    public string Offline { get; set; } = "#3F474D";
     public string Disabled { get; set; } = "#D8DCDF";
     public string NodeFill { get; set; } = "#AEB5BA";
     public string Selection { get; set; } = "#21428E";

@@ -17,15 +17,18 @@ public sealed class TopBarViewModel : ViewModelBase
     private bool _isAutomaticPressed;
     private bool _isManualPressed;
     private bool _isEmergencyPressed;
+    private bool _areCommandsEnabled = true;
     private string _connectionStatusText = "Ожидание";
 
     public TopBarViewModel(
         IRouteMapSettingsDialogService? settingsDialogService = null,
         IEquipmentCommandDispatcher? commandDispatcher = null,
-        RouteTopBarSettings? settings = null)
+        RouteTopBarSettings? settings = null,
+        bool isSettingsVisible = true)
     {
         _commandDispatcher = commandDispatcher;
         _settings = settings ?? CreateDefaultSettings();
+        IsSettingsVisible = isSettingsVisible;
 
         SwitchToAutomaticCommand = ReactiveCommand.CreateFromTask(SwitchToAutomaticAsync);
         SwitchToManualCommand = ReactiveCommand.CreateFromTask(SwitchToManualAsync);
@@ -58,6 +61,14 @@ public sealed class TopBarViewModel : ViewModelBase
         private set => this.RaiseAndSetIfChanged(ref _connectionStatusText, value);
     }
 
+    public bool AreCommandsEnabled
+    {
+        get => _areCommandsEnabled;
+        private set => this.RaiseAndSetIfChanged(ref _areCommandsEnabled, value);
+    }
+
+    public bool IsSettingsVisible { get; }
+
     public string AutomaticText => _settings.Automatic.Text;
     public string ManualText => _settings.Manual.Text;
     public string EmergencyText => _settings.Emergency.Text;
@@ -79,12 +90,18 @@ public sealed class TopBarViewModel : ViewModelBase
         RaiseButtonProperties();
     }
 
-    public void ApplyRuntime(bool isAutomaticMode, bool isManualMode, bool hasEmergency, string connectionStatusText)
+    public void ApplyRuntime(
+        bool isAutomaticMode,
+        bool isManualMode,
+        bool hasEmergency,
+        string connectionStatusText,
+        bool isConnectionAvailable)
     {
         IsAutomaticMode = isAutomaticMode;
         IsManualMode = isManualMode;
         HasEmergency = hasEmergency;
         ConnectionStatusText = connectionStatusText;
+        AreCommandsEnabled = isConnectionAvailable;
         RaiseButtonProperties();
     }
 
@@ -120,6 +137,9 @@ public sealed class TopBarViewModel : ViewModelBase
 
     private async Task SwitchToAutomaticAsync()
     {
+        if (!AreCommandsEnabled)
+            return;
+
         IsAutomaticMode = true;
         IsManualMode = false;
         RaiseButtonProperties();
@@ -129,6 +149,9 @@ public sealed class TopBarViewModel : ViewModelBase
 
     private async Task SwitchToManualAsync()
     {
+        if (!AreCommandsEnabled)
+            return;
+
         IsAutomaticMode = false;
         IsManualMode = true;
         RaiseButtonProperties();
@@ -138,6 +161,9 @@ public sealed class TopBarViewModel : ViewModelBase
 
     private async Task ExecuteEmergencyAsync()
     {
+        if (!AreCommandsEnabled)
+            return;
+
         HasEmergency = !HasEmergency;
         RaiseButtonProperties();
         await DispatchAsync(_settings.Emergency.Binding, HasEmergency);

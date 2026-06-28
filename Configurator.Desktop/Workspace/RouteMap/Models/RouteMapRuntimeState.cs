@@ -6,7 +6,8 @@ public sealed record RouteMapRuntimeState(
     bool IsManualMode,
     bool HasEmergency,
     bool IsQueueRunning,
-    string ConnectionStatusText)
+    string ConnectionStatusText,
+    bool IsConnectionAvailable = true)
 {
     public static RouteMapRuntimeState Empty { get; } = new(
         new Dictionary<string, RouteObjectRuntimeState>(),

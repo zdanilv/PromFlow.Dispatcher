@@ -25,6 +25,8 @@ route.bsu2_to_bucket.fragment_1.active
 equip.bucket.start
 equip.bucket.stop
 equip.bucket.text
+connection.status
+connection.connected
 ```
 
 Use lowercase Latin letters, digits, dots, and `_` inside object identifiers. Do not encode
@@ -65,6 +67,16 @@ Direction must match Modbus access:
 
 `State` and `*OffFeedback` are legacy concepts and must not be used for new behavior.
 
+## System SignalIds
+
+| SignalId | Type | Meaning |
+|---|---|---|
+| `connection.status` | `String` | Modbus runtime status text shown in TopBar |
+| `connection.connected` | `Bool` | `true` when Modbus runtime is running and the snapshot is not stale |
+
+System SignalIds are produced by the provider. They appear as system rows in
+`SignalId ↔ Modbus` and are not added to `Modbus.DataMap`.
+
 ## Adding A Signal
 
 1. Add a RouteMap binding with role, direction, value type, and stable SignalId.
@@ -76,4 +88,3 @@ Direction must match Modbus access:
 
 Do not change SignalId when moving a signal to another coil, register, or bit. Only
 `Modbus.DataMap` changes.
-

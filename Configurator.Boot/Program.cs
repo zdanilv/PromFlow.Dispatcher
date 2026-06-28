@@ -1,5 +1,6 @@
 ﻿using Avalonia;
 using Configurator.Application;
+using Configurator.Application.Services;
 using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop;
@@ -24,8 +25,10 @@ using Configurator.Infrastructure;
 using Configurator.Infrastructure.Modbus;
 using Configurator.Infrastructure.Modbus.RouteMap;
 using Configurator.Infrastructure.OpcUa;
+using Configurator.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
@@ -56,10 +59,17 @@ internal static class Program
     /// </summary>
     public static AppBuilder BuildAvaloniaApp()
     {
-        // Конфигурация нужна инфраструктурным модулям Modbus/OpcUa для начальных настроек.
-        var configuration = new ConfigurationBuilder()
+        var launchConfiguration = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+            .Build();
+
+        Directory.CreateDirectory(ApplicationConfigPaths.SharedConfigDirectory);
+        var sharedConfigProvider = new PhysicalFileProvider(ApplicationConfigPaths.SharedConfigDirectory);
+        var runtimeConfiguration = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+            .AddJsonFile(sharedConfigProvider, ApplicationConfigPaths.AppSettingsFileName, optional: true, reloadOnChange: true)
             .Build();
 
         return AppBuilder
@@ -69,11 +79,12 @@ internal static class Program
                 services =>
                 {
                     services.AddLogging();
+                    services.Configure<ApplicationOptions>(launchConfiguration.GetSection(ApplicationOptions.SectionName));
                     services.AddApplication();
-                    services.AddInfrastructure(configuration);
+                    services.AddInfrastructure(runtimeConfiguration);
                     // Modbus/OpcUa регистрируются в boot-слое, чтобы Desktop зависел только от application-контрактов.
-                    services.AddModbusInfrastructure(configuration);
-                    services.AddOpcUaInfrastructure(configuration);
+                    services.AddModbusInfrastructure(runtimeConfiguration);
+                    services.AddOpcUaInfrastructure(runtimeConfiguration);
 
                     services.AddSingleton(sp => new RouteMapConfigurationMapper(RouteMapSeed.Create()));
                     services.AddSingleton<RouteMapConfigurationStorage>();
@@ -88,7 +99,7 @@ internal static class Program
                     services.AddTransient<RouteMapDashboardViewModel>();
                     services.AddTransient<RouteMapSignalMappingViewModel>();
 
-                    var routeMapRuntime = configuration
+                    var routeMapRuntime = runtimeConfiguration
                         .GetSection(RouteMapRuntimeOptions.SectionName)
                         .Get<RouteMapRuntimeOptions>() ?? new RouteMapRuntimeOptions();
                     services.AddSingleton<MockSignalState>();

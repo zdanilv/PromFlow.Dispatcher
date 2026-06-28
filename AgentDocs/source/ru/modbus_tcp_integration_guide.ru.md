@@ -33,7 +33,13 @@ RouteMap UI commands
 - `Modbus.DataMap` используется RouteMap и вкладкой `SignalId ↔ Modbus`;
 - обе карты читают и пишут через общий TCP runtime.
 
-В Workspace остаются только вкладки `Route Map`, `SignalId ↔ Modbus`, `Modbus Demo`.
+В `Application.WorkMode=admin` Workspace показывает вкладки `Route Map`,
+`SignalId ↔ Modbus`, `Modbus Demo`. В `Application.WorkMode=user` Workspace показывает
+только `Route Map` на всю рабочую область; кнопка `НАСТРОЙКИ` в TopBar скрыта.
+`Application.WorkMode` читается как режим запуска оболочки, а рабочие секции
+`RouteMapRuntime`, `Modbus` и `ModbusDemo` читаются и сохраняются в общем
+`%LOCALAPPDATA%\Configurator\appsettings.json`. Поэтому admin настраивает подключение,
+а user использует те же значения без видимых вкладок настройки.
 
 ## Выбор Источника RouteMap
 
@@ -49,10 +55,12 @@ RouteMap UI commands
 
 Источник переключается в `Route Map` -> `НАСТРОЙКИ` -> `Источник данных`.
 `ПРИМЕНИТЬ` меняет текущую сессию, `СОХРАНИТЬ` также обновляет `RouteMapRuntime` в
-`appsettings.json`. Переключение на Modbus не запускает соединение: запуск выполняется
+общем `%LOCALAPPDATA%\Configurator\appsettings.json`. Переключение на Modbus не запускает соединение: запуск выполняется
 на вкладке `Modbus Demo`.
 
 Связи SignalId с адресами редактируются на вкладке `SignalId ↔ Modbus`.
+Системные `connection.status` и `connection.connected` создает provider, в
+`Modbus.DataMap` их не добавляют.
 
 ## Каталог SignalId
 

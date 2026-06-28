@@ -25,7 +25,8 @@
                                                   SelectedObjectId="{Binding SelectedObjectId, Mode=TwoWay}"
                                                   NodeRoleStates="{Binding NodeRoleStates}"
                                                   ToggleNodeTargetCommand="{Binding ToggleNodeTargetCommand}"
-                                                  ToggleNodeLoaderCommand="{Binding ToggleNodeLoaderCommand}"/>
+                                                  ToggleNodeLoaderCommand="{Binding ToggleNodeLoaderCommand}"
+                                                  AreCommandsEnabled="{Binding RuntimeState.IsConnectionAvailable}"/>
                         <panels:RouteMapAttachedCardsLayer Definition="{Binding Definition}"
                                                            Cards="{Binding MapEquipmentCards}"
                                                            ClipToBounds="False"/>

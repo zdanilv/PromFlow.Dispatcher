@@ -36,11 +36,11 @@ internal static class RouteMapSignalInventory
             .GroupBy(usage => usage.Binding.SignalId, StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
-                if (string.Equals(group.Key, "connection.status", StringComparison.OrdinalIgnoreCase))
+                if (IsSystemSignal(group.Key))
                 {
                     return new RouteMapSignalInventoryItem(
                         group.First().Binding.SignalId,
-                        SignalValueType.String,
+                        SystemSignalType(group.Key),
                         ModbusDataAccess.Read,
                         string.Join(", ", group.Select(item => item.Binding.Role).Distinct()),
                         string.Join(", ", group.Select(item => item.ObjectName).Distinct(StringComparer.Ordinal)),
@@ -73,21 +73,41 @@ internal static class RouteMapSignalInventory
             .OrderBy(item => item.SignalId, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (items.All(item => !string.Equals(item.SignalId, "connection.status", StringComparison.OrdinalIgnoreCase)))
-        {
-            items.Insert(0, new RouteMapSignalInventoryItem(
-                "connection.status",
-                SignalValueType.String,
-                ModbusDataAccess.Read,
-                "System",
-                "Modbus runtime",
-                HasTypeConflict: false,
-                Category: RouteMapSignalElementCategory.System,
-                IsSystem: true));
-        }
+        EnsureSystemSignal(items, RouteMapSystemSignalIds.ConnectionStatus, SignalValueType.String);
+        EnsureSystemSignal(items, RouteMapSystemSignalIds.ConnectionConnected, SignalValueType.Bool);
 
         return items;
     }
+
+    private static void EnsureSystemSignal(
+        List<RouteMapSignalInventoryItem> items,
+        string signalId,
+        SignalValueType valueType)
+    {
+        if (items.Any(item => string.Equals(item.SignalId, signalId, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        items.Insert(0, new RouteMapSignalInventoryItem(
+            signalId,
+            valueType,
+            ModbusDataAccess.Read,
+            "System",
+            "Modbus runtime",
+            HasTypeConflict: false,
+            Category: RouteMapSignalElementCategory.System,
+            IsSystem: true));
+    }
+
+    private static bool IsSystemSignal(string signalId) =>
+        string.Equals(signalId, RouteMapSystemSignalIds.ConnectionStatus, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(signalId, RouteMapSystemSignalIds.ConnectionConnected, StringComparison.OrdinalIgnoreCase);
+
+    private static SignalValueType SystemSignalType(string signalId) =>
+        string.Equals(signalId, RouteMapSystemSignalIds.ConnectionConnected, StringComparison.OrdinalIgnoreCase)
+            ? SignalValueType.Bool
+            : SignalValueType.String;
 
     private static IEnumerable<(string ObjectName, RouteMapSignalElementCategory Category, SignalBinding Binding, bool PreferPulseWriteMode)> EnumerateBindings(
         RouteMapDefinition definition)

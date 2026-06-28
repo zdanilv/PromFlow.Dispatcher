@@ -95,7 +95,7 @@ public sealed record RouteMapPaletteSettings
     public string Running { get; init; } = "#2563EB";
     public string Warning { get; init; } = "#D99B22";
     public string Fault { get; init; } = "#D95D4E";
-    public string Offline { get; init; } = "#68717A";
+    public string Offline { get; init; } = "#3F474D";
     public string Disabled { get; init; } = "#D8DCDF";
     public string NodeFill { get; init; } = "#AEB5BA";
     public string Selection { get; init; } = "#21428E";

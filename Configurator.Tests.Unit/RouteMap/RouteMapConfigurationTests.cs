@@ -372,7 +372,12 @@ public sealed class RouteMapConfigurationTests
 
         Assert.Equal(Color.Parse("#D95D4E"), BrushColor(viewModel.EmergencyBackground));
 
-        viewModel.ApplyRuntime(isAutomaticMode: false, isManualMode: true, hasEmergency: true, "Ожидание");
+        viewModel.ApplyRuntime(
+            isAutomaticMode: false,
+            isManualMode: true,
+            hasEmergency: true,
+            connectionStatusText: "Ожидание",
+            isConnectionAvailable: true);
 
         Assert.Equal(Color.Parse("#9E2F25"), BrushColor(viewModel.EmergencyBackground));
 

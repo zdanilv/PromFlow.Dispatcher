@@ -100,10 +100,11 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
         }
 
         var now = DateTimeOffset.Now;
-        var isConnected = state.ClientState == ModbusConnectionState.Running
+        var isRuntimeRunning = state.ClientState == ModbusConnectionState.Running
             || state.ServerState == ModbusConnectionState.Running;
         var isStale = snapshot.Timestamp == DateTimeOffset.MinValue
             || now - snapshot.Timestamp > TimeSpan.FromMilliseconds(_staleAfterMs);
+        var isConnected = isRuntimeRunning && !isStale;
         var signals = new Dictionary<string, SignalValue>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var point in _modbusOptions.CurrentValue.DataMap.Where(point => point.IsReadable))
@@ -123,15 +124,22 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
                 dataValue?.Value,
                 signalType,
                 dataValue?.Timestamp ?? snapshot.Timestamp,
-                IsQualityGood: isConnected && dataValue is not null,
+                IsQualityGood: isRuntimeRunning && dataValue is not null,
                 IsStale: isStale || dataValue is null);
         }
 
-        signals["connection.status"] = new SignalValue(
-            "connection.status",
+        signals[RouteMapSystemSignalIds.ConnectionStatus] = new SignalValue(
+            RouteMapSystemSignalIds.ConnectionStatus,
             state.Message,
             SignalValueType.String,
             state.UpdatedAt,
+            IsQualityGood: true,
+            IsStale: false);
+        signals[RouteMapSystemSignalIds.ConnectionConnected] = new SignalValue(
+            RouteMapSystemSignalIds.ConnectionConnected,
+            isConnected,
+            SignalValueType.Bool,
+            now,
             IsQualityGood: true,
             IsStale: false);
 

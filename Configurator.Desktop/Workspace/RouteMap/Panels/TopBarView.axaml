@@ -46,7 +46,7 @@
     <Border Background="#F4F5F2"
             MinHeight="64"
             Padding="16,8">
-    <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
         <StackPanel Orientation="Horizontal"
                     VerticalAlignment="Center"
                     Spacing="12">
@@ -75,6 +75,7 @@
                           BorderBrush="{Binding AutomaticBackground}"
                           Foreground="{Binding AutomaticForeground}"
                           IsChecked="{Binding IsAutomaticMode}"
+                          IsEnabled="{Binding AreCommandsEnabled}"
                           Command="{Binding SwitchToAutomaticCommand}"/>
             <ToggleButton x:Name="ManualButton"
                           Classes="mode"
@@ -83,6 +84,7 @@
                           BorderBrush="{Binding ManualBackground}"
                           Foreground="{Binding ManualForeground}"
                           IsChecked="{Binding IsManualMode}"
+                          IsEnabled="{Binding AreCommandsEnabled}"
                           Command="{Binding SwitchToManualCommand}"/>
         </StackPanel>
 
@@ -98,9 +100,11 @@
                           BorderBrush="{Binding EmergencyBackground}"
                           Foreground="{Binding EmergencyForeground}"
                           IsChecked="{Binding HasEmergency}"
+                          IsEnabled="{Binding AreCommandsEnabled}"
                           Command="{Binding EmergencyCommand}"/>
             <Button Classes="settings"
                     Content="НАСТРОЙКИ"
+                    IsVisible="{Binding IsSettingsVisible}"
                     Command="{Binding OpenSettingsCommand}"/>
         </StackPanel>
 
@@ -116,17 +120,6 @@
                        FontSize="12"/>
         </StackPanel>
 
-        <StackPanel Grid.Column="4"
-                    Orientation="Horizontal"
-                    VerticalAlignment="Center"
-                    Spacing="8">
-            <TextBlock Text="Admin"
-                       VerticalAlignment="Center"
-                       Foreground="#69747E"/>
-            <TextBlock Text="⌄"
-                       VerticalAlignment="Center"
-                       Foreground="#9CA4AA"/>
-        </StackPanel>
     </Grid>
     </Border>
 </UserControl>

@@ -42,7 +42,10 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | Ошибка доступа | Binding direction и point access |
 | Конфликт адреса | Duplicate coil/bit или пересекающиеся registers |
 | UI остается в mock | `RouteMapRuntime.SignalSource` и флаг источника данных |
+| User сбрасывает admin-настройки | Общий `%LOCALAPPDATA%\Configurator\appsettings.json` и overlay после exe-local defaults |
 | Все stale/offline | Состояние `ModbusDemo`, poll interval и `StaleAfterMs` |
+| В user-режиме видны вкладки | `Application.WorkMode` и binding `WorkspaceView.IsUserMode` |
+| Offline lock не сработал | Системный `connection.connected`, mapper и `AreCommandsEnabled` |
 | Bit-write отклонен | Нет первого raw snapshot holding register |
 | Нет readback | Access, PLC echo и `WriteConfirmationTimeoutMs` |
 | Неверный physical address | StartAddress и 0/1-based notation PLC |
@@ -54,13 +57,15 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 3. Получить утвержденную PLC карту coils/registers/bits.
 4. Уточнить notation адресов.
 5. Настроить endpoint и start addresses в `Modbus Demo`.
-6. Заполнить `Modbus.DataMap` во вкладке `SignalId ↔ Modbus`.
-7. Устранить все `Не настроен` и `Ошибка`.
-8. Сначала включить read-only сигналы.
-9. Проверить quality, stale, reconnect.
-10. Проверить active nodes, active lines и fragments.
-11. Проверить modes, emergency, loader/target.
-12. По одной разрешить команды оборудования.
-13. Проверить latched/pulse, timeout и потерю связи во время записи.
-14. Убедиться, что interlock и safety реализованы в PLC.
+6. Проверить, что `RouteMapRuntime`, `Modbus` и `ModbusDemo` сохранены в общем `%LOCALAPPDATA%\Configurator\appsettings.json`.
+7. Заполнить `Modbus.DataMap` во вкладке `SignalId ↔ Modbus`.
+8. Устранить все `Не настроен` и `Ошибка`.
+9. Сначала включить read-only сигналы.
+10. Проверить quality, stale, reconnect.
+11. Проверить `connection.connected=false`: команды заблокированы, узлы/линии offline.
+12. Проверить active nodes, active lines и fragments.
+13. Проверить modes, emergency, loader/target.
+14. По одной разрешить команды оборудования.
+15. Проверить latched/pulse, timeout и потерю связи во время записи.
+16. Убедиться, что interlock и safety реализованы в PLC.
 

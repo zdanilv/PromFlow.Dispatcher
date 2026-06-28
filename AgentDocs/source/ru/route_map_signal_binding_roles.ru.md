@@ -12,6 +12,7 @@
 | `Fault` | `Read` | `Bool` | Переводит объект в аварийное состояние при `true`. |
 | `ActiveRoute` | `Read` | `Bool` | Показывает, что узел или линия входит в текущий активный маршрут. |
 | `connection.status` | `Read` | `String` | Системный SignalId статуса общего Modbus Demo runtime, отображается в TopBar. |
+| `connection.connected` | `Read` | `Bool` | Системный флаг доступности связи; при `false` команды блокируются, узлы и линии offline. |
 
 ## Узлы
 
@@ -73,6 +74,7 @@
 | SignalId | Направление | Тип | Назначение |
 | --- | --- | --- | --- |
 | `connection.status` | `Read` | `String` | Статус общего Modbus Demo runtime, который отображается в TopBar. |
+| `connection.connected` | `Read` | `Bool` | `true`, когда Modbus runtime running и snapshot не stale. |
 
 ## Правило для ToggleButton
 

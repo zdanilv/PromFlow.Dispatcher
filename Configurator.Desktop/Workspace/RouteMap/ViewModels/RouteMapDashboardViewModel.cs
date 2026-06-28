@@ -1,9 +1,11 @@
+using Configurator.Application.Services;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Configurator.Desktop.Workspace.RouteMap.Services;
 using Avalonia.Threading;
+using Microsoft.Extensions.Options;
 using ReactiveUI;
 using System.Collections.ObjectModel;
 using System.Reactive.Linq;
@@ -30,13 +32,18 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         IRouteMapRuntimeMapper<RouteMapRuntimeState> runtimeMapper,
         IEquipmentCommandDispatcher commandDispatcher,
         IRouteMapSettingsDialogService settingsDialogService,
+        IOptions<ApplicationOptions>? applicationOptions = null,
         RouteMapModbusBindingDiagnostics? bindingDiagnostics = null)
     {
         _runtimeMapper = runtimeMapper;
         _commandDispatcher = commandDispatcher;
         _bindingDiagnostics = bindingDiagnostics;
         _definition = configurationManager.CurrentDefinition;
-        TopBar = new TopBarViewModel(settingsDialogService, commandDispatcher, Definition.TopBar);
+        TopBar = new TopBarViewModel(
+            settingsDialogService,
+            commandDispatcher,
+            Definition.TopBar,
+            isSettingsVisible: applicationOptions?.Value.IsAdminMode ?? true);
         MapEquipmentCards = new ObservableCollection<EquipmentCardViewModel>(
             Definition.MapEquipment.Select(x => new EquipmentCardViewModel(x, commandDispatcher, Definition.Display?.Palette)));
         RequestsPanel = new RequestsPanelViewModel(Definition.Requests, Definition.RequestTemplates);
@@ -173,7 +180,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             runtimeState.IsAutomaticMode,
             runtimeState.IsManualMode,
             runtimeState.HasEmergency,
-            runtimeState.ConnectionStatusText);
+            runtimeState.ConnectionStatusText,
+            runtimeState.IsConnectionAvailable);
         foreach (var card in MapEquipmentCards)
             card.ApplyRuntime(runtimeState.Find(card.Id));
 

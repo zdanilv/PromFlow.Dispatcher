@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -9,12 +10,18 @@ using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Application.Services.Authorization;
 using Configurator.Desktop.Dialogs.ModbusSettingsDialog;
+using Configurator.Desktop.Workspace.RouteMap;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
+using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
+using Configurator.Desktop.Workspace.RouteMap.Panels;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
+using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 using Configurator.Desktop.Workspace;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -135,7 +142,7 @@ public sealed class RouteMapSettingsDialogVisualTests
     [AvaloniaFact]
     public void Workspace_places_signal_mapping_tab_immediately_after_route_map()
     {
-        var view = new WorkspaceView();
+        var view = new WorkspaceView { DataContext = CreateWorkspaceViewModel(isAdminMode: true) };
         var window = new Window { Width = 1200, Height = 760, Content = view };
         window.Show();
         Dispatcher.UIThread.RunJobs();
@@ -143,9 +150,103 @@ public sealed class RouteMapSettingsDialogVisualTests
         var tabs = view.GetVisualDescendants().OfType<TabControl>().Single();
         var headers = tabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString() ?? string.Empty).ToArray();
 
+        Assert.True(tabs.IsVisible);
         Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Modbus Demo"], headers);
 
         window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Workspace_user_mode_shows_route_map_without_tabs()
+    {
+        var view = new WorkspaceView { DataContext = CreateWorkspaceViewModel(isAdminMode: false) };
+        var window = new Window { Width = 1200, Height = 760, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var root = Assert.IsType<Grid>(view.Content);
+        var tabs = root.Children.OfType<TabControl>().Single();
+        var routeMapHost = view.FindControl<Grid>("UserRouteMapHost")!;
+
+        Assert.False(tabs.IsVisible);
+        Assert.True(routeMapHost.IsVisible);
+        Assert.Single(routeMapHost.Children.OfType<RouteMapDashboardView>());
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void TopBar_does_not_show_admin_text_or_arrow()
+    {
+        var view = new TopBarView { DataContext = new TopBarViewModel() };
+        var window = new Window { Width = 1200, Height = 96, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var texts = view.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .Select(textBlock => textBlock.Text)
+            .ToArray();
+
+        Assert.DoesNotContain("Admin", texts);
+        Assert.DoesNotContain("⌄", texts);
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void TopBar_disables_commands_but_keeps_settings_available_when_connection_is_offline()
+    {
+        var viewModel = new TopBarViewModel();
+        viewModel.ApplyRuntime(
+            isAutomaticMode: false,
+            isManualMode: true,
+            hasEmergency: false,
+            connectionStatusText: "Offline",
+            isConnectionAvailable: false);
+        var view = new TopBarView { DataContext = viewModel };
+        var window = new Window { Width = 1200, Height = 96, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(view.FindControl<ToggleButton>("AutomaticButton")!.IsEnabled);
+        Assert.False(view.FindControl<ToggleButton>("ManualButton")!.IsEnabled);
+        Assert.False(view.FindControl<ToggleButton>("EmergencyButton")!.IsEnabled);
+
+        var settings = view.GetVisualDescendants()
+            .OfType<Button>()
+            .Single(button => button.Classes.Contains("settings"));
+        Assert.True(settings.IsVisible);
+        Assert.True(settings.IsEnabled);
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void TopBar_hides_settings_in_user_mode()
+    {
+        var view = new TopBarView { DataContext = new TopBarViewModel(isSettingsVisible: false) };
+        var window = new Window { Width = 1200, Height = 96, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var settings = view.GetVisualDescendants()
+            .OfType<Button>()
+            .Single(button => button.Classes.Contains("settings"));
+
+        Assert.False(settings.IsVisible);
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void RouteMap_node_menu_items_are_disabled_when_commands_are_disabled()
+    {
+        var control = new RouteMapControl { AreCommandsEnabled = false };
+
+        var item = control.CreateNodeMenuItem("Отправить", "bsu_1", isChecked: false, command: null);
+
+        Assert.False(item.IsEnabled);
     }
 
     [AvaloniaFact]
@@ -452,5 +553,51 @@ public sealed class RouteMapSettingsDialogVisualTests
     {
         public Task<string?> PickImportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
         public Task<string?> PickExportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+    }
+
+    private static WorkspaceViewModel CreateWorkspaceViewModel(bool isAdminMode) =>
+        new(
+            hostScreen: null!,
+            authService: new TestAuthApp(),
+            modbusDemo: null!,
+            routeMapDashboard: null!,
+            routeMapSignalMapping: null!,
+            modbusRuntime: new NoOpModbusRuntime(),
+            modbusOptions: new StaticModbusDemoOptionsProvider(),
+            applicationOptions: Options.Create(new ApplicationOptions
+            {
+                WorkMode = isAdminMode ? ApplicationOptions.AdminWorkMode : ApplicationOptions.UserWorkMode
+            }),
+            logger: NullLogger<WorkspaceViewModel>.Instance);
+
+    private sealed class TestAuthApp : IAuthApp
+    {
+        public bool IsAuthenticated { get; set; } = true;
+        public bool Authenticate(string username, string password) => IsAuthenticated;
+    }
+
+    private sealed class StaticModbusDemoOptionsProvider : IModbusDemoOptionsProvider
+    {
+        public ModbusOptions CurrentValue { get; } = new();
+    }
+
+    private sealed class NoOpModbusRuntime : IModbusRuntimeService
+    {
+        public ModbusStatus Status => ModbusStatus.Stopped;
+        public ModbusSnapshot ClientSnapshot => ModbusSnapshot.Empty;
+        public ModbusSnapshot ServerSnapshot => ModbusSnapshot.Empty;
+        public ModbusOptions CurrentOptions { get; } = new();
+        public event EventHandler<ModbusStatus>? StatusChanged { add { } remove { } }
+        public event EventHandler<ModbusSnapshot>? SnapshotChanged { add { } remove { } }
+        public Task StartAsync(ModbusRunMode mode = ModbusRunMode.Both, ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RestartAsync(ModbusRunMode mode = ModbusRunMode.Both, ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task StartClientAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task StopClientAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RestartClientAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task StartServerAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task StopServerAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RestartServerAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

@@ -3,6 +3,11 @@
 RouteMap использует Modbus TCP через доменные `SignalId`. Физическая адресация находится
 в `Modbus.DataMap`, а endpoint и lifecycle принадлежат `ModbusDemo`.
 
+Рабочие секции `Modbus` и `ModbusDemo` сохраняются в общем
+`%LOCALAPPDATA%\Configurator\appsettings.json`. В `admin` режиме они доступны через
+вкладки `SignalId ↔ Modbus` и `Modbus Demo`; в `user` режиме эти вкладки скрыты, но
+runtime, autostart и mapping продолжают использовать те же сохраненные значения.
+
 ## Разделение карт
 
 | Карта | Назначение |
@@ -79,8 +84,9 @@ physical register address = HoldingRegisterStartAddress + Address
 `Modbus.DataMap` и публикует значения. Если runtime остановлен, связь потеряна или значение
 устарело, RouteMap получает bad/stale quality, а не аварийное завершение приложения.
 
-`connection.status` — системный SignalId. Его создает runtime provider; добавлять его в
-`DataMap` не нужно.
+`connection.status` и `connection.connected` — системные SignalId. Их создает runtime
+provider; добавлять их в `DataMap` не нужно. `connection.connected=false` блокирует
+команды RouteMap и переводит узлы/линии в offline-состояние.
 
 ## Запись
 
@@ -106,4 +112,3 @@ Bool внутри holding register пишется как сериализова�
 
 Не назначайте один и тот же bit двум SignalId. Не пересекайте целое register-значение со
 словом, которое используется как набор bit-точек.
-

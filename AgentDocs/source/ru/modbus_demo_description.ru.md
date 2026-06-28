@@ -9,7 +9,12 @@ xml
 
 WorkspaceViewModel получает ModbusDemoViewModel через DI и кладёт его в свойство ModbusDemo: WorkspaceViewModel.cs (line 18).
 
-В Workspace рядом с ним остаются только `Route Map` и `SignalId ↔ Modbus`.
+В `Application.WorkMode=admin` в Workspace рядом с ним остаются `Route Map` и
+`SignalId ↔ Modbus`. В `Application.WorkMode=user` вкладка `Modbus Demo` скрыта, а
+оператор видит только RouteMap.
+Скрытие вкладки не отключает `ModbusDemoViewModel`: `WorkspaceViewModel` продолжает
+создавать ее через DI, а `ModbusDemo.AutostartOnWorkspaceOpen` может запускать общий
+runtime при открытии Workspace в user режиме.
 
 Сам UI находится в ModbusDemoView.axaml (line 1). Основные биндинги:
 
@@ -46,7 +51,8 @@ csharp
     - Subscribe("DemoImageVisible", ApplyDataValue)
 
 **Настройки**  
-Настройки лежат в appsettings.json (line 78), секция ModbusDemo.
+Defaults лежат в `Configurator.Boot/appsettings.json`, а изменяемая секция `ModbusDemo`
+сохраняется в общем `%LOCALAPPDATA%\Configurator\appsettings.json`.
 
 Ключевые значения по умолчанию:
 

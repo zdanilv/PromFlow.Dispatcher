@@ -1,3 +1,4 @@
+using Configurator.Application.Services;
 using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
@@ -6,6 +7,7 @@ using Configurator.Desktop.Workspace.ModbusDemo;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ReactiveUI;
 
 namespace Configurator.Desktop.Workspace
@@ -23,6 +25,8 @@ namespace Configurator.Desktop.Workspace
         public ModbusDemoViewModel ModbusDemo { get; }
         public RouteMapDashboardViewModel RouteMapDashboard { get; }
         public RouteMapSignalMappingViewModel RouteMapSignalMapping { get; }
+        public bool IsUserMode { get; }
+        public bool IsAdminMode { get; }
 
         public WorkspaceViewModel(
             IScreen hostScreen,
@@ -32,6 +36,7 @@ namespace Configurator.Desktop.Workspace
             RouteMapSignalMappingViewModel routeMapSignalMapping,
             IModbusRuntimeService modbusRuntime,
             IModbusDemoOptionsProvider modbusOptions,
+            IOptions<ApplicationOptions> applicationOptions,
             ILogger<WorkspaceViewModel> logger)
         {
             HostScreen = hostScreen;
@@ -39,6 +44,8 @@ namespace Configurator.Desktop.Workspace
             ModbusDemo = modbusDemo;
             RouteMapDashboard = routeMapDashboard;
             RouteMapSignalMapping = routeMapSignalMapping;
+            IsUserMode = applicationOptions.Value.IsUserMode;
+            IsAdminMode = applicationOptions.Value.IsAdminMode;
 
             var options = modbusOptions.CurrentValue.Clone();
             if (options.AutostartOnWorkspaceOpen && options.StartupMode != ModbusRunMode.None)

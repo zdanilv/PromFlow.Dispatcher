@@ -3,6 +3,11 @@
 RouteMap uses Modbus TCP through domain `SignalId` values. Physical addressing is stored
 in `Modbus.DataMap`; endpoint and lifecycle belong to `ModbusDemo`.
 
+Mutable `Modbus` and `ModbusDemo` sections are saved in the shared
+`%LOCALAPPDATA%\Configurator\appsettings.json`. Admin mode exposes them through
+`SignalId ↔ Modbus` and `Modbus Demo`; user mode hides those tabs while the runtime,
+autostart, and mappings keep using the same saved values.
+
 ## Data Map Separation
 
 | Map | Purpose |
@@ -71,8 +76,9 @@ Client/server roles publish `ModbusSnapshot`. The RouteMap facade decodes snapsh
 through `Modbus.DataMap`. Stopped runtime, lost connection, or stale values produce
 quality/stale state instead of crashing the UI.
 
-`connection.status` is a system SignalId produced by the runtime provider. Do not add it
-to `DataMap`.
+`connection.status` and `connection.connected` are system SignalIds produced by the
+runtime provider. Do not add them to `DataMap`. `connection.connected=false` disables
+RouteMap commands and forces nodes/segments into offline state.
 
 ## Writes
 
@@ -83,4 +89,3 @@ Use pulse only when the PLC contract requires an edge or short pulse.
 Register-bit writes are serialized read-modify-write operations using the latest raw word
 shadow. The first write is rejected until the raw register snapshot exists. Do not map the
 same bit twice or overlap whole-register values with bit points.
-

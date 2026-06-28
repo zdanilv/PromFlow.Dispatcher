@@ -56,7 +56,7 @@ public sealed class RouteMapModbusBindingDiagnostics : IDisposable
 
         foreach (var binding in EnumerateBindings(definition))
         {
-            if (string.Equals(binding.SignalId, "connection.status", StringComparison.OrdinalIgnoreCase))
+            if (IsSystemSignal(binding.SignalId))
             {
                 continue;
             }
@@ -126,6 +126,10 @@ public sealed class RouteMapModbusBindingDiagnostics : IDisposable
         SignalBindingRole.AutomaticModeOffFeedback or
         SignalBindingRole.ManualModeOffFeedback or
         SignalBindingRole.EmergencyOffFeedback;
+
+    private static bool IsSystemSignal(string signalId) =>
+        string.Equals(signalId, RouteMapSystemSignalIds.ConnectionStatus, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(signalId, RouteMapSystemSignalIds.ConnectionConnected, StringComparison.OrdinalIgnoreCase);
 
     private static bool TypesMatch(SignalValueType signalType, ModbusValueType modbusType)
     {

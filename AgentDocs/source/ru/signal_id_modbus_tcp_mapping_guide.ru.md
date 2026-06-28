@@ -20,6 +20,8 @@ route.bsu2_to_bucket.fragment_1.active
 equip.bucket.start
 equip.bucket.stop
 equip.bucket.text
+connection.status
+connection.connected
 ```
 
 SignalId остается тем же при переносе сигнала на другой coil, регистр или бит. Физический
@@ -283,6 +285,10 @@ SignalId ↔ Modbus
 Modbus Demo
 ```
 
+В `Application.WorkMode=user` эта вкладка скрыта, но ее сохраненная конфигурация
+`Modbus.DataMap` остается общей: user-mode runtime читает те же значения из
+`%LOCALAPPDATA%\Configurator\appsettings.json`.
+
 Вкладка автоматически читает актуальную RouteMap definition и показывает все уникальные
 SignalId из TopBar, узлов, линий, vehicles и карточек.
 
@@ -314,8 +320,8 @@ SignalId из TopBar, узлов, линий, vehicles и карточек.
 | `Ошибка` | Тип, доступ или параметры точки несовместимы |
 | `Системный` | Сигнал создается runtime и не требует PLC-адреса |
 
-`connection.status` является системным сигналом. Его создает
-`ModbusTcpSignalValueProvider`; добавлять его в `DataMap` не нужно.
+`connection.status` и `connection.connected` являются системными сигналами. Их создает
+`ModbusTcpSignalValueProvider`; добавлять их в `DataMap` не нужно.
 
 ### Создание связи
 
@@ -492,7 +498,8 @@ offset.
 | Выключен | `Modbus` |
 
 `ПРИМЕНИТЬ` переключает источник только для текущей сессии. `СОХРАНИТЬ` записывает
-`RouteMapRuntime.SignalSource` в `appsettings.json` и переключает источник немедленно.
+`RouteMapRuntime.SignalSource` в общий `%LOCALAPPDATA%\Configurator\appsettings.json`
+и переключает источник немедленно.
 
 Dashboard и его подписчики не пересоздаются. Старый backend отключается, новые команды и
 snapshots направляются выбранному backend.

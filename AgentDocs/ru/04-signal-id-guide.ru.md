@@ -24,6 +24,8 @@ route.bsu2_to_bucket.fragment_1.active
 equip.bucket.start
 equip.bucket.stop
 equip.bucket.text
+connection.status
+connection.connected
 ```
 
 Используйте латинские буквы в нижнем регистре, цифры, точки и `_` внутри объекта.
@@ -70,6 +72,16 @@ Direction должен соответствовать Modbus access:
 
 `State` и `*OffFeedback` — legacy. Не используйте их в новом поведении.
 
+## Системные SignalId
+
+| SignalId | Тип | Назначение |
+|---|---|---|
+| `connection.status` | `String` | Текст состояния Modbus runtime для TopBar |
+| `connection.connected` | `Bool` | `true`, когда Modbus runtime running и snapshot не stale |
+
+Системные SignalId создает provider. Они отображаются в `SignalId ↔ Modbus` как
+системные строки и не добавляются в `Modbus.DataMap`.
+
 ## Типы
 
 | SignalValueType | Modbus Type |
@@ -92,4 +104,3 @@ Direction должен соответствовать Modbus access:
 
 SignalId не меняется при переносе сигнала на другой coil/register/bit. Меняется только
 `Modbus.DataMap`.
-
