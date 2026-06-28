@@ -39,6 +39,7 @@ public static class DependencyInjection
         services.AddSingleton(CreateRouteMapTcpService);
         services.AddSingleton<IModbusDataMapRuntime>(sp =>
             (IModbusDataMapRuntime)sp.GetRequiredService<IModbusTcpService>());
+        services.AddSingleton<IModbusBitWriter, ModbusBitWriter>();
         services.AddSingleton<IModbusDataSnapshotSource>(sp =>
             new ModbusDataSnapshotSourceAdapter(
                 (IModbusDataSnapshotSource)sp.GetRequiredService<IModbusTcpService>()));

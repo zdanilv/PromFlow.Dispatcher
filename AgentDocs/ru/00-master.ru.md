@@ -10,6 +10,7 @@
 |---|---|---|
 | Меняю RouteMap UI | `02-route-map-guide.ru.md`, `05-coding-rules.ru.md` | `source/ru/route_map_programmer_guide.ru.md` |
 | Подключаю PLC или Modbus TCP | `03-modbus-tcp-guide.ru.md`, `04-signal-id-guide.ru.md` | `source/ru/route_map_modbus_tcp_full_guide.ru.md` |
+| Добавляю тревоги или подтверждения | `03-modbus-tcp-guide.ru.md`, `06-testing-and-diagnostics.ru.md` | `source/ru/modbus_tcp_integration_guide.ru.md` |
 | Добавляю новый сигнал | `04-signal-id-guide.ru.md`, `03-modbus-tcp-guide.ru.md` | `source/ru/signal_id_modbus_tcp_mapping_guide.ru.md` |
 | Чиню runtime, DI или lifecycle | `01-architecture-overview.ru.md`, `05-coding-rules.ru.md` | `source/ru/modbus_tcp_integration_guide.ru.md` |
 | Проверяю перед PR или commit | `06-testing-and-diagnostics.ru.md` | профильные source-гайды |
@@ -18,7 +19,7 @@
 
 - `01-architecture-overview.ru.md` — общий поток данных, Workspace, DI, RouteMap, SignalId, Modbus runtime.
 - `02-route-map-guide.ru.md` — RouteMap definition, schema v10, редактор, миграции, validation, runtime state.
-- `03-modbus-tcp-guide.ru.md` — общий TCP runtime, `ModbusDemo`, `Modbus.DataMap`, snapshots, запись команд.
+- `03-modbus-tcp-guide.ru.md` — общий TCP runtime, `ModbusDemo`, `Modbus.DataMap`, `Modbus.AlarmMap`, таблица `Менеджер тревог`, snapshots, запись команд.
 - `04-signal-id-guide.ru.md` — правила SignalId, роли, направления, типы и mapping.
 - `05-coding-rules.ru.md` — правила разработки с учетом текущей архитектуры.
 - `06-testing-and-diagnostics.ru.md` — команды проверки, диагностика и production checklist.
@@ -38,6 +39,7 @@
 
 - RouteMap UI работает только с доменными `SignalId`, не с Modbus-адресами.
 - Физическая адресация PLC живет в `Modbus.DataMap`; `ModbusDemo.DataMap` не смешивается с RouteMap.
+- Операторские тревоги живут в `Modbus.AlarmMap`, не в `Modbus.DataMap`, но сохраняются в той же секции `Modbus`.
 - `ModbusDemo` владеет TCP endpoint и lifecycle общего runtime.
 - `RouteMapConfigurationManager` владеет актуальной definition; не регистрируйте `RouteMapDefinition` как immutable singleton.
 - UI не обновляется напрямую из Modbus callback: поток идет через provider, mapper и ViewModel.

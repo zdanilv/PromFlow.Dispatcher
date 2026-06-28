@@ -14,6 +14,14 @@ RouteMap использует тот же TCP runtime, но отдельную �
 редактируется на вкладке `SignalId ↔ Modbus`. RouteMap schema v10 также добавляет
 read-only fragment-сигналы линий вида `route.<segmentId>.fragment_<n>.active`; их не
 нужно добавлять в `ModbusDemo.DataMap`.
+Операторские тревоги также не добавляются в `ModbusDemo.DataMap`: они живут в
+`Modbus.AlarmMap` и редактируются на вкладке `Менеджер тревог`.
+В таблице `Менеджер тревог` колонки `Alarm client/server` и `OK client/server`
+показывают физические адреса относительно `ModbusDemo.Client` и `ModbusDemo.Server`.
+При ручном вводе физического адреса редактор пересчитывает `Area` и zero-based
+`Offset`; для `HoldingRegister` нужно указать `Bit=0..15`, для `Coil` бит не задается.
+`Repeat ms` отвечает за повторный показ диалога, а `Pulse ms` — за длительность
+acknowledgement-импульса после кнопки `Хорошо`.
 
 ## Новая точка DataMap
 

@@ -15,24 +15,32 @@ RouteMap source, SignalId mapping, and Modbus TCP settings.
 
 `Configurator.Boot/appsettings.json` contains `Application.WorkMode`:
 
-- `admin` shows the `Route Map`, `SignalId ↔ Modbus`, and `Modbus Demo` tabs;
+- `admin` shows the `Route Map`, `SignalId ↔ Modbus`, `Менеджер тревог`, and `Modbus Demo` tabs;
 - `user` shows only `Route Map` across the Workspace area, without tabs.
 
 Missing or invalid values are treated as `admin`. In admin mode, `WorkspaceView` has
-three tabs:
+four tabs:
 
 ```text
 Route Map
 SignalId ↔ Modbus
+Менеджер тревог
 Modbus Demo
 ```
 
 `WorkspaceViewModel` owns `RouteMapDashboardViewModel`,
-`RouteMapSignalMappingViewModel`, and `ModbusDemoViewModel`. It may autostart the shared
-Modbus runtime using `ModbusDemo.AutostartOnWorkspaceOpen` and `StartupMode`.
+`RouteMapSignalMappingViewModel`, `AlarmManagerViewModel`, and `ModbusDemoViewModel`.
+It may autostart the shared Modbus runtime using `ModbusDemo.AutostartOnWorkspaceOpen`
+and `StartupMode`.
 
-In user mode the `SignalId ↔ Modbus` and `Modbus Demo` tabs are hidden only visually:
-their view models and the shared runtime remain part of Workspace.
+In user mode the `SignalId ↔ Modbus`, `Менеджер тревог`, and `Modbus Demo` tabs are
+hidden. The `Менеджер тревог` tab is admin-only, but `ModbusAlarmMonitor` runs in both
+Workspace modes, reads saved `Modbus.AlarmMap`, and shows dialogs on alarm-bit rising
+edges.
+An AlarmMap entry contains `Enabled`, `Id`, `Kind`, `Message`, the input `Alarm` bit,
+the separate `Acknowledgement` bit, `RepeatIntervalMs`, and
+`AcknowledgementPulseDurationMs`; the UI exposes them as `Вкл.`, `Тип`, `Сообщение`,
+`Alarm area/Offset/Bit`, `OK area/Offset/Bit`, `Repeat ms`, and `Pulse ms`.
 
 ## Read Flow
 
@@ -84,6 +92,7 @@ through a separate facade and separate data map.
 ```text
 ModbusDemo.DataMap -> demo UI facade
 Modbus.DataMap     -> RouteMap facade and SignalId mapping tab
+Modbus.AlarmMap    -> alarm dialogs in admin/user and acknowledgement pulses
 ```
 
 Do not move endpoint or lifecycle ownership into RouteMap.

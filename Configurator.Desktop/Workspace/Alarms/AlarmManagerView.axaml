@@ -1,0 +1,119 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:alarms="clr-namespace:Configurator.Desktop.Workspace.Alarms"
+             x:Class="Configurator.Desktop.Workspace.Alarms.AlarmManagerView"
+             x:Name="Root"
+             x:CompileBindings="False">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.caption"><Setter Property="Foreground" Value="#66717C"/><Setter Property="FontSize" Value="12"/></Style>
+    <Style Selector="TextBox.cell"><Setter Property="Height" Value="30"/><Setter Property="MinWidth" Value="72"/></Style>
+    <Style Selector="ComboBox.cell"><Setter Property="Height" Value="30"/><Setter Property="MinWidth" Value="126"/></Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,Auto,*" Margin="12" RowSpacing="10">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <StackPanel>
+        <TextBlock Text="Менеджер тревог" FontSize="22" FontWeight="SemiBold"/>
+        <TextBlock Text="Тревоги хранятся в Modbus.AlarmMap и читаются из общего Modbus runtime."
+                   Classes="caption" TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding ClientAddressBase}" Classes="caption"/>
+        <TextBlock Text="{Binding ServerAddressBase}" Classes="caption"/>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+        <Button Content="ДОБАВИТЬ" Command="{Binding AddAlarmCommand}"/>
+        <Button Content="ПЕРЕЗАГРУЗИТЬ" Command="{Binding ReloadCommand}"/>
+        <Button Content="СОХРАНИТЬ" Command="{Binding SaveCommand}"/>
+      </StackPanel>
+    </Grid>
+
+    <StackPanel Grid.Row="1" Spacing="4">
+      <Border Background="#FFF4E5" BorderBrush="#E0A84B" BorderThickness="1" CornerRadius="4" Padding="8"
+              IsVisible="{Binding HasExternalChanges}">
+        <TextBlock Text="Modbus.AlarmMap был изменен извне. Локальный черновик сохранен; используйте ПЕРЕЗАГРУЗИТЬ для принятия внешних изменений."
+                   TextWrapping="Wrap"/>
+      </Border>
+      <Border Background="#FFF0F0" BorderBrush="#E8A4A4" BorderThickness="1" CornerRadius="4" Padding="8"
+              IsVisible="{Binding HasError}">
+        <TextBlock Text="{Binding ErrorMessage}" Foreground="#A22F2F" TextWrapping="Wrap"/>
+      </Border>
+      <TextBlock Text="{Binding StatusMessage}" Foreground="#27804A"/>
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+      <StackPanel MinWidth="2060">
+        <Border Background="White" Padding="6">
+          <Grid ColumnDefinitions="70,150,150,260,120,80,70,130,130,120,80,70,130,130,120,110,150"
+                ColumnSpacing="6">
+            <TextBlock Text="Вкл." FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="1" Text="Id" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="2" Text="Тип" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="3" Text="Сообщение" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="4" Text="Alarm area" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="5" Text="Offset" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="6" Text="Bit" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="7" Text="Alarm client" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="8" Text="Alarm server" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="9" Text="OK area" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="10" Text="Offset" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="11" Text="Bit" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="12" Text="OK client" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="13" Text="OK server" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="14" Text="Repeat ms" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="15" Text="Pulse ms" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="16" Text="Действие" FontWeight="SemiBold"/>
+          </Grid>
+        </Border>
+
+        <ItemsControl ItemsSource="{Binding Rows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="alarms:AlarmManagerRow">
+              <Border BorderBrush="#E1E6EA" BorderThickness="0,0,0,1" Padding="6" Background="White">
+                <StackPanel>
+                  <Grid Classes="alarm-manager-row"
+                        ColumnDefinitions="70,150,150,260,120,80,70,130,130,120,80,70,130,130,120,110,150"
+                        ColumnSpacing="6">
+                    <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" Classes="cell" Text="{Binding Id, Mode=TwoWay}"/>
+                    <ComboBox Grid.Column="2" Classes="cell"
+                              ItemsSource="{Binding DataContext.AlarmKinds, ElementName=Root}"
+                              SelectedItem="{Binding Kind, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="3" Classes="cell" Text="{Binding Message, Mode=TwoWay}"/>
+                    <ComboBox Grid.Column="4" Classes="cell"
+                              ItemsSource="{Binding DataContext.DataAreas, ElementName=Root}"
+                              SelectedItem="{Binding AlarmArea, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="5" Classes="cell" Text="{Binding AlarmAddress, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="6" Classes="cell" IsEnabled="{Binding CanEditAlarmBitIndex}" Text="{Binding AlarmBitIndex, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="7" Classes="cell" Text="{Binding AlarmClientPhysicalAddressText, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="8" Classes="cell" Text="{Binding AlarmServerPhysicalAddressText, Mode=TwoWay}"/>
+                    <ComboBox Grid.Column="9" Classes="cell"
+                              ItemsSource="{Binding DataContext.DataAreas, ElementName=Root}"
+                              SelectedItem="{Binding AcknowledgementArea, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="10" Classes="cell" Text="{Binding AcknowledgementAddress, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="11" Classes="cell" IsEnabled="{Binding CanEditAcknowledgementBitIndex}" Text="{Binding AcknowledgementBitIndex, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="12" Classes="cell" Text="{Binding AcknowledgementClientPhysicalAddressText, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="13" Classes="cell" Text="{Binding AcknowledgementServerPhysicalAddressText, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="14" Classes="cell" Text="{Binding RepeatIntervalMs, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="15" Classes="cell" Text="{Binding AcknowledgementPulseDurationMs, Mode=TwoWay}"/>
+                    <StackPanel Grid.Column="16" Orientation="Horizontal" Spacing="6">
+                      <Button Content="Копия"
+                              Command="{Binding DataContext.DuplicateAlarmCommand, ElementName=Root}"
+                              CommandParameter="{Binding}"/>
+                      <Button Content="Удалить"
+                              Command="{Binding DataContext.RemoveAlarmCommand, ElementName=Root}"
+                              CommandParameter="{Binding}"/>
+                    </StackPanel>
+                  </Grid>
+                  <TextBlock Text="{Binding ValidationMessage}"
+                             Foreground="#B42318"
+                             FontSize="11"
+                             TextWrapping="Wrap"
+                             IsVisible="{Binding HasError}"/>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

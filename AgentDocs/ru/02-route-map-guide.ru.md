@@ -95,7 +95,12 @@ Legacy `Momentary`, `State` и `*OffFeedback` остаются только дл
 Кнопка `НАСТРОЙКИ` открывает `RouteMapSettingsDialog`. В режиме
 `Application.WorkMode=user` кнопка скрыта, а Workspace показывает только RouteMap.
 При этом скрытие настроек не меняет сохраненную конфигурацию: user продолжает читать
-общие `RouteMapRuntime`, `Modbus` и `ModbusDemo`, но не показывает вкладки настройки.
+общие `RouteMapRuntime`, `Modbus` и `ModbusDemo`, но не показывает вкладки настройки,
+включая admin-вкладку `Менеджер тревог`. User-режим при этом продолжает реагировать на
+`Modbus.AlarmMap`.
+В этой карте `Alarm area/Offset/Bit` задают входной бит диалога, `OK area/Offset/Bit` —
+отдельный бит подтверждения, `Repeat ms` — повтор при активном alarm-бите, `Pulse ms` —
+длительность acknowledgement-импульса.
 Вкладки:
 
 - `Источник данных`;

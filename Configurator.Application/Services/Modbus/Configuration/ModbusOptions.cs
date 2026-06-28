@@ -48,6 +48,11 @@ public sealed class ModbusOptions
     public List<ModbusDataPointOptions> DataMap { get; set; } = [];
 
     /// <summary>
+    /// Настройки пользовательских тревог и подтверждений, читаемых из общего Modbus snapshot.
+    /// </summary>
+    public List<ModbusAlarmOptions> AlarmMap { get; set; } = [];
+
+    /// <summary>
     /// Таймаут ожидания подтверждения записи через последующее чтение readable-точек.
     /// </summary>
     public int WriteConfirmationTimeoutMs { get; set; } = 2000;
@@ -64,6 +69,7 @@ public sealed class ModbusOptions
             Client = Client.Clone(),
             Server = Server.Clone(),
             DataMap = DataMap.Select(point => point.Clone()).ToList(),
+            AlarmMap = AlarmMap.Select(alarm => alarm.Clone()).ToList(),
             WriteConfirmationTimeoutMs = WriteConfirmationTimeoutMs
         };
     }

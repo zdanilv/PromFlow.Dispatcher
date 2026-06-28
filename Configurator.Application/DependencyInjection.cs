@@ -15,6 +15,7 @@ namespace Configurator.Application
             // MediatR/FluentValidation/Mapster can be added here later.
             //services.AddScoped<IGetRecentGroupCase, GetRecentGroupCase>();
             services.AddSingleton<IModbusDataMapValidator, ModbusDataMapValidator>();
+            services.AddSingleton<IModbusAlarmMapValidator, ModbusAlarmMapValidator>();
             return services;
         }
     }

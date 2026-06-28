@@ -793,6 +793,12 @@ public sealed class ModbusDemoViewModelTests
             return Task.CompletedTask;
         }
 
+        public Task<bool> ShowAlarmNotificationAsync(
+            ModbusAlarmKind kind,
+            string message,
+            CancellationToken ct = default)
+            => Task.FromResult(false);
+
         public Task<ModbusOptions?> EditModbusSettingsAsync(
             string title,
             string sectionName,

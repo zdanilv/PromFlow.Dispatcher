@@ -15,6 +15,7 @@ using Configurator.Application.Services.OpcUa.Runtime;
 using Configurator.Application.Services.OpcUa.Security;
 using Configurator.Application.Services.OpcUa.Tags;
 using Configurator.Application.Services.OpcUa.Validation;
+using Configurator.Desktop.Dialogs.AlarmNotificationDialog;
 using Configurator.Desktop.Dialogs.ModbusSettingsDialog;
 using Configurator.Desktop.Dialogs.OpcUaTagEditorDialog;
 using Configurator.Desktop.Dialogs.OpcUaTagImportDialog;
@@ -40,6 +41,20 @@ public sealed class DialogViewFactory(IServiceProvider serviceProvider) : IDialo
         view.DataContext = vm;
 
         return new DialogViewContext<string?>(view, vm.Result);
+    }
+
+    public DialogViewContext<bool> CreateAlarmNotification(
+        ModbusAlarmKind kind,
+        string message)
+    {
+        var vm = ActivatorUtilities.CreateInstance<AlarmNotificationDialogViewModel>(
+            serviceProvider,
+            kind,
+            message);
+        var view = serviceProvider.GetRequiredService<AlarmNotificationDialogView>();
+        view.DataContext = vm;
+
+        return new DialogViewContext<bool>(view, vm.Result);
     }
 
     public DialogViewContext<ModbusOptions?> CreateModbusSettings(

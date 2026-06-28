@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dialog="clr-namespace:Configurator.Desktop.Dialogs.AlarmNotificationDialog"
+             x:Class="Configurator.Desktop.Dialogs.AlarmNotificationDialog.AlarmNotificationDialogView"
+             x:DataType="dialog:AlarmNotificationDialogViewModel">
+  <Border Width="460"
+          Background="White"
+          CornerRadius="8"
+          BorderBrush="#D0D7DE"
+          BorderThickness="1">
+    <Grid RowDefinitions="Auto,*,Auto">
+      <Border Background="{Binding HeaderBackground}"
+              CornerRadius="8,8,0,0"
+              Padding="16,12">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="{Binding Title}"
+                     Foreground="White"
+                     FontSize="18"
+                     FontWeight="SemiBold"
+                     VerticalAlignment="Center"/>
+          <Button Grid.Column="1"
+                  Content="X"
+                  Width="32"
+                  Height="30"
+                  Padding="0"
+                  HorizontalContentAlignment="Center"
+                  VerticalContentAlignment="Center"
+                  Command="{Binding CloseCommand}"/>
+        </Grid>
+      </Border>
+
+      <StackPanel Grid.Row="1"
+                  Margin="24"
+                  Spacing="16"
+                  HorizontalAlignment="Center">
+        <Border Width="58"
+                Height="58"
+                CornerRadius="29"
+                Background="{Binding BadgeBackground}"
+                HorizontalAlignment="Center">
+          <TextBlock Text="{Binding BadgeText}"
+                     Foreground="{Binding BadgeForeground}"
+                     FontSize="32"
+                     FontWeight="Bold"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center"/>
+        </Border>
+        <TextBlock Text="{Binding Message}"
+                   FontSize="18"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap"
+                   MaxWidth="390"/>
+      </StackPanel>
+
+      <Button Grid.Row="2"
+              Content="Хорошо"
+              Width="130"
+              HorizontalAlignment="Center"
+              Margin="0,0,0,20"
+              Command="{Binding OkCommand}"/>
+    </Grid>
+  </Border>
+</UserControl>

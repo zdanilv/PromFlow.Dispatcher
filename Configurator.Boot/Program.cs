@@ -5,6 +5,7 @@ using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop;
 using Configurator.Desktop.Dialogs;
+using Configurator.Desktop.Dialogs.AlarmNotificationDialog;
 using Configurator.Desktop.Dialogs.ConfirmDialog;
 using Configurator.Desktop.Dialogs.InputDialog;
 using Configurator.Desktop.Dialogs.ModbusSettingsDialog;
@@ -12,6 +13,7 @@ using Configurator.Desktop.Dialogs.OpcUaTagEditorDialog;
 using Configurator.Desktop.Dialogs.OpcUaTagImportDialog;
 using Configurator.Desktop.Main;
 using Configurator.Desktop.Workspace;
+using Configurator.Desktop.Workspace.Alarms;
 using Configurator.Desktop.Workspace.Authorization;
 using Configurator.Desktop.Workspace.ModbusDemo;
 using Configurator.Desktop.Workspace.RouteMap;
@@ -98,6 +100,8 @@ internal static class Program
                     services.AddSingleton<IRouteMapRuntimeMapper<RouteMapRuntimeState>, RouteMapRuntimeMapper>();
                     services.AddTransient<RouteMapDashboardViewModel>();
                     services.AddTransient<RouteMapSignalMappingViewModel>();
+                    services.AddTransient<AlarmManagerViewModel>();
+                    services.AddTransient<ModbusAlarmMonitor>();
 
                     var routeMapRuntime = runtimeConfiguration
                         .GetSection(RouteMapRuntimeOptions.SectionName)
@@ -131,7 +135,9 @@ internal static class Program
                     services.AddTransient<IViewFor<ModbusDemoViewModel>, ModbusDemoView>();
                     services.AddTransient<RouteMapDashboardView>();
                     services.AddTransient<RouteMapSignalMappingView>();
+                    services.AddTransient<AlarmManagerView>();
 
+                    services.AddTransient<AlarmNotificationDialogView>();
                     services.AddTransient<ConfirmDialogView>();
                     services.AddTransient<InputDialogView>();
                     services.AddTransient<ModbusSettingsDialogView>();

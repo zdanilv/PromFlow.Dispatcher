@@ -31,11 +31,14 @@ RouteMap UI commands
 
 - `ModbusDemo.DataMap` используется только контролами экрана `Modbus Demo`;
 - `Modbus.DataMap` используется RouteMap и вкладкой `SignalId ↔ Modbus`;
-- обе карты читают и пишут через общий TCP runtime.
+- `Modbus.AlarmMap` используется монитором тревог в admin/user и вкладкой `Менеджер тревог`;
+- эти карты читают и пишут через общий TCP runtime.
 
 В `Application.WorkMode=admin` Workspace показывает вкладки `Route Map`,
-`SignalId ↔ Modbus`, `Modbus Demo`. В `Application.WorkMode=user` Workspace показывает
-только `Route Map` на всю рабочую область; кнопка `НАСТРОЙКИ` в TopBar скрыта.
+`SignalId ↔ Modbus`, `Менеджер тревог`, `Modbus Demo`. В `Application.WorkMode=user`
+Workspace показывает только `Route Map` на всю рабочую область; кнопка `НАСТРОЙКИ` в
+TopBar скрыта, но диалоги из `Modbus.AlarmMap` продолжают работать; в admin они тоже
+работают для наладки и симуляции.
 `Application.WorkMode` читается как режим запуска оболочки, а рабочие секции
 `RouteMapRuntime`, `Modbus` и `ModbusDemo` читаются и сохраняются в общем
 `%LOCALAPPDATA%\Configurator\appsettings.json`. Поэтому admin настраивает подключение,
@@ -61,6 +64,36 @@ RouteMap UI commands
 Связи SignalId с адресами редактируются на вкладке `SignalId ↔ Modbus`.
 Системные `connection.status` и `connection.connected` создает provider, в
 `Modbus.DataMap` их не добавляют.
+
+Тревоги и повторные подтверждения редактируются во вкладке `Менеджер тревог`. Они
+сохраняются в `Modbus.AlarmMap`, используют отдельный alarm-bit и отдельный
+acknowledgement-bit; кнопка `Хорошо` пишет acknowledgement-импульс.
+
+### Таблица `Менеджер тревог`
+
+Одна строка таблицы равна одной записи `Modbus.AlarmMap[]`.
+
+| Колонка | Что задает | Как используется |
+|---|---|---|
+| `Вкл.` | `Enabled` | Включает/выключает строку без удаления из конфигурации |
+| `Id` | `Id` | Уникальное имя тревоги; пустые и повторяющиеся значения запрещены |
+| `Тип` | `Kind` | `Fault` открывает красный диалог аварии, `Confirmation` — предупреждающий диалог повторного подтверждения |
+| `Сообщение` | `Message` | Текст сообщения в user-диалоге |
+| `Alarm area` | `Alarm.Area` | Где читать входной alarm-бит: `Coil` или `HoldingRegister` |
+| `Alarm Offset` | `Alarm.Address` | Zero-based offset alarm-бита от start address выбранной области |
+| `Alarm Bit` | `Alarm.BitIndex` | Номер бита `0..15` для `HoldingRegister`; для `Coil` пустой |
+| `Alarm client/server` | физический адрес alarm-бита | Показывает и позволяет ввести адрес относительно `ModbusDemo.Client` или `ModbusDemo.Server`; ввод пересчитывает area/offset |
+| `OK area` | `Acknowledgement.Area` | Где писать acknowledgement-бит после `Хорошо` |
+| `OK Offset` | `Acknowledgement.Address` | Zero-based offset acknowledgement-бита |
+| `OK Bit` | `Acknowledgement.BitIndex` | Номер бита `0..15` для acknowledgement в `HoldingRegister`; для `Coil` пустой |
+| `OK client/server` | физический адрес acknowledgement-бита | Показывает адрес подтверждения для client/server start address |
+| `Repeat ms` | `RepeatIntervalMs` | Повторный показ при сохраняющемся `Alarm=true`; диапазон `1000..86400000` мс |
+| `Pulse ms` | `AcknowledgementPulseDurationMs` | Длина импульса `true/false` в acknowledgement-бит; диапазон `1..60000` мс |
+| `Действие` | операции строки | `Копия` создает дубль с новым `Id`; `Удалить` убирает строку из черновика |
+
+`Alarm` и `Acknowledgement` должны быть разными битами и попадать в диапазоны endpoint:
+`CoilCount`/`RegisterCount` и flags `CoilsEnabled`/`HoldingRegistersEnabled`. Кнопка
+`Хорошо` пишет acknowledgement; закрытие диалога через `X` только закрывает окно.
 
 ## Каталог SignalId
 
@@ -126,10 +159,11 @@ toggle-команды RouteMap и пишут `true/false` в свои command bi
 1. Оставить `SignalSource=Mock` и проверить RouteMap UI.
 2. Настроить endpoint и lifecycle на вкладке `Modbus Demo`.
 3. Заполнить `Modbus.DataMap` на вкладке `SignalId ↔ Modbus`.
-4. Заполнить `ModbusDemo.DataMap` только для контролов demo-экрана.
-5. Запустить Client или Server на вкладке `Modbus Demo`.
-6. Переключить RouteMap на `SignalSource=Modbus`.
-7. Проверить readback, timeout, reconnect и interlock на стенде.
+4. Заполнить `Modbus.AlarmMap` на вкладке `Менеджер тревог`, если нужны диалоги тревог.
+5. Заполнить `ModbusDemo.DataMap` только для контролов demo-экрана.
+6. Запустить Client или Server на вкладке `Modbus Demo`.
+7. Переключить RouteMap на `SignalSource=Modbus`.
+8. Проверить readback, timeout, alarm acknowledgement, reconnect и interlock на стенде.
 
 UI не является контуром функциональной безопасности. Interlock режимов, аварии и
 исполнительных механизмов должен оставаться в PLC.

@@ -282,12 +282,35 @@ command-binding. Отдельных ролей OffFeedback и режима `Mome
 ```text
 Route Map
 SignalId ↔ Modbus
+Менеджер тревог
 Modbus Demo
 ```
 
 В `Application.WorkMode=user` эта вкладка скрыта, но ее сохраненная конфигурация
 `Modbus.DataMap` остается общей: user-mode runtime читает те же значения из
-`%LOCALAPPDATA%\Configurator\appsettings.json`.
+`%LOCALAPPDATA%\Configurator\appsettings.json`. Тревоги не добавляются в `DataMap`;
+для них есть отдельная вкладка `Менеджер тревог` и список `Modbus.AlarmMap`.
+
+`Менеджер тревог` похож на адресный редактор, но работает с операторскими
+уведомлениями, а не с RouteMap `SignalId`. Значения его таблицы:
+
+| Колонка | Значение |
+|---|---|
+| `Вкл.` | Использовать строку в мониторе тревог |
+| `Id` | Уникальный непустой идентификатор тревоги |
+| `Тип` | `Fault` для аварии или `Confirmation` для повторного подтверждения |
+| `Сообщение` | Текст модального user-диалога |
+| `Alarm area`, `Offset`, `Bit` | Входной Modbus-бит, по фронту которого открывается диалог |
+| `Alarm client`, `Alarm server` | Физические адреса того же alarm-бита для баз `ModbusDemo.Client/Server`; ввод пересчитывает area/offset |
+| `OK area`, `Offset`, `Bit` | Отдельный acknowledgement-бит, в который пишет кнопка `Хорошо` |
+| `OK client`, `OK server` | Физические адреса acknowledgement-бита для client/server баз |
+| `Repeat ms` | Интервал повторного показа при сохраняющемся `Alarm=true` |
+| `Pulse ms` | Длительность acknowledgement-импульса `true/false` |
+| `Действие` | Дублирование или удаление строки черновика |
+
+Для `HoldingRegister` поле `Bit` обязательно и принимает `0..15`; для `Coil` оно не
+используется. `Alarm` и `Acknowledgement` должны указывать на разные биты и попадать в
+диапазоны endpoint из `ModbusDemo`.
 
 Вкладка автоматически читает актуальную RouteMap definition и показывает все уникальные
 SignalId из TopBar, узлов, линий, vehicles и карточек.

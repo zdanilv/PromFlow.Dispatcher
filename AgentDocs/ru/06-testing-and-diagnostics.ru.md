@@ -50,6 +50,23 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | Нет readback | Access, PLC echo и `WriteConfirmationTimeoutMs` |
 | Неверный physical address | StartAddress и 0/1-based notation PLC |
 
+## Диагностика Менеджера тревог
+
+| Симптом | Проверить |
+|---|---|
+| Диалог не появляется | `Application.WorkMode=user`, активный runtime snapshot и `Modbus.AlarmMap[].Enabled` |
+| Диалог появляется повторно слишком часто | `RepeatIntervalMs` конкретной тревоги |
+| `Хорошо` не подтверждает | Отдельный `Acknowledgement` address/bit и `AcknowledgementPulseDurationMs` |
+| Ошибка адреса в менеджере | Попадание Alarm/Acknowledgement в ranges `ModbusDemo.Client/Server` |
+| RouteMap видит тревогу как SignalId | Тревога ошибочно добавлена в `Modbus.DataMap` вместо `Modbus.AlarmMap` |
+
+При проверке таблицы `Менеджер тревог` читайте группы колонок так: `Alarm area/Offset/Bit`
+это входной бит показа диалога, `OK area/Offset/Bit` это отдельный бит подтверждения,
+`Alarm client/server` и `OK client/server` это физические адреса по базам
+`ModbusDemo.Client/Server`. `Repeat ms` должен быть `1000..86400000`, `Pulse ms` —
+`1..60000`; для `HoldingRegister` `Bit` обязателен в диапазоне `0..15`, для `Coil`
+бит должен отсутствовать.
+
 ## Production checklist
 
 1. Проверить RouteMap в `Mock`.
@@ -59,13 +76,15 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 5. Настроить endpoint и start addresses в `Modbus Demo`.
 6. Проверить, что `RouteMapRuntime`, `Modbus` и `ModbusDemo` сохранены в общем `%LOCALAPPDATA%\Configurator\appsettings.json`.
 7. Заполнить `Modbus.DataMap` во вкладке `SignalId ↔ Modbus`.
-8. Устранить все `Не настроен` и `Ошибка`.
-9. Сначала включить read-only сигналы.
-10. Проверить quality, stale, reconnect.
-11. Проверить `connection.connected=false`: команды заблокированы, узлы/линии offline.
-12. Проверить active nodes, active lines и fragments.
-13. Проверить modes, emergency, loader/target.
-14. По одной разрешить команды оборудования.
-15. Проверить latched/pulse, timeout и потерю связи во время записи.
-16. Убедиться, что interlock и safety реализованы в PLC.
+8. Заполнить `Modbus.AlarmMap` во вкладке `Менеджер тревог`, не дублируя тревоги в `DataMap`.
+9. Устранить все `Не настроен` и `Ошибка`.
+10. Сначала включить read-only сигналы.
+11. Проверить quality, stale, reconnect.
+12. Проверить `connection.connected=false`: команды заблокированы, узлы/линии offline.
+13. Проверить active nodes, active lines и fragments.
+14. Проверить modes, emergency, loader/target.
+15. Проверить диалоги аварии/повторного подтверждения и acknowledgement-импульс.
+16. По одной разрешить команды оборудования.
+17. Проверить latched/pulse, timeout и потерю связи во время записи.
+18. Убедиться, что interlock и safety реализованы в PLC.
 

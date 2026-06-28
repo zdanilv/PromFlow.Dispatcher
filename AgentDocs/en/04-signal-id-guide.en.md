@@ -88,3 +88,15 @@ System SignalIds are produced by the provider. They appear as system rows in
 
 Do not change SignalId when moving a signal to another coil, register, or bit. Only
 `Modbus.DataMap` changes.
+
+Operator alarms and repeated-confirmation warnings that are not RouteMap binding roles do
+not get SignalIds and are not added to `Modbus.DataMap`. Configure them through
+`Менеджер тревог`, which saves `Modbus.AlarmMap`.
+
+In the `Менеджер тревог` table, `Alarm area/Offset/Bit` define the input bit that opens
+the dialog, while `OK area/Offset/Bit` define the separate acknowledgement bit written by
+`Хорошо`. `Alarm client/server` and `OK client/server` show physical addresses based on
+`ModbusDemo.Client/Server` and can recalculate area/offset when edited. `Repeat ms`
+controls dialog repetition while `Alarm=true`; `Pulse ms` controls the `true/false`
+acknowledgement pulse length. `HoldingRegister` requires `Bit=0..15`; `Coil` does not
+use a bit index.

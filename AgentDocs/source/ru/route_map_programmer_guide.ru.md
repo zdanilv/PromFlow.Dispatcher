@@ -6,14 +6,16 @@
 `WorkspaceView` в `PromFlow.Dispatcher`.
 
 В `Application.WorkMode=admin` Workspace подключает вкладки `Route Map`,
-`SignalId ↔ Modbus` и `Modbus Demo`. В `Application.WorkMode=user` Workspace показывает
-только `Route Map` на всю рабочую область. Экраны `Modbus TCP` и `OPC UA` остаются в
-кодовой базе, но не подключаются к основному Workspace.
+`SignalId ↔ Modbus`, `Менеджер тревог` и `Modbus Demo`. В `Application.WorkMode=user`
+Workspace показывает только `Route Map` на всю рабочую область. Экраны `Modbus TCP` и
+`OPC UA` остаются в кодовой базе, но не подключаются к основному Workspace.
 
 `Application.WorkMode` является launch-only режимом оболочки. Рабочие настройки
 `RouteMapRuntime`, `Modbus` и `ModbusDemo` накладываются поверх defaults из общего
 `%LOCALAPPDATA%\Configurator\appsettings.json`; скрытые в user режиме `SignalId ↔ Modbus`
 и `Modbus Demo` продолжают существовать как VM/runtime и использовать те же настройки.
+`Менеджер тревог` скрыт как admin-вкладка, но монитор тревог продолжает читать
+`Modbus.AlarmMap`; в admin он также работает для наладки и симуляции.
 
 Экран состоит из:
 
@@ -520,6 +522,28 @@ read-modify-write. UI при этом не меняется: он продолж
 
 `ModbusDemo.DataMap` используется только экраном `Modbus Demo`. RouteMap hot-apply меняет
 только `Modbus.DataMap` и не трогает demo-карту.
+Операторские аварии и повторные подтверждения хранятся отдельно в `Modbus.AlarmMap`:
+они не являются RouteMap `SignalId` и не попадают в `ModbusTcpSignalValueProvider`.
+
+`Менеджер тревог` редактирует `ModbusAlarmOptions`. UI-колонки соответствуют модели так:
+
+| UI | Модель | Назначение |
+|---|---|---|
+| `Вкл.` | `Enabled` | Участвует ли строка в мониторинге тревог |
+| `Id` | `Id` | Уникальный ключ состояния тревоги |
+| `Тип` | `Kind` | `Fault` или `Confirmation`, влияет на визуальный стиль диалога |
+| `Сообщение` | `Message` | Текст модального уведомления |
+| `Alarm area/Offset/Bit` | `Alarm.Area/Address/BitIndex` | Входной бит, где `Address` — zero-based offset, а `BitIndex` нужен только для `HoldingRegister` |
+| `Alarm client/server` | вычисляется из `Alarm` | Физический адрес по start address client/server endpoint; setter пересчитывает area и offset |
+| `OK area/Offset/Bit` | `Acknowledgement.Area/Address/BitIndex` | Отдельный бит подтверждения |
+| `OK client/server` | вычисляется из `Acknowledgement` | Физический адрес acknowledgement-бита |
+| `Repeat ms` | `RepeatIntervalMs` | Период повторного показа при активном alarm-бите |
+| `Pulse ms` | `AcknowledgementPulseDurationMs` | Время между записью `true` и `false` в acknowledgement-бит |
+
+Валидатор требует непустые уникальные `Id`, непустой `Message`, разные `Alarm` и
+`Acknowledgement`, `BitIndex=0..15` для `HoldingRegister`, `RepeatIntervalMs` в
+`1000..86400000` и `AcknowledgementPulseDurationMs` в `1..60000`. Диапазоны адресов
+берутся из endpoint-настроек `ModbusDemo`.
 
 Начальный источник читается при запуске, но может быть горячо изменен в редакторе:
 

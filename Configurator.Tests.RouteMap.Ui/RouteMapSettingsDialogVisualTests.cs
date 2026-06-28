@@ -5,13 +5,18 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Configurator.Application.Services;
+using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.OpcUa.Browsing;
+using Configurator.Application.Services.OpcUa.Tags;
+using Configurator.Desktop.Dialogs.AlarmNotificationDialog;
 using Configurator.Desktop.Dialogs.ModbusSettingsDialog;
+using Configurator.Desktop.Workspace.Alarms;
 using Configurator.Desktop.Workspace.RouteMap;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
@@ -151,7 +156,7 @@ public sealed class RouteMapSettingsDialogVisualTests
         var headers = tabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString() ?? string.Empty).ToArray();
 
         Assert.True(tabs.IsVisible);
-        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Modbus Demo"], headers);
+        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Менеджер тревог", "Modbus Demo"], headers);
 
         window.Close();
     }
@@ -171,6 +176,102 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.False(tabs.IsVisible);
         Assert.True(routeMapHost.IsVisible);
         Assert.Single(routeMapHost.Children.OfType<RouteMapDashboardView>());
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Alarm_manager_rows_scroll_horizontally_without_overlap()
+    {
+        var options = new ModbusOptions
+        {
+            Client = new ModbusEndpointOptions
+            {
+                CoilCount = 8,
+                RegisterCount = 8,
+                CoilsEnabled = true,
+                HoldingRegistersEnabled = true
+            },
+            Server = new ModbusEndpointOptions
+            {
+                CoilCount = 8,
+                RegisterCount = 8,
+                CoilsEnabled = true,
+                HoldingRegistersEnabled = true
+            },
+            AlarmMap =
+            [
+                new()
+                {
+                    Id = "alarm.main",
+                    Kind = ModbusAlarmKind.Fault,
+                    Message = "Авария",
+                    Alarm = new ModbusBitAddressOptions
+                    {
+                        Area = ModbusDataArea.HoldingRegister,
+                        Address = 1,
+                        BitIndex = 0
+                    },
+                    Acknowledgement = new ModbusBitAddressOptions
+                    {
+                        Area = ModbusDataArea.HoldingRegister,
+                        Address = 1,
+                        BitIndex = 1
+                    }
+                }
+            ]
+        };
+        using var viewModel = new AlarmManagerViewModel(
+            new StaticOptionsMonitor(options),
+            new NullAppConfigService(),
+            new ModbusAlarmMapValidator());
+        var view = new AlarmManagerView { Width = 900, DataContext = viewModel };
+        var window = new Window { Width = 940, Height = 360, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var row = view.GetVisualDescendants()
+            .OfType<Grid>()
+            .Single(x => x.Classes.Contains("alarm-manager-row"));
+        var controls = row.Children.OfType<Control>().ToArray();
+        var scroll = view.GetVisualDescendants().OfType<ScrollViewer>().First();
+
+        Assert.True(scroll.Extent.Width > scroll.Viewport.Width);
+        Assert.Equal(17, controls.Length);
+        Assert.Equal(Enumerable.Range(0, 17), controls.Select(Grid.GetColumn));
+        for (var index = 1; index < controls.Length; index++)
+            Assert.True(controls[index - 1].Bounds.Right <= controls[index].Bounds.Left);
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Alarm_dialog_kinds_have_distinct_visual_style_and_buttons()
+    {
+        var fault = new AlarmNotificationDialogViewModel(ModbusAlarmKind.Fault, "Авария");
+        var confirmation = new AlarmNotificationDialogViewModel(ModbusAlarmKind.Confirmation, "Повторное подтверждение");
+
+        Assert.NotEqual(
+            ((SolidColorBrush)fault.HeaderBackground).Color,
+            ((SolidColorBrush)confirmation.HeaderBackground).Color);
+
+        var view = new AlarmNotificationDialogView { DataContext = fault };
+        var window = new Window { Width = 540, Height = 320, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var texts = view.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .Select(text => text.Text)
+            .ToArray();
+        var buttons = view.GetVisualDescendants()
+            .OfType<Button>()
+            .Select(button => button.Content?.ToString())
+            .ToArray();
+
+        Assert.Contains("Авария", texts);
+        Assert.Contains("Хорошо", buttons);
+        Assert.Contains("X", buttons);
 
         window.Close();
     }
@@ -540,6 +641,26 @@ public sealed class RouteMapSettingsDialogVisualTests
             ModbusOperationResult.Success();
     }
 
+    private sealed class NoOpBitWriter : IModbusBitWriter
+    {
+        public Task<ModbusOperationResult> PulseAsync(
+            ModbusBitAddressOptions address,
+            int pulseDurationMs,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(ModbusOperationResult.Success());
+    }
+
+    private sealed class NoOpDialogService : IDialogService
+    {
+        public Task<bool> ConfirmAsync(string message, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<string?> RequestSecretAsync(string message, CancellationToken ct = default) => Task.FromResult<string?>(null);
+        public Task ShowErrorAsync(string title, string message, string? details = null, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<bool> ShowAlarmNotificationAsync(ModbusAlarmKind kind, string message, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<ModbusOptions?> EditModbusSettingsAsync(string title, string sectionName, ModbusOptions options, CancellationToken ct = default) => Task.FromResult<ModbusOptions?>(null);
+        public Task<OpcUaConfiguredTag?> EditOpcUaTagAsync(string title, OpcUaConfiguredTag? tag, OpcUaImportTarget target, CancellationToken ct = default) => Task.FromResult<OpcUaConfiguredTag?>(null);
+        public Task<OpcUaTagImportResult?> ImportOpcUaTagsAsync(OpcUaBrowseRequest request, CancellationToken ct = default) => Task.FromResult<OpcUaTagImportResult?>(null);
+    }
+
     private sealed class NullAppConfigService : IAppConfigService
     {
         public T GetSection<T>(string sectionName) where T : class, new() => new();
@@ -555,20 +676,34 @@ public sealed class RouteMapSettingsDialogVisualTests
         public Task<string?> PickExportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
     }
 
-    private static WorkspaceViewModel CreateWorkspaceViewModel(bool isAdminMode) =>
-        new(
+    private static WorkspaceViewModel CreateWorkspaceViewModel(bool isAdminMode)
+    {
+        var runtime = new NoOpModbusRuntime();
+        var optionsMonitor = new StaticOptionsMonitor(new ModbusOptions());
+        return new WorkspaceViewModel(
             hostScreen: null!,
             authService: new TestAuthApp(),
             modbusDemo: null!,
+            alarmManager: new AlarmManagerViewModel(
+                optionsMonitor,
+                new NullAppConfigService(),
+                new ModbusAlarmMapValidator()),
+            alarmMonitor: new ModbusAlarmMonitor(
+                optionsMonitor,
+                runtime,
+                new NoOpDialogService(),
+                new NoOpBitWriter(),
+                NullLogger<ModbusAlarmMonitor>.Instance),
             routeMapDashboard: null!,
             routeMapSignalMapping: null!,
-            modbusRuntime: new NoOpModbusRuntime(),
+            modbusRuntime: runtime,
             modbusOptions: new StaticModbusDemoOptionsProvider(),
             applicationOptions: Options.Create(new ApplicationOptions
             {
                 WorkMode = isAdminMode ? ApplicationOptions.AdminWorkMode : ApplicationOptions.UserWorkMode
             }),
             logger: NullLogger<WorkspaceViewModel>.Instance);
+    }
 
     private sealed class TestAuthApp : IAuthApp
     {

@@ -25,9 +25,9 @@ RouteMap является первой вкладкой и открываетс�
 
 ```text
 Route Map
-Modbus TCP
+SignalId ↔ Modbus
+Менеджер тревог
 Modbus Demo
-OPC UA
 ```
 
 `WorkspaceViewModel` владеет дочерними ViewModel и освобождает их подписки. При закрытии
@@ -62,6 +62,12 @@ PulseDurationMs: длительность импульса
 
 Register-bit запись выполняется сериализованным read-modify-write с сохранением соседних
 битов. До получения первого raw snapshot запись такого бита отклоняется.
+Операторские аварии и повторные подтверждения настраиваются отдельно в `Modbus.AlarmMap`,
+чтобы не попадать в SignalId-каталог RouteMap.
+В таблице `Менеджер тревог` `Alarm area/Offset/Bit` описывают входной бит, `OK area/Offset/Bit`
+— отдельный acknowledgement-бит, `Repeat ms` — интервал повторного показа, `Pulse ms` —
+длительность импульса подтверждения. Для `HoldingRegister` bit обязателен `0..15`, для
+`Coil` не используется.
 
 ## Конфигурация Режима
 
@@ -78,6 +84,8 @@ Register-bit запись выполняется сериализованным 
 `Modbus.AutostartOnWorkspaceOpen` и `StartupMode` теперь реально применяются при создании
 Workspace. Production-адреса PLC должны быть заменены в `Modbus.DataMap` без изменения
 RouteMap JSON или XAML.
+Alarm/acknowledgement-биты должны быть заменены в `Modbus.AlarmMap` без добавления
+служебных SignalId.
 
 ## Эксплуатационные Ограничения
 

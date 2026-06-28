@@ -9,8 +9,9 @@ xml
 
 WorkspaceViewModel получает ModbusDemoViewModel через DI и кладёт его в свойство ModbusDemo: WorkspaceViewModel.cs (line 18).
 
-В `Application.WorkMode=admin` в Workspace рядом с ним остаются `Route Map` и
-`SignalId ↔ Modbus`. В `Application.WorkMode=user` вкладка `Modbus Demo` скрыта, а
+В `Application.WorkMode=admin` в Workspace рядом с ним остаются `Route Map`,
+`SignalId ↔ Modbus` и `Менеджер тревог`. В `Application.WorkMode=user` вкладка
+`Modbus Demo` скрыта, а
 оператор видит только RouteMap.
 Скрытие вкладки не отключает `ModbusDemoViewModel`: `WorkspaceViewModel` продолжает
 создавать ее через DI, а `ModbusDemo.AutostartOnWorkspaceOpen` может запускать общий
@@ -64,7 +65,8 @@ Defaults лежат в `Configurator.Boot/appsettings.json`, а изменяем
     - DemoInput: HoldingRegister, address 0, UInt16, ReadWrite
     - DemoImageVisible: HoldingRegister, address 0, UInt16, Read
 
-Класс настроек: ModbusOptions, внутри него Client, Server, DataMap, WriteConfirmationTimeoutMs.
+Класс настроек: ModbusOptions, внутри него Client, Server, DataMap, AlarmMap,
+WriteConfirmationTimeoutMs.
 
 **DI И Общий Runtime**  
 Регистрация идёт в DependencyInjection.cs (line 25), метод:
@@ -93,9 +95,19 @@ csharp
 - `IModbusDemoTcpService` использует `ModbusDemo.DataMap` для контролов demo UI;
 - `IModbusTcpService` для RouteMap использует `Modbus.DataMap`, но берет Client/Server
   настройки из `ModbusDemo`.
+- `ModbusAlarmMonitor` использует `Modbus.AlarmMap` для user-диалогов и пишет
+  acknowledgement-биты отдельным импульсом.
 
-Это важно: demo UI и RouteMap не смешивают DataMap, но читают и пишут через один TCP
-runtime.
+Это важно: demo UI, RouteMap и тревоги не смешивают свои карты, но читают и пишут через
+один TCP runtime.
+
+Строка `Modbus.AlarmMap` содержит `Enabled`, `Id`, `Kind`, `Message`, входной
+`Alarm.Area/Address/BitIndex`, отдельный `Acknowledgement.Area/Address/BitIndex`,
+`RepeatIntervalMs` и `AcknowledgementPulseDurationMs`. В UI эти поля видны как
+`Вкл.`, `Id`, `Тип`, `Сообщение`, группы `Alarm area/Offset/Bit` и `OK area/Offset/Bit`,
+а также `Repeat ms` и `Pulse ms`. Физические колонки `Alarm client/server` и
+`OK client/server` строятся из тех же offsets по start addresses `ModbusDemo.Client` и
+`ModbusDemo.Server`.
 
 **Facade**  
 ModbusDemoTcpService — тонкий делегирующий фасад: ModbusDemoTcpService.cs (line 12).

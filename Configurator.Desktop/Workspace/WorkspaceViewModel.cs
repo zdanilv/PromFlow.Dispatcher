@@ -3,6 +3,7 @@ using Configurator.Application.Services.Authorization;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Desktop.Workspace.Alarms;
 using Configurator.Desktop.Workspace.ModbusDemo;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
@@ -23,8 +24,10 @@ namespace Configurator.Desktop.Workspace
         // Example data passed from the login screen: authorization token.
         public string AuthToken { get; }
         public ModbusDemoViewModel ModbusDemo { get; }
+        public AlarmManagerViewModel AlarmManager { get; }
         public RouteMapDashboardViewModel RouteMapDashboard { get; }
         public RouteMapSignalMappingViewModel RouteMapSignalMapping { get; }
+        public ModbusAlarmMonitor AlarmMonitor { get; }
         public bool IsUserMode { get; }
         public bool IsAdminMode { get; }
 
@@ -32,6 +35,8 @@ namespace Configurator.Desktop.Workspace
             IScreen hostScreen,
             IAuthApp authService,
             ModbusDemoViewModel modbusDemo,
+            AlarmManagerViewModel alarmManager,
+            ModbusAlarmMonitor alarmMonitor,
             RouteMapDashboardViewModel routeMapDashboard,
             RouteMapSignalMappingViewModel routeMapSignalMapping,
             IModbusRuntimeService modbusRuntime,
@@ -42,6 +47,8 @@ namespace Configurator.Desktop.Workspace
             HostScreen = hostScreen;
             AuthToken = authService.IsAuthenticated.ToString();
             ModbusDemo = modbusDemo;
+            AlarmManager = alarmManager;
+            AlarmMonitor = alarmMonitor;
             RouteMapDashboard = routeMapDashboard;
             RouteMapSignalMapping = routeMapSignalMapping;
             IsUserMode = applicationOptions.Value.IsUserMode;
@@ -52,6 +59,8 @@ namespace Configurator.Desktop.Workspace
             {
                 _ = StartModbusAsync(modbusRuntime, options, logger, _lifetimeCancellation.Token);
             }
+
+            AlarmMonitor.Start();
         }
 
         public void Dispose()
@@ -64,6 +73,8 @@ namespace Configurator.Desktop.Workspace
             _disposed = true;
             _lifetimeCancellation.Cancel();
             _lifetimeCancellation.Dispose();
+            AlarmMonitor.Dispose();
+            AlarmManager.Dispose();
             RouteMapDashboard.Dispose();
             RouteMapSignalMapping.Dispose();
             ModbusDemo.Dispose();

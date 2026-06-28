@@ -49,6 +49,23 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | No readback | Access, PLC echo, `WriteConfirmationTimeoutMs` |
 | Wrong physical address | Start address and PLC 0/1-based notation |
 
+## Alarm Manager Diagnostics
+
+| Symptom | Check |
+|---|---|
+| Dialog does not appear | `Application.WorkMode=user`, active runtime snapshot, and `Modbus.AlarmMap[].Enabled` |
+| Dialog repeats too often | The alarm row `RepeatIntervalMs` |
+| `Хорошо` does not acknowledge | Separate `Acknowledgement` address/bit and `AcknowledgementPulseDurationMs` |
+| Address error in manager | Alarm/Acknowledgement ranges against `ModbusDemo.Client/Server` |
+| RouteMap sees an alarm as SignalId | Alarm was added to `Modbus.DataMap` instead of `Modbus.AlarmMap` |
+
+When checking the `Менеджер тревог` table, read the column groups as follows:
+`Alarm area/Offset/Bit` is the input bit that opens the dialog, `OK area/Offset/Bit` is
+the separate acknowledgement bit, and `Alarm client/server` plus `OK client/server` are
+physical addresses based on `ModbusDemo.Client/Server`. `Repeat ms` must be
+`1000..86400000`, `Pulse ms` must be `1..60000`; `HoldingRegister` requires
+`Bit=0..15`, while `Coil` must not define a bit index.
+
 ## Production Checklist
 
 1. Verify RouteMap in `Mock`.
@@ -58,13 +75,15 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 5. Configure endpoint and start addresses in `Modbus Demo`.
 6. Verify `RouteMapRuntime`, `Modbus`, and `ModbusDemo` are saved in shared `%LOCALAPPDATA%\Configurator\appsettings.json`.
 7. Fill `Modbus.DataMap` in `SignalId ↔ Modbus`.
-8. Clear all unconfigured/error rows.
-9. Enable read-only signals first.
-10. Verify quality, stale, and reconnect.
-11. Verify `connection.connected=false`: commands disabled, nodes/segments offline.
-12. Verify active nodes, lines, and fragments.
-13. Verify modes, emergency, loader, and target.
-14. Enable equipment commands one by one.
-15. Verify latched/pulse behavior, timeout, and connection loss during write.
-16. Confirm interlocks and safety remain in PLC.
+8. Fill `Modbus.AlarmMap` in `Менеджер тревог`, without duplicating alarms in `DataMap`.
+9. Clear all unconfigured/error rows.
+10. Enable read-only signals first.
+11. Verify quality, stale, and reconnect.
+12. Verify `connection.connected=false`: commands disabled, nodes/segments offline.
+13. Verify active nodes, lines, and fragments.
+14. Verify modes, emergency, loader, and target.
+15. Verify fault/confirmation dialogs and the acknowledgement pulse.
+16. Enable equipment commands one by one.
+17. Verify latched/pulse behavior, timeout, and connection loss during write.
+18. Confirm interlocks and safety remain in PLC.
 

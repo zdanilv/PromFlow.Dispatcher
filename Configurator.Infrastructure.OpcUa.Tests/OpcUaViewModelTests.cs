@@ -425,6 +425,12 @@ public sealed class OpcUaViewModelTests
         public Task ShowErrorAsync(string title, string message, string? details = null, CancellationToken ct = default)
             => Task.CompletedTask;
 
+        public Task<bool> ShowAlarmNotificationAsync(
+            ModbusAlarmKind kind,
+            string message,
+            CancellationToken ct = default)
+            => Task.FromResult(false);
+
         public Task<ModbusOptions?> EditModbusSettingsAsync(
             string title,
             string sectionName,

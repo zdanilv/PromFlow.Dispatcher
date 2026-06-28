@@ -89,7 +89,12 @@ publishes the definition. Invalid documents are not published.
 
 Hiding settings in user mode does not create a separate configuration. User mode still
 reads the shared `RouteMapRuntime`, `Modbus`, and `ModbusDemo` sections while keeping the
-configuration tabs out of the UI.
+configuration tabs out of the UI, including `Менеджер тревог`. User mode still reacts to
+saved `Modbus.AlarmMap` alarm definitions.
+In that map, `Alarm area/Offset/Bit` defines the dialog input bit,
+`OK area/Offset/Bit` defines the separate acknowledgement bit, `Repeat ms` controls
+repetition while the alarm bit stays active, and `Pulse ms` controls the acknowledgement
+pulse duration.
 
 Validation covers schema version, ID uniqueness, references, binding roles, required
 commands, geometry, colors, fragment bindings, placeholder rules, and toggle semantics.

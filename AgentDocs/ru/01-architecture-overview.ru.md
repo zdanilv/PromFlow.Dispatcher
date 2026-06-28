@@ -14,15 +14,16 @@ Application и Infrastructure. RouteMap находится в desktop-слое, 
 
 `Configurator.Boot/appsettings.json` содержит `Application.WorkMode`:
 
-- `admin` — Workspace показывает вкладки `Route Map`, `SignalId ↔ Modbus`, `Modbus Demo`;
+- `admin` — Workspace показывает вкладки `Route Map`, `SignalId ↔ Modbus`, `Менеджер тревог`, `Modbus Demo`;
 - `user` — Workspace показывает только `Route Map` на всю рабочую область, без вкладок.
 
 Неверное или отсутствующее значение трактуется как `admin`. Актуальный admin-режим
-`WorkspaceView` содержит три вкладки:
+`WorkspaceView` содержит четыре вкладки:
 
 ```text
 Route Map
 SignalId ↔ Modbus
+Менеджер тревог
 Modbus Demo
 ```
 
@@ -30,14 +31,20 @@ Modbus Demo
 
 - `RouteMapDashboardViewModel` — операторская мнемосхема.
 - `RouteMapSignalMappingViewModel` — редактор связей `SignalId ↔ Modbus`.
+- `AlarmManagerViewModel` — редактор `Modbus.AlarmMap`.
 - `ModbusDemoViewModel` — экран запуска, остановки и настройки общего TCP runtime.
 
 `ModbusDemo.AutostartOnWorkspaceOpen` и `StartupMode` могут запускать общий runtime при
 открытии Workspace.
 
-В `user` режиме вкладки `SignalId ↔ Modbus` и `Modbus Demo` скрыты только визуально:
-их view model и общий Modbus runtime остаются частью Workspace, поэтому сохраненные
-admin-настройки продолжают применяться для управления оборудованием.
+В `user` режиме вкладки `SignalId ↔ Modbus`, `Менеджер тревог` и `Modbus Demo` скрыты
+визуально. Вкладка `Менеджер тревог` доступна только admin, но `ModbusAlarmMonitor`
+запускается в обоих режимах Workspace, читает сохраненный `Modbus.AlarmMap` и показывает
+диалоги по фронту alarm-бита.
+Запись AlarmMap содержит `Enabled`, `Id`, `Kind`, `Message`, входной `Alarm`-бит,
+отдельный `Acknowledgement`-бит, `RepeatIntervalMs` и
+`AcknowledgementPulseDurationMs`; UI показывает их как колонки `Вкл.`, `Тип`,
+`Сообщение`, `Alarm area/Offset/Bit`, `OK area/Offset/Bit`, `Repeat ms` и `Pulse ms`.
 
 ## Поток чтения
 
@@ -91,6 +98,7 @@ port, UnitId, start addresses, autostart и lifecycle. RouteMap использу
 ```text
 ModbusDemo.DataMap -> demo UI facade
 Modbus.DataMap     -> RouteMap facade and SignalId mapping tab
+Modbus.AlarmMap    -> alarm dialogs in admin/user and acknowledgement pulses
 ```
 
 Не переносите endpoint/lifecycle в RouteMap. RouteMap отвечает за доменные bindings и

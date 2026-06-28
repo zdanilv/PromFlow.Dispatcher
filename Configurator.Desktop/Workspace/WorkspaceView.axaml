@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Configurator.Desktop.Workspace;assembly=Configurator.Desktop"
+             xmlns:alarms="using:Configurator.Desktop.Workspace.Alarms"
              xmlns:modbusDemo="using:Configurator.Desktop.Workspace.ModbusDemo"
              xmlns:routeMap="using:Configurator.Desktop.Workspace.RouteMap"
              xmlns:signalMapping="using:Configurator.Desktop.Workspace.RouteMap.SignalMapping"
@@ -40,6 +41,9 @@
             </TabItem>
             <TabItem Header="SignalId ↔ Modbus">
                 <signalMapping:RouteMapSignalMappingView DataContext="{Binding RouteMapSignalMapping}"/>
+            </TabItem>
+            <TabItem Header="Менеджер тревог">
+                <alarms:AlarmManagerView DataContext="{Binding AlarmManager}"/>
             </TabItem>
             <TabItem Header="Modbus Demo">
                 <modbusDemo:ModbusDemoView DataContext="{Binding ModbusDemo}"/>

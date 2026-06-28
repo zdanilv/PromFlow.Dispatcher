@@ -31,6 +31,7 @@ public sealed class ModbusSettingsDialogViewModel : ReactiveObject
     private readonly IAppConfigService _appConfigService;
     private readonly IModbusDataMapValidator _dataMapValidator;
     private readonly Subject<ModbusOptions?> _result = new();
+    private List<ModbusAlarmOptions> _alarmMap = [];
     private bool _autostartOnWorkspaceOpen;
     private ModbusRunMode _startupMode;
     private int _writeConfirmationTimeoutMs;
@@ -309,6 +310,8 @@ public sealed class ModbusSettingsDialogViewModel : ReactiveObject
         {
             DataPoints.Add(new ModbusDataPointEditorRow(point.Clone(), RemoveDataPoint));
         }
+
+        _alarmMap = options.AlarmMap.Select(alarm => alarm.Clone()).ToList();
     }
 
     /// <summary>
@@ -348,7 +351,8 @@ public sealed class ModbusSettingsDialogViewModel : ReactiveObject
                 CoilCount = ServerCoilCount,
                 RegisterCount = ServerRegisterCount
             },
-            DataMap = DataPoints.Select(point => point.ToOptions()).ToList()
+            DataMap = DataPoints.Select(point => point.ToOptions()).ToList(),
+            AlarmMap = _alarmMap.Select(alarm => alarm.Clone()).ToList()
         };
 
     private string Validate(ModbusOptions options)

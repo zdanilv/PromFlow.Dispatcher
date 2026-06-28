@@ -32,6 +32,10 @@ public interface IDialogViewFactory
     /// <returns>Prepared view with bound view-model and its result stream.</returns>
     DialogViewContext<string?> CreateSecretInput(string message);
 
+    DialogViewContext<bool> CreateAlarmNotification(
+        ModbusAlarmKind kind,
+        string message);
+
     DialogViewContext<ModbusOptions?> CreateModbusSettings(
         string title,
         string sectionName,

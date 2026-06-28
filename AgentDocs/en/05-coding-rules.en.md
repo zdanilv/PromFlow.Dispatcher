@@ -7,6 +7,7 @@ Follow these rules when changing RouteMap, Modbus TCP, SignalId mapping, or rela
 - Do not put Modbus addresses in XAML, ViewModels, `RouteMapControl`, or `route-map.json`.
 - Keep physical PLC mapping in `Modbus.DataMap`.
 - Do not mix `Modbus.DataMap` with `ModbusDemo.DataMap`.
+- Do not store operator alarm dialogs in `Modbus.DataMap`; use `Modbus.AlarmMap`.
 - Do not move TCP endpoint/lifecycle ownership from `ModbusDemo` into RouteMap.
 - Do not register `RouteMapDefinition` as an immutable singleton.
 - Do not update Avalonia UI directly from Modbus callbacks.
@@ -33,6 +34,11 @@ Follow these rules when changing RouteMap, Modbus TCP, SignalId mapping, or rela
 ## Modbus
 
 - RouteMap facade uses `Modbus.DataMap`; demo facade uses `ModbusDemo.DataMap`.
+- `Modbus.AlarmMap` is read by the alarm monitor in admin/user modes; acknowledgements
+  are written as bit pulses without service DataMap points.
+- In `Менеджер тревог`, keep `Alarm` and `Acknowledgement` as different bits.
+  `Repeat ms` is valid in `1000..86400000`, `Pulse ms` in `1..60000`; register bits are
+  only `0..15`, and coil bits are not defined.
 - Register-bit writes must preserve neighboring bits through shadow/read-modify-write.
 - Do not automatically retry non-idempotent commands.
 - Use `Pulse` only for confirmed PLC contracts.

@@ -11,10 +11,11 @@ RouteMap является первой вкладкой Workspace и экран�
 или общий Modbus Demo TCP runtime.
 
 В `Application.WorkMode=admin` Workspace показывает вкладки `Route Map`,
-`SignalId ↔ Modbus` и `Modbus Demo`. В `Application.WorkMode=user` остается только
-RouteMap на всю рабочую область, а кнопка `НАСТРОЙКИ` скрыта. Экран `Modbus Demo`
-владеет запуском, остановкой и настройкой TCP endpoint. RouteMap работает через тот же
-runtime, но декодирует snapshot по отдельной RouteMap-карте `Modbus.DataMap`.
+`SignalId ↔ Modbus`, `Менеджер тревог` и `Modbus Demo`. В `Application.WorkMode=user`
+остается только RouteMap на всю рабочую область, а кнопка `НАСТРОЙКИ` скрыта. Экран
+`Modbus Demo` владеет запуском, остановкой и настройкой TCP endpoint. RouteMap работает
+через тот же runtime, но декодирует snapshot по отдельной RouteMap-карте
+`Modbus.DataMap`; монитор тревог читает `Modbus.AlarmMap` в admin и user режимах.
 
 `Application.WorkMode` читается из launch-конфига как режим оболочки. Рабочие секции
 `RouteMapRuntime`, `Modbus` и `ModbusDemo` накладываются поверх defaults из общего
@@ -47,7 +48,8 @@ UI не является контуром функциональной безо�
 2. Убедитесь, что `DataMap[].Name` совпадает с `SignalId` RouteMap.
 3. Переключите `RouteMapRuntime.SignalSource` в `Modbus`.
 4. Заполните RouteMap-карту `Modbus.DataMap` на вкладке `SignalId ↔ Modbus`.
-5. Сначала проверьте read-only сигналы, затем разрешайте команды.
+5. Заполните `Modbus.AlarmMap` на вкладке `Менеджер тревог`, если нужны аварии или повторные подтверждения.
+6. Сначала проверьте read-only сигналы, затем разрешайте команды.
 
 Пример:
 
@@ -57,7 +59,8 @@ UI не является контуром функциональной безо�
   "StaleAfterMs": 1500
 },
 "Modbus": {
-  "DataMap": []
+  "DataMap": [],
+  "AlarmMap": []
 },
 "ModbusDemo": {
   "AutostartOnWorkspaceOpen": true,
@@ -367,12 +370,13 @@ Dashboard получает целый словарь сигналов, прео�
 в `%LOCALAPPDATA%\Configurator\appsettings.json`. Используются две рабочие секции:
 
 - `ModbusDemo` задает endpoint, lifecycle и карту данных для экрана `Modbus Demo`;
-- `Modbus` хранит RouteMap `DataMap` и `WriteConfirmationTimeoutMs`.
+- `Modbus` хранит RouteMap `DataMap`, `AlarmMap` и `WriteConfirmationTimeoutMs`.
 
 ```json
 "Modbus": {
   "WriteConfirmationTimeoutMs": 2000,
-  "DataMap": []
+  "DataMap": [],
+  "AlarmMap": []
 },
 "ModbusDemo": {
   "AutostartOnWorkspaceOpen": false,
@@ -443,6 +447,62 @@ physical register address = HoldingRegisterStartAddress + Address
 | `BitIndex` | Бит `0..15` для Bool в Holding Register |
 | `WriteMode` | `Latched` или `Pulse` |
 | `PulseDurationMs` | Длительность импульса |
+
+## 9.1 Modbus AlarmMap
+
+`Modbus.AlarmMap` хранит операторские аварии и предупреждения, которые не являются
+RouteMap `SignalId`. Записи редактируются в admin-вкладке `Менеджер тревог`; в
+`Application.WorkMode=user` вкладка скрыта, но `ModbusAlarmMonitor` запускается в обоих
+режимах Workspace, читает сохраненную карту и показывает диалоги по активному runtime
+snapshot.
+
+Каждая строка таблицы соответствует одному `ModbusAlarmOptions`:
+
+| Колонка UI | Поле JSON | Назначение и допустимые значения |
+|---|---|---|
+| `Вкл.` | `Enabled` | `true` включает тревогу в мониторе; `false` оставляет строку в конфигурации, но диалог не появляется и acknowledgement не пишется |
+| `Id` | `Id` | Непустой уникальный идентификатор; нужен для диагностики, сохранения состояния фронта и расчета повторного показа |
+| `Тип` | `Kind` | `Fault` — аварийный красный диалог `Авария`; `Confirmation` — предупреждающий диалог `Повторное подтверждение` |
+| `Сообщение` | `Message` | Текст в модальном диалоге; должен быть непустым |
+| `Alarm area` | `Alarm.Area` | Область входного бита: `Coil` или `HoldingRegister` |
+| `Alarm Offset` | `Alarm.Address` | Zero-based offset внутри выбранной области; не является notation `40001` |
+| `Alarm Bit` | `Alarm.BitIndex` | Обязателен для `HoldingRegister` и должен быть `0..15`; для `Coil` не задается |
+| `Alarm client` | вычисляемое поле | Физический адрес alarm-бита по базам `ModbusDemo.Client`; ввод значения пересчитывает `Alarm.Area` и `Alarm.Address` |
+| `Alarm server` | вычисляемое поле | Физический адрес alarm-бита по базам `ModbusDemo.Server`; нужен для проверки PLC-карты в другой роли |
+| `OK area` | `Acknowledgement.Area` | Область отдельного acknowledgement-бита, куда монитор пишет по кнопке `Хорошо` |
+| `OK Offset` | `Acknowledgement.Address` | Zero-based offset acknowledgement-бита |
+| `OK Bit` | `Acknowledgement.BitIndex` | Обязателен для `HoldingRegister` и должен быть `0..15`; для `Coil` не задается |
+| `OK client` | вычисляемое поле | Физический client-адрес acknowledgement-бита |
+| `OK server` | вычисляемое поле | Физический server-адрес acknowledgement-бита |
+| `Repeat ms` | `RepeatIntervalMs` | Интервал повторного показа, пока `Alarm=true`; валидный диапазон `1000..86400000` мс |
+| `Pulse ms` | `AcknowledgementPulseDurationMs` | Длительность acknowledgement-импульса `true/false`; валидный диапазон `1..60000` мс |
+| `Действие` | — | `Копия` создает дубль с новым `Id`; `Удалить` убирает строку из локального черновика |
+
+Кнопка `ДОБАВИТЬ` создает включенную строку с `Kind=Fault`, сообщением по умолчанию,
+`Alarm=Coil[0]`, `Acknowledgement=Coil[1]`, `RepeatIntervalMs=60000` и
+`AcknowledgementPulseDurationMs=300`. `СОХРАНИТЬ` записывает только `Modbus.AlarmMap`;
+`Modbus.DataMap` и `ModbusDemo.DataMap` не меняются. `ПЕРЕЗАГРУЗИТЬ` отбрасывает
+локальный черновик и перечитывает сохраненное значение.
+
+Адреса `Alarm` и `Acknowledgement` обязаны различаться и попадать в диапазоны
+`ModbusDemo.Client`/`ModbusDemo.Server`: для `Coil` проверяются `CoilsEnabled` и
+`CoilCount`, для `HoldingRegister` — `HoldingRegistersEnabled`, `RegisterCount` и
+`BitIndex`. Физический адрес в колонках `Alarm client/server` и `OK client/server`
+вычисляется так же, как во вкладке `SignalId ↔ Modbus`:
+
+```text
+physical coil address     = CoilStartAddress + Address
+physical register address = HoldingRegisterStartAddress + Address
+```
+
+`AlarmMap` сохраняется в той же секции `Modbus`, что и `DataMap`, но не передается в
+RouteMap facade и не появляется во вкладке `SignalId ↔ Modbus`.
+
+В user-mode монитор показывает диалог только на фронте `Alarm=true`. Если оператор нажал
+`Хорошо`, acknowledgement-бит получает импульс `true`, затем `false` через `Pulse ms`.
+Закрытие через `X` не пишет acknowledgement. Если alarm-бит остается `true`, тот же
+диалог повторится через `Repeat ms`; когда alarm-бит станет `false`, состояние строки
+сбрасывается и следующий фронт снова покажет диалог сразу.
 
 ### Coil
 
@@ -715,6 +775,7 @@ Latched/Pulse, quality/stale, reconnect и локальный Modbus TCP server.
 
 - Не добавляйте Modbus-адреса в XAML, RouteMap ViewModel или `route-map.json`.
 - Не смешивайте RouteMap-карту `Modbus.DataMap` с demo-картой `ModbusDemo.DataMap`.
+- Не добавляйте тревоги в `Modbus.DataMap`: используйте `Modbus.AlarmMap`.
 - Не обновляйте Avalonia controls из Modbus callback.
 - Не меняйте `SignalId` при изменении только физического адреса PLC.
 - Не назначайте Pulse без подтвержденной семантики PLC.

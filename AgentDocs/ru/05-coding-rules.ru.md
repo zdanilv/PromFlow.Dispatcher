@@ -8,6 +8,7 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
 - Не добавляйте Modbus-адреса в XAML, ViewModel, `RouteMapControl` или `route-map.json`.
 - UI работает с `SignalId`; физическая адресация остается в `Modbus.DataMap`.
 - Не смешивайте `Modbus.DataMap` и `ModbusDemo.DataMap`.
+- Не храните операторские тревоги в `Modbus.DataMap`; используйте `Modbus.AlarmMap`.
 - Не переносите TCP endpoint/lifecycle из `ModbusDemo` в RouteMap.
 - Не регистрируйте `RouteMapDefinition` как immutable singleton.
 - Не обновляйте Avalonia UI напрямую из Modbus callback.
@@ -34,6 +35,11 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
 ## Modbus
 
 - RouteMap facade использует `Modbus.DataMap`; demo facade использует `ModbusDemo.DataMap`.
+- `Modbus.AlarmMap` читает монитор тревог в admin/user режимах; acknowledgement пишется
+  отдельным импульсом через bit-writer, без служебных DataMap-точек.
+- В `Менеджер тревог` не смешивайте `Alarm` и `Acknowledgement`: это разные биты.
+  `Repeat ms` валиден в `1000..86400000`, `Pulse ms` в `1..60000`; register bit только
+  `0..15`, coil bit не задается.
 - Register-bit запись должна сохранять соседние биты через shadow/read-modify-write.
 - Не делайте automatic retry для неидемпотентных команд.
 - `Pulse` назначайте только по подтвержденному PLC-контракту.

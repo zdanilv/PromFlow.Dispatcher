@@ -52,6 +52,11 @@ public interface IDialogService
         string? details = null,
         CancellationToken ct = default);
 
+    Task<bool> ShowAlarmNotificationAsync(
+        ModbusAlarmKind kind,
+        string message,
+        CancellationToken ct = default);
+
     Task<ModbusOptions?> EditModbusSettingsAsync(
         string title,
         string sectionName,

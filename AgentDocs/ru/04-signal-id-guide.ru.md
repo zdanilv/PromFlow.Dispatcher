@@ -104,3 +104,15 @@ Direction должен соответствовать Modbus access:
 
 SignalId не меняется при переносе сигнала на другой coil/register/bit. Меняется только
 `Modbus.DataMap`.
+
+Операторские аварии и предупреждения, которые не являются binding-ролями RouteMap,
+не получают `SignalId` и не добавляются в `Modbus.DataMap`. Для них используйте
+admin-вкладку `Менеджер тревог`, которая сохраняет `Modbus.AlarmMap`.
+
+В таблице `Менеджер тревог` `Alarm area/Offset/Bit` задают входной бит показа диалога,
+а `OK area/Offset/Bit` — отдельный acknowledgement-бит для кнопки `Хорошо`.
+Колонки `Alarm client/server` и `OK client/server` показывают физические адреса по
+базам `ModbusDemo.Client/Server` и могут пересчитать area/offset при ручном вводе.
+`Repeat ms` задает повтор диалога при сохраняющемся `Alarm=true`, `Pulse ms` — длину
+импульса `true/false`. Для `HoldingRegister` `Bit` обязателен и равен `0..15`, для
+`Coil` не используется.
