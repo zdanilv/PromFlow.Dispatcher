@@ -63,9 +63,11 @@ TopBar скрыта, но диалоги из `Modbus.AlarmMap` продолжа
 
 Связи SignalId с адресами редактируются на вкладке `SignalId ↔ Modbus`.
 Системные `connection.status` и `connection.connected` создает provider, в
-`Modbus.DataMap` их не добавляют.
+`Modbus.DataMap` их не добавляют. `system.fault` находится в системной группе, но
+настраивается как обычная read/bool точка `Modbus.DataMap`; при `true` вся RouteMap
+переходит в общий аварийный вид, а offline остается выше по приоритету.
 
-Тревоги и повторные подтверждения редактируются во вкладке `Менеджер тревог`. Они
+Тревоги, повторные подтверждения и обычные сообщения редактируются во вкладке `Менеджер тревог`. Они
 сохраняются в `Modbus.AlarmMap`, используют отдельный alarm-bit и отдельный
 acknowledgement-bit; кнопка `Хорошо` пишет acknowledgement-импульс.
 
@@ -77,8 +79,8 @@ acknowledgement-bit; кнопка `Хорошо` пишет acknowledgement-им
 |---|---|---|
 | `Вкл.` | `Enabled` | Включает/выключает строку без удаления из конфигурации |
 | `Id` | `Id` | Уникальное имя тревоги; пустые и повторяющиеся значения запрещены |
-| `Тип` | `Kind` | `Fault` открывает красный диалог аварии, `Confirmation` — предупреждающий диалог повторного подтверждения |
-| `Сообщение` | `Message` | Текст сообщения в user-диалоге |
+| `Тип` | `Kind` | `Fault` открывает красный диалог аварии, `Confirmation` — предупреждающий диалог повторного подтверждения, `Message` — нейтральный диалог сообщения |
+| `Сообщение` | `Message` | Текст сообщения в модальном диалоге |
 | `Alarm area` | `Alarm.Area` | Где читать входной alarm-бит: `Coil` или `HoldingRegister` |
 | `Alarm Offset` | `Alarm.Address` | Zero-based offset alarm-бита от start address выбранной области |
 | `Alarm Bit` | `Alarm.BitIndex` | Номер бита `0..15` для `HoldingRegister`; для `Coil` пустой |
@@ -143,8 +145,11 @@ bits одного holding register; общий `Fault` линии остаетс
 ## Семантика Команд
 
 В schema v10 карточные `ПУСК`/`СТОП` и TopBar `АВАРИЯ` всегда работают как
-toggle-команды RouteMap и пишут `true/false` в свои command bindings. Legacy-значение
-`RouteCommandButtonKind.Momentary` миграция приводит к `Toggle`.
+toggle-команды RouteMap. `ПУСК` и `СТОП` взаимоисключаются: включение одной кнопки
+сначала пишет `false` в противоположную команду, затем `true` в свою; ручное снятие
+пишет только свою команду `false`. `StartOffFeedback`/`StopOffFeedback` — опциональные
+read/bool роли карточек: `true` отключает кнопку и показывает ее снятой без записи в PLC.
+Legacy-значение `RouteCommandButtonKind.Momentary` миграция приводит к `Toggle`.
 
 `ModbusWriteMode` управляет только физической записью:
 
@@ -159,7 +164,7 @@ toggle-команды RouteMap и пишут `true/false` в свои command bi
 1. Оставить `SignalSource=Mock` и проверить RouteMap UI.
 2. Настроить endpoint и lifecycle на вкладке `Modbus Demo`.
 3. Заполнить `Modbus.DataMap` на вкладке `SignalId ↔ Modbus`.
-4. Заполнить `Modbus.AlarmMap` на вкладке `Менеджер тревог`, если нужны диалоги тревог.
+4. Заполнить `Modbus.AlarmMap` на вкладке `Менеджер тревог`, если нужны диалоги тревог, повторных подтверждений или сообщений.
 5. Заполнить `ModbusDemo.DataMap` только для контролов demo-экрана.
 6. Запустить Client или Server на вкладке `Modbus Demo`.
 7. Переключить RouteMap на `SignalSource=Modbus`.

@@ -67,8 +67,6 @@ public sealed partial class SignalBindingsEditor : UserControl
 
     private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
         SignalBindingRole.State or
-        SignalBindingRole.StartOffFeedback or
-        SignalBindingRole.StopOffFeedback or
         SignalBindingRole.TargetOffFeedback or
         SignalBindingRole.LoaderOffFeedback or
         SignalBindingRole.AutomaticModeOffFeedback or

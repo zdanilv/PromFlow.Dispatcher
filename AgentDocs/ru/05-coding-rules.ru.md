@@ -31,6 +31,10 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
 - Не меняйте SignalId при изменении PLC address.
 - Обязательные command bindings должны оставаться `Bool` и обычно `ReadWrite`.
 - `ActiveRouteFragment` всегда `Read` + `Bool`.
+- `system.fault` — системный, но PLC-mapped `Read/Bool` SignalId в `Modbus.DataMap`;
+  не переносите его в `Modbus.AlarmMap`.
+- `StartOffFeedback` и `StopOffFeedback` — только карточные `Read/Bool` роли. При
+  `true` они отключают кнопку и сбрасывают checked-состояние без записи команды.
 
 ## Modbus
 
@@ -50,6 +54,8 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
 - Все обновления Avalonia observable state должны возвращаться на UI thread.
 - Подписки ViewModel должны освобождаться в `Dispose`.
 - Runtime readback не должен повторно отправлять команды.
+- Взаимоисключение `ПУСК`/`СТОП` должно писать `false` в противоположную команду перед
+  `true` в выбранную; snapshot-конфликт двух `true` отображается как checked только `СТОП`.
 - Optimistic UI state допустим только как временное состояние до readback.
 
 ## Visual Studio visibility

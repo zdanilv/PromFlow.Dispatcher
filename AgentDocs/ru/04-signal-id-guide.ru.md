@@ -17,12 +17,15 @@ PLC. RouteMap, ViewModel и XAML должны знать только `SignalId`
 system.mode.automatic
 system.mode.manual
 system.emergency
+system.fault
 route.node.bsu_1.active
 route.node.bsu_1.target
 route.node.bsu_1.loader
 route.bsu2_to_bucket.fragment_1.active
 equip.bucket.start
+equip.bucket.start.off
 equip.bucket.stop
+equip.bucket.stop.off
 equip.bucket.text
 connection.status
 connection.connected
@@ -67,10 +70,13 @@ Direction должен соответствовать Modbus access:
 | `Text` | `String` или число | card status |
 | `Value` | любой поддержанный | extra runtime value |
 | `StartCommand`, `StopCommand` | `Bool` | equipment commands |
+| `StartOffFeedback`, `StopOffFeedback` | `Bool` | read-only disable bits for card start/stop buttons |
 | `TargetCommand`, `LoaderCommand` | `Bool` | node menu commands |
 | `AutomaticModeCommand`, `ManualModeCommand`, `EmergencyCommand` | `Bool` | TopBar commands |
 
-`State` и `*OffFeedback` — legacy. Не используйте их в новом поведении.
+`StartOffFeedback=true` или `StopOffFeedback=true` отключает соответствующую кнопку
+карточки и визуально сбрасывает `IsChecked=false` без записи команды. Остальные
+`*OffFeedback` и `State` — legacy. Не используйте их в новом поведении.
 
 ## Системные SignalId
 
@@ -78,9 +84,12 @@ Direction должен соответствовать Modbus access:
 |---|---|---|
 | `connection.status` | `String` | Текст состояния Modbus runtime для TopBar |
 | `connection.connected` | `Bool` | `true`, когда Modbus runtime running и snapshot не stale |
+| `system.fault` | `Bool` | PLC-mapped общий сигнал аварии RouteMap; `true` переводит элементы карты в fault-вид |
 
-Системные SignalId создает provider. Они отображаются в `SignalId ↔ Modbus` как
-системные строки и не добавляются в `Modbus.DataMap`.
+`connection.status` и `connection.connected` создает provider: они отображаются в
+`SignalId ↔ Modbus` как внутренние системные строки и не добавляются в `Modbus.DataMap`.
+`system.fault` отображается в той же системной группе, но это обычный read-only Bool из
+PLC: создайте для него точку `Modbus.DataMap`.
 
 ## Типы
 

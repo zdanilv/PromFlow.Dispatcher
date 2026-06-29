@@ -75,6 +75,7 @@ internal static class RouteMapSignalInventory
 
         EnsureSystemSignal(items, RouteMapSystemSignalIds.ConnectionStatus, SignalValueType.String);
         EnsureSystemSignal(items, RouteMapSystemSignalIds.ConnectionConnected, SignalValueType.Bool);
+        EnsureSystemSignal(items, RouteMapSystemSignalIds.GlobalFault, SignalValueType.Bool, isInternal: false);
 
         return items;
     }
@@ -82,7 +83,8 @@ internal static class RouteMapSignalInventory
     private static void EnsureSystemSignal(
         List<RouteMapSignalInventoryItem> items,
         string signalId,
-        SignalValueType valueType)
+        SignalValueType valueType,
+        bool isInternal = true)
     {
         if (items.Any(item => string.Equals(item.SignalId, signalId, StringComparison.OrdinalIgnoreCase)))
         {
@@ -94,10 +96,10 @@ internal static class RouteMapSignalInventory
             valueType,
             ModbusDataAccess.Read,
             "System",
-            "Modbus runtime",
+            isInternal ? "Modbus runtime" : "RouteMap",
             HasTypeConflict: false,
             Category: RouteMapSignalElementCategory.System,
-            IsSystem: true));
+            IsSystem: isInternal));
     }
 
     private static bool IsSystemSignal(string signalId) =>
@@ -183,8 +185,6 @@ internal static class RouteMapSignalInventory
 
     private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
         SignalBindingRole.State or
-        SignalBindingRole.StartOffFeedback or
-        SignalBindingRole.StopOffFeedback or
         SignalBindingRole.TargetOffFeedback or
         SignalBindingRole.LoaderOffFeedback or
         SignalBindingRole.AutomaticModeOffFeedback or

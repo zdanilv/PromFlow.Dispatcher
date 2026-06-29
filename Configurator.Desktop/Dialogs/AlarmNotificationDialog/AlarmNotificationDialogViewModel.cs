@@ -26,15 +26,39 @@ public sealed class AlarmNotificationDialogViewModel : ReactiveObject
     public ReactiveCommand<Unit, Unit> OkCommand { get; }
     public ReactiveCommand<Unit, Unit> CloseCommand { get; }
     public bool IsFault => Kind == ModbusAlarmKind.Fault;
-    public string Title => IsFault ? "Авария" : "Повторное подтверждение";
-    public string BadgeText => IsFault ? "!" : "?";
-    public IBrush HeaderBackground => IsFault
-        ? new SolidColorBrush(Color.Parse("#B42318"))
-        : new SolidColorBrush(Color.Parse("#9A6700"));
-    public IBrush BadgeBackground => IsFault
-        ? new SolidColorBrush(Color.Parse("#FEE4E2"))
-        : new SolidColorBrush(Color.Parse("#FFF4CC"));
-    public IBrush BadgeForeground => IsFault
-        ? new SolidColorBrush(Color.Parse("#B42318"))
-        : new SolidColorBrush(Color.Parse("#8A5A00"));
+    public string Title => Kind switch
+    {
+        ModbusAlarmKind.Fault => "Авария",
+        ModbusAlarmKind.Confirmation => "Повторное подтверждение",
+        ModbusAlarmKind.Message => "Сообщение",
+        _ => "Сообщение",
+    };
+    public string BadgeText => Kind switch
+    {
+        ModbusAlarmKind.Fault => "!",
+        ModbusAlarmKind.Confirmation => "?",
+        ModbusAlarmKind.Message => "i",
+        _ => "i",
+    };
+    public IBrush HeaderBackground => Kind switch
+    {
+        ModbusAlarmKind.Fault => new SolidColorBrush(Color.Parse("#B42318")),
+        ModbusAlarmKind.Confirmation => new SolidColorBrush(Color.Parse("#9A6700")),
+        ModbusAlarmKind.Message => new SolidColorBrush(Color.Parse("#295B8D")),
+        _ => new SolidColorBrush(Color.Parse("#295B8D")),
+    };
+    public IBrush BadgeBackground => Kind switch
+    {
+        ModbusAlarmKind.Fault => new SolidColorBrush(Color.Parse("#FEE4E2")),
+        ModbusAlarmKind.Confirmation => new SolidColorBrush(Color.Parse("#FFF4CC")),
+        ModbusAlarmKind.Message => new SolidColorBrush(Color.Parse("#E8F2FF")),
+        _ => new SolidColorBrush(Color.Parse("#E8F2FF")),
+    };
+    public IBrush BadgeForeground => Kind switch
+    {
+        ModbusAlarmKind.Fault => new SolidColorBrush(Color.Parse("#B42318")),
+        ModbusAlarmKind.Confirmation => new SolidColorBrush(Color.Parse("#8A5A00")),
+        ModbusAlarmKind.Message => new SolidColorBrush(Color.Parse("#295B8D")),
+        _ => new SolidColorBrush(Color.Parse("#295B8D")),
+    };
 }

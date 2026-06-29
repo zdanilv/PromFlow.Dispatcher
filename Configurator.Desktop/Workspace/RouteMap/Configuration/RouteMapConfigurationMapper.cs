@@ -372,8 +372,8 @@ public sealed class RouteMapConfigurationMapper
             CanStop = card.CanStop,
             StartButtonKind = RouteCommandButtonKind.Toggle,
             StopButtonKind = RouteCommandButtonKind.Toggle,
-            StartOffFeedbackEnabled = false,
-            StopOffFeedbackEnabled = false,
+            StartOffFeedbackEnabled = card.StartOffFeedbackEnabled,
+            StopOffFeedbackEnabled = card.StopOffFeedbackEnabled,
             IsVisible = card.IsVisible,
             AttachedChainId = card.AttachedChainId ?? chain?.Id,
             AttachedCardRightOffset = card.AttachedChainId is not null
@@ -404,8 +404,8 @@ public sealed class RouteMapConfigurationMapper
                 .ToArray(),
             RouteCommandButtonKind.Toggle,
             RouteCommandButtonKind.Toggle,
-            StartOffFeedbackEnabled: false,
-            StopOffFeedbackEnabled: false,
+            StartOffFeedbackEnabled: card.StartOffFeedbackEnabled,
+            StopOffFeedbackEnabled: card.StopOffFeedbackEnabled,
             card.IsVisible,
             card.AttachedChainId,
             card.AttachedCardRightOffset,
@@ -561,8 +561,6 @@ public sealed class RouteMapConfigurationMapper
 
     private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
         SignalBindingRole.State or
-        SignalBindingRole.StartOffFeedback or
-        SignalBindingRole.StopOffFeedback or
         SignalBindingRole.TargetOffFeedback or
         SignalBindingRole.LoaderOffFeedback or
         SignalBindingRole.AutomaticModeOffFeedback or

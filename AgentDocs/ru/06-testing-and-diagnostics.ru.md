@@ -46,6 +46,9 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | Все stale/offline | Состояние `ModbusDemo`, poll interval и `StaleAfterMs` |
 | В user-режиме видны вкладки | `Application.WorkMode` и binding `WorkspaceView.IsUserMode` |
 | Offline lock не сработал | Системный `connection.connected`, mapper и `AreCommandsEnabled` |
+| Общая авария не окрашивает карту | Точка `Modbus.DataMap` с `Name=system.fault`, `Read/Bool`, good quality и значение `true` |
+| `ПУСК`/`СТОП` не отключается по PLC | Роли `StartOffFeedback`/`StopOffFeedback`, направление `Read`, тип `Bool`, значение `true` |
+| `ПУСК` и `СТОП` одновременно checked | Readback `StartCommand`/`StopCommand`; при конфликте UI должен показывать checked только `СТОП` |
 | Bit-write отклонен | Нет первого raw snapshot holding register |
 | Нет readback | Access, PLC echo и `WriteConfirmationTimeoutMs` |
 | Неверный physical address | StartAddress и 0/1-based notation PLC |
@@ -54,7 +57,7 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 
 | Симптом | Проверить |
 |---|---|
-| Диалог не появляется | `Application.WorkMode=user`, активный runtime snapshot и `Modbus.AlarmMap[].Enabled` |
+| Диалог не появляется | Открытый Workspace в `admin` или `user`, активный runtime snapshot и `Modbus.AlarmMap[].Enabled` |
 | Диалог появляется повторно слишком часто | `RepeatIntervalMs` конкретной тревоги |
 | `Хорошо` не подтверждает | Отдельный `Acknowledgement` address/bit и `AcknowledgementPulseDurationMs` |
 | Ошибка адреса в менеджере | Попадание Alarm/Acknowledgement в ranges `ModbusDemo.Client/Server` |
@@ -83,8 +86,9 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 12. Проверить `connection.connected=false`: команды заблокированы, узлы/линии offline.
 13. Проверить active nodes, active lines и fragments.
 14. Проверить modes, emergency, loader/target.
-15. Проверить диалоги аварии/повторного подтверждения и acknowledgement-импульс.
-16. По одной разрешить команды оборудования.
-17. Проверить latched/pulse, timeout и потерю связи во время записи.
-18. Убедиться, что interlock и safety реализованы в PLC.
+15. Проверить диалоги аварии/повторного подтверждения/обычного сообщения и acknowledgement-импульс.
+16. Проверить `system.fault=true`: RouteMap переходит в общий аварийный вид, `false` возвращает обычную per-object логику.
+17. По одной разрешить команды оборудования; проверить взаимоисключение `ПУСК`/`СТОП` и `StartOffFeedback`/`StopOffFeedback`.
+18. Проверить latched/pulse, timeout и потерю связи во время записи.
+19. Убедиться, что interlock и safety реализованы в PLC.
 

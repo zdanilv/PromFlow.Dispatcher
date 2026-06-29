@@ -184,8 +184,8 @@ route.<segmentId>.active
 
 Если `route.<segmentId>.active == true`, mapper переводит линию в `RouteObjectState.ActiveRoute`, и `RouteMapControl` рисует ее активной синей линией.
 `IsDirectional` не участвует в этом решении. Итоговый приоритет runtime-состояния:
-`Offline`, затем `Fault`, `ActiveRoute`, fallback; порядок bindings в JSON на
-результат не влияет.
+`Offline`, затем глобальный `system.fault` или локальный `Fault`, затем `ActiveRoute`,
+fallback; порядок bindings в JSON на результат не влияет.
 
 Начиная со `schemaVersion = 10` длинная линия может иметь `ActiveFragments`: по одному
 `ActiveRouteFragment` binding на каждый видимый range после логической фрагментации.
@@ -346,6 +346,11 @@ equip.bucket.stop
 - расширяются вместе с шириной карточки;
 - имеют `MinHeight = 40` и `FontSize = 18`;
 - пишут `true/false` в `equip.bucket.start` и `equip.bucket.stop`;
+- взаимоисключают друг друга: включение `ПУСК` сначала пишет `StopCommand=false`, затем
+  `StartCommand=true`, включение `СТОП` сначала пишет `StartCommand=false`, затем
+  `StopCommand=true`;
+- поддерживают read-only `StartOffFeedback` и `StopOffFeedback`: `true` отключает
+  соответствующую кнопку и показывает ее снятой без записи команды;
 - runtime-обновление checked-состояния не отправляет команды обратно, потому что VM защищена флагом `_isApplyingRuntime`.
 
 Цвета кнопок вычисляются во ViewModel с приоритетом `pressed > checked > normal`.
@@ -466,9 +471,13 @@ services.AddTransient<RouteMapDashboardViewModel>();
 
 Правильный поток:
 
-В актуальной `schemaVersion = 10` карточные toggle-кнопки `ПУСК`/`СТОП` и TopBar
-`АВАРИЯ` не используют OffFeedback и не поддерживают `Momentary`: пользовательское
-включение пишет `true` в свой `*Command`, снятие галочки пишет `false`.
+В актуальной `schemaVersion = 10` карточные toggle-кнопки `ПУСК`/`СТОП` не поддерживают
+`Momentary`, но используют активные роли `StartOffFeedback`/`StopOffFeedback` для
+отключения кнопок по PLC-readback. Пользовательское включение `ПУСК` сначала пишет
+`StopCommand=false`, затем `StartCommand=true`; включение `СТОП` сначала пишет
+`StartCommand=false`, затем `StopCommand=true`; снятие галочки пишет только свою
+команду `false`. TopBar `АВАРИЯ` не использует OffFeedback и пишет `true/false`
+напрямую.
 
 Toggle-команды узлов `Отправить`/`Возврат` и режимы TopBar `АВТОМАТ`/`РУЧНОЕ`
 также пишут включение и выключение напрямую через `TargetCommand`/`LoaderCommand`
@@ -509,12 +518,15 @@ equip.bucket.text
 equip.bucket.start
 equip.bucket.stop
 route.active_bsu1_bsu2.active
+system.fault
 ```
 
 `ModbusTcpSignalValueProvider` получает heartbeat snapshots через
 `IModbusDataSnapshotSource`, формирует quality/stale и синтезирует `connection.status` и
 `connection.connected`. При `connection.connected=false` mapper переводит все узлы и
-линии в `Offline`, а UI-команды блокируются, кроме кнопки `НАСТРОЙКИ`.
+линии в `Offline`, а UI-команды блокируются, кроме кнопки `НАСТРОЙКИ`. `system.fault`
+не синтезируется provider-ом: это обычная read/bool точка `Modbus.DataMap`, которую PLC
+поднимает для общей аварии всей карты.
 `ModbusTcpCommandDispatcher` проверяет тип и доступ, затем выполняет latched или pulse
 запись через `IModbusTcpService`. Bool внутри Holding Register записывается защищенным
 read-modify-write. UI при этом не меняется: он продолжает получать `SignalValue` и
@@ -522,7 +534,7 @@ read-modify-write. UI при этом не меняется: он продолж
 
 `ModbusDemo.DataMap` используется только экраном `Modbus Demo`. RouteMap hot-apply меняет
 только `Modbus.DataMap` и не трогает demo-карту.
-Операторские аварии и повторные подтверждения хранятся отдельно в `Modbus.AlarmMap`:
+Операторские аварии, повторные подтверждения и обычные сообщения хранятся отдельно в `Modbus.AlarmMap`:
 они не являются RouteMap `SignalId` и не попадают в `ModbusTcpSignalValueProvider`.
 
 `Менеджер тревог` редактирует `ModbusAlarmOptions`. UI-колонки соответствуют модели так:
@@ -531,7 +543,7 @@ read-modify-write. UI при этом не меняется: он продолж
 |---|---|---|
 | `Вкл.` | `Enabled` | Участвует ли строка в мониторинге тревог |
 | `Id` | `Id` | Уникальный ключ состояния тревоги |
-| `Тип` | `Kind` | `Fault` или `Confirmation`, влияет на визуальный стиль диалога |
+| `Тип` | `Kind` | `Fault`, `Confirmation` или `Message`, влияет на визуальный стиль диалога |
 | `Сообщение` | `Message` | Текст модального уведомления |
 | `Alarm area/Offset/Bit` | `Alarm.Area/Address/BitIndex` | Входной бит, где `Address` — zero-based offset, а `BitIndex` нужен только для `HoldingRegister` |
 | `Alarm client/server` | вычисляется из `Alarm` | Физический адрес по start address client/server endpoint; setter пересчитывает area и offset |
@@ -584,7 +596,8 @@ read-modify-write. UI при этом не меняется: он продолж
 - `StatusBrush` для известных статусов;
 - checked-состояние `ПУСК` / `СТОП`;
 - запись `true/false` для `equip.bucket.start` и `equip.bucket.stop`;
-- обычные toggle-команды `ПУСК` / `СТОП` / `АВАРИЯ`;
+- взаимоисключение `ПУСК` / `СТОП`, Stop-приоритет при конфликтном readback и OffFeedback-блокировку;
+- обычную toggle-команду TopBar `АВАРИЯ`;
 - отображение `Отправить` / `Возврат` в карточке из выбранных ролей узлов;
 - уникальность ролей `IsLoader` и `IsTarget`.
 - последовательные миграции v1→v2→v3 и v2→v3 с сохранением пользовательских свойств;
@@ -772,6 +785,7 @@ viewport предусмотрен горизонтальный `ScrollViewer`.
 - единственность начальных `IsLoader` и `IsTarget`;
 - конечность координат, положительные размеры и формат цветов;
 - что `ПУСК`, `СТОП` и `АВАРИЯ` используют `RouteCommandButtonKind.Toggle`;
+- что `StartOffFeedback`/`StopOffFeedback` допустимы только у карточек, имеют `Direction=Read` и `ValueType=Bool`;
 - радиус дуги `0..min(|dx|, |dy|)`;
 - неотрицательный endpoint-gap;
 - ссылки правил заглушек и их размеры/лимиты.
@@ -815,10 +829,13 @@ bindings кнопок `АВТОМАТ`, `РУЧНОЙ`, `АВАРИЯ`. Теле
 normal `#D95D4E`, pressed `#949595`, checked `#9E2F25`, foreground `#FFFFFF`.
 
 В актуальной `schemaVersion = 10` `ПУСК`, `СТОП` и `АВАРИЯ` всегда работают как
-обычные `ToggleButton`: `true` пишется при включении, `false` при снятии галочки.
-Legacy-значение `RouteCommandButtonKind.Momentary` остается только для безопасной
-десериализации старых JSON и миграцией приводится к `Toggle`. `АВТОМАТ` и
-`РУЧНОЙ` остаются взаимоисключающими toggle-кнопками.
+`ToggleButton`. `ПУСК` и `СТОП` взаимоисключаются: включение одной кнопки сначала
+снимает противоположную команду, затем пишет `true` в свою; ручное снятие пишет только
+свою команду `false`. Если PLC readback вернул оба command-бита `true`, UI показывает
+только `СТОП` и не пишет исправление обратно в PLC. `АВАРИЯ` пишет `true` при включении
+и `false` при снятии. Legacy-значение `RouteCommandButtonKind.Momentary` остается
+только для безопасной десериализации старых JSON и миграцией приводится к `Toggle`.
+`АВТОМАТ` и `РУЧНОЙ` остаются взаимоисключающими toggle-кнопками.
 
 Обязательные командные роли:
 
@@ -828,16 +845,19 @@ ManualModeCommand     -> system.mode.manual
 EmergencyCommand      -> system.emergency
 StartCommand           -> кнопка ПУСК карточки
 StopCommand            -> кнопка СТОП карточки
+StartOffFeedback       -> read-only отключение ПУСК карточки
+StopOffFeedback        -> read-only отключение СТОП карточки
 TargetCommand          -> пункт Отправить узла
 LoaderCommand          -> пункт Возврат узла
 ```
 
-Все перечисленные команды используют `Bool` и `ReadWrite`. UI сначала оптимистично меняет
-checked-состояние, затем отправляет `SignalWriteRequest` через
-`IEquipmentCommandDispatcher`. Для выбора узла записываются все изменения: прежняя роль
-получает `false`, новая — `true`, а взаимоисключающая роль выбранного узла при необходимости
-также сбрасывается. Входное значение `ReadWrite` применяется как readback и не вызывает
-повторной записи.
+Командные роли используют `Bool` и `ReadWrite`; `StartOffFeedback`/`StopOffFeedback`
+используют `Bool` и `Read`. UI сначала оптимистично меняет checked-состояние, затем
+отправляет `SignalWriteRequest` через `IEquipmentCommandDispatcher`. Для выбора узла
+записываются все изменения: прежняя роль получает `false`, новая — `true`, а
+взаимоисключающая роль выбранного узла при необходимости также сбрасывается. Входное
+значение `ReadWrite` и OffFeedback применяется как readback и не вызывает повторной
+записи.
 
 Каждый узел и сегмент имеет отдельный `ActiveRoute` binding. Для узла стандартный ID:
 

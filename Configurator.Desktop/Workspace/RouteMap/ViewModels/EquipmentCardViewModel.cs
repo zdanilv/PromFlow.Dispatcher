@@ -155,12 +155,20 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             if (_isStartChecked == value)
                 return;
 
-            this.RaiseAndSetIfChanged(ref _isStartChecked, value);
-            this.RaisePropertyChanged(nameof(StartBackground));
-            this.RaisePropertyChanged(nameof(StartForeground));
+            SetStartChecked(value);
 
             if (!_isApplyingRuntime)
-                _ = DispatchAsync(_startBinding, value);
+            {
+                if (value)
+                {
+                    SetStopChecked(false);
+                    _ = DispatchStartAsync();
+                }
+                else
+                {
+                    _ = DispatchAsync(_startBinding, false);
+                }
+            }
         }
     }
 
@@ -172,12 +180,20 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             if (_isStopChecked == value)
                 return;
 
-            this.RaiseAndSetIfChanged(ref _isStopChecked, value);
-            this.RaisePropertyChanged(nameof(StopBackground));
-            this.RaisePropertyChanged(nameof(StopForeground));
+            SetStopChecked(value);
 
             if (!_isApplyingRuntime)
-                _ = DispatchAsync(_stopBinding, value);
+            {
+                if (value)
+                {
+                    SetStartChecked(false);
+                    _ = DispatchStopAsync();
+                }
+                else
+                {
+                    _ = DispatchAsync(_stopBinding, false);
+                }
+            }
         }
     }
 
@@ -245,7 +261,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             StatusText = runtimeState.Text ?? StatusText;
             CanStart = runtimeState.CanStart;
             CanStop = runtimeState.CanStop;
-            IsStartChecked = runtimeState.IsStartChecked;
+            var isStartChecked = runtimeState.IsStartChecked && !runtimeState.IsStopChecked;
+            IsStartChecked = isStartChecked;
             IsStopChecked = runtimeState.IsStopChecked;
             _runtimeVisible = runtimeState.IsVisible;
             this.RaisePropertyChanged(nameof(IsVisible));
@@ -271,6 +288,38 @@ public sealed class EquipmentCardViewModel : ViewModelBase
 
         return _commandDispatcher.DispatchAsync(
             new SignalWriteRequest(binding.SignalId, value, binding.ValueType));
+    }
+
+    private async Task DispatchStartAsync()
+    {
+        await DispatchAsync(_stopBinding, false);
+        await DispatchAsync(_startBinding, true);
+    }
+
+    private async Task DispatchStopAsync()
+    {
+        await DispatchAsync(_startBinding, false);
+        await DispatchAsync(_stopBinding, true);
+    }
+
+    private void SetStartChecked(bool value)
+    {
+        if (_isStartChecked == value)
+            return;
+
+        this.RaiseAndSetIfChanged(ref _isStartChecked, value, nameof(IsStartChecked));
+        this.RaisePropertyChanged(nameof(StartBackground));
+        this.RaisePropertyChanged(nameof(StartForeground));
+    }
+
+    private void SetStopChecked(bool value)
+    {
+        if (_isStopChecked == value)
+            return;
+
+        this.RaiseAndSetIfChanged(ref _isStopChecked, value, nameof(IsStopChecked));
+        this.RaisePropertyChanged(nameof(StopBackground));
+        this.RaisePropertyChanged(nameof(StopForeground));
     }
 
     private static string SelectedPointTitle(

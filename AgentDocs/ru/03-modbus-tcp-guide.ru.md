@@ -21,6 +21,8 @@ RouteMap использует Modbus TCP через доменные `SignalId`.
 production mapping.
 Не добавляйте операторские тревоги в `Modbus.DataMap`: они настраиваются отдельно в
 `Modbus.AlarmMap`, чтобы RouteMap не видел их как SignalId.
+Исключение по названию, но не по смыслу: `system.fault` — это не операторский диалог, а
+системный RouteMap SignalId общей аварии; его нужно настраивать в `Modbus.DataMap`.
 
 ## Endpoint и lifecycle
 
@@ -104,7 +106,7 @@ acknowledgement-импульс `true/false`; если alarm-бит остает�
 |---|---|---|
 | `Вкл.` | `Enabled` | Включает строку для монитора тревог; выключенная строка сохраняется, но не показывает диалог и не пишет acknowledgement |
 | `Id` | `Id` | Уникальный идентификатор тревоги; используется для состояния повтора и должен быть непустым |
-| `Тип` | `Kind` | `Fault` показывает красный диалог `Авария`; `Confirmation` показывает предупреждающий диалог `Повторное подтверждение` |
+| `Тип` | `Kind` | `Fault` показывает красный диалог `Авария`; `Confirmation` показывает предупреждающий диалог `Повторное подтверждение`; `Message` показывает нейтральный диалог `Сообщение` |
 | `Сообщение` | `Message` | Текст, который оператор видит в модальном диалоге |
 | `Alarm area` | `Alarm.Area` | Область входного бита: `Coil` или `HoldingRegister` |
 | `Offset` после `Alarm area` | `Alarm.Address` | Zero-based offset alarm-бита внутри выбранной области |
@@ -145,6 +147,10 @@ physical register address = HoldingRegisterStartAddress + Address
 `connection.status` и `connection.connected` — системные SignalId. Их создает runtime
 provider; добавлять их в `DataMap` не нужно. `connection.connected=false` блокирует
 команды RouteMap и переводит узлы/линии в offline-состояние.
+
+`system.fault` — системный, но PLC-mapped SignalId. Он отображается в `SignalId ↔ Modbus`
+как строка системной группы, допускает создание точки `Modbus.DataMap` с `Read/Bool` и
+при `true` переводит RouteMap-объекты и карточки в общий аварийный вид.
 
 ## Запись
 

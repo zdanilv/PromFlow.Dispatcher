@@ -245,8 +245,8 @@ public sealed class RouteMapConfigurationMigrator
 
         foreach (var card in document.Cards)
         {
-            EnsureBinding(card.Bindings, SignalBindingRole.StartOffFeedback, $"{card.Id}.start.off", SignalBindingDirection.Read);
-            EnsureBinding(card.Bindings, SignalBindingRole.StopOffFeedback, $"{card.Id}.stop.off", SignalBindingDirection.Read);
+            NormalizeOptionalOffFeedback(card.Bindings, SignalBindingRole.StartOffFeedback);
+            NormalizeOptionalOffFeedback(card.Bindings, SignalBindingRole.StopOffFeedback);
         }
     }
 
@@ -276,16 +276,10 @@ public sealed class RouteMapConfigurationMigrator
 
         foreach (var card in document.Cards)
         {
-            card.StartOffFeedbackEnabled = card.StartButtonKind == RouteCommandButtonKind.Toggle;
-            card.StopOffFeedbackEnabled = card.StopButtonKind == RouteCommandButtonKind.Toggle;
-            if (card.StartOffFeedbackEnabled)
-                EnsureBinding(card.Bindings, SignalBindingRole.StartOffFeedback, $"{card.Id}.start.off", SignalBindingDirection.Read);
-            else
-                RemoveBindings(card.Bindings, SignalBindingRole.StartOffFeedback);
-            if (card.StopOffFeedbackEnabled)
-                EnsureBinding(card.Bindings, SignalBindingRole.StopOffFeedback, $"{card.Id}.stop.off", SignalBindingDirection.Read);
-            else
-                RemoveBindings(card.Bindings, SignalBindingRole.StopOffFeedback);
+            NormalizeOptionalOffFeedback(card.Bindings, SignalBindingRole.StartOffFeedback);
+            NormalizeOptionalOffFeedback(card.Bindings, SignalBindingRole.StopOffFeedback);
+            card.StartOffFeedbackEnabled = HasBinding(card.Bindings, SignalBindingRole.StartOffFeedback);
+            card.StopOffFeedbackEnabled = HasBinding(card.Bindings, SignalBindingRole.StopOffFeedback);
         }
     }
 
@@ -313,9 +307,10 @@ public sealed class RouteMapConfigurationMigrator
         {
             card.StartButtonKind = RouteCommandButtonKind.Toggle;
             card.StopButtonKind = RouteCommandButtonKind.Toggle;
-            card.StartOffFeedbackEnabled = false;
-            card.StopOffFeedbackEnabled = false;
-            RemoveBindings(card.Bindings, SignalBindingRole.StartOffFeedback, SignalBindingRole.StopOffFeedback);
+            NormalizeOptionalOffFeedback(card.Bindings, SignalBindingRole.StartOffFeedback);
+            NormalizeOptionalOffFeedback(card.Bindings, SignalBindingRole.StopOffFeedback);
+            card.StartOffFeedbackEnabled = HasBinding(card.Bindings, SignalBindingRole.StartOffFeedback);
+            card.StopOffFeedbackEnabled = HasBinding(card.Bindings, SignalBindingRole.StopOffFeedback);
         }
     }
 
@@ -448,6 +443,22 @@ public sealed class RouteMapConfigurationMigrator
         binding.Direction = direction;
         binding.ValueType = SignalValueType.Bool;
     }
+
+    private static void NormalizeOptionalOffFeedback(
+        ICollection<SignalBindingConfiguration> bindings,
+        SignalBindingRole role)
+    {
+        foreach (var binding in bindings.Where(x => x.Role == role))
+        {
+            binding.Direction = SignalBindingDirection.Read;
+            binding.ValueType = SignalValueType.Bool;
+        }
+    }
+
+    private static bool HasBinding(
+        IEnumerable<SignalBindingConfiguration> bindings,
+        SignalBindingRole role) =>
+        bindings.Any(x => x.Role == role);
 
     private static void RemoveBindings(
         ICollection<SignalBindingConfiguration> bindings,

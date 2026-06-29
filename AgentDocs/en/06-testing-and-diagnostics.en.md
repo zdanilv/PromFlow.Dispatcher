@@ -45,6 +45,9 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | All values stale/offline | `ModbusDemo` state, poll interval, `StaleAfterMs` |
 | Tabs visible in user mode | `Application.WorkMode` and `WorkspaceView.IsUserMode` binding |
 | Offline lock not applied | System `connection.connected`, mapper, and `AreCommandsEnabled` |
+| Global fault does not color the map | `Modbus.DataMap` point with `Name=system.fault`, `Read/Bool`, good quality, and value `true` |
+| `Start`/`Stop` does not disable from PLC | `StartOffFeedback`/`StopOffFeedback`, `Read`, `Bool`, value `true` |
+| `Start` and `Stop` both checked | `StartCommand`/`StopCommand` readback; on conflict UI should show only `Stop` checked |
 | Bit write rejected | Missing first raw holding-register snapshot |
 | No readback | Access, PLC echo, `WriteConfirmationTimeoutMs` |
 | Wrong physical address | Start address and PLC 0/1-based notation |
@@ -53,7 +56,7 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 
 | Symptom | Check |
 |---|---|
-| Dialog does not appear | `Application.WorkMode=user`, active runtime snapshot, and `Modbus.AlarmMap[].Enabled` |
+| Dialog does not appear | Open Workspace in `admin` or `user`, active runtime snapshot, and `Modbus.AlarmMap[].Enabled` |
 | Dialog repeats too often | The alarm row `RepeatIntervalMs` |
 | `Хорошо` does not acknowledge | Separate `Acknowledgement` address/bit and `AcknowledgementPulseDurationMs` |
 | Address error in manager | Alarm/Acknowledgement ranges against `ModbusDemo.Client/Server` |
@@ -82,8 +85,9 @@ physical addresses based on `ModbusDemo.Client/Server`. `Repeat ms` must be
 12. Verify `connection.connected=false`: commands disabled, nodes/segments offline.
 13. Verify active nodes, lines, and fragments.
 14. Verify modes, emergency, loader, and target.
-15. Verify fault/confirmation dialogs and the acknowledgement pulse.
-16. Enable equipment commands one by one.
-17. Verify latched/pulse behavior, timeout, and connection loss during write.
-18. Confirm interlocks and safety remain in PLC.
+15. Verify fault/confirmation/message dialogs and the acknowledgement pulse.
+16. Verify `system.fault=true`: RouteMap enters the global fault visual state, then returns to per-object logic at `false`.
+17. Enable equipment commands one by one; verify `Start`/`Stop` mutual exclusion and `StartOffFeedback`/`StopOffFeedback`.
+18. Verify latched/pulse behavior, timeout, and connection loss during write.
+19. Confirm interlocks and safety remain in PLC.
 

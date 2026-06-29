@@ -40,6 +40,10 @@
 - RouteMap UI работает только с доменными `SignalId`, не с Modbus-адресами.
 - Физическая адресация PLC живет в `Modbus.DataMap`; `ModbusDemo.DataMap` не смешивается с RouteMap.
 - Операторские тревоги живут в `Modbus.AlarmMap`, не в `Modbus.DataMap`, но сохраняются в той же секции `Modbus`.
+- `system.fault` — исключение только по названию: это RouteMap SignalId общей аварии и
+  настраивается в `Modbus.DataMap`, а не в `Modbus.AlarmMap`.
+- `ПУСК`/`СТОП` на карточках взаимоисключающие; `StartOffFeedback`/`StopOffFeedback`
+  являются активными read-only ролями отключения этих кнопок.
 - `ModbusDemo` владеет TCP endpoint и lifecycle общего runtime.
 - `RouteMapConfigurationManager` владеет актуальной definition; не регистрируйте `RouteMapDefinition` как immutable singleton.
 - UI не обновляется напрямую из Modbus callback: поток идет через provider, mapper и ViewModel.

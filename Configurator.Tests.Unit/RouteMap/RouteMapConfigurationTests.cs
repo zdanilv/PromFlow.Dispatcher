@@ -289,6 +289,41 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
+    public void Mapper_preserves_card_off_feedback_bindings()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var card = document.Cards.Single();
+        card.StartOffFeedbackEnabled = true;
+        card.StopOffFeedbackEnabled = true;
+        card.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.StartOffFeedback,
+            SignalId = "equip.bucket.start.off",
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.Bool
+        });
+        card.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.StopOffFeedback,
+            SignalId = "equip.bucket.stop.off",
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.Bool
+        });
+
+        var definition = scope.Mapper.ToDefinition(document);
+        var roundTrip = scope.Mapper.ToDocument(definition);
+
+        var modelCard = definition.MapEquipment.Single();
+        Assert.True(modelCard.StartOffFeedbackEnabled);
+        Assert.True(modelCard.StopOffFeedbackEnabled);
+        Assert.Contains(modelCard.Bindings, x => x.Role == SignalBindingRole.StartOffFeedback);
+        Assert.Contains(modelCard.Bindings, x => x.Role == SignalBindingRole.StopOffFeedback);
+        Assert.Contains(roundTrip.Cards.Single().Bindings, x => x.Role == SignalBindingRole.StartOffFeedback);
+        Assert.Contains(roundTrip.Cards.Single().Bindings, x => x.Role == SignalBindingRole.StopOffFeedback);
+    }
+
+    [Fact]
     public void Validator_rejects_missing_required_node_card_and_top_bar_bindings()
     {
         using var scope = new TempConfigurationScope();
@@ -307,7 +342,7 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Validator_rejects_card_and_emergency_off_feedback_roles()
+    public void Validator_accepts_card_off_feedback_and_rejects_emergency_off_feedback_role()
     {
         using var scope = new TempConfigurationScope();
         var document = scope.Mapper.CreateSeedDocument();
@@ -332,10 +367,9 @@ public sealed class RouteMapConfigurationTests
         var result = new RouteMapConfigurationValidator().Validate(document);
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, x => x.Property == nameof(card.StartOffFeedbackEnabled));
         Assert.Contains(result.Errors, x => x.Property == nameof(document.TopBar.Emergency.OffFeedbackEnabled));
-        Assert.Contains(result.Errors, x => x.Message.Contains(nameof(SignalBindingRole.StartOffFeedback)));
         Assert.Contains(result.Errors, x => x.Message.Contains(nameof(SignalBindingRole.EmergencyOffFeedback)));
+        Assert.DoesNotContain(result.Errors, x => x.Message.Contains(nameof(SignalBindingRole.StartOffFeedback)));
     }
 
     [Fact]
@@ -467,6 +501,41 @@ public sealed class RouteMapConfigurationTests
         Assert.DoesNotContain(result.Document.TopBar.Emergency.Bindings, x => x.Role == SignalBindingRole.EmergencyOffFeedback);
         Assert.DoesNotContain(result.Document.Cards.Single().Bindings, x => x.Role == SignalBindingRole.StartOffFeedback);
         Assert.DoesNotContain(result.Document.Cards.Single().Bindings, x => x.Role == SignalBindingRole.StopOffFeedback);
+    }
+
+    [Fact]
+    public void Migrator_preserves_existing_card_start_stop_off_feedback()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.SchemaVersion = 6;
+        var card = document.Cards.Single();
+        card.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.StartOffFeedback,
+            SignalId = "equip.bucket.start.off",
+            Direction = SignalBindingDirection.Write,
+            ValueType = SignalValueType.UInt16
+        });
+        card.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.StopOffFeedback,
+            SignalId = "equip.bucket.stop.off",
+            Direction = SignalBindingDirection.Write,
+            ValueType = SignalValueType.UInt16
+        });
+
+        var result = new RouteMapConfigurationMigrator().Migrate(document);
+
+        var migratedCard = result.Document.Cards.Single();
+        var startOff = Assert.Single(migratedCard.Bindings, x => x.Role == SignalBindingRole.StartOffFeedback);
+        var stopOff = Assert.Single(migratedCard.Bindings, x => x.Role == SignalBindingRole.StopOffFeedback);
+        Assert.True(migratedCard.StartOffFeedbackEnabled);
+        Assert.True(migratedCard.StopOffFeedbackEnabled);
+        Assert.Equal(SignalBindingDirection.Read, startOff.Direction);
+        Assert.Equal(SignalBindingDirection.Read, stopOff.Direction);
+        Assert.Equal(SignalValueType.Bool, startOff.ValueType);
+        Assert.Equal(SignalValueType.Bool, stopOff.ValueType);
     }
 
     [Fact]

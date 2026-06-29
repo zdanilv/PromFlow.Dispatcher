@@ -110,6 +110,15 @@ public sealed class RouteMapModbusBindingDiagnostics : IDisposable
             bindings = bindings.Concat(topBarBindings);
         }
 
+        bindings = bindings.Concat(
+        [
+            new SignalBinding(
+                SignalBindingRole.Fault,
+                RouteMapSystemSignalIds.GlobalFault,
+                SignalBindingDirection.Read,
+                SignalValueType.Bool)
+        ]);
+
         return bindings
             .Where(binding => !IsDeprecatedSignalRole(binding.Role))
             .Where(binding => !string.IsNullOrWhiteSpace(binding.SignalId))
@@ -119,8 +128,6 @@ public sealed class RouteMapModbusBindingDiagnostics : IDisposable
 
     private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
         SignalBindingRole.State or
-        SignalBindingRole.StartOffFeedback or
-        SignalBindingRole.StopOffFeedback or
         SignalBindingRole.TargetOffFeedback or
         SignalBindingRole.LoaderOffFeedback or
         SignalBindingRole.AutomaticModeOffFeedback or

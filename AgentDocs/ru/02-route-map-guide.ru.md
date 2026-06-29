@@ -74,6 +74,9 @@ RouteMapRuntimeMapper применяет сигналы к объектам. П�
 Offline -> Fault -> ActiveRoute -> static fallback
 ```
 
+PLC-mapped `system.fault=true` переводит все runtime-объекты RouteMap в тот же `Fault`-вид,
+что и локальная роль `Fault=true`; `Offline`/bad quality остаются выше по приоритету.
+
 `Visible=false` скрывает объект. `Fault=true` перекрывает active route. Bad quality или
 stale по активному сигналу переводят объект в `Offline`.
 
@@ -87,8 +90,15 @@ stale по активному сигналу переводят объект в 
 как toggle/readback-команды. UI пишет `true` при включении и `false` при снятии или
 переключении. PLC должен вернуть readback, чтобы состояние UI стало окончательным.
 
-Legacy `Momentary`, `State` и `*OffFeedback` остаются только для безопасной загрузки старых
-профилей и миграции; не возвращайте их в новое поведение.
+`ПУСК` и `СТОП` на карточках взаимоисключающие: включение `ПУСК` сначала пишет
+`StopCommand=false`, затем `StartCommand=true`; включение `СТОП` сначала пишет
+`StartCommand=false`, затем `StopCommand=true`. Если snapshot вернул оба command-бита
+`true`, UI показывает включенным только `СТОП`.
+
+`StartOffFeedback` и `StopOffFeedback` снова являются активными ролями карточек. Это
+`Read/Bool` сигналы: `true` отключает соответствующую кнопку и визуально снимает
+`IsChecked=false`, не выполняя обратную запись в PLC. Остальные `*OffFeedback` и `State`
+остаются legacy.
 
 ## Редактор
 

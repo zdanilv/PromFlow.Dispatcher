@@ -134,7 +134,7 @@ public sealed class ModbusAlarmMonitorTests
     }
 
     [Fact]
-    public async Task ProcessSnapshotAsync_RoutesFaultAndConfirmationKindsToDialog()
+    public async Task ProcessSnapshotAsync_RoutesAllAlarmKindsToDialog()
     {
         var dialog = new RecordingDialogService(confirm: false);
         var writer = new RecordingBitWriter();
@@ -161,14 +161,24 @@ public sealed class ModbusAlarmMonitorTests
                     Acknowledgement = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 3 },
                     RepeatIntervalMs = 1000,
                     AcknowledgementPulseDurationMs = 1
+                },
+                new()
+                {
+                    Id = "alarm.message",
+                    Kind = ModbusAlarmKind.Message,
+                    Message = "Сообщение",
+                    Alarm = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 4 },
+                    Acknowledgement = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 5 },
+                    RepeatIntervalMs = 1000,
+                    AcknowledgementPulseDurationMs = 1
                 }
             ]
         }, dialog, writer);
 
-        await monitor.ProcessSnapshotAsync(CreateSnapshot(true, false, true, false), DateTimeOffset.UtcNow);
+        await monitor.ProcessSnapshotAsync(CreateSnapshot(true, false, true, false, true, false), DateTimeOffset.UtcNow);
 
         Assert.Equal(
-            [ModbusAlarmKind.Fault, ModbusAlarmKind.Confirmation],
+            [ModbusAlarmKind.Fault, ModbusAlarmKind.Confirmation, ModbusAlarmKind.Message],
             dialog.AlarmNotifications.Select(notification => notification.Kind).ToArray());
         Assert.Empty(writer.Pulses);
     }

@@ -115,6 +115,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         SignalBindingRole.Text, SignalBindingRole.Value, SignalBindingRole.Visible,
         SignalBindingRole.StartCommand,
         SignalBindingRole.StopCommand,
+        SignalBindingRole.StartOffFeedback,
+        SignalBindingRole.StopOffFeedback,
         SignalBindingRole.Fault,
     ];
     public IReadOnlyList<SignalBindingRole> AutomaticModeBindingRoles { get; } =
@@ -128,8 +130,6 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
         SignalBindingRole.State or
-        SignalBindingRole.StartOffFeedback or
-        SignalBindingRole.StopOffFeedback or
         SignalBindingRole.TargetOffFeedback or
         SignalBindingRole.LoaderOffFeedback or
         SignalBindingRole.AutomaticModeOffFeedback or
@@ -399,8 +399,6 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     {
         card.StartButtonKind = RouteCommandButtonKind.Toggle;
         card.StopButtonKind = RouteCommandButtonKind.Toggle;
-        card.StartOffFeedbackEnabled = false;
-        card.StopOffFeedbackEnabled = false;
 
         if (card.CanStart)
             EnsureBinding(card.Bindings, SignalBindingRole.StartCommand, $"{card.Id}.start", SignalBindingDirection.ReadWrite);
@@ -408,7 +406,11 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         if (card.CanStop)
             EnsureBinding(card.Bindings, SignalBindingRole.StopCommand, $"{card.Id}.stop", SignalBindingDirection.ReadWrite);
 
-        RemoveBindings(card.Bindings, SignalBindingRole.State, SignalBindingRole.StartOffFeedback, SignalBindingRole.StopOffFeedback);
+        NormalizeOptionalOffFeedback(card.Bindings, SignalBindingRole.StartOffFeedback);
+        NormalizeOptionalOffFeedback(card.Bindings, SignalBindingRole.StopOffFeedback);
+        card.StartOffFeedbackEnabled = card.Bindings.Any(x => x.Role == SignalBindingRole.StartOffFeedback);
+        card.StopOffFeedbackEnabled = card.Bindings.Any(x => x.Role == SignalBindingRole.StopOffFeedback);
+        RemoveBindings(card.Bindings, SignalBindingRole.State);
     }
 
     private void EnsureDraftRequiredBindings()
@@ -454,6 +456,17 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         });
     }
 
+    private static void NormalizeOptionalOffFeedback(
+        ICollection<SignalBindingConfiguration> bindings,
+        SignalBindingRole role)
+    {
+        foreach (var binding in bindings.Where(x => x.Role == role))
+        {
+            binding.Direction = SignalBindingDirection.Read;
+            binding.ValueType = SignalValueType.Bool;
+        }
+    }
+
     private static void RemoveBindings(
         ICollection<SignalBindingConfiguration> bindings,
         params SignalBindingRole[] roles)
@@ -485,6 +498,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
             {
                 SignalBindingRole.StartCommand => $"{card.Id}.start",
                 SignalBindingRole.StopCommand => $"{card.Id}.stop",
+                SignalBindingRole.StartOffFeedback => $"{card.Id}.start.off",
+                SignalBindingRole.StopOffFeedback => $"{card.Id}.stop.off",
                 _ => binding.SignalId,
             };
         }

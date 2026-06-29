@@ -26,7 +26,7 @@ public sealed class EquipmentCardViewModelTests
             IsStartChecked: true,
             IsStopChecked: true));
 
-        Assert.True(viewModel.IsStartChecked);
+        Assert.False(viewModel.IsStartChecked);
         Assert.True(viewModel.IsStopChecked);
         Assert.Empty(dispatcher.Requests);
     }
@@ -42,6 +42,7 @@ public sealed class EquipmentCardViewModelTests
         viewModel.IsStartChecked = false;
 
         Assert.Collection(dispatcher.Requests,
+            request => Assert.Equal(("equip.bucket.stop", false, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)),
             request => Assert.Equal(("equip.bucket.start", true, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)),
             request => Assert.Equal(("equip.bucket.start", false, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)));
         Assert.False(viewModel.IsStartChecked);
@@ -58,6 +59,7 @@ public sealed class EquipmentCardViewModelTests
         viewModel.IsStopChecked = false;
 
         Assert.Collection(dispatcher.Requests,
+            request => Assert.Equal(("equip.bucket.start", false, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)),
             request => Assert.Equal(("equip.bucket.stop", true, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)),
             request => Assert.Equal(("equip.bucket.stop", false, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)));
         Assert.False(viewModel.IsStopChecked);
@@ -73,10 +75,16 @@ public sealed class EquipmentCardViewModelTests
         Assert.Equal(Avalonia.Media.Color.Parse("#D95D4E"), BrushColor(viewModel.StopBackground));
 
         viewModel.IsStartChecked = true;
-        viewModel.IsStopChecked = true;
 
         Assert.Equal(Avalonia.Media.Color.Parse("#3A9D5D"), BrushColor(viewModel.StartBackground));
         Assert.Equal(Avalonia.Media.Color.Parse("#FFFFFF"), BrushColor(viewModel.StartForeground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#D95D4E"), BrushColor(viewModel.StopBackground));
+
+        viewModel.IsStopChecked = true;
+
+        Assert.False(viewModel.IsStartChecked);
+        Assert.True(viewModel.IsStopChecked);
+        Assert.Equal(Avalonia.Media.Color.Parse("#D0D0D0"), BrushColor(viewModel.StartBackground));
         Assert.Equal(Avalonia.Media.Color.Parse("#9E2F25"), BrushColor(viewModel.StopBackground));
         Assert.Equal(Avalonia.Media.Color.Parse("#FFFFFF"), BrushColor(viewModel.StopForeground));
 

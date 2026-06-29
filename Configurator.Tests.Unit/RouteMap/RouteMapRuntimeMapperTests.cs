@@ -355,12 +355,57 @@ public sealed class RouteMapRuntimeMapperTests
         var runtime = mapper.Map(signals);
         var bucket = runtime.Find("equip.bucket");
 
-        Assert.True(bucket?.IsStartChecked);
+        Assert.False(bucket?.IsStartChecked);
         Assert.True(bucket?.IsStopChecked);
     }
 
     [Fact]
-    public void Map_ignores_legacy_off_feedback_toggle_readback()
+    public void Map_uses_card_off_feedback_to_disable_and_uncheck_buttons()
+    {
+        var seed = RouteMapSeed.Create();
+        var card = seed.MapEquipment.Single();
+        var definition = seed with
+        {
+            MapEquipment =
+            [
+                card with
+                {
+                    Bindings = card.Bindings.Concat(
+                    [
+                        new SignalBinding(
+                            SignalBindingRole.StartOffFeedback,
+                            "equip.bucket.start.off",
+                            SignalBindingDirection.Read,
+                            SignalValueType.Bool),
+                        new SignalBinding(
+                            SignalBindingRole.StopOffFeedback,
+                            "equip.bucket.stop.off",
+                            SignalBindingDirection.Read,
+                            SignalValueType.Bool)
+                    ]).ToArray()
+                }
+            ]
+        };
+        var mapper = new RouteMapRuntimeMapper(definition);
+        var now = DateTimeOffset.UtcNow;
+        var signals = new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.start"] = new("equip.bucket.start", true, SignalValueType.Bool, now, true, false),
+            ["equip.bucket.stop"] = new("equip.bucket.stop", true, SignalValueType.Bool, now, true, false),
+            ["equip.bucket.start.off"] = new("equip.bucket.start.off", true, SignalValueType.Bool, now, true, false),
+            ["equip.bucket.stop.off"] = new("equip.bucket.stop.off", true, SignalValueType.Bool, now, true, false),
+        };
+
+        var bucket = mapper.Map(signals).Find("equip.bucket");
+
+        Assert.False(bucket?.CanStart);
+        Assert.False(bucket?.CanStop);
+        Assert.False(bucket?.IsStartChecked);
+        Assert.False(bucket?.IsStopChecked);
+    }
+
+    [Fact]
+    public void Map_ignores_non_card_legacy_off_feedback_toggle_readback()
     {
         var definition = RouteMapSeed.Create();
         var mapper = new RouteMapRuntimeMapper(definition);
@@ -368,7 +413,6 @@ public sealed class RouteMapRuntimeMapperTests
         var signals = new Dictionary<string, SignalValue>
         {
             ["equip.bucket.start"] = new("equip.bucket.start", true, SignalValueType.Bool, now, true, false),
-            ["equip.bucket.start.off"] = new("equip.bucket.start.off", true, SignalValueType.Bool, now, true, false),
             ["route.node.bsu_1.loader"] = new("route.node.bsu_1.loader", true, SignalValueType.Bool, now, true, false),
             ["route.node.bsu_1.loader.off"] = new("route.node.bsu_1.loader.off", true, SignalValueType.Bool, now, true, false),
             ["system.mode.manual"] = new("system.mode.manual", true, SignalValueType.Bool, now, true, false),
@@ -383,6 +427,32 @@ public sealed class RouteMapRuntimeMapperTests
         Assert.True(runtime.Find("bsu_1")?.IsLoader);
         Assert.True(runtime.IsManualMode);
         Assert.True(runtime.HasEmergency);
+    }
+
+    [Fact]
+    public void Map_applies_global_fault_to_route_objects_and_cards()
+    {
+        var definition = RouteMapSeed.Create();
+        var mapper = new RouteMapRuntimeMapper(definition);
+        var now = DateTimeOffset.UtcNow;
+        var signals = new Dictionary<string, SignalValue>
+        {
+            [RouteMapSystemSignalIds.GlobalFault] = new(
+                RouteMapSystemSignalIds.GlobalFault,
+                true,
+                SignalValueType.Bool,
+                now,
+                IsQualityGood: true,
+                IsStale: false),
+            ["equip.bucket.start"] = new("equip.bucket.start", true, SignalValueType.Bool, now, true, false),
+        };
+
+        var runtime = mapper.Map(signals);
+
+        Assert.All(definition.Nodes, node => Assert.Equal(RouteObjectState.Fault, runtime.Find(node.Id)?.State));
+        Assert.All(definition.Segments, segment => Assert.Equal(RouteObjectState.Fault, runtime.Find(segment.Id)?.State));
+        Assert.Equal(RouteObjectState.Fault, runtime.Find("equip.bucket")?.State);
+        Assert.False(runtime.Find("equip.bucket")?.CanStart);
     }
 
     [Fact]

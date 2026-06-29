@@ -323,9 +323,9 @@ public sealed class EquipmentCardConfiguration : RouteMapConfigurationItem
         set => this.RaiseAndSetIfChanged(ref _stopOffFeedbackEnabled, value);
     }
     [JsonIgnore]
-    public bool IsStartOffFeedbackAvailable => false;
+    public bool IsStartOffFeedbackAvailable => CanStart && StartButtonKind == RouteCommandButtonKind.Toggle;
     [JsonIgnore]
-    public bool IsStopOffFeedbackAvailable => false;
+    public bool IsStopOffFeedbackAvailable => CanStop && StopButtonKind == RouteCommandButtonKind.Toggle;
     public bool IsVisible { get; set; } = true;
     public string? AttachedChainId { get; set; }
     public double AttachedCardRightOffset { get; set; }

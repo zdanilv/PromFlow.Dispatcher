@@ -64,6 +64,9 @@ selection marker rendering, and tests.
 Offline -> Fault -> ActiveRoute -> static fallback
 ```
 
+PLC-mapped `system.fault=true` forces all RouteMap runtime objects into the same `Fault`
+visual state as a local `Fault=true`; `Offline` and bad quality keep higher priority.
+
 `Visible=false` hides an object. `Fault=true` overrides active highlighting. Bad quality
 or stale active signals put the object offline.
 
@@ -77,8 +80,14 @@ nodes and segments to `Offline`, and equipment commands become disabled. `IsTarg
 are toggle/readback commands. UI writes `true` on selection and `false` on clearing or
 switching. PLC readback synchronizes final state.
 
-Legacy `Momentary`, `State`, and `*OffFeedback` are compatibility/migration concepts only.
-Do not restore them as current behavior.
+Card `Start` and `Stop` are mutually exclusive: selecting `Start` writes
+`StopCommand=false` before `StartCommand=true`; selecting `Stop` writes
+`StartCommand=false` before `StopCommand=true`. If readback returns both command bits
+`true`, UI shows only `Stop` as checked.
+
+`StartOffFeedback` and `StopOffFeedback` are active card-only `Read/Bool` roles.
+`true` disables the matching button and visually resets `IsChecked=false` without writing
+back to PLC. Other `*OffFeedback` roles and `State` remain legacy.
 
 ## Editor
 

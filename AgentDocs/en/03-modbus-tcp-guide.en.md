@@ -19,6 +19,8 @@ while the runtime, autostart, mappings, and alarm dialogs keep using the same sa
 Never add RouteMap SignalIds to `ModbusDemo.DataMap`.
 Never add operator alarms to `Modbus.DataMap`: use `Modbus.AlarmMap` so RouteMap does not
 see alarms as SignalIds.
+`system.fault` is the named exception in the opposite direction: it is not an operator
+dialog, but a RouteMap global-fault SignalId, so it belongs in `Modbus.DataMap`.
 
 ## Endpoint And Lifecycle
 
@@ -93,7 +95,7 @@ change `DataMap`; `ПЕРЕЗАГРУЗИТЬ` reloads the saved map and discard
 |---|---|---|
 | `Вкл.` | `Enabled` | Enables the row for the alarm monitor; disabled rows are saved but do not show dialogs or write acknowledgement |
 | `Id` | `Id` | Unique, non-empty alarm identifier used for repeat state |
-| `Тип` | `Kind` | `Fault` shows the red `Авария` dialog; `Confirmation` shows the warning-style `Повторное подтверждение` dialog |
+| `Тип` | `Kind` | `Fault` shows the red `Авария` dialog; `Confirmation` shows the warning-style `Повторное подтверждение` dialog; `Message` shows the neutral `Сообщение` dialog |
 | `Сообщение` | `Message` | Text shown to the operator in the modal dialog |
 | `Alarm area` | `Alarm.Area` | Input bit area: `Coil` or `HoldingRegister` |
 | `Offset` after `Alarm area` | `Alarm.Address` | Zero-based alarm-bit offset inside the selected area |
@@ -134,6 +136,10 @@ quality/stale state instead of crashing the UI.
 `connection.status` and `connection.connected` are system SignalIds produced by the
 runtime provider. Do not add them to `DataMap`. `connection.connected=false` disables
 RouteMap commands and forces nodes/segments into offline state.
+
+`system.fault` is a system-row but PLC-mapped SignalId. Create a `Read/Bool`
+`Modbus.DataMap` point for it in `SignalId ↔ Modbus`; when it is `true`, RouteMap objects
+and cards use the global fault visual state.
 
 ## Writes
 

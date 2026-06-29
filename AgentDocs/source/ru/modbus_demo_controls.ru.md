@@ -13,7 +13,8 @@
 RouteMap использует тот же TCP runtime, но отдельную карту `Modbus.DataMap`, которая
 редактируется на вкладке `SignalId ↔ Modbus`. RouteMap schema v10 также добавляет
 read-only fragment-сигналы линий вида `route.<segmentId>.fragment_<n>.active`; их не
-нужно добавлять в `ModbusDemo.DataMap`.
+нужно добавлять в `ModbusDemo.DataMap`. Общая авария карты настраивается как обычный
+read/bool SignalId `system.fault` в `Modbus.DataMap`, а не в demo-карте.
 Операторские тревоги также не добавляются в `ModbusDemo.DataMap`: они живут в
 `Modbus.AlarmMap` и редактируются на вкладке `Менеджер тревог`.
 В таблице `Менеджер тревог` колонки `Alarm client/server` и `OK client/server`
@@ -21,7 +22,9 @@ read-only fragment-сигналы линий вида `route.<segmentId>.fragmen
 При ручном вводе физического адреса редактор пересчитывает `Area` и zero-based
 `Offset`; для `HoldingRegister` нужно указать `Bit=0..15`, для `Coil` бит не задается.
 `Repeat ms` отвечает за повторный показ диалога, а `Pulse ms` — за длительность
-acknowledgement-импульса после кнопки `Хорошо`.
+acknowledgement-импульса после кнопки `Хорошо`. Тип строки может быть `Fault`,
+`Confirmation` или `Message`; третий вариант показывает нейтральный диалог
+`Сообщение`.
 
 ## Новая точка DataMap
 

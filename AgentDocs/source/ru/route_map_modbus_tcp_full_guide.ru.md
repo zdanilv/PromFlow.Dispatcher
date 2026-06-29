@@ -48,7 +48,7 @@ UI не является контуром функциональной безо�
 2. Убедитесь, что `DataMap[].Name` совпадает с `SignalId` RouteMap.
 3. Переключите `RouteMapRuntime.SignalSource` в `Modbus`.
 4. Заполните RouteMap-карту `Modbus.DataMap` на вкладке `SignalId ↔ Modbus`.
-5. Заполните `Modbus.AlarmMap` на вкладке `Менеджер тревог`, если нужны аварии или повторные подтверждения.
+5. Заполните `Modbus.AlarmMap` на вкладке `Менеджер тревог`, если нужны аварии, повторные подтверждения или обычные сообщения.
 6. Сначала проверьте read-only сигналы, затем разрешайте команды.
 
 Пример:
@@ -320,6 +320,8 @@ Role + SignalId + Direction + ValueType
 | `Visible` | Runtime-видимость |
 | `StartCommand` | Команда ПУСК |
 | `StopCommand` | Команда СТОП |
+| `StartOffFeedback` | Read-only отключение кнопки ПУСК карточки |
+| `StopOffFeedback` | Read-only отключение кнопки СТОП карточки |
 | `Fault` | Признак аварии объекта |
 | `ActiveRoute` | Активность узла или линии |
 | `TargetCommand` | Назначение target |
@@ -336,16 +338,22 @@ system.mode.manual
 system.emergency
 connection.status
 connection.connected
+system.fault
 route.node.<nodeId>.active
 route.node.<nodeId>.target
 route.node.<nodeId>.loader
 route.<segmentId>.active
 equip.<equipmentId>.start
 equip.<equipmentId>.stop
+equip.<equipmentId>.start.off
+equip.<equipmentId>.stop.off
 equip.<equipmentId>.text
 ```
 
 `SignalId` является доменным именем. Оно не должно содержать физический адрес PLC.
+`connection.status` и `connection.connected` создает provider и в `Modbus.DataMap` не
+добавляются; `system.fault` добавляется как обычная read/bool точка PLC и переводит всю
+карту в общий fault-вид при `true`.
 
 ### Runtime-значение
 
@@ -462,7 +470,7 @@ snapshot.
 |---|---|---|
 | `Вкл.` | `Enabled` | `true` включает тревогу в мониторе; `false` оставляет строку в конфигурации, но диалог не появляется и acknowledgement не пишется |
 | `Id` | `Id` | Непустой уникальный идентификатор; нужен для диагностики, сохранения состояния фронта и расчета повторного показа |
-| `Тип` | `Kind` | `Fault` — аварийный красный диалог `Авария`; `Confirmation` — предупреждающий диалог `Повторное подтверждение` |
+| `Тип` | `Kind` | `Fault` — аварийный красный диалог `Авария`; `Confirmation` — предупреждающий диалог `Повторное подтверждение`; `Message` — нейтральный диалог `Сообщение` |
 | `Сообщение` | `Message` | Текст в модальном диалоге; должен быть непустым |
 | `Alarm area` | `Alarm.Area` | Область входного бита: `Coil` или `HoldingRegister` |
 | `Alarm Offset` | `Alarm.Address` | Zero-based offset внутри выбранной области; не является notation `40001` |
@@ -498,7 +506,7 @@ physical register address = HoldingRegisterStartAddress + Address
 `AlarmMap` сохраняется в той же секции `Modbus`, что и `DataMap`, но не передается в
 RouteMap facade и не появляется во вкладке `SignalId ↔ Modbus`.
 
-В user-mode монитор показывает диалог только на фронте `Alarm=true`. Если оператор нажал
+В admin и user режимах монитор показывает диалог только на фронте `Alarm=true`. Если оператор нажал
 `Хорошо`, acknowledgement-бит получает импульс `true`, затем `false` через `Pulse ms`.
 Закрытие через `X` не пишет acknowledgement. Если alarm-бит остается `true`, тот же
 диалог повторится через `Repeat ms`; когда alarm-бит станет `false`, состояние строки
@@ -598,8 +606,12 @@ timestamp и состояние Modbus.
 - корректность значения и карты на уровне `IModbusTcpService`.
 
 В актуальной RouteMap schema v10 `ПУСК`, `СТОП` и `АВАРИЯ` всегда работают как
-обычные toggle-кнопки и пишут `true/false` в свои command bindings. Legacy-значение
-`RouteCommandButtonKind.Momentary` миграция приводит к `Toggle`.
+toggle-кнопки. `ПУСК` и `СТОП` взаимоисключаются: включение `ПУСК` сначала пишет
+`StopCommand=false`, затем `StartCommand=true`; включение `СТОП` сначала пишет
+`StartCommand=false`, затем `StopCommand=true`; ручное снятие пишет только свою команду
+`false`. `StartOffFeedback`/`StopOffFeedback` являются read-only сигналами отключения:
+`true` отключает соответствующую кнопку и показывает ее снятой без write-back в PLC.
+Legacy-значение `RouteCommandButtonKind.Momentary` миграция приводит к `Toggle`.
 
 `ModbusWriteMode` управляет физической записью. `Latched` хранит переданное значение,
 а `Pulse` можно выбрать вручную для точек, где физически нужен импульс, но RouteMap
@@ -677,9 +689,10 @@ holding register. `Fault` линии остается общим для всей
 
 ### Карточка оборудования
 
-Обычно карточка содержит `Text`, `StartCommand`, `StopCommand` и runtime
-видимость. Команды ПУСК/СТОП должны иметь отдельные SignalId, даже если PLC упаковывает
-их в разные биты одного регистра.
+Обычно карточка содержит `Text`, `StartCommand`, `StopCommand`, опциональные
+`StartOffFeedback`/`StopOffFeedback` и runtime видимость. Команды ПУСК/СТОП должны
+иметь отдельные SignalId, даже если PLC упаковывает их в разные биты одного регистра.
+OffFeedback тоже настраивается отдельными read/bool SignalId и не заменяет command-bit.
 
 ## 13. Диагностика
 
@@ -719,9 +732,9 @@ warning-логах так же, как обычный `ActiveRoute`.
 5. Включить `Modbus` и только read-only сигналы.
 6. Проверить connection, stale, reconnect и восстановление.
 7. Проверить активность линий и узлов.
-8. Проверить режимы и аварийный readback.
+8. Проверить режимы, `system.fault` и аварийный readback.
 9. Проверить loader/target и взаимоисключение ролей.
-10. По одной разрешить команды ПУСК/СТОП.
+10. По одной разрешить команды ПУСК/СТОП и проверить их взаимоисключение с OffFeedback.
 11. Проверить timeout, отмену и потерю связи во время команды.
 12. Только после стендовых проверок переносить production-адреса.
 
@@ -775,7 +788,7 @@ Latched/Pulse, quality/stale, reconnect и локальный Modbus TCP server.
 
 - Не добавляйте Modbus-адреса в XAML, RouteMap ViewModel или `route-map.json`.
 - Не смешивайте RouteMap-карту `Modbus.DataMap` с demo-картой `ModbusDemo.DataMap`.
-- Не добавляйте тревоги в `Modbus.DataMap`: используйте `Modbus.AlarmMap`.
+- Не добавляйте тревоги в `Modbus.DataMap`: используйте `Modbus.AlarmMap`; исключение не требуется для `system.fault`, потому что это не диалог тревоги, а read/bool SignalId общей аварии карты.
 - Не обновляйте Avalonia controls из Modbus callback.
 - Не меняйте `SignalId` при изменении только физического адреса PLC.
 - Не назначайте Pulse без подтвержденной семантики PLC.

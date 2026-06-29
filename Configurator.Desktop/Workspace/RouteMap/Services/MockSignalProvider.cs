@@ -44,6 +44,7 @@ public sealed class MockSignalProvider : ISignalValueProvider
             [RouteMapSystemSignalIds.QueueRunning] = Bool(RouteMapSystemSignalIds.QueueRunning, tick % 8 is >= 3 and <= 5, now),
             [RouteMapSystemSignalIds.ConnectionStatus] = String(RouteMapSystemSignalIds.ConnectionStatus, "Ожидание", now),
             [RouteMapSystemSignalIds.ConnectionConnected] = Bool(RouteMapSystemSignalIds.ConnectionConnected, true, now),
+            [RouteMapSystemSignalIds.GlobalFault] = Bool(RouteMapSystemSignalIds.GlobalFault, false, now),
         };
 
         var definition = _configurationManager?.CurrentDefinition ?? _fixedDefinition
@@ -179,8 +180,6 @@ public sealed class MockSignalProvider : ISignalValueProvider
 
     private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
         SignalBindingRole.State or
-        SignalBindingRole.StartOffFeedback or
-        SignalBindingRole.StopOffFeedback or
         SignalBindingRole.TargetOffFeedback or
         SignalBindingRole.LoaderOffFeedback or
         SignalBindingRole.AutomaticModeOffFeedback or

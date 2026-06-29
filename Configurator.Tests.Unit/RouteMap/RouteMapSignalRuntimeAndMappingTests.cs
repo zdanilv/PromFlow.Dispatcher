@@ -116,6 +116,11 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
             inventory.Single(item => item.SignalId == "connection.status").Category);
         Assert.True(inventory.Single(item => item.SignalId == "connection.connected").IsSystem);
         Assert.Equal(SignalValueType.Bool, inventory.Single(item => item.SignalId == "connection.connected").ExpectedType);
+        var globalFault = inventory.Single(item => item.SignalId == RouteMapSystemSignalIds.GlobalFault);
+        Assert.False(globalFault.IsSystem);
+        Assert.Equal(RouteMapSignalElementCategory.System, globalFault.Category);
+        Assert.Equal(SignalValueType.Bool, globalFault.ExpectedType);
+        Assert.Equal(ModbusDataAccess.Read, globalFault.RequiredAccess);
         Assert.Equal(inventory.Count, inventory.Select(item => item.SignalId).Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 
@@ -658,6 +663,32 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
     }
 
     [Fact]
+    public void SignalInventory_ExposesCardStartStopOffFeedbackSignals()
+    {
+        var seed = RouteMapSeed.Create();
+        var card = seed.MapEquipment.Single();
+        var definition = seed with
+        {
+            MapEquipment =
+            [
+                card with
+                {
+                    Bindings = card.Bindings.Concat(
+                    [
+                        new SignalBinding(SignalBindingRole.StartOffFeedback, "equip.bucket.start.off", SignalBindingDirection.Read, SignalValueType.Bool),
+                        new SignalBinding(SignalBindingRole.StopOffFeedback, "equip.bucket.stop.off", SignalBindingDirection.Read, SignalValueType.Bool)
+                    ]).ToArray()
+                }
+            ]
+        };
+
+        var inventory = RouteMapSignalInventory.Build(definition);
+
+        Assert.Contains(inventory, item => item.SignalId == "equip.bucket.start.off");
+        Assert.Contains(inventory, item => item.SignalId == "equip.bucket.stop.off");
+    }
+
+    [Fact]
     public void MappingRow_UsesGrayBackgroundOnlyWhenUnused()
     {
         using var scope = new ConfigurationScope();
@@ -768,6 +799,28 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         Assert.Equal(5, point.Address);
         Assert.Equal(4, point.BitIndex);
         Assert.Equal(ModbusDataArea.HoldingRegister, point.Area);
+    }
+
+    [Fact]
+    public async Task MappingSave_PersistsGlobalFaultSignal()
+    {
+        using var scope = new ConfigurationScope();
+        var config = new RecordingAppConfigService();
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(new ModbusOptions()),
+            config,
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == RouteMapSystemSignalIds.GlobalFault);
+
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+        await viewModel.SaveAsync();
+
+        Assert.False(row.IsSystem);
+        var point = Assert.Single(config.SavedModbus!.DataMap, point => point.Name == RouteMapSystemSignalIds.GlobalFault);
+        Assert.Equal(ModbusDataAccess.Read, point.Access);
+        Assert.Equal(ModbusValueType.Bool, point.Type);
     }
 
     private sealed class ManualSignalProvider : ISignalValueProvider

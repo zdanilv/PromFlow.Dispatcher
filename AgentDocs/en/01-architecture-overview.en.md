@@ -41,6 +41,8 @@ An AlarmMap entry contains `Enabled`, `Id`, `Kind`, `Message`, the input `Alarm`
 the separate `Acknowledgement` bit, `RepeatIntervalMs`, and
 `AcknowledgementPulseDurationMs`; the UI exposes them as `Вкл.`, `Тип`, `Сообщение`,
 `Alarm area/Offset/Bit`, `OK area/Offset/Bit`, `Repeat ms`, and `Pulse ms`.
+`Kind` can be `Fault`, `Confirmation`, or `Message`; it changes dialog styling while
+alarm/ack/repeat behavior stays shared.
 
 ## Read Flow
 
@@ -73,6 +75,9 @@ TopBar / node menu / equipment card
 
 The UI may apply optimistic checked state, but readback is the source of truth. Incoming
 `ReadWrite` values must not trigger another write.
+Card `Start` and `Stop` are mutually exclusive: selecting one writes `false` to the
+opposite command before writing `true` to the selected command. Runtime readback and
+`StartOffFeedback`/`StopOffFeedback` update UI without writing back to PLC.
 
 ## Ownership
 
@@ -94,6 +99,9 @@ ModbusDemo.DataMap -> demo UI facade
 Modbus.DataMap     -> RouteMap facade and SignalId mapping tab
 Modbus.AlarmMap    -> alarm dialogs in admin/user and acknowledgement pulses
 ```
+
+`system.fault` belongs to `Modbus.DataMap` as the PLC-mapped RouteMap global-fault
+SignalId. Operator dialogs still belong only to `Modbus.AlarmMap`.
 
 Do not move endpoint or lifecycle ownership into RouteMap.
 

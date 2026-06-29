@@ -18,12 +18,15 @@ Examples:
 system.mode.automatic
 system.mode.manual
 system.emergency
+system.fault
 route.node.bsu_1.active
 route.node.bsu_1.target
 route.node.bsu_1.loader
 route.bsu2_to_bucket.fragment_1.active
 equip.bucket.start
+equip.bucket.start.off
 equip.bucket.stop
+equip.bucket.stop.off
 equip.bucket.text
 connection.status
 connection.connected
@@ -62,10 +65,13 @@ Direction must match Modbus access:
 | `Text` | string or number | card status |
 | `Value` | supported value | extra runtime value |
 | `StartCommand`, `StopCommand` | `Bool` | equipment commands |
+| `StartOffFeedback`, `StopOffFeedback` | `Bool` | card start/stop disable bits |
 | `TargetCommand`, `LoaderCommand` | `Bool` | node menu commands |
 | `AutomaticModeCommand`, `ManualModeCommand`, `EmergencyCommand` | `Bool` | TopBar commands |
 
-`State` and `*OffFeedback` are legacy concepts and must not be used for new behavior.
+`StartOffFeedback=true` or `StopOffFeedback=true` disables the matching card button and
+visually resets `IsChecked=false` without writing a command. Other `*OffFeedback` roles
+and `State` are legacy concepts and must not be used for new behavior.
 
 ## System SignalIds
 
@@ -73,9 +79,12 @@ Direction must match Modbus access:
 |---|---|---|
 | `connection.status` | `String` | Modbus runtime status text shown in TopBar |
 | `connection.connected` | `Bool` | `true` when Modbus runtime is running and the snapshot is not stale |
+| `system.fault` | `Bool` | PLC-mapped global RouteMap fault; `true` puts objects into fault visuals |
 
-System SignalIds are produced by the provider. They appear as system rows in
-`SignalId ↔ Modbus` and are not added to `Modbus.DataMap`.
+`connection.status` and `connection.connected` are produced by the provider. They appear
+as internal system rows in `SignalId ↔ Modbus` and are not added to `Modbus.DataMap`.
+`system.fault` appears in the same system group, but it is an ordinary PLC `Read/Bool`
+input: create its `Modbus.DataMap` point explicitly.
 
 ## Adding A Signal
 

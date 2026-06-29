@@ -30,6 +30,10 @@ Follow these rules when changing RouteMap, Modbus TCP, SignalId mapping, or rela
 - Do not rename SignalId when only the PLC address changes.
 - Required command bindings should stay `Bool` and normally `ReadWrite`.
 - `ActiveRouteFragment` is always `Read` + `Bool`.
+- `system.fault` is a system but PLC-mapped `Read/Bool` SignalId in `Modbus.DataMap`;
+  do not move it to `Modbus.AlarmMap`.
+- `StartOffFeedback` and `StopOffFeedback` are card-only `Read/Bool` roles. At `true`
+  they disable the button and clear checked state without writing a command.
 
 ## Modbus
 
@@ -49,6 +53,9 @@ Follow these rules when changing RouteMap, Modbus TCP, SignalId mapping, or rela
 - Return observable Avalonia state updates to the UI thread.
 - Dispose ViewModel subscriptions.
 - Runtime readback must not send commands back.
+- `Start`/`Stop` mutual exclusion writes `false` to the opposite command before `true`
+  to the selected command; a readback conflict of two `true` values displays only `Stop`
+  as checked.
 - Optimistic UI state is temporary until readback arrives.
 
 ## Visual Studio Visibility

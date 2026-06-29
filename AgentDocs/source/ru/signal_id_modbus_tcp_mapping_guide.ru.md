@@ -145,7 +145,9 @@ inventory. Старые точки `*.state` в `Modbus.DataMap` не удаля
 не стереть пользовательские адреса.
 
 Если качество любого активного сигнала объекта плохое или значение stale, объект
-становится `Offline`. `Fault=true` имеет приоритет над `ActiveRoute=true`, а
+становится `Offline`. Системный SignalId `system.fault=true` применяется ко всем
+узлам, линиям и карточкам как общий fault-вид и блокировка команд, но не перекрывает
+offline. Локальный `Fault=true` имеет приоритет над `ActiveRoute=true`, а
 `ActiveRoute=true` подсвечивает активный маршрут, если объект не аварийный, не offline
 и не disabled. Если этих сигналов нет, используется статическое fallback-состояние из
 настроек Route Map.
@@ -226,6 +228,8 @@ RouteMap definition. Для динамической подписи потреб
 | `Text` | `Read` | `UInt16` | `equip.bucket.text` | `HoldingRegister`, `Address=44`, `Type=UInt16` | `0` показывает статус `Выключен`, `1` показывает `Ожидание`, `3` показывает `Выполнение`. |
 | `StartCommand` | `ReadWrite` | `Bool` | `equip.bucket.start` | `Coil`, `Address=45`, `Type=Bool` | Кнопка `ПУСК` пишет команду; PLC readback может удерживать toggle включенным. |
 | `StopCommand` | `ReadWrite` | `Bool` | `equip.bucket.stop` | `Coil`, `Address=47`, `Type=Bool` | Кнопка `СТОП` пишет команду; PLC readback может удерживать toggle включенным. |
+| `StartOffFeedback` | `Read` | `Bool` | `equip.bucket.start.off` | `Coil`, `Address=46`, `Type=Bool` | `true` отключает `ПУСК` и показывает кнопку снятой; write-команду не вызывает. |
+| `StopOffFeedback` | `Read` | `Bool` | `equip.bucket.stop.off` | `Coil`, `Address=48`, `Type=Bool` | `true` отключает `СТОП` и показывает кнопку снятой; write-команду не вызывает. |
 
 Коды для `Text` карточки:
 
@@ -270,10 +274,14 @@ DataMap   = HoldingRegister, Address=51, Type=UInt16, Access=Read
 PLC value = 1250 -> значение попадет в runtime как ValueText; стандартная карточка его отдельно не показывает
 ```
 
-`ПУСК` и `СТОП` всегда работают как обычные `ToggleButton`: при включении UI пишет
-`true` в `StartCommand`/`StopCommand`, при снятии галочки пишет `false` в тот же
-command-binding. Отдельных ролей OffFeedback и режима `Momentary` для этих кнопок
-в актуальной схеме RouteMap нет.
+`ПУСК` и `СТОП` работают как взаимоисключающие `ToggleButton`: при включении `ПУСК`
+UI сначала пишет `StopCommand=false`, затем `StartCommand=true`; при включении `СТОП`
+сначала пишет `StartCommand=false`, затем `StopCommand=true`. При ручном снятии
+кнопки пишется только ее command-binding `false`. Если snapshot вернул оба command-бита
+`true`, UI показывает только `СТОП` как приоритетный безопасный вариант и не пишет
+исправление обратно в PLC. `StartOffFeedback`/`StopOffFeedback` — read-only роли
+только для карточек; `true` отключает соответствующую кнопку и принудительно снимает
+ее checked-состояние.
 
 ## 4. Вкладка SignalId ↔ Modbus
 
@@ -298,8 +306,8 @@ Modbus Demo
 |---|---|
 | `Вкл.` | Использовать строку в мониторе тревог |
 | `Id` | Уникальный непустой идентификатор тревоги |
-| `Тип` | `Fault` для аварии или `Confirmation` для повторного подтверждения |
-| `Сообщение` | Текст модального user-диалога |
+| `Тип` | `Fault` для аварии, `Confirmation` для повторного подтверждения или `Message` для нейтрального сообщения |
+| `Сообщение` | Текст модального диалога |
 | `Alarm area`, `Offset`, `Bit` | Входной Modbus-бит, по фронту которого открывается диалог |
 | `Alarm client`, `Alarm server` | Физические адреса того же alarm-бита для баз `ModbusDemo.Client/Server`; ввод пересчитывает area/offset |
 | `OK area`, `Offset`, `Bit` | Отдельный acknowledgement-бит, в который пишет кнопка `Хорошо` |
@@ -343,8 +351,11 @@ SignalId из TopBar, узлов, линий, vehicles и карточек.
 | `Ошибка` | Тип, доступ или параметры точки несовместимы |
 | `Системный` | Сигнал создается runtime и не требует PLC-адреса |
 
-`connection.status` и `connection.connected` являются системными сигналами. Их создает
-`ModbusTcpSignalValueProvider`; добавлять их в `DataMap` не нужно.
+`connection.status` и `connection.connected` являются внутренними системными сигналами.
+Их создает `ModbusTcpSignalValueProvider`; добавлять их в `DataMap` не нужно.
+`system.fault` тоже находится в группе `Системные`, но это PLC-mapped сигнал: его
+создают и сохраняют во вкладке `SignalId ↔ Modbus` как обычную read/bool точку
+`Modbus.DataMap`. При `true` он переводит все элементы RouteMap в общий аварийный вид.
 
 ### Создание связи
 

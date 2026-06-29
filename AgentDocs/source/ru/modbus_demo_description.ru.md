@@ -1,4 +1,4 @@
-ModbusDemo — экран управления общим Modbus TCP runtime. Он показывает простые привязки UI к Modbus TCP: toggle пишет/читает Coil, textbox пишет Holding Register, картинка показывается по значению регистра. Важно: endpoint, start/stop, autostart и lifecycle настраиваются на этом экране через секцию `ModbusDemo`. RouteMap использует тот же TCP runtime, но отдельную карту `Modbus.DataMap`, включая schema v10 fragment-сигналы линий `route.<segmentId>.fragment_<n>.active`.
+ModbusDemo — экран управления общим Modbus TCP runtime. Он показывает простые привязки UI к Modbus TCP: toggle пишет/читает Coil, textbox пишет Holding Register, картинка показывается по значению регистра. Важно: endpoint, start/stop, autostart и lifecycle настраиваются на этом экране через секцию `ModbusDemo`. RouteMap использует тот же TCP runtime, но отдельную карту `Modbus.DataMap`, включая schema v10 fragment-сигналы линий `route.<segmentId>.fragment_<n>.active` и read/bool сигнал общей аварии `system.fault`.
 
 **Где Экран**  
 Экран подключён во вкладке Modbus Demo в WorkspaceView.axaml (line 38):
@@ -95,7 +95,7 @@ csharp
 - `IModbusDemoTcpService` использует `ModbusDemo.DataMap` для контролов demo UI;
 - `IModbusTcpService` для RouteMap использует `Modbus.DataMap`, но берет Client/Server
   настройки из `ModbusDemo`.
-- `ModbusAlarmMonitor` использует `Modbus.AlarmMap` для user-диалогов и пишет
+- `ModbusAlarmMonitor` использует `Modbus.AlarmMap` для диалогов в admin/user и пишет
   acknowledgement-биты отдельным импульсом.
 
 Это важно: demo UI, RouteMap и тревоги не смешивают свои карты, но читают и пишут через
@@ -107,7 +107,8 @@ csharp
 `Вкл.`, `Id`, `Тип`, `Сообщение`, группы `Alarm area/Offset/Bit` и `OK area/Offset/Bit`,
 а также `Repeat ms` и `Pulse ms`. Физические колонки `Alarm client/server` и
 `OK client/server` строятся из тех же offsets по start addresses `ModbusDemo.Client` и
-`ModbusDemo.Server`.
+`ModbusDemo.Server`. `Kind` принимает `Fault` для красной аварии, `Confirmation` для
+предупреждающего повторного подтверждения и `Message` для нейтрального сообщения.
 
 **Facade**  
 ModbusDemoTcpService — тонкий делегирующий фасад: ModbusDemoTcpService.cs (line 12).

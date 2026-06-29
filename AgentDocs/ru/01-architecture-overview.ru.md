@@ -45,6 +45,8 @@ Modbus Demo
 отдельный `Acknowledgement`-бит, `RepeatIntervalMs` и
 `AcknowledgementPulseDurationMs`; UI показывает их как колонки `Вкл.`, `Тип`,
 `Сообщение`, `Alarm area/Offset/Bit`, `OK area/Offset/Bit`, `Repeat ms` и `Pulse ms`.
+`Kind` принимает `Fault`, `Confirmation` или `Message`; это влияет только на визуальный
+стиль диалога, а alarm/ack/repeat поведение остается общим.
 
 ## Поток чтения
 
@@ -77,6 +79,9 @@ TopBar / node menu / equipment card
 
 UI может оптимистично обновить checked-состояние, но окончательная синхронизация приходит
 через readback. Входной `ReadWrite` сигнал не должен порождать повторную запись.
+Карточные `ПУСК` и `СТОП` взаимоисключающие: включение одной кнопки сначала пишет
+`false` в команду другой, затем `true` в выбранную команду. Runtime readback и
+`StartOffFeedback`/`StopOffFeedback` обновляют UI без обратной записи в PLC.
 
 ## DI и владельцы состояния
 
@@ -100,6 +105,9 @@ ModbusDemo.DataMap -> demo UI facade
 Modbus.DataMap     -> RouteMap facade and SignalId mapping tab
 Modbus.AlarmMap    -> alarm dialogs in admin/user and acknowledgement pulses
 ```
+
+`system.fault` находится в `Modbus.DataMap` как PLC-mapped системный SignalId общей
+аварии RouteMap. Операторские диалоги при этом остаются только в `Modbus.AlarmMap`.
 
 Не переносите endpoint/lifecycle в RouteMap. RouteMap отвечает за доменные bindings и
 интерпретацию сигналов, а не за физическое подключение PLC.

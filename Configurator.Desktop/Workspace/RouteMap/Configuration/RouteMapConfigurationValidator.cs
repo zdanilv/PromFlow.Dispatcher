@@ -189,10 +189,6 @@ public sealed class RouteMapConfigurationValidator
                 Add(errors, "card", card.Id, nameof(card.StartButtonKind), "ПУСК должен быть обычным ToggleButton.");
             if (card.StopButtonKind != RouteCommandButtonKind.Toggle)
                 Add(errors, "card", card.Id, nameof(card.StopButtonKind), "СТОП должен быть обычным ToggleButton.");
-            if (card.StartOffFeedbackEnabled)
-                Add(errors, "card", card.Id, nameof(card.StartOffFeedbackEnabled), "OffFeedback для ПУСК больше не поддерживается.");
-            if (card.StopOffFeedbackEnabled)
-                Add(errors, "card", card.Id, nameof(card.StopOffFeedbackEnabled), "OffFeedback для СТОП больше не поддерживается.");
             ValidateThickness(errors, "card", card.Id, nameof(card.Style.Margin), card.Style.Margin);
             ValidateThickness(errors, "card", card.Id, nameof(card.Style.Padding), card.Style.Padding);
             ValidateThickness(errors, "card", card.Id, nameof(card.Style.BorderThickness), card.Style.BorderThickness);
@@ -221,6 +217,8 @@ public sealed class RouteMapConfigurationValidator
                 SignalBindingRole.Visible,
                 SignalBindingRole.StartCommand,
                 SignalBindingRole.StopCommand,
+                SignalBindingRole.StartOffFeedback,
+                SignalBindingRole.StopOffFeedback,
                 SignalBindingRole.Fault,
             };
             ValidateBindings(errors, "card", card.Id, card.Bindings, cardAllowedRoles);

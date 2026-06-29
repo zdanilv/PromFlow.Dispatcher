@@ -251,9 +251,18 @@ public sealed class RouteMapSettingsDialogVisualTests
         var fault = new AlarmNotificationDialogViewModel(ModbusAlarmKind.Fault, "Авария");
         var confirmation = new AlarmNotificationDialogViewModel(ModbusAlarmKind.Confirmation, "Повторное подтверждение");
 
+        var message = new AlarmNotificationDialogViewModel(ModbusAlarmKind.Message, "Сообщение");
+
         Assert.NotEqual(
             ((SolidColorBrush)fault.HeaderBackground).Color,
             ((SolidColorBrush)confirmation.HeaderBackground).Color);
+        Assert.NotEqual(
+            ((SolidColorBrush)fault.HeaderBackground).Color,
+            ((SolidColorBrush)message.HeaderBackground).Color);
+        Assert.NotEqual(
+            ((SolidColorBrush)confirmation.HeaderBackground).Color,
+            ((SolidColorBrush)message.HeaderBackground).Color);
+        Assert.Equal("Сообщение", message.Title);
 
         var view = new AlarmNotificationDialogView { DataContext = fault };
         var window = new Window { Width = 540, Height = 320, Content = view };

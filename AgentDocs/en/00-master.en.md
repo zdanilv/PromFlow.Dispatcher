@@ -29,9 +29,13 @@ source guides with deeper Russian detail.
 - RouteMap UI uses domain `SignalId` values, not Modbus addresses.
 - PLC physical addressing lives in `Modbus.DataMap`; never mix it with `ModbusDemo.DataMap`.
 - Operator alarm dialogs live in `Modbus.AlarmMap`, not `Modbus.DataMap`, but stay in the same `Modbus` config section.
+- `system.fault` is a RouteMap global-fault SignalId and is configured in
+  `Modbus.DataMap`, not in `Modbus.AlarmMap`.
+- Card `Start`/`Stop` are mutually exclusive; `StartOffFeedback`/`StopOffFeedback` are
+  active read-only roles for disabling those buttons.
 - `ModbusDemo` owns the TCP endpoint and lifecycle for the shared runtime.
 - `RouteMapConfigurationManager` owns the active definition; do not register `RouteMapDefinition` as an immutable singleton.
 - Modbus callbacks must not update Avalonia UI directly; use provider, mapper, and ViewModel flow.
 - `Start`, `Stop`, `Emergency`, loader/target, and mode commands are toggle/readback commands.
-- Legacy `State` and `*OffFeedback` roles must not be restored as current behavior.
+- Legacy `State` and non-card `*OffFeedback` roles must not be restored as current behavior.
 

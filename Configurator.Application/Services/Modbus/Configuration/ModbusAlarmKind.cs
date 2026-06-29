@@ -13,5 +13,10 @@ public enum ModbusAlarmKind
     /// <summary>
     /// Предупреждение с повторным подтверждением.
     /// </summary>
-    Confirmation
+    Confirmation,
+
+    /// <summary>
+    /// Обычное информационное сообщение.
+    /// </summary>
+    Message
 }

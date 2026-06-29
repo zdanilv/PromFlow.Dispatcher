@@ -62,7 +62,7 @@ PulseDurationMs: длительность импульса
 
 Register-bit запись выполняется сериализованным read-modify-write с сохранением соседних
 битов. До получения первого raw snapshot запись такого бита отклоняется.
-Операторские аварии и повторные подтверждения настраиваются отдельно в `Modbus.AlarmMap`,
+Операторские аварии, повторные подтверждения и обычные сообщения настраиваются отдельно в `Modbus.AlarmMap`,
 чтобы не попадать в SignalId-каталог RouteMap.
 В таблице `Менеджер тревог` `Alarm area/Offset/Bit` описывают входной бит, `OK area/Offset/Bit`
 — отдельный acknowledgement-бит, `Repeat ms` — интервал повторного показа, `Pulse ms` —
@@ -85,7 +85,8 @@ Register-bit запись выполняется сериализованным 
 Workspace. Production-адреса PLC должны быть заменены в `Modbus.DataMap` без изменения
 RouteMap JSON или XAML.
 Alarm/acknowledgement-биты должны быть заменены в `Modbus.AlarmMap` без добавления
-служебных SignalId.
+служебных SignalId. Исключение по названию не требуется для `system.fault`: это не
+диалог тревоги, а обычный read/bool SignalId общей аварии карты в `Modbus.DataMap`.
 
 ## Эксплуатационные Ограничения
 

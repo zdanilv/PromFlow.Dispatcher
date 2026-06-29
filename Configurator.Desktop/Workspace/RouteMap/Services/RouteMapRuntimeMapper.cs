@@ -25,6 +25,7 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         var definition = _configurationManager?.CurrentDefinition ?? _fixedDefinition
             ?? throw new InvalidOperationException("RouteMap definition is unavailable.");
         var isConnectionAvailable = ReadConnectionAvailable(signals);
+        var isGlobalFaultActive = ReadBool(signals, RouteMapSystemSignalIds.GlobalFault);
 
         foreach (var node in definition.Nodes)
             objects[node.Id] = MapObject(
@@ -35,7 +36,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 canStartFallback: false,
                 canStopFallback: false,
                 activeAsState: false,
-                forceOffline: !isConnectionAvailable);
+                forceOffline: !isConnectionAvailable,
+                forceFault: isGlobalFaultActive);
 
         foreach (var segment in definition.Segments)
             objects[segment.Id] = MapObject(
@@ -47,10 +49,19 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 canStopFallback: false,
                 activeAsState: true,
                 activeFragments: segment.ActiveFragments,
-                forceOffline: !isConnectionAvailable);
+                forceOffline: !isConnectionAvailable,
+                forceFault: isGlobalFaultActive);
 
         foreach (var vehicle in definition.Vehicles)
-            objects[vehicle.Id] = MapObject(vehicle.Id, vehicle.State, vehicle.Bindings, signals, canStartFallback: false, canStopFallback: false);
+            objects[vehicle.Id] = MapObject(
+                vehicle.Id,
+                vehicle.State,
+                vehicle.Bindings,
+                signals,
+                canStartFallback: false,
+                canStopFallback: false,
+                forceOffline: !isConnectionAvailable,
+                forceFault: isGlobalFaultActive);
 
         foreach (var equipment in definition.MapEquipment)
         {
@@ -62,6 +73,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 equipment.CanStart,
                 equipment.CanStop,
                 equipment.StatusText,
+                forceOffline: !isConnectionAvailable,
+                forceFault: isGlobalFaultActive,
                 forceCommandsDisabled: !isConnectionAvailable);
         }
 
@@ -86,6 +99,7 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         bool activeAsState = true,
         IReadOnlyList<RouteSegmentActiveFragment>? activeFragments = null,
         bool forceOffline = false,
+        bool forceFault = false,
         bool forceCommandsDisabled = false)
     {
         var text = textFallback;
@@ -93,6 +107,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         var isVisible = true;
         var isStartChecked = false;
         var isStopChecked = false;
+        var isStartOff = false;
+        var isStopOff = false;
         var isOffline = false;
         var hasFault = false;
         var isActiveRoute = false;
@@ -148,12 +164,14 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                         isStartChecked = ReadBool(signal, isStartChecked);
                     break;
                 case SignalBindingRole.StartOffFeedback:
+                    isStartOff = ReadBool(signal, isStartOff);
                     break;
                 case SignalBindingRole.StopCommand:
                     if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
                         isStopChecked = ReadBool(signal, isStopChecked);
                     break;
                 case SignalBindingRole.StopOffFeedback:
+                    isStopOff = ReadBool(signal, isStopOff);
                     break;
                 case SignalBindingRole.LoaderCommand:
                     if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
@@ -199,11 +217,18 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
 
         var state = forceOffline || isOffline
             ? RouteObjectState.Offline
-            : hasFault
+            : forceFault || hasFault
                 ? RouteObjectState.Fault
                 : isActiveRoute && activeAsState
                     ? RouteObjectState.ActiveRoute
                     : fallbackState;
+
+        if (isStartOff)
+            isStartChecked = false;
+        if (isStopOff)
+            isStopChecked = false;
+        if (isStartChecked && isStopChecked)
+            isStartChecked = false;
 
         var commandsAllowed = !forceCommandsDisabled
             && state is not RouteObjectState.Offline
@@ -216,8 +241,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             text,
             valueText,
             isVisible,
-            canStartFallback && commandsAllowed,
-            canStopFallback && commandsAllowed,
+            canStartFallback && commandsAllowed && !isStartOff,
+            canStopFallback && commandsAllowed && !isStopOff,
             isStartChecked,
             isStopChecked,
             hasActiveSignal,
@@ -306,8 +331,6 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
 
     private static bool IsIgnoredRuntimeRole(SignalBindingRole role) => role is
         SignalBindingRole.State or
-        SignalBindingRole.StartOffFeedback or
-        SignalBindingRole.StopOffFeedback or
         SignalBindingRole.TargetOffFeedback or
         SignalBindingRole.LoaderOffFeedback or
         SignalBindingRole.AutomaticModeOffFeedback or
