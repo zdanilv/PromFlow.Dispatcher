@@ -72,6 +72,11 @@ production mapping.
 `Name` должен точно соответствовать `SignalBinding.SignalId`. Сравнение выполняется без
 учета регистра, но используйте единое написание.
 
+Параметры оборудования из карточки RouteMap используют роль `EquipmentParameter` и также
+попадают в `SignalId ↔ Modbus` как обычные доменные `SignalId`. Их `Direction` задает
+требуемый `Access`, а `ValueType` — ожидаемый Modbus type; физический адрес задается
+только в `Modbus.DataMap`.
+
 ## AlarmMap point
 
 Тревога задает отдельный alarm-бит и отдельный acknowledgement-бит:
@@ -91,8 +96,13 @@ production mapping.
 
 `ModbusAlarmMonitor` работает при открытом Workspace и в `admin`, и в `user` режиме.
 Он показывает диалог на фронте `Alarm=true`. Кнопка `Хорошо` пишет
-acknowledgement-импульс `true/false`; если alarm-бит остается `true`, диалог
-повторяется через `RepeatIntervalMs`.
+acknowledgement-импульс `true/false` только если alarm-бит все еще активен; если
+alarm-бит остается `true`, диалог повторяется через `RepeatIntervalMs`.
+После показа диалога тревога добавляется во вкладку `Уведомления` правой панели RouteMap.
+`Хорошо` снимает маркер непрочитанного, а `X` элемента списка удаляет его только после
+`Alarm=false`. `Очистить список` удаляет только такие же неактивные уведомления и не
+пишет acknowledgement. События активации, снятия и `OK` пишутся в сессионную вкладку
+`История`; это in-memory журнал, а не сохраненная БД.
 
 ### Таблица `Менеджер тревог`
 
@@ -124,7 +134,7 @@ acknowledgement-импульс `true/false`; если alarm-бит остает�
 
 `Alarm` и `Acknowledgement` должны указывать на разные биты и попадать в диапазоны
 активных endpoint из `ModbusDemo`. Закрытие диалога кнопкой `X` не пишет
-acknowledgement; импульс отправляется только по `Хорошо`.
+acknowledgement; импульс отправляется только по `Хорошо`, пока alarm-бит активен.
 
 ## Address и physical address
 
@@ -146,7 +156,8 @@ physical register address = HoldingRegisterStartAddress + Address
 
 `connection.status` и `connection.connected` — системные SignalId. Их создает runtime
 provider; добавлять их в `DataMap` не нужно. `connection.connected=false` блокирует
-команды RouteMap и переводит узлы/линии в offline-состояние.
+команды RouteMap, переводит узлы/линии в offline-состояние и показывает на карточках
+текст `Не в сети` независимо от status/text binding.
 
 `system.fault` — системный, но PLC-mapped SignalId. Он отображается в `SignalId ↔ Modbus`
 как строка системной группы, допускает создание точки `Modbus.DataMap` с `Read/Bool` и
@@ -160,6 +171,13 @@ provider; добавлять их в `DataMap` не нужно. `connection.conn
 - writable access;
 - совместимость `SignalValueType` и Modbus type;
 - корректность значения и адреса.
+
+Диалог параметров карточки отправляет значения тем же путем, что `ПУСК`/`СТОП`:
+`Write` и `ReadWrite` параметры формируют `SignalWriteRequest`; `Read` параметры не
+пишутся и только отображают последний хороший snapshot. Bool вводится переключателем
+`Вкл/Выкл`, остальные типы парсятся по `SignalValueType`. Перед `DispatchAsync` диалог
+проверяет, что строка `SignalId` есть в `Modbus.DataMap`, access допускает запись и
+Modbus type совместим с `SignalValueType`.
 
 `Latched` записывает переданное значение и для readable-точек ждет readback до
 `WriteConfirmationTimeoutMs`.

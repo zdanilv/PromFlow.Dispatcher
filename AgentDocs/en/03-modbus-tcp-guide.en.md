@@ -63,6 +63,11 @@ Bool inside holding register:
 `Name` must match `SignalBinding.SignalId`. Keep one canonical casing even though lookup
 is case-insensitive.
 
+RouteMap card equipment parameters use the `EquipmentParameter` role and appear in
+`SignalId ↔ Modbus` as normal domain `SignalId` rows. Their `Direction` determines the
+required `Access`, and `ValueType` determines the expected Modbus type; the physical
+address is configured only in `Modbus.DataMap`.
+
 ## AlarmMap Entry
 
 An alarm entry has one alarm bit and a separate acknowledgement bit:
@@ -82,7 +87,13 @@ An alarm entry has one alarm bit and a separate acknowledgement bit:
 
 `ModbusAlarmMonitor` runs while Workspace is open in both admin and user modes. It shows
 the dialog when `Alarm` rises to `true`. `Хорошо` writes a `true/false` acknowledgement
-pulse; if the alarm bit remains `true`, the dialog repeats after `RepeatIntervalMs`.
+pulse only while the alarm bit is still active; if the alarm bit remains `true`, the
+dialog repeats after `RepeatIntervalMs`.
+After the dialog is shown, the alarm is added to the RouteMap right-panel
+`Уведомления` tab. `Хорошо` clears the unread marker, and the row `X` removes it only
+after `Alarm=false`. `Очистить список` removes only the same inactive notifications and
+does not write acknowledgement. Activation, clear, and `OK` events are written to the
+session `История` tab; this is an in-memory log, not a persisted database.
 
 ### `Менеджер тревог` Table
 
@@ -113,7 +124,7 @@ change `DataMap`; `ПЕРЕЗАГРУЗИТЬ` reloads the saved map and discard
 
 `Alarm` and `Acknowledgement` must point to different bits and fit the active endpoint
 ranges from `ModbusDemo`. Closing the dialog with `X` does not acknowledge; the pulse is
-sent only from `Хорошо`.
+sent only from `Хорошо` while the alarm bit is active.
 
 ## Addressing
 
@@ -135,13 +146,21 @@ quality/stale state instead of crashing the UI.
 
 `connection.status` and `connection.connected` are system SignalIds produced by the
 runtime provider. Do not add them to `DataMap`. `connection.connected=false` disables
-RouteMap commands and forces nodes/segments into offline state.
+RouteMap commands, forces nodes/segments into offline state, and shows card text
+`Не в сети` independently from the card status/text binding.
 
 `system.fault` is a system-row but PLC-mapped SignalId. Create a `Read/Bool`
 `Modbus.DataMap` point for it in `SignalId ↔ Modbus`; when it is `true`, RouteMap objects
 and cards use the global fault visual state.
 
 ## Writes
+
+The card-parameters dialog writes through the same path as `Start`/`Stop`: `Write` and
+`ReadWrite` parameters create `SignalWriteRequest`; `Read` parameters are display-only
+and use the latest good snapshot value. Bool uses a `Вкл/Выкл` switch, while other types
+are parsed by `SignalValueType`. Before `DispatchAsync`, the dialog checks that the
+`SignalId` row exists in `Modbus.DataMap`, access allows writing, and Modbus type
+matches `SignalValueType`.
 
 `Latched` writes the supplied value and waits for readback for readable points.
 `Pulse` accepts only `true`, writes `true`, waits `PulseDurationMs`, then writes `false`.

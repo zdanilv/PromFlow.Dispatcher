@@ -101,6 +101,7 @@ public sealed class EquipmentCardViewModelTests
     [InlineData("Ожидание", "warning")]
     [InlineData("Выключено", "muted")]
     [InlineData("Выключен", "muted")]
+    [InlineData("Не в сети", "muted")]
     [InlineData("Авария", "fault")]
     [InlineData("Выполнение", "ready")]
     [InlineData("Выгрузка", "ready")]

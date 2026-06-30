@@ -84,6 +84,11 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 10;
                     wasMigrated = true;
                     break;
+                case 10:
+                    ApplyVersion11(document);
+                    document.SchemaVersion = 11;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }
@@ -344,6 +349,16 @@ public sealed class RouteMapConfigurationMigrator
             ApplyCardButtonStateDefaults(card.Style);
 
         RouteSegmentActiveFragmentSynchronizer.Ensure(document);
+    }
+
+    private static void ApplyVersion11(RouteMapConfigurationDocument document)
+    {
+        foreach (var card in document.Cards)
+        {
+            card.Parameters ??= [];
+            foreach (var parameter in card.Parameters)
+                parameter.Role = SignalBindingRole.EquipmentParameter;
+        }
     }
 
     private static void ApplyButtonStateDefaults(RouteTopBarButtonConfiguration button)

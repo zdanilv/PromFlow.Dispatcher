@@ -48,6 +48,9 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | Global fault does not color the map | `Modbus.DataMap` point with `Name=system.fault`, `Read/Bool`, good quality, and value `true` |
 | `Start`/`Stop` does not disable from PLC | `StartOffFeedback`/`StopOffFeedback`, `Read`, `Bool`, value `true` |
 | `Start` and `Stop` both checked | `StartCommand`/`StopCommand` readback; on conflict UI should show only `Stop` checked |
+| Card parameter is missing from mapping | Parameter was added on `Карточки`, role is `EquipmentParameter`, `SignalId` is not empty, and the RouteMap definition was applied |
+| `Н` does not send a value | Parameter direction is `Write`/`ReadWrite`, value type parses, and a compatible `Modbus.DataMap` point exists |
+| `Н` shows `SignalId ... не настроен` | Create/save the parameter row in `SignalId ↔ Modbus`; Bool uses a switch, but mapping is still required for Modbus |
 | Bit write rejected | Missing first raw holding-register snapshot |
 | No readback | Access, PLC echo, `WriteConfirmationTimeoutMs` |
 | Wrong physical address | Start address and PLC 0/1-based notation |
@@ -61,6 +64,13 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | `Хорошо` does not acknowledge | Separate `Acknowledgement` address/bit and `AcknowledgementPulseDurationMs` |
 | Address error in manager | Alarm/Acknowledgement ranges against `ModbusDemo.Client/Server` |
 | RouteMap sees an alarm as SignalId | Alarm was added to `Modbus.DataMap` instead of `Modbus.AlarmMap` |
+| Notification row does not close with `X` | The current alarm bit is still `true`; removal is allowed only after `Alarm=false` |
+| `Очистить список` leaves rows visible | Those alarms are still active; bulk clearing uses the same check as `X` |
+| Unread marker does not clear | Press `Хорошо` in the alarm dialog or from the notification row |
+| `История` has no SignalId rows | Missing `Modbus.DataMap` point, bad/stale value, or unchanged value since the last quality snapshot |
+| `История` address looks like `HoldingRegister 3` | That format is obsolete; the current `Адрес` column shows only offset `3` |
+| Right panel does not expand on `История` | `NotificationsPanelView` must not have fixed `Width/MaxWidth=400` |
+| `История` is not exported to DB | Only `NoopSessionJournalExporter` exists; DB schema and connection are not implemented |
 
 When checking the `Менеджер тревог` table, read the column groups as follows:
 `Alarm area/Offset/Bit` is the input bit that opens the dialog, `OK area/Offset/Bit` is
@@ -82,12 +92,15 @@ physical addresses based on `ModbusDemo.Client/Server`. `Repeat ms` must be
 9. Clear all unconfigured/error rows.
 10. Enable read-only signals first.
 11. Verify quality, stale, and reconnect.
-12. Verify `connection.connected=false`: commands disabled, nodes/segments offline.
+12. Verify `connection.connected=false`: commands disabled, nodes/segments offline, and cards show `Не в сети`.
 13. Verify active nodes, lines, and fragments.
 14. Verify modes, emergency, loader, and target.
 15. Verify fault/confirmation/message dialogs and the acknowledgement pulse.
-16. Verify `system.fault=true`: RouteMap enters the global fault visual state, then returns to per-object logic at `false`.
-17. Enable equipment commands one by one; verify `Start`/`Stop` mutual exclusion and `StartOffFeedback`/`StopOffFeedback`.
-18. Verify latched/pulse behavior, timeout, and connection loss during write.
-19. Confirm interlocks and safety remain in PLC.
+16. Verify `Уведомления`: row appears after the dialog, `Хорошо` clears unread, and `X` plus `Очистить список` remove only after `Alarm=false`.
+17. Verify `История`: the panel expands, commands/received SignalIds/alarms appear with direction arrows, combined `Роли / объекты`, and numeric offset address.
+18. Verify `system.fault=true`: RouteMap enters the global fault visual state, then returns to per-object logic at `false`.
+19. Enable equipment commands one by one; verify `Start`/`Stop` mutual exclusion and `StartOffFeedback`/`StopOffFeedback`.
+20. Verify card parameters: `Н` button, Bool switch, numeric validation, read-only rows, `Write`/`ReadWrite` save behavior, and automatic `EquipmentParameter` rows in `SignalId ↔ Modbus`.
+21. Verify latched/pulse behavior, timeout, and connection loss during write.
+22. Confirm interlocks and safety remain in PLC.
 

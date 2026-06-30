@@ -28,6 +28,7 @@ equip.bucket.start.off
 equip.bucket.stop
 equip.bucket.stop.off
 equip.bucket.text
+equip.bucket.parameter
 connection.status
 connection.connected
 ```
@@ -64,6 +65,7 @@ Direction must match Modbus access:
 | `ActiveRouteFragment` | `Bool` | split-line highlight |
 | `Text` | string or number | card status |
 | `Value` | supported value | extra runtime value |
+| `EquipmentParameter` | supported value | configurable equipment-card parameter |
 | `StartCommand`, `StopCommand` | `Bool` | equipment commands |
 | `StartOffFeedback`, `StopOffFeedback` | `Bool` | card start/stop disable bits |
 | `TargetCommand`, `LoaderCommand` | `Bool` | node menu commands |
@@ -72,6 +74,11 @@ Direction must match Modbus access:
 `StartOffFeedback=true` or `StopOffFeedback=true` disables the matching card button and
 visually resets `IsChecked=false` without writing a command. Other `*OffFeedback` roles
 and `State` are legacy concepts and must not be used for new behavior.
+
+`EquipmentParameter` is used only by the equipment-parameter list on a card. Admins set
+`Title`, `SignalId`, `Direction`, and `ValueType` on the `Карточки` tab; these SignalIds
+automatically appear in `SignalId ↔ Modbus`, while the physical address still belongs
+only to `Modbus.DataMap`.
 
 ## System SignalIds
 
@@ -94,6 +101,13 @@ input: create its `Modbus.DataMap` point explicitly.
 4. Create a `Modbus.DataMap` point with the same `Name`.
 5. Configure area, offset or physical address, bit, access, type, and write mode.
 6. Verify diagnostics, first snapshot, command behavior, and readback.
+
+For equipment-card parameters, add the signal through the card's `Настройки
+оборудования` section. `Read` parameters are display-only in the dialog; `Write` and
+`ReadWrite` parameters are sent through `SignalWriteRequest` when `Сохранить` is
+pressed. Bool parameters use a switch, other values must match `SignalValueType`, and
+the Modbus source requires the row to be configured in `SignalId ↔ Modbus` before
+dispatch.
 
 Do not change SignalId when moving a signal to another coil, register, or bit. Only
 `Modbus.DataMap` changes.

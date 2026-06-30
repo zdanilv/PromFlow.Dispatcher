@@ -353,6 +353,10 @@ public sealed record RouteVehicle(
     RouteObjectState State,
     IReadOnlyList<SignalBinding> Bindings);
 
+public sealed record EquipmentCardParameter(
+    string Title,
+    SignalBinding Binding);
+
 public sealed record EquipmentCommandCard(
     string Id,
     string Title,
@@ -369,7 +373,10 @@ public sealed record EquipmentCommandCard(
     string? AttachedChainId = null,
     double AttachedCardRightOffset = 0,
     RouteCardVerticalAnchor? VerticalAnchor = null,
-    EquipmentCardStyle? Style = null);
+    EquipmentCardStyle? Style = null)
+{
+    public IReadOnlyList<EquipmentCardParameter> Parameters { get; init; } = [];
+}
 
 public sealed record RoutePlaceholderRule(
     string Id,

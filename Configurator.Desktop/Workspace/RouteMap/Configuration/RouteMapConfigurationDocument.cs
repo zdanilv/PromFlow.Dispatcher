@@ -35,7 +35,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 10;
+    public const int CurrentSchemaVersion = 11;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();
@@ -333,6 +333,46 @@ public sealed class EquipmentCardConfiguration : RouteMapConfigurationItem
     public string? VerticalAnchorNodeId { get; set; }
     public EquipmentCardStyleConfiguration Style { get; set; } = new();
     public ObservableCollection<SignalBindingConfiguration> Bindings { get; set; } = [];
+    public ObservableCollection<EquipmentCardParameterConfiguration> Parameters { get; set; } = [];
+}
+
+public sealed class EquipmentCardParameterConfiguration : ReactiveObject
+{
+    private string _title = "Параметр";
+    private SignalBindingRole _role = SignalBindingRole.EquipmentParameter;
+    private string _signalId = string.Empty;
+    private SignalBindingDirection _direction = SignalBindingDirection.ReadWrite;
+    private SignalValueType _valueType = SignalValueType.UInt16;
+
+    public string Title
+    {
+        get => _title;
+        set => this.RaiseAndSetIfChanged(ref _title, value);
+    }
+
+    public SignalBindingRole Role
+    {
+        get => _role;
+        set => this.RaiseAndSetIfChanged(ref _role, value);
+    }
+
+    public string SignalId
+    {
+        get => _signalId;
+        set => this.RaiseAndSetIfChanged(ref _signalId, value);
+    }
+
+    public SignalBindingDirection Direction
+    {
+        get => _direction;
+        set => this.RaiseAndSetIfChanged(ref _direction, value);
+    }
+
+    public SignalValueType ValueType
+    {
+        get => _valueType;
+        set => this.RaiseAndSetIfChanged(ref _valueType, value);
+    }
 }
 
 public sealed class EquipmentCardStyleConfiguration

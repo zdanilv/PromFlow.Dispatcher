@@ -1,4 +1,5 @@
 using Configurator.Application.Services;
+using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -19,6 +20,9 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private readonly IRouteMapRuntimeMapper<RouteMapRuntimeState> _runtimeMapper;
     private readonly IEquipmentCommandDispatcher _commandDispatcher;
     private readonly RouteMapModbusBindingDiagnostics? _bindingDiagnostics;
+    private readonly RouteMapSessionJournal _sessionJournal;
+    private readonly IOptionsMonitor<ModbusOptions> _modbusOptions;
+    private readonly IEquipmentCardParametersDialogService? _cardParametersDialogService;
     private RouteMapRuntimeState _runtimeState = RouteMapRuntimeState.Empty;
     private IReadOnlyDictionary<string, RouteNodeRoleState> _nodeRoleStates;
     private RouteMapDefinition _definition;
@@ -32,12 +36,19 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         IRouteMapRuntimeMapper<RouteMapRuntimeState> runtimeMapper,
         IEquipmentCommandDispatcher commandDispatcher,
         IRouteMapSettingsDialogService settingsDialogService,
+        NotificationsPanelViewModel notificationsPanel,
+        RouteMapSessionJournal sessionJournal,
+        IOptionsMonitor<ModbusOptions> modbusOptions,
         IOptions<ApplicationOptions>? applicationOptions = null,
-        RouteMapModbusBindingDiagnostics? bindingDiagnostics = null)
+        RouteMapModbusBindingDiagnostics? bindingDiagnostics = null,
+        IEquipmentCardParametersDialogService? cardParametersDialogService = null)
     {
         _runtimeMapper = runtimeMapper;
         _commandDispatcher = commandDispatcher;
         _bindingDiagnostics = bindingDiagnostics;
+        _sessionJournal = sessionJournal;
+        _modbusOptions = modbusOptions;
+        _cardParametersDialogService = cardParametersDialogService;
         _definition = configurationManager.CurrentDefinition;
         TopBar = new TopBarViewModel(
             settingsDialogService,
@@ -45,8 +56,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             Definition.TopBar,
             isSettingsVisible: applicationOptions?.Value.IsAdminMode ?? true);
         MapEquipmentCards = new ObservableCollection<EquipmentCardViewModel>(
-            Definition.MapEquipment.Select(x => new EquipmentCardViewModel(x, commandDispatcher, Definition.Display?.Palette)));
-        RequestsPanel = new RequestsPanelViewModel(Definition.Requests, Definition.RequestTemplates);
+            Definition.MapEquipment.Select(CreateEquipmentCardViewModel));
+        NotificationsPanel = notificationsPanel;
         _nodeRoleStates = Definition.Nodes.ToDictionary(
             x => x.Id,
             x => new RouteNodeRoleState(x.Id, x.IsLoader, x.IsTarget));
@@ -64,7 +75,11 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             {
                 _lastSignals = signals;
                 var runtimeState = runtimeMapper.Map(signals);
-                Dispatcher.UIThread.Post(() => ApplyRuntime(runtimeState));
+                Dispatcher.UIThread.Post(() =>
+                {
+                    ApplyRuntime(runtimeState);
+                    _sessionJournal.RecordSignalSnapshot(signals, Definition, _modbusOptions.CurrentValue);
+                });
             });
     }
 
@@ -79,7 +94,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     }
     public TopBarViewModel TopBar { get; }
     public ObservableCollection<EquipmentCardViewModel> MapEquipmentCards { get; }
-    public RequestsPanelViewModel RequestsPanel { get; }
+    public NotificationsPanelViewModel NotificationsPanel { get; }
     public ReactiveCommand<string, System.Reactive.Unit> ToggleNodeTargetCommand { get; }
     public ReactiveCommand<string, System.Reactive.Unit> ToggleNodeLoaderCommand { get; }
 
@@ -138,6 +153,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     {
         _signalSubscription.Dispose();
         _definitionSubscription.Dispose();
+        NotificationsPanel.Dispose();
         _bindingDiagnostics?.Dispose();
     }
 
@@ -146,7 +162,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         Definition = definition;
         MapEquipmentCards.Clear();
         foreach (var card in definition.MapEquipment)
-            MapEquipmentCards.Add(new EquipmentCardViewModel(card, _commandDispatcher, definition.Display?.Palette));
+            MapEquipmentCards.Add(CreateEquipmentCardViewModel(card));
 
         NodeRoleStates = definition.Nodes.ToDictionary(
             x => x.Id,
@@ -185,9 +201,16 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         foreach (var card in MapEquipmentCards)
             card.ApplyRuntime(runtimeState.Find(card.Id));
 
-        RequestsPanel.ApplyRuntime(runtimeState);
         ApplyNodeRoleReadback(runtimeState);
     }
+
+    private EquipmentCardViewModel CreateEquipmentCardViewModel(EquipmentCommandCard card) =>
+        new(
+            card,
+            _commandDispatcher,
+            Definition.Display?.Palette,
+            _cardParametersDialogService,
+            () => _lastSignals);
 
     private async Task ToggleNodeTargetAsync(string objectId)
     {

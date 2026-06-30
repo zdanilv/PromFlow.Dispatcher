@@ -300,6 +300,38 @@ public sealed class RouteMapRuntimeMapperTests
         Assert.False(runtime.Find("equip.bucket")?.CanStop);
     }
 
+    [Fact]
+    public void Map_shows_card_offline_text_when_modbus_connection_is_unavailable()
+    {
+        var definition = RouteMapSeed.Create();
+        var mapper = new RouteMapRuntimeMapper(definition);
+        var now = DateTimeOffset.UtcNow;
+        var signals = new Dictionary<string, SignalValue>
+        {
+            [RouteMapSystemSignalIds.ConnectionConnected] = new(
+                RouteMapSystemSignalIds.ConnectionConnected,
+                false,
+                SignalValueType.Bool,
+                now,
+                IsQualityGood: true,
+                IsStale: false),
+            ["equip.bucket.text"] = new(
+                "equip.bucket.text",
+                (ushort)3,
+                SignalValueType.UInt16,
+                now,
+                IsQualityGood: true,
+                IsStale: false),
+        };
+
+        var bucket = mapper.Map(signals).Find("equip.bucket");
+
+        Assert.Equal(RouteObjectState.Offline, bucket?.State);
+        Assert.Equal("Не в сети", bucket?.Text);
+        Assert.False(bucket?.CanStart);
+        Assert.False(bucket?.CanStop);
+    }
+
     [Theory]
     [InlineData(0, "Выключен")]
     [InlineData(1, "Ожидание")]

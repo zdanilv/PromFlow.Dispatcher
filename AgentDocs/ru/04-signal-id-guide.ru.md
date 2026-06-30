@@ -27,6 +27,7 @@ equip.bucket.start.off
 equip.bucket.stop
 equip.bucket.stop.off
 equip.bucket.text
+equip.bucket.parameter
 connection.status
 connection.connected
 ```
@@ -69,6 +70,7 @@ Direction должен соответствовать Modbus access:
 | `ActiveRouteFragment` | `Bool` | read-only split-line highlight |
 | `Text` | `String` или число | card status |
 | `Value` | любой поддержанный | extra runtime value |
+| `EquipmentParameter` | любой поддержанный | настраиваемый параметр оборудования карточки |
 | `StartCommand`, `StopCommand` | `Bool` | equipment commands |
 | `StartOffFeedback`, `StopOffFeedback` | `Bool` | read-only disable bits for card start/stop buttons |
 | `TargetCommand`, `LoaderCommand` | `Bool` | node menu commands |
@@ -77,6 +79,11 @@ Direction должен соответствовать Modbus access:
 `StartOffFeedback=true` или `StopOffFeedback=true` отключает соответствующую кнопку
 карточки и визуально сбрасывает `IsChecked=false` без записи команды. Остальные
 `*OffFeedback` и `State` — legacy. Не используйте их в новом поведении.
+
+`EquipmentParameter` используется только для списка параметров оборудования карточки.
+Администратор задает `Title`, `SignalId`, `Direction` и `ValueType` во вкладке
+`Карточки`; такие SignalId автоматически появляются в `SignalId ↔ Modbus`, а
+физический адрес по-прежнему задается только в `Modbus.DataMap`.
 
 ## Системные SignalId
 
@@ -110,6 +117,13 @@ PLC: создайте для него точку `Modbus.DataMap`.
 5. Создайте точку в `Modbus.DataMap` с тем же `Name`.
 6. Настройте area, offset/physical address, bit, access, type и write mode.
 7. Проверьте diagnostics, первый snapshot и readback.
+
+Для параметров оборудования добавляйте сигнал через секцию карточки
+`Настройки оборудования`. `Read` параметры показываются в диалоге только для чтения,
+`Write` и `ReadWrite` отправляются через `SignalWriteRequest` при нажатии
+`Сохранить`. Bool-параметры вводятся переключателем, остальные значения должны
+соответствовать `SignalValueType`; для Modbus-источника строка должна быть настроена в
+`SignalId ↔ Modbus` до отправки.
 
 SignalId не меняется при переносе сигнала на другой coil/register/bit. Меняется только
 `Modbus.DataMap`.

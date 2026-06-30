@@ -125,6 +125,41 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
     }
 
     [Fact]
+    public void SignalInventory_AddsEquipmentCardParameters()
+    {
+        var seed = RouteMapSeed.Create();
+        var card = seed.MapEquipment.Single();
+        var definition = seed with
+        {
+            MapEquipment =
+            [
+                card with
+                {
+                    Parameters =
+                    [
+                        new EquipmentCardParameter(
+                            "Скорость",
+                            new SignalBinding(
+                                SignalBindingRole.EquipmentParameter,
+                                "equip.bucket.speed",
+                                SignalBindingDirection.ReadWrite,
+                                SignalValueType.Float32))
+                    ]
+                }
+            ]
+        };
+
+        var item = RouteMapSignalInventory.Build(definition).Single(x => x.SignalId == "equip.bucket.speed");
+
+        Assert.Equal(RouteMapSignalElementCategory.Card, item.Category);
+        Assert.Equal(SignalValueType.Float32, item.ExpectedType);
+        Assert.Equal(ModbusDataAccess.ReadWrite, item.RequiredAccess);
+        Assert.Equal(nameof(SignalBindingRole.EquipmentParameter), item.Roles);
+        Assert.Contains("Карточка equip.bucket", item.Objects);
+        Assert.Contains("Скорость", item.Objects);
+    }
+
+    [Fact]
     public void SignalInventory_AssignsEveryElementCategory()
     {
         var definition = RouteMapSeed.Create();

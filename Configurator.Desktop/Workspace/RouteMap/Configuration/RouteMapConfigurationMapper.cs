@@ -386,6 +386,8 @@ public sealed class RouteMapConfigurationMapper
                 card.Bindings
                     .Where(binding => !IsDeprecatedSignalRole(binding.Role))
                     .Select(ToConfiguration)),
+            Parameters = new ObservableCollection<EquipmentCardParameterConfiguration>(
+                card.Parameters.Select(ToConfiguration)),
         };
     }
 
@@ -410,8 +412,28 @@ public sealed class RouteMapConfigurationMapper
             card.AttachedChainId,
             card.AttachedCardRightOffset,
             new RouteCardVerticalAnchor(card.VerticalAnchorKind, card.VerticalAnchorNodeId),
-            ToModel(card.Style));
+            ToModel(card.Style))
+        {
+            Parameters = card.Parameters.Select(ToModel).ToArray(),
+        };
     }
+
+    private static EquipmentCardParameterConfiguration ToConfiguration(EquipmentCardParameter parameter) => new()
+    {
+        Title = parameter.Title,
+        Role = parameter.Binding.Role,
+        SignalId = parameter.Binding.SignalId,
+        Direction = parameter.Binding.Direction,
+        ValueType = parameter.Binding.ValueType,
+    };
+
+    private static EquipmentCardParameter ToModel(EquipmentCardParameterConfiguration parameter) => new(
+        parameter.Title,
+        new SignalBinding(
+            SignalBindingRole.EquipmentParameter,
+            parameter.SignalId,
+            parameter.Direction,
+            parameter.ValueType));
 
     private static EquipmentCardStyleConfiguration ToConfiguration(EquipmentCardStyle style)
     {

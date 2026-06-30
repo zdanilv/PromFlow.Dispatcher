@@ -1,12 +1,12 @@
 using Avalonia.Markup.Xaml;
-using ReactiveUI.Avalonia;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
+using ReactiveUI.Avalonia;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Panels;
 
-public partial class RequestsPanelView : ReactiveUserControl<RequestsPanelViewModel>
+public partial class NotificationsPanelView : ReactiveUserControl<NotificationsPanelViewModel>
 {
-    public RequestsPanelView()
+    public NotificationsPanelView()
     {
         AvaloniaXamlLoader.Load(this);
     }

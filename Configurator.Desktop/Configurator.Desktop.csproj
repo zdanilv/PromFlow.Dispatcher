@@ -49,6 +49,7 @@
 	<ItemGroup>
 	  <Folder Include="Assets\icons\filled\" />
 	  <Folder Include="Dialogs\AlarmNotificationDialog\" />
+	  <Folder Include="Dialogs\EquipmentCardParametersDialog\" />
 	  <Folder Include="Workspace\Alarms\" />
 	  <Folder Include="Workspace\ModbusDemo\" />
 	  <Folder Include="Workspace\Modbus\" />
@@ -61,6 +62,12 @@
 	    <SubType>Designer</SubType>
 	  </None>
 	  <None Update="Dialogs\AlarmNotificationDialog\AlarmNotificationDialogView.axaml">
+	    <SubType>Designer</SubType>
+	  </None>
+	  <None Update="Dialogs\EquipmentCardParametersDialog\EquipmentCardParametersDialogView.axaml">
+	    <SubType>Designer</SubType>
+	  </None>
+	  <None Update="Workspace\RouteMap\Panels\NotificationsPanelView.axaml">
 	    <SubType>Designer</SubType>
 	  </None>
 	  <None Update="Workspace\Alarms\AlarmManagerView.axaml">

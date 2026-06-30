@@ -6,6 +6,7 @@ using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.OpcUa.Browsing;
 using Configurator.Application.Services.OpcUa.Tags;
 using Configurator.Desktop.Workspace.Alarms;
+using Configurator.Desktop.Workspace.RouteMap.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -24,6 +25,7 @@ public sealed class ModbusAlarmMonitorTests
             runtime,
             new RecordingDialogService(confirm: true),
             new RecordingBitWriter(),
+            new RouteMapSessionJournal(),
             NullLogger<ModbusAlarmMonitor>.Instance);
 
         monitor.Start();
@@ -96,6 +98,7 @@ public sealed class ModbusAlarmMonitorTests
             new RecordingRuntime(),
             dialog,
             writer,
+            new RouteMapSessionJournal(),
             NullLogger<ModbusAlarmMonitor>.Instance);
         monitor.Start();
         options.Emit(new ModbusOptions
@@ -183,15 +186,66 @@ public sealed class ModbusAlarmMonitorTests
         Assert.Empty(writer.Pulses);
     }
 
+    [Fact]
+    public async Task ProcessSnapshotAsync_AddsSingleNotificationAndMarksReadOnOk()
+    {
+        var journal = new RouteMapSessionJournal();
+        var dialog = new RecordingDialogService(confirm: true);
+        var writer = new RecordingBitWriter();
+        var monitor = CreateMonitor(CreateOptions(repeatIntervalMs: 1000), dialog, writer, journal);
+        var now = DateTimeOffset.UtcNow;
+        var activeSnapshot = CreateSnapshot(alarmActive: true);
+
+        await monitor.ProcessSnapshotAsync(activeSnapshot, now);
+        await monitor.ProcessSnapshotAsync(activeSnapshot, now.AddMilliseconds(1001));
+
+        var notification = Assert.Single(journal.Notifications);
+        Assert.Equal("alarm.main", notification.Id);
+        Assert.True(notification.IsActive);
+        Assert.False(notification.IsUnread);
+        Assert.Equal(2, dialog.AlarmMessages.Count);
+        Assert.Equal(2, writer.Pulses.Count);
+        Assert.Equal(1, journal.History.Count(item => item.EventText == "Тревога"));
+        Assert.Equal(2, journal.History.Count(item => item.EventText == "OK"));
+    }
+
+    [Fact]
+    public async Task ProcessSnapshotAsync_OnlyDismissesNotificationAfterAlarmBitIsFalse()
+    {
+        var journal = new RouteMapSessionJournal();
+        var monitor = CreateMonitor(
+            CreateOptions(repeatIntervalMs: 1000),
+            new RecordingDialogService(confirm: false),
+            new RecordingBitWriter(),
+            journal);
+        var now = DateTimeOffset.UtcNow;
+
+        await monitor.ProcessSnapshotAsync(CreateSnapshot(alarmActive: true), now);
+
+        Assert.False(journal.TryDismissAlarm("alarm.main"));
+        var notification = Assert.Single(journal.Notifications);
+        Assert.True(notification.IsUnread);
+        Assert.True(notification.IsActive);
+
+        await monitor.ProcessSnapshotAsync(CreateSnapshot(alarmActive: false), now.AddMilliseconds(100));
+
+        Assert.False(notification.IsActive);
+        Assert.True(journal.TryDismissAlarm("alarm.main"));
+        Assert.Empty(journal.Notifications);
+        Assert.Contains(journal.History, item => item.EventText == "Снято");
+    }
+
     private static ModbusAlarmMonitor CreateMonitor(
         ModbusOptions options,
         IDialogService dialog,
-        IModbusBitWriter writer)
+        IModbusBitWriter writer,
+        RouteMapSessionJournal? journal = null)
         => new(
             new StaticOptionsMonitor(options),
             new NoOpRuntime(),
             dialog,
             writer,
+            journal ?? new RouteMapSessionJournal(),
             NullLogger<ModbusAlarmMonitor>.Instance);
 
     private static ModbusOptions CreateOptions(int repeatIntervalMs)

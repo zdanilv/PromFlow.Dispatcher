@@ -9,6 +9,7 @@ using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Desktop.Main;
 using Configurator.Application.Services.Signals;
+using Configurator.Desktop.Workspace.RouteMap.Services;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.ComponentModel;
@@ -55,6 +56,7 @@ public partial class App : Avalonia.Application
 
         _isShutdownInProgress = true;
 
+        await ExportSessionJournalAsync();
         Services.GetService<MainViewModel>()?.Dispose();
         (Services.GetService<ISignalValueProvider>() as IDisposable)?.Dispose();
         await StopModbusRuntimeAsync();
@@ -95,6 +97,30 @@ public partial class App : Avalonia.Application
         catch (Exception ex)
         {
             Debug.WriteLine($"[App] Modbus shutdown failed: {ex}");
+        }
+    }
+
+    private static async Task ExportSessionJournalAsync()
+    {
+        var journal = Services.GetService<RouteMapSessionJournal>();
+        var exporter = Services.GetService<ISessionJournalExporter>();
+        if (journal is null || exporter is null)
+        {
+            return;
+        }
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            await exporter.ExportAsync(journal, timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Debug.WriteLine("[App] Session journal export timeout.");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[App] Session journal export failed: {ex}");
         }
     }
 }

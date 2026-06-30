@@ -1,9 +1,11 @@
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
+using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Avalonia;
 using Avalonia.Media;
 using ReactiveUI;
+using System.Reactive;
 
 namespace Configurator.Desktop.Workspace.RouteMap.ViewModels;
 
@@ -12,6 +14,9 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public const string EmptyRoutePointText = "—";
 
     private readonly IEquipmentCommandDispatcher _commandDispatcher;
+    private readonly IEquipmentCardParametersDialogService? _parametersDialogService;
+    private readonly Func<IReadOnlyDictionary<string, SignalValue>?>? _signalSnapshotAccessor;
+    private readonly EquipmentCommandCard _card;
     private readonly SignalBinding? _startBinding;
     private readonly SignalBinding? _stopBinding;
     private readonly RouteMapPaletteSettings _palette;
@@ -32,8 +37,11 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public EquipmentCardViewModel(
         EquipmentCommandCard card,
         IEquipmentCommandDispatcher commandDispatcher,
-        RouteMapPaletteSettings? palette = null)
+        RouteMapPaletteSettings? palette = null,
+        IEquipmentCardParametersDialogService? parametersDialogService = null,
+        Func<IReadOnlyDictionary<string, SignalValue>?>? signalSnapshotAccessor = null)
     {
+        _card = card;
         Id = card.Id;
         Title = card.Title;
         IsStaticallyVisible = card.IsVisible;
@@ -49,8 +57,11 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         _canStart = card.CanStart;
         _canStop = card.CanStop;
         _commandDispatcher = commandDispatcher;
+        _parametersDialogService = parametersDialogService;
+        _signalSnapshotAccessor = signalSnapshotAccessor;
         _startBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.StartCommand);
         _stopBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.StopCommand);
+        OpenParametersCommand = ReactiveCommand.CreateFromTask(OpenParametersAsync);
     }
 
     public string Id { get; }
@@ -85,6 +96,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public IBrush StartForeground => RouteMapPalette.Brush(StartStateColor(Style.StartForegroundColor, Style.StartPressedForegroundColor, Style.StartCheckedForegroundColor));
     public IBrush StopBackground => RouteMapPalette.Brush(StopStateColor(Style.StopColor, Style.StopPressedColor, Style.StopCheckedColor));
     public IBrush StopForeground => RouteMapPalette.Brush(StopStateColor(Style.StopForegroundColor, Style.StopPressedForegroundColor, Style.StopCheckedForegroundColor));
+    public ReactiveCommand<Unit, Unit> OpenParametersCommand { get; }
 
     public string SendPointTitle
     {
@@ -242,6 +254,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         "Ожидание" => PaletteBrush(_palette.Warning, RouteMapPalette.WarningBrush),
         "Выключено" => PaletteBrush(_palette.MutedText, RouteMapPalette.MutedTextBrush),
         "Выключен" => PaletteBrush(_palette.MutedText, RouteMapPalette.MutedTextBrush),
+        "Не в сети" => PaletteBrush(_palette.MutedText, RouteMapPalette.MutedTextBrush),
         "Авария" => PaletteBrush(_palette.Fault, RouteMapPalette.FaultBrush),
         "Выполнение" => PaletteBrush(_palette.Ready, RouteMapPalette.ReadyBrush),
         "Выгрузка" => PaletteBrush(_palette.Ready, RouteMapPalette.ReadyBrush),
@@ -288,6 +301,12 @@ public sealed class EquipmentCardViewModel : ViewModelBase
 
         return _commandDispatcher.DispatchAsync(
             new SignalWriteRequest(binding.SignalId, value, binding.ValueType));
+    }
+
+    private Task OpenParametersAsync()
+    {
+        return _parametersDialogService?.ShowAsync(_card, _signalSnapshotAccessor?.Invoke())
+            ?? Task.CompletedTask;
     }
 
     private async Task DispatchStartAsync()

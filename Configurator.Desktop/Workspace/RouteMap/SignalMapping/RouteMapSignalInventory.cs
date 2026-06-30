@@ -180,6 +180,15 @@ internal static class RouteMapSignalInventory
                     binding,
                     false);
             }
+
+            foreach (var parameter in card.Parameters)
+            {
+                yield return (
+                    $"Карточка {card.Id}, настройка {parameter.Title}",
+                    RouteMapSignalElementCategory.Card,
+                    parameter.Binding,
+                    false);
+            }
         }
     }
 

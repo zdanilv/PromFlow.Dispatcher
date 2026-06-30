@@ -11,6 +11,7 @@ using Configurator.Application.Services.OpcUa.Browsing;
 using Configurator.Application.Services.OpcUa.Tags;
 using Configurator.Desktop.Workspace;
 using Configurator.Desktop.Workspace.Alarms;
+using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.ModbusDemo;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
@@ -207,6 +208,7 @@ public sealed class WorkspaceViewModelTests
             runtime,
             new NoOpDialogService(),
             new NoOpBitWriter(),
+            new RouteMapSessionJournal(),
             NullLogger<ModbusAlarmMonitor>.Instance);
 
     private sealed class StaticOptionsMonitor(ModbusOptions options) : IOptionsMonitor<ModbusOptions>

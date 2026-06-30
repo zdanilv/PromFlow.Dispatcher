@@ -61,9 +61,9 @@
                 </Border>
             </Grid>
 
-            <panels:RequestsPanelView Grid.Column="1"
-                                      IsVisible="False"
-                                      DataContext="{Binding RequestsPanel}"/>
+            <panels:NotificationsPanelView Grid.Column="1"
+                                           IsVisible="True"
+                                           DataContext="{Binding NotificationsPanel}"/>
         </Grid>
     </Grid>
 </UserControl>

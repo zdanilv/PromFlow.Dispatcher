@@ -2,11 +2,13 @@
 using Configurator.Application;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Dialogs;
+using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop;
 using Configurator.Desktop.Dialogs;
 using Configurator.Desktop.Dialogs.AlarmNotificationDialog;
 using Configurator.Desktop.Dialogs.ConfirmDialog;
+using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Dialogs.InputDialog;
 using Configurator.Desktop.Dialogs.ModbusSettingsDialog;
 using Configurator.Desktop.Dialogs.OpcUaTagEditorDialog;
@@ -19,6 +21,7 @@ using Configurator.Desktop.Workspace.ModbusDemo;
 using Configurator.Desktop.Workspace.RouteMap;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
+using Configurator.Desktop.Workspace.RouteMap.Panels;
 using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
@@ -33,6 +36,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ReactiveUI;
 using ReactiveUI.Avalonia;
 using ReactiveUI.Avalonia.Splat;
@@ -95,11 +99,16 @@ internal static class Program
                     services.AddSingleton<RouteMapConfigurationManager>();
                     services.AddSingleton<IRouteMapSettingsFilePicker, RouteMapSettingsFilePicker>();
                     services.AddSingleton<IRouteMapSettingsDialogService, RouteMapSettingsDialogService>();
+                    services.AddSingleton<IEquipmentCardParametersDialogService, EquipmentCardParametersDialogService>();
+                    services.AddSingleton<IEquipmentParameterWriteValidator, EquipmentParameterWriteValidator>();
                     services.AddTransient<RouteMapSettingsViewModel>();
                     services.AddTransient<RouteMapSettingsDialog>();
                     services.AddSingleton<IRouteMapRuntimeMapper<RouteMapRuntimeState>, RouteMapRuntimeMapper>();
                     services.AddTransient<RouteMapDashboardViewModel>();
                     services.AddTransient<RouteMapSignalMappingViewModel>();
+                    services.AddSingleton<RouteMapSessionJournal>();
+                    services.AddSingleton<ISessionJournalExporter, NoopSessionJournalExporter>();
+                    services.AddTransient<NotificationsPanelViewModel>();
                     services.AddTransient<AlarmManagerViewModel>();
                     services.AddTransient<ModbusAlarmMonitor>();
 
@@ -116,7 +125,10 @@ internal static class Program
                         sp.GetRequiredService<MockEquipmentCommandDispatcher>(),
                         sp.GetRequiredService<ModbusTcpSignalValueProvider>(),
                         sp.GetRequiredService<ModbusTcpCommandDispatcher>(),
-                        routeMapRuntime.SignalSource));
+                        routeMapRuntime.SignalSource,
+                        sp.GetRequiredService<RouteMapSessionJournal>(),
+                        sp.GetRequiredService<RouteMapConfigurationManager>(),
+                        sp.GetRequiredService<IOptionsMonitor<ModbusOptions>>()));
                     services.AddSingleton<ISignalValueProvider>(sp => sp.GetRequiredService<IRouteMapSignalRuntime>());
                     services.AddSingleton<IEquipmentCommandDispatcher>(sp => sp.GetRequiredService<IRouteMapSignalRuntime>());
                     services.AddTransient<RouteMapModbusBindingDiagnostics>();
@@ -134,10 +146,12 @@ internal static class Program
                     services.AddTransient<IViewFor<AuthorizationViewModel>, AuthorizationView>();
                     services.AddTransient<IViewFor<ModbusDemoViewModel>, ModbusDemoView>();
                     services.AddTransient<RouteMapDashboardView>();
+                    services.AddTransient<NotificationsPanelView>();
                     services.AddTransient<RouteMapSignalMappingView>();
                     services.AddTransient<AlarmManagerView>();
 
                     services.AddTransient<AlarmNotificationDialogView>();
+                    services.AddTransient<EquipmentCardParametersDialogView>();
                     services.AddTransient<ConfirmDialogView>();
                     services.AddTransient<InputDialogView>();
                     services.AddTransient<ModbusSettingsDialogView>();

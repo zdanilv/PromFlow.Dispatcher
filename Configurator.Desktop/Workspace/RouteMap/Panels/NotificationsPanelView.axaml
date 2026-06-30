@@ -1,0 +1,218 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Workspace.RouteMap.ViewModels"
+             xmlns:services="clr-namespace:Configurator.Desktop.Workspace.RouteMap.Services"
+             mc:Ignorable="d"
+             d:DesignWidth="400"
+             d:DesignHeight="720"
+             x:Class="Configurator.Desktop.Workspace.RouteMap.Panels.NotificationsPanelView"
+             x:DataType="vm:NotificationsPanelViewModel"
+             x:Name="Root">
+    <Border MinWidth="400"
+            Background="#F2F4F5"
+            BorderBrush="#D8DDE1"
+            BorderThickness="1,0,0,0"
+            Padding="12,10">
+        <TabControl>
+            <TabItem Header="Уведомления">
+                <Grid RowDefinitions="*,Auto"
+                      RowSpacing="10">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  IsVisible="{Binding HasNotifications}">
+                        <ItemsControl ItemsSource="{Binding Notifications}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="services:AlarmNotificationItem" x:DataType="services:AlarmNotificationItem">
+                                    <Border Margin="0,0,0,10"
+                                            Background="White"
+                                            BorderBrush="#D0D7DE"
+                                            BorderThickness="1"
+                                            CornerRadius="6">
+                                        <Grid ColumnDefinitions="*,38">
+                                            <Button Padding="0"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    HorizontalContentAlignment="Stretch"
+                                                    Command="{Binding DataContext.ShowNotificationCommand, ElementName=Root}"
+                                                    CommandParameter="{Binding}">
+                                                <Grid RowDefinitions="Auto,*">
+                                                    <Border Background="{Binding HeaderBackground}"
+                                                            CornerRadius="6,0,0,0"
+                                                            Padding="10,8">
+                                                        <Grid ColumnDefinitions="Auto,*,Auto"
+                                                              ColumnSpacing="8">
+                                                            <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                                                <Ellipse Width="10"
+                                                                         Height="10"
+                                                                         Fill="#2B7FFF"
+                                                                         IsVisible="{Binding IsUnread}"/>
+                                                                <Ellipse Width="10"
+                                                                         Height="10"
+                                                                         Stroke="#C5CDD5"
+                                                                         StrokeThickness="1.5"
+                                                                         IsVisible="{Binding IsRead}"/>
+                                                            </Grid>
+                                                            <TextBlock Grid.Column="1"
+                                                                       Text="{Binding Title}"
+                                                                       Foreground="White"
+                                                                       FontWeight="SemiBold"
+                                                                       FontSize="14"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       VerticalAlignment="Center"/>
+                                                            <TextBlock Grid.Column="2"
+                                                                       Text="{Binding CreatedAtText}"
+                                                                       Foreground="#F8FAFC"
+                                                                       FontSize="11"
+                                                                       VerticalAlignment="Center"/>
+                                                        </Grid>
+                                                    </Border>
+
+                                                    <Grid Grid.Row="1"
+                                                          ColumnDefinitions="52,*"
+                                                          ColumnSpacing="10"
+                                                          Margin="10">
+                                                        <Border Width="42"
+                                                                Height="42"
+                                                                CornerRadius="21"
+                                                                Background="{Binding BadgeBackground}"
+                                                                VerticalAlignment="Top">
+                                                            <TextBlock Text="{Binding BadgeText}"
+                                                                       Foreground="{Binding BadgeForeground}"
+                                                                       FontSize="24"
+                                                                       FontWeight="Bold"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        <TextBlock Grid.Column="1"
+                                                                   Text="{Binding Message}"
+                                                                   Foreground="#2F3A45"
+                                                                   TextWrapping="Wrap"
+                                                                   FontSize="13"
+                                                                   LineHeight="18"
+                                                                   MaxHeight="74"/>
+                                                    </Grid>
+                                                </Grid>
+                                            </Button>
+
+                                            <Button Grid.Column="1"
+                                                    Content="X"
+                                                    Width="28"
+                                                    Height="28"
+                                                    Margin="0,6,6,0"
+                                                    Padding="0"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Top"
+                                                    HorizontalContentAlignment="Center"
+                                                    VerticalContentAlignment="Center"
+                                                    Command="{Binding DataContext.DismissNotificationCommand, ElementName=Root}"
+                                                    CommandParameter="{Binding}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <Border Background="#FFFFFF"
+                            BorderBrush="#DDE2E6"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="18"
+                            VerticalAlignment="Top"
+                            IsVisible="{Binding HasNoNotifications}">
+                        <TextBlock Text="Нет уведомлений"
+                                   Foreground="#65717D"
+                                   TextAlignment="Center"/>
+                    </Border>
+
+                    <Button Grid.Row="1"
+                            Content="Очистить список"
+                            Height="34"
+                            HorizontalAlignment="Stretch"
+                            IsEnabled="{Binding HasNotifications}"
+                            Command="{Binding ClearNotificationsCommand}"/>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="История">
+                <Grid RowDefinitions="*">
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto"
+                                  IsVisible="{Binding HasHistory}">
+                        <StackPanel MinWidth="860">
+                            <Border Background="#FFFFFF"
+                                    BorderBrush="#DDE2E6"
+                                    BorderThickness="0,0,0,1"
+                                    Padding="6">
+                                <Grid ColumnDefinitions="135,42,190,230,70,46,95"
+                                      ColumnSpacing="8">
+                                    <TextBlock Text="Дата/время" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="↑↓"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="SignalId / AlarmId" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Column="3" Text="Роли / объекты" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Column="4" Text="Адрес" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Column="5" Text="Бит" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Column="6" Text="Значение" FontWeight="SemiBold"/>
+                                </Grid>
+                            </Border>
+
+                            <ItemsControl ItemsSource="{Binding History}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="services:RouteMapSessionHistoryItem" x:DataType="services:RouteMapSessionHistoryItem">
+                                        <Border Background="White"
+                                                BorderBrush="#E1E6EA"
+                                                BorderThickness="0,0,0,1"
+                                                Padding="6">
+                                            <Grid Classes="route-map-history-row"
+                                                  ColumnDefinitions="135,42,190,230,70,46,95"
+                                                  ColumnSpacing="8"
+                                                  MinHeight="30">
+                                                <TextBlock Text="{Binding TimestampText}" TextWrapping="Wrap"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding DirectionGlyph}"
+                                                           FontSize="18"
+                                                           FontWeight="SemiBold"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding Name}" TextWrapping="Wrap"/>
+                                                <StackPanel Grid.Column="3"
+                                                            VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Roles}"
+                                                               FontSize="11"
+                                                               TextWrapping="Wrap"/>
+                                                    <TextBlock Text="{Binding Objects}"
+                                                               Foreground="#66717C"
+                                                               FontSize="12"
+                                                               TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="4" Text="{Binding Address}" TextWrapping="Wrap"/>
+                                                <TextBlock Grid.Column="5" Text="{Binding Bit}" TextWrapping="Wrap"/>
+                                                <TextBlock Grid.Column="6" Text="{Binding Value}" TextWrapping="Wrap"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <Border Background="#FFFFFF"
+                            BorderBrush="#DDE2E6"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="18"
+                            VerticalAlignment="Top"
+                            IsVisible="{Binding HasNoHistory}">
+                        <TextBlock Text="История пуста"
+                                   Foreground="#65717D"
+                                   TextAlignment="Center"/>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </Border>
+</UserControl>

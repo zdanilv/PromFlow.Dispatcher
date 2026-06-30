@@ -20,6 +20,8 @@ Follow these rules when changing RouteMap, Modbus TCP, SignalId mapping, or rela
 - Runtime states should flow through `RouteMapRuntimeMapper`.
 - New bindings must be validated by `RouteMapConfigurationValidator`.
 - Schema changes require migrator updates and tests.
+- Card equipment parameters are stored on the card as `EquipmentParameter` bindings
+  with configurable `Title`, `SignalId`, `Direction`, and `ValueType`.
 - Do not restore old rails, sensors, item lists, vehicles, or bottom panels without a
   separate product requirement.
 
@@ -34,12 +36,19 @@ Follow these rules when changing RouteMap, Modbus TCP, SignalId mapping, or rela
   do not move it to `Modbus.AlarmMap`.
 - `StartOffFeedback` and `StopOffFeedback` are card-only `Read/Bool` roles. At `true`
   they disable the button and clear checked state without writing a command.
+- `EquipmentParameter` is the only role for card equipment parameters. These SignalIds
+  must flow into `SignalId ↔ Modbus` through `RouteMapSignalInventory`; do not maintain
+  a separate manual list for them.
 
 ## Modbus
 
 - RouteMap facade uses `Modbus.DataMap`; demo facade uses `ModbusDemo.DataMap`.
 - `Modbus.AlarmMap` is read by the alarm monitor in admin/user modes; acknowledgements
   are written as bit pulses without service DataMap points.
+- The right notification panel consumes the same `Modbus.AlarmMap` events through
+  `RouteMapSessionJournal`; do not create service SignalIds for operator alarms.
+- The `История` session tab stays in memory. Future database export should be wired
+  through `ISessionJournalExporter`, not from XAML or Modbus callbacks.
 - In `Менеджер тревог`, keep `Alarm` and `Acknowledgement` as different bits.
   `Repeat ms` is valid in `1000..86400000`, `Pulse ms` in `1..60000`; register bits are
   only `0..15`, and coil bits are not defined.
@@ -52,7 +61,15 @@ Follow these rules when changing RouteMap, Modbus TCP, SignalId mapping, or rela
 
 - Return observable Avalonia state updates to the UI thread.
 - Dispose ViewModel subscriptions.
+- Keep `NotificationsPanelView` at minimum width `400`, but do not set a fixed
+  `MaxWidth`; the `История` tab must expand the RouteMap right column to table width.
 - Runtime readback must not send commands back.
+- The card-parameters dialog should write only `Write`/`ReadWrite` values through
+  `IEquipmentCommandDispatcher`; `Read` rows are display-only, and `Сохранить` does not
+  close the dialog. Show Bool as a switch; validate other values by `SignalValueType`,
+  and check Modbus mapping before `DispatchAsync`.
+- When `connection.connected=false`, cards show `Не в сети` with the muted indicator
+  independently from their status/text binding.
 - `Start`/`Stop` mutual exclusion writes `false` to the opposite command before `true`
   to the selected command; a readback conflict of two `true` values displays only `Stop`
   as checked.

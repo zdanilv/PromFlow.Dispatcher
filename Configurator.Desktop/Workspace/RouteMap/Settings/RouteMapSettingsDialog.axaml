@@ -259,6 +259,51 @@
                                              AddCommand="{Binding DataContext.AddBindingCommand, ElementName=Root}"
                                              AddCommandParameter="card"
                                              RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
+              <TextBlock Classes="section" Text="Настройки оборудования"/>
+              <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                            VerticalScrollBarVisibility="Disabled">
+                <StackPanel MinWidth="960">
+                  <Grid ColumnDefinitions="180,170,280,130,130,Auto"
+                        ColumnSpacing="6"
+                        Margin="0,0,0,4">
+                    <TextBlock Text="Название" Foreground="#66717C"/>
+                    <TextBlock Grid.Column="1" Text="Role" Foreground="#66717C"/>
+                    <TextBlock Grid.Column="2" Text="SignalId" Foreground="#66717C"/>
+                    <TextBlock Grid.Column="3" Text="Direction" Foreground="#66717C"/>
+                    <TextBlock Grid.Column="4" Text="ValueType" Foreground="#66717C"/>
+                    <TextBlock Grid.Column="5" Text="Действие" Foreground="#66717C"/>
+                  </Grid>
+                  <ItemsControl ItemsSource="{Binding Parameters}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Grid ColumnDefinitions="180,170,280,130,130,Auto"
+                              ColumnSpacing="6"
+                              Margin="0,2">
+                          <TextBox Text="{Binding Title}"/>
+                          <ComboBox Grid.Column="1"
+                                    ItemsSource="{Binding DataContext.EquipmentParameterRoles, ElementName=Root}"
+                                    SelectedItem="{Binding Role}"/>
+                          <TextBox Grid.Column="2" Text="{Binding SignalId}"/>
+                          <ComboBox Grid.Column="3"
+                                    ItemsSource="{Binding DataContext.SignalBindingDirections, ElementName=Root}"
+                                    SelectedItem="{Binding Direction}"/>
+                          <ComboBox Grid.Column="4"
+                                    ItemsSource="{Binding DataContext.SignalValueTypes, ElementName=Root}"
+                                    SelectedItem="{Binding ValueType}"/>
+                          <Button Grid.Column="5"
+                                  Content="Удалить"
+                                  Command="{Binding DataContext.RemoveCardParameterCommand, ElementName=Root}"
+                                  CommandParameter="{Binding}"/>
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </ScrollViewer>
+              <Button Content="Добавить настройку"
+                      HorizontalAlignment="Left"
+                      Margin="0,6,0,0"
+                      Command="{Binding DataContext.AddCardParameterCommand, ElementName=Root}"/>
             </StackPanel></ScrollViewer></Border>
           </Grid>
         </TabItem>

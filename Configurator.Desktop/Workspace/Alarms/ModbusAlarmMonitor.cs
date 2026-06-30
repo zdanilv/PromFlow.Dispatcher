@@ -4,6 +4,7 @@ using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Desktop.Workspace.RouteMap.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -15,6 +16,7 @@ public sealed class ModbusAlarmMonitor : IDisposable
     private readonly IModbusRuntimeService _runtime;
     private readonly IDialogService _dialogService;
     private readonly IModbusBitWriter _bitWriter;
+    private readonly RouteMapSessionJournal _sessionJournal;
     private readonly ILogger<ModbusAlarmMonitor> _logger;
     private readonly Dictionary<string, AlarmRuntimeState> _states = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _sync = new();
@@ -28,12 +30,14 @@ public sealed class ModbusAlarmMonitor : IDisposable
         IModbusRuntimeService runtime,
         IDialogService dialogService,
         IModbusBitWriter bitWriter,
+        RouteMapSessionJournal sessionJournal,
         ILogger<ModbusAlarmMonitor> logger)
     {
         _optionsMonitor = optionsMonitor;
         _runtime = runtime;
         _dialogService = dialogService;
         _bitWriter = bitWriter;
+        _sessionJournal = sessionJournal;
         _logger = logger;
         _options = optionsMonitor.CurrentValue.Clone();
     }
@@ -100,7 +104,14 @@ public sealed class ModbusAlarmMonitor : IDisposable
                 state = GetState(alarm.Id);
                 if (!isActive)
                 {
+                    if (state.IsActive)
+                    {
+                        _sessionJournal.RecordAlarmCleared(alarm, now);
+                    }
+
                     state.IsActive = false;
+                    state.ActivatedAt = null;
+                    state.ShouldMarkNotificationUnread = false;
                     state.NextShowAt = null;
                     state.IsShowing = false;
                     continue;
@@ -109,7 +120,10 @@ public sealed class ModbusAlarmMonitor : IDisposable
                 if (!state.IsActive)
                 {
                     state.IsActive = true;
+                    state.ActivatedAt = now;
+                    state.ShouldMarkNotificationUnread = true;
                     state.NextShowAt = now;
+                    _sessionJournal.RecordAlarmActivated(alarm, now);
                 }
 
                 if (state.IsShowing || state.NextShowAt is { } nextShowAt && now < nextShowAt)
@@ -122,22 +136,37 @@ public sealed class ModbusAlarmMonitor : IDisposable
 
             try
             {
+                DateTimeOffset createdAt;
+                bool markUnread;
+                lock (_sync)
+                {
+                    state = GetState(alarm.Id);
+                    createdAt = state.ActivatedAt ?? now;
+                    markUnread = state.ShouldMarkNotificationUnread;
+                    state.ShouldMarkNotificationUnread = false;
+                }
+
+                _sessionJournal.ShowAlarmNotification(alarm, createdAt, markUnread);
                 var confirmed = await _dialogService.ShowAlarmNotificationAsync(
                     alarm.Kind,
                     alarm.Message,
                     cancellationToken);
                 if (confirmed)
                 {
-                    var acknowledgement = await _bitWriter.PulseAsync(
-                        alarm.Acknowledgement,
-                        alarm.AcknowledgementPulseDurationMs,
-                        cancellationToken);
-                    if (!acknowledgement.Succeeded)
+                    _sessionJournal.RecordAlarmAcknowledged(alarm, DateTimeOffset.Now);
+                    if (_sessionJournal.IsAlarmActive(alarm.Id))
                     {
-                        _logger.LogWarning(
-                            "Failed to write acknowledgement for alarm {AlarmId}: {Error}",
-                            alarm.Id,
-                            acknowledgement.ErrorMessage);
+                        var acknowledgement = await _bitWriter.PulseAsync(
+                            alarm.Acknowledgement,
+                            alarm.AcknowledgementPulseDurationMs,
+                            cancellationToken);
+                        if (!acknowledgement.Succeeded)
+                        {
+                            _logger.LogWarning(
+                                "Failed to write acknowledgement for alarm {AlarmId}: {Error}",
+                                alarm.Id,
+                                acknowledgement.ErrorMessage);
+                        }
                     }
                 }
             }
@@ -252,5 +281,7 @@ public sealed class ModbusAlarmMonitor : IDisposable
         public bool IsActive { get; set; }
         public bool IsShowing { get; set; }
         public DateTimeOffset? NextShowAt { get; set; }
+        public DateTimeOffset? ActivatedAt { get; set; }
+        public bool ShouldMarkNotificationUnread { get; set; }
     }
 }

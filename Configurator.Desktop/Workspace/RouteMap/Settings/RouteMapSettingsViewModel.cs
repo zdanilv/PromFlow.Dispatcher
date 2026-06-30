@@ -77,6 +77,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         DeletePlaceholderCommand = ReactiveCommand.Create(DeletePlaceholder);
         AddBindingCommand = ReactiveCommand.Create<string>(AddBinding);
         RemoveBindingCommand = ReactiveCommand.Create<SignalBindingConfiguration>(RemoveBinding);
+        AddCardParameterCommand = ReactiveCommand.Create(AddCardParameter);
+        RemoveCardParameterCommand = ReactiveCommand.Create<EquipmentCardParameterConfiguration>(RemoveCardParameter);
 
         AttachDraft(_draft);
         SelectFirstItems();
@@ -127,6 +129,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         [SignalBindingRole.EmergencyCommand];
     public IReadOnlyList<SignalBindingDirection> SignalBindingDirections { get; } = Enum.GetValues<SignalBindingDirection>();
     public IReadOnlyList<SignalValueType> SignalValueTypes { get; } = Enum.GetValues<SignalValueType>();
+    public IReadOnlyList<SignalBindingRole> EquipmentParameterRoles { get; } = [SignalBindingRole.EquipmentParameter];
 
     private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
         SignalBindingRole.State or
@@ -215,6 +218,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> DeletePlaceholderCommand { get; }
     public ReactiveCommand<string, Unit> AddBindingCommand { get; }
     public ReactiveCommand<SignalBindingConfiguration, Unit> RemoveBindingCommand { get; }
+    public ReactiveCommand<Unit, Unit> AddCardParameterCommand { get; }
+    public ReactiveCommand<EquipmentCardParameterConfiguration, Unit> RemoveCardParameterCommand { get; }
 
     public void Dispose()
     {
@@ -326,7 +331,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     private void DuplicateChain() { if (SelectedChain is null) return; var item = Clone(x => x.Chains, SelectedChain); item.Id = UniqueId(SelectedChain.Id, Draft.Chains.Select(x => x.Id)); Draft.Chains.Add(item); SelectedChain = item; }
     private void DuplicateNode() { if (SelectedNode is null) return; var item = Clone(x => x.Nodes, SelectedNode); item.Id = UniqueId(SelectedNode.Id, Draft.Nodes.Select(x => x.Id)); RewriteNodeBindingIds(item); EnsureNodeBindings(item); Draft.Nodes.Add(item); SelectedNode = item; }
     private void DuplicateSegment() { if (SelectedSegment is null) return; var item = Clone(x => x.Segments, SelectedSegment); item.Id = UniqueId(SelectedSegment.Id, Draft.Segments.Select(x => x.Id)); RewriteSegmentBindingIds(item); EnsureSegmentActiveBinding(item); RouteSegmentActiveFragmentSynchronizer.Ensure(Draft, item); Draft.Segments.Add(item); SelectedSegment = item; }
-    private void DuplicateCard() { if (SelectedCard is null) return; var item = Clone(x => x.Cards, SelectedCard); item.Id = UniqueId(SelectedCard.Id, Draft.Cards.Select(x => x.Id)); item.AttachedChainId = null; RewriteCardBindingIds(item); EnsureCardBindings(item); Draft.Cards.Add(item); SelectedCard = item; }
+    private void DuplicateCard() { if (SelectedCard is null) return; var sourceId = SelectedCard.Id; var item = Clone(x => x.Cards, SelectedCard); item.Id = UniqueId(SelectedCard.Id, Draft.Cards.Select(x => x.Id)); item.AttachedChainId = null; RewriteCardBindingIds(item, sourceId); EnsureCardBindings(item); Draft.Cards.Add(item); SelectedCard = item; }
     private void DuplicatePlaceholder() { if (SelectedPlaceholderRule is null) return; var item = Clone(x => x.PlaceholderRules, SelectedPlaceholderRule); item.Id = UniqueId(SelectedPlaceholderRule.Id, Draft.PlaceholderRules.Select(x => x.Id)); Draft.PlaceholderRules.Add(item); SelectedPlaceholderRule = item; }
 
     private void DeleteChain() { if (SelectedChain is null) return; var deps = Draft.Cards.Where(x => x.AttachedChainId == SelectedChain.Id).Select(x => $"карточка {x.Id}"); if (BlockDelete(deps)) return; Draft.Chains.Remove(SelectedChain); SelectedChain = Draft.Chains.FirstOrDefault(); }
@@ -365,6 +370,26 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         SelectedNode?.Bindings.Remove(binding);
         SelectedSegment?.Bindings.Remove(binding);
         SelectedCard?.Bindings.Remove(binding);
+    }
+
+    private void AddCardParameter()
+    {
+        if (SelectedCard is null)
+            return;
+
+        SelectedCard.Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = "Параметр",
+            Role = SignalBindingRole.EquipmentParameter,
+            SignalId = $"{SelectedCard.Id}.parameter",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.UInt16,
+        });
+    }
+
+    private void RemoveCardParameter(EquipmentCardParameterConfiguration parameter)
+    {
+        SelectedCard?.Parameters.Remove(parameter);
     }
 
     private bool IsRequiredBinding(SignalBindingConfiguration binding)
@@ -410,6 +435,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         NormalizeOptionalOffFeedback(card.Bindings, SignalBindingRole.StopOffFeedback);
         card.StartOffFeedbackEnabled = card.Bindings.Any(x => x.Role == SignalBindingRole.StartOffFeedback);
         card.StopOffFeedbackEnabled = card.Bindings.Any(x => x.Role == SignalBindingRole.StopOffFeedback);
+        foreach (var parameter in card.Parameters)
+            parameter.Role = SignalBindingRole.EquipmentParameter;
         RemoveBindings(card.Bindings, SignalBindingRole.State);
     }
 
@@ -490,7 +517,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         }
     }
 
-    private static void RewriteCardBindingIds(EquipmentCardConfiguration card)
+    private static void RewriteCardBindingIds(EquipmentCardConfiguration card, string? oldId = null)
     {
         foreach (var binding in card.Bindings)
         {
@@ -502,6 +529,20 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
                 SignalBindingRole.StopOffFeedback => $"{card.Id}.stop.off",
                 _ => binding.SignalId,
             };
+        }
+
+        foreach (var parameter in card.Parameters)
+        {
+            parameter.Role = SignalBindingRole.EquipmentParameter;
+            if (string.IsNullOrWhiteSpace(parameter.SignalId))
+            {
+                parameter.SignalId = $"{card.Id}.parameter";
+            }
+            else if (!string.IsNullOrWhiteSpace(oldId) &&
+                     parameter.SignalId.StartsWith(oldId + ".", StringComparison.Ordinal))
+            {
+                parameter.SignalId = card.Id + parameter.SignalId[oldId.Length..];
+            }
         }
     }
 

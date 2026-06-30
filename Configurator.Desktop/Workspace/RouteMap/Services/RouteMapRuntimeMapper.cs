@@ -75,7 +75,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 equipment.StatusText,
                 forceOffline: !isConnectionAvailable,
                 forceFault: isGlobalFaultActive,
-                forceCommandsDisabled: !isConnectionAvailable);
+                forceCommandsDisabled: !isConnectionAvailable,
+                offlineText: "Не в сети");
         }
 
         return new RouteMapRuntimeState(
@@ -100,7 +101,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         IReadOnlyList<RouteSegmentActiveFragment>? activeFragments = null,
         bool forceOffline = false,
         bool forceFault = false,
-        bool forceCommandsDisabled = false)
+        bool forceCommandsDisabled = false,
+        string? offlineText = null)
     {
         var text = textFallback;
         string? valueText = null;
@@ -234,6 +236,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             && state is not RouteObjectState.Offline
             && state is not RouteObjectState.Fault
             && state is not RouteObjectState.Disabled;
+        if (forceOffline && !string.IsNullOrWhiteSpace(offlineText))
+            text = offlineText;
 
         return new RouteObjectRuntimeState(
             objectId,

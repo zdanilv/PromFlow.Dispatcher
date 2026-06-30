@@ -51,6 +51,10 @@
 			<Setter Property="BorderBrush" Value="#D95D4E"/>
 			<Setter Property="Foreground" Value="#FFFFFF"/>
 		</Style>
+		<Style Selector="Button.parameter">
+			<Setter Property="Background" Value="#D0D0D0"/>
+			<Setter Property="BorderBrush" Value="#D0D0D0"/>
+		</Style>
 	</UserControl.Styles>
 
 	<Border MinWidth="{Binding MinimumCardWidth}"
@@ -63,19 +67,31 @@
 			Margin="{Binding CardMargin}"
 			IsVisible="{Binding IsVisible}">
 		<Grid RowDefinitions="Auto,Auto,Auto,Auto"
-			  ColumnDefinitions="14,*"
+			  ColumnDefinitions="14,*,40"
 			  RowSpacing="5"
 			  Margin="5">
-			<Viewbox Stretch="Uniform"
-					 StretchDirection="DownOnly"
-					 Grid.ColumnSpan="2"
-					 HorizontalAlignment="Left">
-				<TextBlock Text="{Binding Title}"
-						   Foreground="{Binding TitleBrush}"
-						   FontWeight="SemiBold"
-						   FontSize="{Binding TitleFontSize}"
-						   TextWrapping="NoWrap"/>
-			</Viewbox>
+			<Grid Grid.ColumnSpan="3"
+				  ColumnDefinitions="*,40"
+				  ColumnSpacing="8">
+				<Viewbox Stretch="Uniform"
+						 StretchDirection="DownOnly"
+						 HorizontalAlignment="Left"
+						 VerticalAlignment="Center">
+					<TextBlock Text="{Binding Title}"
+							   Foreground="{Binding TitleBrush}"
+							   FontWeight="SemiBold"
+							   FontSize="{Binding TitleFontSize}"
+							   TextWrapping="NoWrap"/>
+				</Viewbox>
+				<Button Grid.Column="1"
+						Classes="equipment-action parameter"
+						Content="Н"
+						Width="40"
+						Height="40"
+						MinWidth="40"
+						MinHeight="40"
+						Command="{Binding OpenParametersCommand}"/>
+			</Grid>
 
 			<Ellipse Grid.Row="1"
 					 Grid.Column="0"
@@ -99,7 +115,7 @@
 			</Viewbox>
 
 			<StackPanel Grid.Row="2"
-						Grid.ColumnSpan="2"
+						Grid.ColumnSpan="3"
 						Orientation="Vertical"
 						Spacing="3"
 						Margin="0,8,0,8">
@@ -122,7 +138,7 @@
 			</StackPanel>
 
 			<Grid Grid.Row="3"
-				  Grid.ColumnSpan="2"
+				  Grid.ColumnSpan="3"
 				  ColumnDefinitions="*,*"
 				  ColumnSpacing="11">
 				<ToggleButton x:Name="StartButton"

@@ -18,7 +18,7 @@
 ## Актуальные документы
 
 - `01-architecture-overview.ru.md` — общий поток данных, Workspace, DI, RouteMap, SignalId, Modbus runtime.
-- `02-route-map-guide.ru.md` — RouteMap definition, schema v10, редактор, миграции, validation, runtime state.
+- `02-route-map-guide.ru.md` — RouteMap definition, schema v11, редактор, миграции, validation, runtime state.
 - `03-modbus-tcp-guide.ru.md` — общий TCP runtime, `ModbusDemo`, `Modbus.DataMap`, `Modbus.AlarmMap`, таблица `Менеджер тревог`, snapshots, запись команд.
 - `04-signal-id-guide.ru.md` — правила SignalId, роли, направления, типы и mapping.
 - `05-coding-rules.ru.md` — правила разработки с учетом текущей архитектуры.
@@ -44,6 +44,8 @@
   настраивается в `Modbus.DataMap`, а не в `Modbus.AlarmMap`.
 - `ПУСК`/`СТОП` на карточках взаимоисключающие; `StartOffFeedback`/`StopOffFeedback`
   являются активными read-only ролями отключения этих кнопок.
+- Параметры оборудования карточек живут в RouteMap definition как `EquipmentParameter`
+  SignalId; физические адреса для них настраиваются только в `Modbus.DataMap`.
 - `ModbusDemo` владеет TCP endpoint и lifecycle общего runtime.
 - `RouteMapConfigurationManager` владеет актуальной definition; не регистрируйте `RouteMapDefinition` как immutable singleton.
 - UI не обновляется напрямую из Modbus callback: поток идет через provider, mapper и ViewModel.

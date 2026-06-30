@@ -29,7 +29,8 @@ Modbus Demo
 ```
 
 `WorkspaceViewModel` owns `RouteMapDashboardViewModel`,
-`RouteMapSignalMappingViewModel`, `AlarmManagerViewModel`, and `ModbusDemoViewModel`.
+`NotificationsPanelViewModel`, `RouteMapSignalMappingViewModel`, `AlarmManagerViewModel`,
+and `ModbusDemoViewModel`.
 It may autostart the shared Modbus runtime using `ModbusDemo.AutostartOnWorkspaceOpen`
 and `StartupMode`.
 
@@ -43,6 +44,13 @@ the separate `Acknowledgement` bit, `RepeatIntervalMs`, and
 `Alarm area/Offset/Bit`, `OK area/Offset/Bit`, `Repeat ms`, and `Pulse ms`.
 `Kind` can be `Fault`, `Confirmation`, or `Message`; it changes dialog styling while
 alarm/ack/repeat behavior stays shared.
+After a dialog is shown, the alarm appears in the RouteMap right panel `Уведомления`
+tab. `Хорошо` clears the unread marker; the row `X` removes it only after `Alarm=false`.
+`Очистить список` bulk-removes only rows that pass the same close check. The `История`
+tab is an in-memory session log for successful sent SignalIds, first and changed received
+values from `Modbus.DataMap`, and alarm events from `Modbus.AlarmMap`. It expands the
+right panel to the table width, uses arrows for direction, and shows the address as a
+numeric offset without the Modbus area name.
 
 ## Read Flow
 
@@ -55,6 +63,7 @@ ModbusDemo endpoint/lifecycle
   -> ISignalValueProvider
   -> RouteMapRuntimeMapper
   -> RouteMapDashboardViewModel
+  -> RouteMapSessionJournal
   -> Avalonia UI
 ```
 
@@ -64,13 +73,14 @@ The mapper converts values, quality, and stale state into `RouteMapRuntimeState`
 ## Write Flow
 
 ```text
-TopBar / node menu / equipment card
+TopBar / node menu / equipment card / card parameter dialog
   -> SignalWriteRequest
   -> IEquipmentCommandDispatcher
   -> ModbusTcpCommandDispatcher
   -> IModbusTcpService.SetAsync
   -> shared Modbus client or local server
   -> poll/readback
+  -> RouteMapSessionJournal
 ```
 
 The UI may apply optimistic checked state, but readback is the source of truth. Incoming
@@ -78,6 +88,9 @@ The UI may apply optimistic checked state, but readback is the source of truth. 
 Card `Start` and `Stop` are mutually exclusive: selecting one writes `false` to the
 opposite command before writing `true` to the selected command. Runtime readback and
 `StartOffFeedback`/`StopOffFeedback` update UI without writing back to PLC.
+The card-parameters dialog opened by `Н` uses the same `IEquipmentCommandDispatcher`:
+`Write` and `ReadWrite` rows are sent as `SignalWriteRequest`, while `Read` rows only
+display the latest good value.
 
 ## Ownership
 
@@ -87,6 +100,11 @@ opposite command before writing `true` to the selected command. Runtime readback
 - `RouteMapConfigurationManager` owns `CurrentDocument` and `CurrentDefinition`.
 - `RouteMapConfigurationStorage`, `Migrator`, `Validator`, and `Mapper` handle JSON
   loading, migration, validation, and mapping.
+- `RouteMapSessionJournal` owns the in-memory notification and session-history state.
+  `NoopSessionJournalExporter` is called during shutdown as the future database export
+  hook; the database itself is not implemented yet.
+- `EquipmentCardParametersDialogService` owns the modal card-parameter dialog. Parameter
+  definitions live in RouteMap, while PLC addresses still live only in `Modbus.DataMap`.
 
 ## Modbus Runtime
 

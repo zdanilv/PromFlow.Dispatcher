@@ -222,6 +222,7 @@ public sealed class RouteMapConfigurationValidator
                 SignalBindingRole.Fault,
             };
             ValidateBindings(errors, "card", card.Id, card.Bindings, cardAllowedRoles);
+            ValidateCardParameters(errors, card);
             if (card.CanStart)
             {
                 ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.StartCommand, SignalBindingDirection.ReadWrite);
@@ -266,6 +267,34 @@ public sealed class RouteMapConfigurationValidator
             Add(errors, "node", node.Id, nameof(node.IsTarget), "Один узел не может одновременно быть loader и target.");
 
         return new RouteMapConfigurationValidationResult(errors);
+    }
+
+    private static void ValidateCardParameters(
+        ICollection<RouteMapConfigurationError> errors,
+        EquipmentCardConfiguration card)
+    {
+        var parameters = card.Parameters?.ToArray() ?? [];
+        foreach (var parameter in parameters)
+        {
+            if (string.IsNullOrWhiteSpace(parameter.Title))
+                Add(errors, "card", card.Id, nameof(parameter.Title), "Название настройки оборудования обязательно.");
+            if (string.IsNullOrWhiteSpace(parameter.SignalId))
+                Add(errors, "card", card.Id, nameof(parameter.SignalId), "SignalId настройки оборудования обязателен.");
+            if (parameter.Role != SignalBindingRole.EquipmentParameter)
+                Add(errors, "card", card.Id, nameof(parameter.Role), "Настройка оборудования должна использовать роль EquipmentParameter.");
+            ValidateEnum(errors, "card", card.Id, nameof(parameter.Role), parameter.Role);
+            ValidateEnum(errors, "card", card.Id, nameof(parameter.Direction), parameter.Direction);
+            ValidateEnum(errors, "card", card.Id, nameof(parameter.ValueType), parameter.ValueType);
+        }
+
+        foreach (var duplicate in parameters
+                     .Where(parameter => !string.IsNullOrWhiteSpace(parameter.SignalId))
+                     .GroupBy(parameter => parameter.SignalId, StringComparer.OrdinalIgnoreCase)
+                     .Where(group => group.Count() > 1))
+        {
+            Add(errors, "card", card.Id, nameof(EquipmentCardParameterConfiguration.SignalId),
+                $"SignalId настройки оборудования '{duplicate.Key}' указан несколько раз.");
+        }
     }
 
     private static void ValidateBindings(

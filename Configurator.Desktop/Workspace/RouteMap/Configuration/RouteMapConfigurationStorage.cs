@@ -165,6 +165,7 @@ public sealed class RouteMapConfigurationStorage
             card.Style.BorderThickness ??= new RouteThicknessConfiguration();
             card.Style.CornerRadius ??= new RouteCornerRadiusConfiguration();
             card.Bindings ??= [];
+            card.Parameters ??= [];
         }
         foreach (var rule in document.PlaceholderRules)
         {

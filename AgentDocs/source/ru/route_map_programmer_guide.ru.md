@@ -22,7 +22,7 @@ Workspace показывает только `Route Map` на всю рабочу
 - верхней панели `TopBarView`;
 - центральной карты `RouteMapControl`, которая рисует узлы, линии, подписи, hover/selection и меню узлов;
 - overlay-слоя `RouteMapAttachedCardsLayer`, который размещает attached-карточки оборудования поверх карты и рисует визуальные карточки-заглушки вокруг них;
-- скрытой правой панели заявок `RequestsPanelView` с `IsVisible="False"`.
+- правой панели `NotificationsPanelView` с вкладками `Уведомления` и `История`.
 
 Главное правило: UI работает с доменными `SignalId`, а не с Modbus-адресами. Привязка `SignalId -> Modbus register/bit` должна оставаться во внешнем application/infrastructure слое.
 

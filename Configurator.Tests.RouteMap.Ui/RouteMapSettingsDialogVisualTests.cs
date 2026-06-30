@@ -1,3 +1,4 @@
+using System.Reactive.Linq;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
@@ -12,9 +13,11 @@ using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services.Signals;
 using Configurator.Application.Services.OpcUa.Browsing;
 using Configurator.Application.Services.OpcUa.Tags;
 using Configurator.Desktop.Dialogs.AlarmNotificationDialog;
+using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Dialogs.ModbusSettingsDialog;
 using Configurator.Desktop.Workspace.Alarms;
 using Configurator.Desktop.Workspace.RouteMap;
@@ -24,6 +27,7 @@ using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Panels;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
+using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 using Configurator.Desktop.Workspace;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -152,7 +156,8 @@ public sealed class RouteMapSettingsDialogVisualTests
         window.Show();
         Dispatcher.UIThread.RunJobs();
 
-        var tabs = view.GetVisualDescendants().OfType<TabControl>().Single();
+        var root = Assert.IsType<Grid>(view.Content);
+        var tabs = root.Children.OfType<TabControl>().Single();
         var headers = tabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString() ?? string.Empty).ToArray();
 
         Assert.True(tabs.IsVisible);
@@ -281,6 +286,249 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.Contains("Авария", texts);
         Assert.Contains("Хорошо", buttons);
         Assert.Contains("X", buttons);
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Notifications_panel_has_clear_button_dynamic_history_width_and_history_columns()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "route-map-notifications-ui-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var journal = new RouteMapSessionJournal();
+        var activeAlarm = new ModbusAlarmOptions
+        {
+            Id = "alarm.main",
+            Kind = ModbusAlarmKind.Fault,
+            Message = "Авария привода",
+            Alarm = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 0 },
+            Acknowledgement = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 1 }
+        };
+        var closedAlarm = new ModbusAlarmOptions
+        {
+            Id = "alarm.closed",
+            Kind = ModbusAlarmKind.Message,
+            Message = "Закрытое сообщение",
+            Alarm = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 2 },
+            Acknowledgement = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 3 }
+        };
+        journal.ShowAlarmNotification(
+            activeAlarm,
+            DateTimeOffset.UtcNow,
+            markUnread: true);
+        journal.ShowAlarmNotification(
+            closedAlarm,
+            DateTimeOffset.UtcNow,
+            markUnread: true);
+        journal.RecordAlarmCleared(closedAlarm, DateTimeOffset.UtcNow);
+        journal.RecordSignalSent(
+            new SignalWriteRequest("equip.bucket.start", true, SignalValueType.Bool),
+            RouteMapSeed.Create(),
+            new ModbusOptions
+            {
+                DataMap =
+                [
+                    new()
+                    {
+                        Name = "equip.bucket.start",
+                        Area = ModbusDataArea.Coil,
+                        Address = 3,
+                        Type = ModbusValueType.Bool,
+                        Access = ModbusDataAccess.ReadWrite
+                    }
+                ]
+            },
+            DateTimeOffset.UtcNow);
+
+        try
+        {
+            using var manager = new RouteMapConfigurationManager(
+                new RouteMapConfigurationStorage(Path.Combine(directory, "route-map.json")),
+                new RouteMapConfigurationMapper(RouteMapSeed.Create()),
+                new RouteMapConfigurationValidator(),
+                new RouteMapConfigurationMigrator());
+            using var notificationsPanel = new NotificationsPanelViewModel(
+                journal,
+                new NoOpDialogService(),
+                new NoOpBitWriter());
+            using var viewModel = new RouteMapDashboardViewModel(
+                manager,
+                new EmptySignalProvider(),
+                new RouteMapRuntimeMapper(manager.CurrentDefinition),
+                new NoOpCommandDispatcher(),
+                new NoOpSettingsDialogService(),
+                notificationsPanel,
+                journal,
+                new StaticOptionsMonitor(new ModbusOptions()));
+            var view = new RouteMapDashboardView { DataContext = viewModel };
+            var window = new Window { Width = 1300, Height = 760, Content = view };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var panel = view.GetVisualDescendants().OfType<NotificationsPanelView>().Single();
+            var tabs = panel.GetVisualDescendants().OfType<TabControl>().Single();
+            var headers = tabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString() ?? string.Empty).ToArray();
+
+            Assert.True(panel.IsVisible);
+            var notificationsWidth = panel.Bounds.Width;
+            Assert.True(notificationsWidth >= 400);
+            Assert.Equal(["Уведомления", "История"], headers);
+            Assert.Contains("Авария привода", panel.GetVisualDescendants().OfType<TextBlock>().Select(item => item.Text));
+            var clearButton = panel.GetVisualDescendants()
+                .OfType<Button>()
+                .Single(button => button.Content?.ToString() == "Очистить список");
+            Assert.True(clearButton.IsEnabled);
+
+            clearButton.Command!.Execute(clearButton.CommandParameter);
+            Dispatcher.UIThread.RunJobs();
+            var notification = Assert.Single(journal.Notifications);
+            Assert.Equal("alarm.main", notification.Id);
+
+            tabs.SelectedIndex = 1;
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(panel.Bounds.Width > notificationsWidth);
+            Assert.True(panel.Bounds.Width > 400);
+            var textValues = panel.GetVisualDescendants()
+                .OfType<TextBlock>()
+                .Select(item => item.Text)
+                .ToArray();
+            Assert.Contains("↑↓", textValues);
+            Assert.Contains("Роли / объекты", textValues);
+            Assert.Contains("↑", textValues);
+            Assert.Contains("3", textValues);
+            Assert.DoesNotContain("Coil 3", textValues);
+            var rows = panel.GetVisualDescendants()
+                .OfType<Grid>()
+                .Where(grid => grid.Classes.Contains("route-map-history-row"))
+                .ToArray();
+            Assert.NotEmpty(rows);
+            foreach (var row in rows)
+            {
+                var controls = row.Children.OfType<Control>().ToArray();
+                Assert.Equal(7, controls.Length);
+                Assert.Equal(Enumerable.Range(0, 7), controls.Select(Grid.GetColumn));
+                for (var index = 1; index < controls.Length; index++)
+                    Assert.True(controls[index - 1].Bounds.Right <= controls[index].Bounds.Left);
+            }
+
+            window.Close();
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [AvaloniaFact]
+    public void Equipment_card_has_parameters_button_and_dialog_layout()
+    {
+        var card = RouteMapSeed.Create().MapEquipment.Single() with
+        {
+            Parameters =
+            [
+                new EquipmentCardParameter(
+                    "Скорость",
+                    new SignalBinding(
+                        SignalBindingRole.EquipmentParameter,
+                        "equip.bucket.speed",
+                        SignalBindingDirection.ReadWrite,
+                        SignalValueType.UInt16)),
+                new EquipmentCardParameter(
+                    "Разрешение",
+                    new SignalBinding(
+                        SignalBindingRole.EquipmentParameter,
+                        "equip.bucket.enabled",
+                        SignalBindingDirection.ReadWrite,
+                        SignalValueType.Bool))
+            ]
+        };
+        var dispatcher = new NoOpCommandDispatcher();
+        var cardViewModel = new EquipmentCardViewModel(card, dispatcher);
+        var cardView = new EquipmentCardView { DataContext = cardViewModel };
+        var cardWindow = new Window { Width = 340, Height = 200, Content = cardView };
+        cardWindow.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var parameterButton = cardView.GetVisualDescendants()
+            .OfType<Button>()
+            .Single(button => button.Content?.ToString() == "Н");
+        Assert.InRange(parameterButton.Bounds.Width, 39, 41);
+        Assert.InRange(parameterButton.Bounds.Height, 39, 41);
+
+        var dialogViewModel = new EquipmentCardParametersDialogViewModel(card, null, dispatcher);
+        var dialog = new EquipmentCardParametersDialogView { DataContext = dialogViewModel };
+        var dialogWindow = new Window { Width = 560, Height = 420, Content = dialog };
+        dialogWindow.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var texts = dialog.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .Select(text => text.Text)
+            .ToArray();
+        var buttons = dialog.GetVisualDescendants()
+            .OfType<Button>()
+            .Select(button => button.Content?.ToString())
+            .ToArray();
+
+        Assert.Contains("Настройки оборудования", texts);
+        Assert.Contains("Скорость", texts);
+        Assert.Contains("Разрешение", texts);
+        Assert.Contains("equip.bucket.speed • UInt16", texts);
+        Assert.Contains("equip.bucket.enabled • Bool", texts);
+        Assert.Contains("Закрыть", buttons);
+        Assert.Contains("Сохранить", buttons);
+        Assert.Single(dialog.GetVisualDescendants().OfType<TextBox>(), textBox => textBox.IsVisible);
+        Assert.Single(dialog.GetVisualDescendants().OfType<ToggleSwitch>(), toggle => toggle.IsVisible);
+
+        dialogWindow.Close();
+        cardWindow.Close();
+    }
+
+    [AvaloniaFact]
+    public void Card_settings_add_parameter_and_signal_mapping_includes_it()
+    {
+        using var fixture = new DialogFixture(1320, 780);
+        fixture.SelectTab(5);
+
+        var textValues = fixture.Dialog.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .Select(text => text.Text)
+            .ToArray();
+        Assert.Contains("Настройки оборудования", textValues);
+        var addButton = fixture.Dialog.GetVisualDescendants()
+            .OfType<Button>()
+            .Single(button => button.Content?.ToString() == "Добавить настройку");
+
+        addButton.Command!.Execute(addButton.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+
+        var parameter = Assert.Single(fixture.ViewModel.SelectedCard!.Parameters);
+        Assert.Equal("Параметр", parameter.Title);
+        Assert.Equal(SignalBindingRole.EquipmentParameter, parameter.Role);
+        Assert.Equal($"{fixture.ViewModel.SelectedCard.Id}.parameter", parameter.SignalId);
+        Assert.Equal(SignalBindingDirection.ReadWrite, parameter.Direction);
+        Assert.Equal(SignalValueType.UInt16, parameter.ValueType);
+        parameter.Title = "Скорость";
+        parameter.SignalId = "equip.bucket.speed";
+        parameter.ValueType = SignalValueType.Float32;
+        fixture.ViewModel.Apply();
+
+        using var mappingViewModel = new RouteMapSignalMappingViewModel(
+            fixture.Manager,
+            new StaticOptionsMonitor(new ModbusOptions()),
+            new NullAppConfigService(),
+            new ModbusDataMapValidator(),
+            new NoOpDataMapRuntime());
+        var mappingView = new RouteMapSignalMappingView { DataContext = mappingViewModel };
+        var window = new Window { Width = 1200, Height = 760, Content = mappingView };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var row = SignalMappingRowGrid(mappingView, "equip.bucket.speed");
+        var rowModel = Assert.IsType<RouteMapSignalMappingRow>(row.DataContext);
+        Assert.Equal(SignalValueType.Float32, rowModel.ExpectedType);
+        Assert.Equal(ModbusDataAccess.ReadWrite, rowModel.RequiredAccess);
+        Assert.Contains(nameof(SignalBindingRole.EquipmentParameter), rowModel.Roles);
 
         window.Close();
     }
@@ -562,6 +810,8 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         public Window Window { get; }
         public RouteMapSettingsDialog Dialog { get; }
+        public RouteMapConfigurationManager Manager => _manager;
+        public RouteMapSettingsViewModel ViewModel => _viewModel;
 
         public void SelectTab(int index)
         {
@@ -650,6 +900,23 @@ public sealed class RouteMapSettingsDialogVisualTests
             ModbusOperationResult.Success();
     }
 
+    private sealed class EmptySignalProvider : ISignalValueProvider
+    {
+        public IObservable<IReadOnlyDictionary<string, SignalValue>> Observe() =>
+            Observable.Empty<IReadOnlyDictionary<string, SignalValue>>();
+    }
+
+    private sealed class NoOpCommandDispatcher : IEquipmentCommandDispatcher
+    {
+        public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class NoOpSettingsDialogService : IRouteMapSettingsDialogService
+    {
+        public Task ShowAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
     private sealed class NoOpBitWriter : IModbusBitWriter
     {
         public Task<ModbusOperationResult> PulseAsync(
@@ -702,6 +969,7 @@ public sealed class RouteMapSettingsDialogVisualTests
                 runtime,
                 new NoOpDialogService(),
                 new NoOpBitWriter(),
+                new RouteMapSessionJournal(),
                 NullLogger<ModbusAlarmMonitor>.Instance),
             routeMapDashboard: null!,
             routeMapSignalMapping: null!,

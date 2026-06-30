@@ -1,11 +1,19 @@
 using System.Reactive.Linq;
 using Avalonia.Media;
+using Configurator.Application.Services.Dialogs;
+using Configurator.Application.Services.Modbus.Configuration;
+using Configurator.Application.Services.Modbus.Contracts;
+using Configurator.Application.Services.Modbus.Data;
+using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Application.Services.OpcUa.Browsing;
+using Configurator.Application.Services.OpcUa.Tags;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Configurator.Tests.Unit.RouteMap;
@@ -115,6 +123,20 @@ public sealed class RouteMapConfigurationTests
         Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, result.Document.SchemaVersion);
         Assert.Equal((321d, 654d, 17d), (lower.X, lower.Y, lower.LabelOffsetX));
         Assert.All(result.Document.Segments, segment => Assert.Single(segment.Bindings, x => x.Role == SignalBindingRole.ActiveRoute));
+    }
+
+    [Fact]
+    public void Migrator_v10_to_v11_adds_empty_card_parameters()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.SchemaVersion = 10;
+
+        var result = new RouteMapConfigurationMigrator().Migrate(document);
+
+        Assert.True(result.WasMigrated);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, result.Document.SchemaVersion);
+        Assert.All(result.Document.Cards, card => Assert.Empty(card.Parameters));
     }
 
     [Fact]
@@ -324,6 +346,37 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
+    public void Mapper_round_trip_preserves_card_parameters()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var card = document.Cards.Single();
+        card.Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = "Скорость",
+            Role = SignalBindingRole.EquipmentParameter,
+            SignalId = "equip.bucket.speed",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Float32,
+        });
+
+        var definition = scope.Mapper.ToDefinition(document);
+        var roundTrip = scope.Mapper.ToDocument(definition);
+
+        var modelParameter = Assert.Single(definition.MapEquipment.Single().Parameters);
+        Assert.Equal("Скорость", modelParameter.Title);
+        Assert.Equal(new SignalBinding(
+            SignalBindingRole.EquipmentParameter,
+            "equip.bucket.speed",
+            SignalBindingDirection.ReadWrite,
+            SignalValueType.Float32), modelParameter.Binding);
+        var configurationParameter = Assert.Single(roundTrip.Cards.Single().Parameters);
+        Assert.Equal("Скорость", configurationParameter.Title);
+        Assert.Equal(SignalBindingRole.EquipmentParameter, configurationParameter.Role);
+        Assert.Equal("equip.bucket.speed", configurationParameter.SignalId);
+    }
+
+    [Fact]
     public void Validator_rejects_missing_required_node_card_and_top_bar_bindings()
     {
         using var scope = new TempConfigurationScope();
@@ -339,6 +392,42 @@ public sealed class RouteMapConfigurationTests
         Assert.Contains(result.Errors, x => x.Scope == "node" && x.Message.Contains("ActiveRoute"));
         Assert.Contains(result.Errors, x => x.Scope == "card" && x.Message.Contains("StartCommand"));
         Assert.Contains(result.Errors, x => x.Scope == "topBar" && x.Message.Contains("AutomaticModeCommand"));
+    }
+
+    [Fact]
+    public void Validator_rejects_invalid_card_parameters()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var card = document.Cards.Single();
+        card.Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = string.Empty,
+            Role = SignalBindingRole.StartCommand,
+            SignalId = string.Empty,
+            Direction = (SignalBindingDirection)999,
+            ValueType = (SignalValueType)999,
+        });
+        card.Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = "A",
+            SignalId = "equip.bucket.duplicate",
+        });
+        card.Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = "B",
+            SignalId = "equip.bucket.duplicate",
+        });
+
+        var result = new RouteMapConfigurationValidator().Validate(document);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.Scope == "card" && x.Property == nameof(EquipmentCardParameterConfiguration.Title));
+        Assert.Contains(result.Errors, x => x.Scope == "card" && x.Property == nameof(EquipmentCardParameterConfiguration.SignalId));
+        Assert.Contains(result.Errors, x => x.Scope == "card" && x.Property == nameof(EquipmentCardParameterConfiguration.Role));
+        Assert.Contains(result.Errors, x => x.Scope == "card" && x.Property == nameof(EquipmentCardParameterConfiguration.Direction));
+        Assert.Contains(result.Errors, x => x.Scope == "card" && x.Property == nameof(EquipmentCardParameterConfiguration.ValueType));
+        Assert.Contains(result.Errors, x => x.Scope == "card" && x.Message.Contains("duplicate"));
     }
 
     [Fact]
@@ -729,12 +818,20 @@ public sealed class RouteMapConfigurationTests
         using var scope = new TempConfigurationScope();
         using var manager = scope.CreateManager();
         var dispatcher = new FailingDispatcher();
+        var journal = new RouteMapSessionJournal();
+        using var notificationsPanel = new NotificationsPanelViewModel(
+            journal,
+            new NoOpDialogService(),
+            new NoOpBitWriter());
         using var viewModel = new RouteMapDashboardViewModel(
             manager,
             new EmptySignalProvider(),
             new RouteMapRuntimeMapper(manager.CurrentDefinition),
             dispatcher,
-            new RecordingSettingsDialogService());
+            new RecordingSettingsDialogService(),
+            notificationsPanel,
+            journal,
+            new StaticOptionsMonitor(new ModbusOptions()));
 
         await viewModel.ToggleNodeLoaderCommand.Execute("bsu_1").FirstAsync();
 
@@ -788,6 +885,33 @@ public sealed class RouteMapConfigurationTests
     {
         public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default) =>
             Task.FromException(new InvalidOperationException("Write failed"));
+    }
+
+    private sealed class NoOpBitWriter : IModbusBitWriter
+    {
+        public Task<ModbusOperationResult> PulseAsync(
+            ModbusBitAddressOptions address,
+            int pulseDurationMs,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(ModbusOperationResult.Success());
+    }
+
+    private sealed class NoOpDialogService : IDialogService
+    {
+        public Task<bool> ConfirmAsync(string message, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<string?> RequestSecretAsync(string message, CancellationToken ct = default) => Task.FromResult<string?>(null);
+        public Task ShowErrorAsync(string title, string message, string? details = null, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<bool> ShowAlarmNotificationAsync(ModbusAlarmKind kind, string message, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<ModbusOptions?> EditModbusSettingsAsync(string title, string sectionName, ModbusOptions options, CancellationToken ct = default) => Task.FromResult<ModbusOptions?>(null);
+        public Task<OpcUaConfiguredTag?> EditOpcUaTagAsync(string title, OpcUaConfiguredTag? tag, OpcUaImportTarget target, CancellationToken ct = default) => Task.FromResult<OpcUaConfiguredTag?>(null);
+        public Task<OpcUaTagImportResult?> ImportOpcUaTagsAsync(OpcUaBrowseRequest request, CancellationToken ct = default) => Task.FromResult<OpcUaTagImportResult?>(null);
+    }
+
+    private sealed class StaticOptionsMonitor(ModbusOptions options) : IOptionsMonitor<ModbusOptions>
+    {
+        public ModbusOptions CurrentValue { get; } = options;
+        public ModbusOptions Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<ModbusOptions, string?> listener) => null;
     }
 
     private sealed class EmptySignalProvider : ISignalValueProvider

@@ -1,4 +1,7 @@
+using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
+using Configurator.Desktop.Workspace.RouteMap.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Services;
 
@@ -8,6 +11,9 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
     private readonly IEquipmentCommandDispatcher _mockDispatcher;
     private readonly ISignalValueProvider _modbusProvider;
     private readonly IEquipmentCommandDispatcher _modbusDispatcher;
+    private readonly RouteMapSessionJournal? _sessionJournal;
+    private readonly RouteMapConfigurationManager? _configurationManager;
+    private readonly IOptionsMonitor<ModbusOptions>? _modbusOptions;
     private readonly SignalSnapshotObservable _observable = new();
     private readonly object _sync = new();
     private IDisposable? _activeSubscription;
@@ -21,12 +27,18 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
         IEquipmentCommandDispatcher mockDispatcher,
         ISignalValueProvider modbusProvider,
         IEquipmentCommandDispatcher modbusDispatcher,
-        RouteMapSignalSource initialSource)
+        RouteMapSignalSource initialSource,
+        RouteMapSessionJournal? sessionJournal = null,
+        RouteMapConfigurationManager? configurationManager = null,
+        IOptionsMonitor<ModbusOptions>? modbusOptions = null)
     {
         _mockProvider = mockProvider;
         _mockDispatcher = mockDispatcher;
         _modbusProvider = modbusProvider;
         _modbusDispatcher = modbusDispatcher;
+        _sessionJournal = sessionJournal;
+        _configurationManager = configurationManager;
+        _modbusOptions = modbusOptions;
         SwitchSource(initialSource);
     }
 
@@ -88,7 +100,7 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
         SourceChanged?.Invoke(this, new RouteMapSignalSourceChangedEventArgs(previousSource, source));
     }
 
-    public Task DispatchAsync(
+    public async Task DispatchAsync(
         SignalWriteRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -99,7 +111,17 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
             dispatcher = DispatcherFor(_currentSource);
         }
 
-        return dispatcher.DispatchAsync(request, cancellationToken);
+        await dispatcher.DispatchAsync(request, cancellationToken);
+        if (_sessionJournal is not null
+            && _configurationManager is not null
+            && _modbusOptions is not null)
+        {
+            _sessionJournal.RecordSignalSent(
+                request,
+                _configurationManager.CurrentDefinition,
+                _modbusOptions.CurrentValue,
+                DateTimeOffset.Now);
+        }
     }
 
     public void Dispose()

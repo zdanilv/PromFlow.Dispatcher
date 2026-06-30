@@ -18,7 +18,7 @@ source guides with deeper Russian detail.
 ## Current Documents
 
 - `01-architecture-overview.en.md` — Workspace, DI, RouteMap, SignalId, and Modbus runtime.
-- `02-route-map-guide.en.md` — RouteMap definition, schema v10, editor, migrations, validation, runtime state.
+- `02-route-map-guide.en.md` — RouteMap definition, schema v11, editor, migrations, validation, runtime state.
 - `03-modbus-tcp-guide.en.md` — shared TCP runtime, `ModbusDemo`, `Modbus.DataMap`, `Modbus.AlarmMap`, `Менеджер тревог` table, snapshots, writes.
 - `04-signal-id-guide.en.md` — SignalId naming, roles, directions, types, and mapping.
 - `05-coding-rules.en.md` — coding rules for the current architecture.
@@ -33,6 +33,8 @@ source guides with deeper Russian detail.
   `Modbus.DataMap`, not in `Modbus.AlarmMap`.
 - Card `Start`/`Stop` are mutually exclusive; `StartOffFeedback`/`StopOffFeedback` are
   active read-only roles for disabling those buttons.
+- Card equipment parameters live in the RouteMap definition as `EquipmentParameter`
+  SignalIds; their physical addresses are configured only in `Modbus.DataMap`.
 - `ModbusDemo` owns the TCP endpoint and lifecycle for the shared runtime.
 - `RouteMapConfigurationManager` owns the active definition; do not register `RouteMapDefinition` as an immutable singleton.
 - Modbus callbacks must not update Avalonia UI directly; use provider, mapper, and ViewModel flow.
