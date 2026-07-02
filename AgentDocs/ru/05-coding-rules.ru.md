@@ -69,6 +69,8 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
   `IEquipmentCommandDispatcher`; `Read` строки отображаются без редактирования, а
   `Сохранить` не закрывает диалог. Bool показывайте переключателем; остальные значения
   валидируйте по `SignalValueType`, а Modbus mapping проверяйте до `DispatchAsync`.
+  В `user` режиме скрывайте техническую подпись `SignalId • Type`; в `admin` режиме
+  оставляйте ее видимой для диагностики.
 - При `connection.connected=false` карточки показывают `Не в сети` серым индикатором
   независимо от status/text binding.
 - Взаимоисключение `ПУСК`/`СТОП` должно писать `false` в противоположную команду перед

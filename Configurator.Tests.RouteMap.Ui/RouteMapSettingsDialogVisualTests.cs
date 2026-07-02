@@ -432,7 +432,7 @@ public sealed class RouteMapSettingsDialogVisualTests
                         SignalBindingRole.EquipmentParameter,
                         "equip.bucket.speed",
                         SignalBindingDirection.ReadWrite,
-                        SignalValueType.UInt16)),
+                        SignalValueType.Word)),
                 new EquipmentCardParameter(
                     "Разрешение",
                     new SignalBinding(
@@ -463,6 +463,7 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         var texts = dialog.GetVisualDescendants()
             .OfType<TextBlock>()
+            .Where(text => text.IsVisible)
             .Select(text => text.Text)
             .ToArray();
         var buttons = dialog.GetVisualDescendants()
@@ -473,7 +474,7 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.Contains("Настройки оборудования", texts);
         Assert.Contains("Скорость", texts);
         Assert.Contains("Разрешение", texts);
-        Assert.Contains("equip.bucket.speed • UInt16", texts);
+        Assert.Contains("equip.bucket.speed • Word", texts);
         Assert.Contains("equip.bucket.enabled • Bool", texts);
         Assert.Contains("Закрыть", buttons);
         Assert.Contains("Сохранить", buttons);
@@ -481,6 +482,28 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.Single(dialog.GetVisualDescendants().OfType<ToggleSwitch>(), toggle => toggle.IsVisible);
 
         dialogWindow.Close();
+
+        var userDialogViewModel = new EquipmentCardParametersDialogViewModel(
+            card,
+            null,
+            dispatcher,
+            showTechnicalDetails: false);
+        var userDialog = new EquipmentCardParametersDialogView { DataContext = userDialogViewModel };
+        var userDialogWindow = new Window { Width = 560, Height = 420, Content = userDialog };
+        userDialogWindow.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var userTexts = userDialog.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .Where(text => text.IsVisible)
+            .Select(text => text.Text)
+            .ToArray();
+        Assert.Contains("Скорость", userTexts);
+        Assert.Contains("Разрешение", userTexts);
+        Assert.DoesNotContain("equip.bucket.speed • Word", userTexts);
+        Assert.DoesNotContain("equip.bucket.enabled • Bool", userTexts);
+
+        userDialogWindow.Close();
         cardWindow.Close();
     }
 
@@ -507,10 +530,9 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.Equal(SignalBindingRole.EquipmentParameter, parameter.Role);
         Assert.Equal($"{fixture.ViewModel.SelectedCard.Id}.parameter", parameter.SignalId);
         Assert.Equal(SignalBindingDirection.ReadWrite, parameter.Direction);
-        Assert.Equal(SignalValueType.UInt16, parameter.ValueType);
+        Assert.Equal(SignalValueType.Word, parameter.ValueType);
         parameter.Title = "Скорость";
         parameter.SignalId = "equip.bucket.speed";
-        parameter.ValueType = SignalValueType.Float32;
         fixture.ViewModel.Apply();
 
         using var mappingViewModel = new RouteMapSignalMappingViewModel(
@@ -526,9 +548,13 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         var row = SignalMappingRowGrid(mappingView, "equip.bucket.speed");
         var rowModel = Assert.IsType<RouteMapSignalMappingRow>(row.DataContext);
-        Assert.Equal(SignalValueType.Float32, rowModel.ExpectedType);
+        Assert.Equal(SignalValueType.Word, rowModel.ExpectedType);
         Assert.Equal(ModbusDataAccess.ReadWrite, rowModel.RequiredAccess);
         Assert.Contains(nameof(SignalBindingRole.EquipmentParameter), rowModel.Roles);
+
+        mappingViewModel.CreateMappingCommand.Execute(rowModel).Subscribe();
+        Assert.Equal(ModbusValueType.Word, rowModel.Type);
+        Assert.Equal(1, rowModel.Length);
 
         window.Close();
     }

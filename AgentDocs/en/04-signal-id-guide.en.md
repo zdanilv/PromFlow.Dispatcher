@@ -55,6 +55,19 @@ Direction must match Modbus access:
 | `Write` | `Write` or `ReadWrite` |
 | `ReadWrite` | `ReadWrite` |
 
+Supported value types map to Modbus types as follows:
+
+| SignalValueType | Modbus Type |
+|---|---|
+| `Bool` | `Bool` |
+| `UInt16` | `UInt16` |
+| `Word` | `Word` (`UInt16` remains compatible for old configs) |
+| `Int16`, `Int32` | `Int` |
+| `Dword` | `Dword` |
+| `Float32` | `Real` |
+| `String` | `String` |
+| `Date` | `Date` |
+
 ## Roles
 
 | Role | Type | Common use |
@@ -107,7 +120,9 @@ For equipment-card parameters, add the signal through the card's `Настрой
 `ReadWrite` parameters are sent through `SignalWriteRequest` when `Сохранить` is
 pressed. Bool parameters use a switch, other values must match `SignalValueType`, and
 the Modbus source requires the row to be configured in `SignalId ↔ Modbus` before
-dispatch.
+dispatch. `Word` has a dedicated Modbus `Word` type and remains compatible with old
+`UInt16`, `Dword` is unsigned 32-bit, and `Date` is passed as `DateTime`. `String`
+parameters require enough Modbus `Length`.
 
 Do not change SignalId when moving a signal to another coil, register, or bit. Only
 `Modbus.DataMap` changes.

@@ -218,6 +218,8 @@ public sealed class RouteMapSessionJournal
         {
             null => string.Empty,
             bool flag => flag ? "true" : "false",
+            DateTime dateTime => dateTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.CurrentCulture),
+            DateTimeOffset dateTimeOffset => dateTimeOffset.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.CurrentCulture),
             IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
             _ => value.ToString() ?? string.Empty
         };

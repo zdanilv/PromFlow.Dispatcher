@@ -21,19 +21,22 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
         EquipmentCommandCard card,
         IReadOnlyDictionary<string, SignalValue>? signals,
         IEquipmentCommandDispatcher dispatcher,
-        IEquipmentParameterWriteValidator? writeValidator = null)
+        IEquipmentParameterWriteValidator? writeValidator = null,
+        bool showTechnicalDetails = true)
     {
         _dispatcher = dispatcher;
         _writeValidator = writeValidator ?? NoopEquipmentParameterWriteValidator.Instance;
+        ShowTechnicalDetails = showTechnicalDetails;
         Title = card.Title;
         foreach (var parameter in card.Parameters)
-            Parameters.Add(new EquipmentCardParameterRow(parameter, signals));
+            Parameters.Add(new EquipmentCardParameterRow(parameter, signals, showTechnicalDetails));
 
         SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync);
         CloseCommand = ReactiveCommand.Create(Close);
     }
 
     public string Title { get; }
+    public bool ShowTechnicalDetails { get; }
     public ObservableCollection<EquipmentCardParameterRow> Parameters { get; } = [];
     public IObservable<bool> Result => _result;
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
@@ -129,10 +132,12 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
 
     public EquipmentCardParameterRow(
         EquipmentCardParameter parameter,
-        IReadOnlyDictionary<string, SignalValue>? signals)
+        IReadOnlyDictionary<string, SignalValue>? signals,
+        bool showTechnicalDetails = true)
     {
         Title = parameter.Title;
         Binding = parameter.Binding;
+        ShowTechnicalDetails = showTechnicalDetails;
         _valueText = InitialValue(parameter.Binding, signals);
         _boolValue = InitialBoolValue(parameter.Binding, signals);
     }
@@ -143,6 +148,7 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
     public SignalBindingDirection Direction => Binding.Direction;
     public SignalValueType ValueType => Binding.ValueType;
     public string SignalCaption => $"{SignalId} • {ValueType}";
+    public bool ShowTechnicalDetails { get; }
     public bool IsBool => ValueType == SignalValueType.Bool;
     public bool UsesTextInput => !IsBool;
     public bool CanEdit => Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite;
@@ -250,6 +256,12 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
         if (valueType == SignalValueType.Bool && value is bool boolean)
             return boolean ? "true" : "false";
 
+        if (valueType == SignalValueType.Date && value is DateTime dateTime)
+            return dateTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.CurrentCulture);
+
+        if (valueType == SignalValueType.Date && value is DateTimeOffset dateTimeOffset)
+            return dateTimeOffset.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.CurrentCulture);
+
         return value is IFormattable formattable
             ? formattable.ToString(null, CultureInfo.CurrentCulture)
             : value.ToString() ?? string.Empty;
@@ -289,6 +301,14 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
                 }
                 validationMessage = "Введите число UInt16.";
                 return false;
+            case SignalValueType.Word:
+                if (TryParseNumber(normalized, ushort.TryParse, out ushort word))
+                {
+                    value = word;
+                    return true;
+                }
+                validationMessage = "Введите число WORD в диапазоне 0..65535.";
+                return false;
             case SignalValueType.Int32:
                 if (TryParseNumber(normalized, int.TryParse, out int int32))
                 {
@@ -296,6 +316,14 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
                     return true;
                 }
                 validationMessage = "Введите число Int32.";
+                return false;
+            case SignalValueType.Dword:
+                if (TryParseNumber(normalized, uint.TryParse, out uint dword))
+                {
+                    value = dword;
+                    return true;
+                }
+                validationMessage = "Введите число DWORD в диапазоне 0..4294967295.";
                 return false;
             case SignalValueType.Float32:
                 if (TryParseFloat(normalized, out var float32))
@@ -308,6 +336,14 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
             case SignalValueType.String:
                 value = text;
                 return true;
+            case SignalValueType.Date:
+                if (TryParseDate(normalized, out var date))
+                {
+                    value = date;
+                    return true;
+                }
+                validationMessage = "Введите дату и время.";
+                return false;
             case SignalValueType.Bool:
                 validationMessage = "Bool-параметр задается переключателем Вкл/Выкл.";
                 return false;
@@ -341,5 +377,19 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
         }
 
         return false;
+    }
+
+    private static bool TryParseDate(string text, out DateTime value)
+    {
+        return DateTime.TryParse(
+                   text,
+                   CultureInfo.CurrentCulture,
+                   DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeLocal,
+                   out value) ||
+               DateTime.TryParse(
+                   text,
+                   CultureInfo.InvariantCulture,
+                   DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeLocal,
+                   out value);
     }
 }

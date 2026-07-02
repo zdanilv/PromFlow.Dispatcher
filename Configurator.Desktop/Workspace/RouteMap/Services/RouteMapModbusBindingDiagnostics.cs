@@ -138,16 +138,6 @@ public sealed class RouteMapModbusBindingDiagnostics : IDisposable
         string.Equals(signalId, RouteMapSystemSignalIds.ConnectionStatus, StringComparison.OrdinalIgnoreCase)
         || string.Equals(signalId, RouteMapSystemSignalIds.ConnectionConnected, StringComparison.OrdinalIgnoreCase);
 
-    private static bool TypesMatch(SignalValueType signalType, ModbusValueType modbusType)
-    {
-        return (signalType, modbusType) switch
-        {
-            (SignalValueType.Bool, ModbusValueType.Bool) => true,
-            (SignalValueType.UInt16, ModbusValueType.UInt16) => true,
-            (SignalValueType.Int16 or SignalValueType.Int32, ModbusValueType.Int) => true,
-            (SignalValueType.Float32, ModbusValueType.Real) => true,
-            (SignalValueType.String, ModbusValueType.String) => true,
-            _ => false
-        };
-    }
+    private static bool TypesMatch(SignalValueType signalType, ModbusValueType modbusType) =>
+        SignalModbusTypeCompatibility.IsCompatible(signalType, modbusType);
 }

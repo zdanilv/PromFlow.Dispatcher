@@ -51,6 +51,8 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | Card parameter is missing from mapping | Parameter was added on `Карточки`, role is `EquipmentParameter`, `SignalId` is not empty, and the RouteMap definition was applied |
 | `Н` does not send a value | Parameter direction is `Write`/`ReadWrite`, value type parses, and a compatible `Modbus.DataMap` point exists |
 | `Н` shows `SignalId ... не настроен` | Create/save the parameter row in `SignalId ↔ Modbus`; Bool uses a switch, but mapping is still required for Modbus |
+| `WORD`/`DWORD`/`DATE` does not write | Check compatibility `Word → Word`, legacy `UInt16 → UInt16`, `Dword → Dword`, `Date → Date`, register-point length, and writable access |
+| `String` from `Н` does not write | Increase row `Length` in `SignalId ↔ Modbus`; capacity is `Length * 2` UTF-8 bytes |
 | Bit write rejected | Missing first raw holding-register snapshot |
 | No readback | Access, PLC echo, `WriteConfirmationTimeoutMs` |
 | Wrong physical address | Start address and PLC 0/1-based notation |
@@ -100,7 +102,7 @@ physical addresses based on `ModbusDemo.Client/Server`. `Repeat ms` must be
 17. Verify `История`: the panel expands, commands/received SignalIds/alarms appear with direction arrows, combined `Роли / объекты`, and numeric offset address.
 18. Verify `system.fault=true`: RouteMap enters the global fault visual state, then returns to per-object logic at `false`.
 19. Enable equipment commands one by one; verify `Start`/`Stop` mutual exclusion and `StartOffFeedback`/`StopOffFeedback`.
-20. Verify card parameters: `Н` button, Bool switch, numeric validation, read-only rows, `Write`/`ReadWrite` save behavior, and automatic `EquipmentParameter` rows in `SignalId ↔ Modbus`.
+20. Verify card parameters: `Н` button, Bool switch, `WORD`/`DWORD`/`DATE` validation, read-only rows, `Write`/`ReadWrite` save behavior, hidden `SignalId • Type` in user mode, and automatic `EquipmentParameter` rows in `SignalId ↔ Modbus`.
 21. Verify latched/pulse behavior, timeout, and connection loss during write.
 22. Confirm interlocks and safety remain in PLC.
 

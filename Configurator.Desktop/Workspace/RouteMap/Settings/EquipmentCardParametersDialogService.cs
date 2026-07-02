@@ -1,14 +1,17 @@
 using Configurator.Application.Services.Signals;
+using Configurator.Application.Services;
 using Configurator.Desktop.Dialogs;
 using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Settings;
 
 public sealed class EquipmentCardParametersDialogService(
     IServiceProvider serviceProvider,
-    DialogCoordinator dialogCoordinator) : IEquipmentCardParametersDialogService
+    DialogCoordinator dialogCoordinator,
+    IOptions<ApplicationOptions> applicationOptions) : IEquipmentCardParametersDialogService
 {
     public async Task ShowAsync(
         EquipmentCommandCard card,
@@ -19,7 +22,8 @@ public sealed class EquipmentCardParametersDialogService(
         var viewModel = ActivatorUtilities.CreateInstance<EquipmentCardParametersDialogViewModel>(
             serviceProvider,
             card,
-            snapshot);
+            snapshot,
+            applicationOptions.Value.IsAdminMode);
         var view = serviceProvider.GetRequiredService<EquipmentCardParametersDialogView>();
         view.DataContext = viewModel;
         try

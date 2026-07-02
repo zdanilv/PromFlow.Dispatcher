@@ -383,7 +383,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
             Role = SignalBindingRole.EquipmentParameter,
             SignalId = $"{SelectedCard.Id}.parameter",
             Direction = SignalBindingDirection.ReadWrite,
-            ValueType = SignalValueType.UInt16,
+            ValueType = SignalValueType.Word,
         });
     }
 

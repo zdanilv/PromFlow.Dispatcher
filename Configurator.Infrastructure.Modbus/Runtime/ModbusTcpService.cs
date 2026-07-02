@@ -611,7 +611,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
                 {
                     ModbusValueType.Bool when point.BitIndex is int bitIndex =>
                         (snapshot.HoldingRegisters[point.Address] & (1 << bitIndex)) != 0,
-                    ModbusValueType.UInt16 => snapshot.HoldingRegisters[point.Address],
+                    ModbusValueType.UInt16 or ModbusValueType.Word => snapshot.HoldingRegisters[point.Address],
                     ModbusValueType.Int => ModbusRegistersCodec.DecodeInt(snapshot.HoldingRegisters, point.Address),
                     ModbusValueType.Real => ModbusRegistersCodec.DecodeReal(snapshot.HoldingRegisters, point.Address),
                     ModbusValueType.String => ModbusRegistersCodec.DecodeString(
@@ -698,7 +698,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
 
             registers = point.Type switch
             {
-                ModbusValueType.UInt16 => [Convert.ToUInt16(value, CultureInfo.InvariantCulture)],
+                ModbusValueType.UInt16 or ModbusValueType.Word => [Convert.ToUInt16(value, CultureInfo.InvariantCulture)],
                 ModbusValueType.Int => ModbusRegistersCodec.EncodeInt(Convert.ToInt32(value, CultureInfo.InvariantCulture)),
                 ModbusValueType.Real => ModbusRegistersCodec.EncodeReal(Convert.ToSingle(value, CultureInfo.InvariantCulture)),
                 ModbusValueType.String => ModbusRegistersCodec.EncodeString(
@@ -914,7 +914,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     private static object DecodeExpectedRegisterValue(ModbusDataPointOptions point, IReadOnlyList<ushort> registers)
         => point.Type switch
         {
-            ModbusValueType.UInt16 => registers[0],
+            ModbusValueType.UInt16 or ModbusValueType.Word => registers[0],
             ModbusValueType.Int => ModbusRegistersCodec.DecodeInt(registers, 0),
             ModbusValueType.Real => ModbusRegistersCodec.DecodeReal(registers, 0),
             ModbusValueType.String => ModbusRegistersCodec.DecodeString(registers, 0, point.Length),

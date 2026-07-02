@@ -3,6 +3,7 @@ using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Signals;
 using Microsoft.Extensions.Options;
+using System.Text;
 
 namespace Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 
@@ -34,19 +35,20 @@ public sealed class EquipmentParameterWriteValidator(
             return $"SignalId {request.SignalId}: тип Modbus {point.Type} не совместим с типом параметра {request.ValueType}.";
         }
 
+        if (request.ValueType == SignalValueType.String && point.Type == ModbusValueType.String)
+        {
+            var text = request.Value?.ToString() ?? string.Empty;
+            var byteCount = Encoding.UTF8.GetByteCount(text);
+            var capacity = Math.Max(0, point.Length) * 2;
+            if (byteCount > capacity)
+            {
+                return $"SignalId {request.SignalId}: строка занимает {byteCount} байт, доступно {capacity}. Увеличьте Length во вкладке SignalId ↔ Modbus.";
+            }
+        }
+
         return null;
     }
 
-    private static bool IsCompatible(ModbusValueType modbusType, SignalValueType signalType)
-    {
-        return (modbusType, signalType) switch
-        {
-            (ModbusValueType.Bool, SignalValueType.Bool) => true,
-            (ModbusValueType.UInt16, SignalValueType.UInt16) => true,
-            (ModbusValueType.Int, SignalValueType.Int16 or SignalValueType.Int32) => true,
-            (ModbusValueType.Real, SignalValueType.Float32) => true,
-            (ModbusValueType.String, SignalValueType.String) => true,
-            _ => false
-        };
-    }
+    private static bool IsCompatible(ModbusValueType modbusType, SignalValueType signalType) =>
+        SignalModbusTypeCompatibility.IsCompatible(signalType, modbusType);
 }

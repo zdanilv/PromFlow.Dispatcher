@@ -58,6 +58,46 @@ public sealed class RouteMapModbusAdapterTests
     }
 
     [Fact]
+    public async Task Dispatcher_AllowsWordDwordAndDateWrites()
+    {
+        var service = new FakeModbusService();
+        var options = CreateOptions(
+            CreateRegisterPoint("word", ModbusValueType.Word, length: 1),
+            CreateRegisterPoint("legacy.word", ModbusValueType.UInt16, length: 1),
+            CreateRegisterPoint("dword", ModbusValueType.Dword, length: 2),
+            CreateRegisterPoint("date", ModbusValueType.Date, length: 2));
+        var dispatcher = new ModbusTcpCommandDispatcher(service, new TestOptionsMonitor(options));
+        var date = new DateTime(2026, 6, 30, 12, 34, 56, DateTimeKind.Local);
+
+        await dispatcher.DispatchAsync(new SignalWriteRequest("word", (ushort)12, SignalValueType.Word));
+        await dispatcher.DispatchAsync(new SignalWriteRequest("legacy.word", (ushort)13, SignalValueType.Word));
+        await dispatcher.DispatchAsync(new SignalWriteRequest("dword", 123456u, SignalValueType.Dword));
+        await dispatcher.DispatchAsync(new SignalWriteRequest("date", date, SignalValueType.Date));
+
+        Assert.Collection(service.RawWrites,
+            write =>
+            {
+                Assert.Equal("word", write.SignalId);
+                Assert.Equal((ushort)12, Assert.IsType<ushort>(write.Value));
+            },
+            write =>
+            {
+                Assert.Equal("legacy.word", write.SignalId);
+                Assert.Equal((ushort)13, Assert.IsType<ushort>(write.Value));
+            },
+            write =>
+            {
+                Assert.Equal("dword", write.SignalId);
+                Assert.Equal(123456u, Assert.IsType<uint>(write.Value));
+            },
+            write =>
+            {
+                Assert.Equal("date", write.SignalId);
+                Assert.Equal(date, Assert.IsType<DateTime>(write.Value));
+            });
+    }
+
+    [Fact]
     public void SignalProvider_MapsValuesAndConnectionQualityWithoutThrowing()
     {
         var running = RunningState();
@@ -65,10 +105,16 @@ public sealed class RouteMapModbusAdapterTests
         var service = new FakeModbusService(running);
         var point = CreatePoint("route.node.bsu_1.active", ModbusWriteMode.Latched);
         point.Access = ModbusDataAccess.Read;
+        var wordPoint = CreateRegisterPoint("route.word", ModbusValueType.Word, length: 1);
+        wordPoint.Access = ModbusDataAccess.Read;
+        var dwordPoint = CreateRegisterPoint("route.dword", ModbusValueType.Dword, length: 2);
+        dwordPoint.Access = ModbusDataAccess.Read;
+        var datePoint = CreateRegisterPoint("route.date", ModbusValueType.Date, length: 2);
+        datePoint.Access = ModbusDataAccess.Read;
         using var provider = new ModbusTcpSignalValueProvider(
             source,
             service,
-            new TestOptionsMonitor(CreateOptions(point)),
+            new TestOptionsMonitor(CreateOptions(point, wordPoint, dwordPoint, datePoint)),
             Options.Create(new RouteMapRuntimeOptions { StaleAfterMs = 250 }),
             NullLogger<ModbusTcpSignalValueProvider>.Instance);
         var observer = new RecordingObserver();
@@ -84,6 +130,30 @@ public sealed class RouteMapModbusAdapterTests
                     point.Length,
                     point.Type,
                     true,
+                    DateTimeOffset.Now),
+                [wordPoint.Name] = new(
+                    wordPoint.Name,
+                    wordPoint.Area,
+                    wordPoint.Address,
+                    wordPoint.Length,
+                    wordPoint.Type,
+                    (ushort)42,
+                    DateTimeOffset.Now),
+                [dwordPoint.Name] = new(
+                    dwordPoint.Name,
+                    dwordPoint.Area,
+                    dwordPoint.Address,
+                    dwordPoint.Length,
+                    dwordPoint.Type,
+                    123456u,
+                    DateTimeOffset.Now),
+                [datePoint.Name] = new(
+                    datePoint.Name,
+                    datePoint.Area,
+                    datePoint.Address,
+                    datePoint.Length,
+                    datePoint.Type,
+                    new DateTime(2026, 6, 30, 12, 34, 56, DateTimeKind.Utc),
                     DateTimeOffset.Now)
             },
             DateTimeOffset.Now,
@@ -93,6 +163,12 @@ public sealed class RouteMapModbusAdapterTests
         Assert.True(connected[point.Name].IsQualityGood);
         Assert.False(connected[point.Name].IsStale);
         Assert.Equal(true, connected[point.Name].Value);
+        Assert.Equal(SignalValueType.Word, connected[wordPoint.Name].ValueType);
+        Assert.Equal((ushort)42, connected[wordPoint.Name].Value);
+        Assert.Equal(SignalValueType.Dword, connected[dwordPoint.Name].ValueType);
+        Assert.Equal(123456u, connected[dwordPoint.Name].Value);
+        Assert.Equal(SignalValueType.Date, connected[datePoint.Name].ValueType);
+        Assert.IsType<DateTime>(connected[datePoint.Name].Value);
         Assert.Equal(true, connected[RouteMapSystemSignalIds.ConnectionConnected].Value);
 
         service.PublishState(running with
@@ -122,6 +198,21 @@ public sealed class RouteMapModbusAdapterTests
             Access = ModbusDataAccess.ReadWrite,
             Type = ModbusValueType.Bool,
             WriteMode = writeMode
+        };
+
+    private static ModbusDataPointOptions CreateRegisterPoint(
+        string name,
+        ModbusValueType type,
+        int length)
+        => new()
+        {
+            Name = name,
+            Area = ModbusDataArea.HoldingRegister,
+            Address = 0,
+            Length = length,
+            Access = ModbusDataAccess.ReadWrite,
+            Type = type,
+            WriteMode = ModbusWriteMode.Latched
         };
 
     private static ModbusOptions CreateOptions(params ModbusDataPointOptions[] points)
@@ -164,6 +255,7 @@ public sealed class RouteMapModbusAdapterTests
         }
 
         public List<(string SignalId, bool Value)> Writes { get; } = [];
+        public List<(string SignalId, object? Value)> RawWrites { get; } = [];
         public ModbusServiceState State { get; private set; }
         public event EventHandler<ModbusServiceState>? StateChanged;
 
@@ -187,7 +279,12 @@ public sealed class RouteMapModbusAdapterTests
 
         public Task<ModbusOperationResult> SetAsync<T>(string name, T value, CancellationToken ct = default)
         {
-            Writes.Add((name, Convert.ToBoolean(value)));
+            RawWrites.Add((name, value));
+            if (value is bool boolean)
+            {
+                Writes.Add((name, boolean));
+            }
+
             return Task.FromResult(ModbusOperationResult.Success());
         }
 

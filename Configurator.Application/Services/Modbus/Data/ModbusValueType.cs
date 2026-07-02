@@ -23,6 +23,11 @@ public enum ModbusValueType
     UInt16,
 
     /// <summary>
+    /// WORD, unsigned 16-bit value stored in one Holding Register.
+    /// </summary>
+    Word,
+
+    /// <summary>
     /// Целое число, закодированное через <see cref="ModbusRegistersCodec.EncodeInt"/>.
     /// </summary>
     Int,

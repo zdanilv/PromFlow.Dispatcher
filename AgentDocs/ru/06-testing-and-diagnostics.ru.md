@@ -52,6 +52,8 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | Параметр карточки не появился в mapping | Настройка добавлена во вкладке `Карточки`, роль `EquipmentParameter`, непустой `SignalId`, применена RouteMap definition |
 | `Н` не отправляет значение | У параметра направление `Write`/`ReadWrite`, валидный тип значения, есть точка `Modbus.DataMap` с совместимым access |
 | `Н` показывает `SignalId ... не настроен` | Создайте/сохраните строку параметра во вкладке `SignalId ↔ Modbus`; Bool вводится переключателем, но mapping всё равно обязателен для Modbus |
+| `WORD`/`DWORD`/`DATE` не пишется | Проверьте совместимость `Word → Word`, legacy `UInt16 → UInt16`, `Dword → Dword`, `Date → Date`, длину register-точки и writable access |
+| `String` из `Н` не пишется | Увеличьте `Length` строки во вкладке `SignalId ↔ Modbus`; емкость равна `Length * 2` UTF-8 байт |
 | Bit-write отклонен | Нет первого raw snapshot holding register |
 | Нет readback | Access, PLC echo и `WriteConfirmationTimeoutMs` |
 | Неверный physical address | StartAddress и 0/1-based notation PLC |
@@ -101,7 +103,7 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 17. Проверить вкладку `История`: панель расширяется, команды/received SignalId/тревоги появляются со стрелками направления, объединенным столбцом `Роли / объекты` и числовым offset-адресом.
 18. Проверить `system.fault=true`: RouteMap переходит в общий аварийный вид, `false` возвращает обычную per-object логику.
 19. По одной разрешить команды оборудования; проверить взаимоисключение `ПУСК`/`СТОП` и `StartOffFeedback`/`StopOffFeedback`.
-20. Проверить параметры карточек: кнопка `Н`, Bool-переключатель, валидацию чисел, read-only строки, сохранение `Write`/`ReadWrite`, авто-строки `EquipmentParameter` в `SignalId ↔ Modbus`.
+20. Проверить параметры карточек: кнопка `Н`, Bool-переключатель, валидацию `WORD`/`DWORD`/`DATE`, read-only строки, сохранение `Write`/`ReadWrite`, скрытие `SignalId • Type` в user-режиме и авто-строки `EquipmentParameter` в `SignalId ↔ Modbus`.
 21. Проверить latched/pulse, timeout и потерю связи во время записи.
 22. Убедиться, что interlock и safety реализованы в PLC.
 

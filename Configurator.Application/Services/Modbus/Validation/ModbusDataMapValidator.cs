@@ -324,6 +324,7 @@ public sealed class ModbusDataMapValidator : IModbusDataMapValidator
         => point.Type switch
         {
             ModbusValueType.UInt16 => 1,
+            ModbusValueType.Word => 1,
             ModbusValueType.Int => 1,
             ModbusValueType.Real => 2,
             ModbusValueType.Date => 2,

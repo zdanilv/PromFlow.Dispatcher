@@ -172,7 +172,7 @@
                               </ComboBox.ContextMenu>
                             </ComboBox>
                             <ComboBox Grid.Column="9" Classes="cell" IsEnabled="{Binding CanEditMapping}"
-                                      ItemsSource="{Binding DataContext.ValueTypes, ElementName=Root}" SelectedItem="{Binding Type}">
+                                      ItemsSource="{Binding AvailableValueTypes}" SelectedItem="{Binding Type}">
                               <ComboBox.ContextMenu>
                                 <ContextMenu>
                                   <MenuItem Header="Modbus-тип должен совпадать с типом SignalId." IsEnabled="False"/>

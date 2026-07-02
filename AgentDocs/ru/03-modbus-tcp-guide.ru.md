@@ -74,8 +74,9 @@ production mapping.
 
 Параметры оборудования из карточки RouteMap используют роль `EquipmentParameter` и также
 попадают в `SignalId ↔ Modbus` как обычные доменные `SignalId`. Их `Direction` задает
-требуемый `Access`, а `ValueType` — ожидаемый Modbus type; физический адрес задается
-только в `Modbus.DataMap`.
+требуемый `Access`, а `ValueType` — ожидаемый Modbus type: `Word` пишется как `Word`,
+legacy `UInt16` — как `UInt16`, `Dword` — как `Dword`, `Date` — как `Date`. Физический
+адрес задается только в `Modbus.DataMap`.
 
 ## AlarmMap point
 
@@ -175,9 +176,11 @@ provider; добавлять их в `DataMap` не нужно. `connection.conn
 Диалог параметров карточки отправляет значения тем же путем, что `ПУСК`/`СТОП`:
 `Write` и `ReadWrite` параметры формируют `SignalWriteRequest`; `Read` параметры не
 пишутся и только отображают последний хороший snapshot. Bool вводится переключателем
-`Вкл/Выкл`, остальные типы парсятся по `SignalValueType`. Перед `DispatchAsync` диалог
-проверяет, что строка `SignalId` есть в `Modbus.DataMap`, access допускает запись и
-Modbus type совместим с `SignalValueType`.
+`Вкл/Выкл`; `Word`/`UInt16` принимают `0..65535`, `Dword` — `0..4294967295`,
+`Date` — дату/время в текущей или invariant culture, остальные типы парсятся по
+`SignalValueType`. Перед `DispatchAsync` диалог проверяет, что строка `SignalId` есть в
+`Modbus.DataMap`, access допускает запись, Modbus type совместим с `SignalValueType`, а
+`String` помещается в емкость `Length * 2` UTF-8 байт.
 
 `Latched` записывает переданное значение и для readable-точек ждет readback до
 `WriteConfirmationTimeoutMs`.

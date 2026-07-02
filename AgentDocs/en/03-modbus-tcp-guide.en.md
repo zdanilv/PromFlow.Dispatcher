@@ -65,8 +65,9 @@ is case-insensitive.
 
 RouteMap card equipment parameters use the `EquipmentParameter` role and appear in
 `SignalId ↔ Modbus` as normal domain `SignalId` rows. Their `Direction` determines the
-required `Access`, and `ValueType` determines the expected Modbus type; the physical
-address is configured only in `Modbus.DataMap`.
+required `Access`, and `ValueType` determines the expected Modbus type: `Word` maps to
+`Word`, legacy `UInt16` maps to `UInt16`, `Dword` maps to `Dword`, and `Date` maps to
+`Date`. The physical address is configured only in `Modbus.DataMap`.
 
 ## AlarmMap Entry
 
@@ -157,10 +158,12 @@ and cards use the global fault visual state.
 
 The card-parameters dialog writes through the same path as `Start`/`Stop`: `Write` and
 `ReadWrite` parameters create `SignalWriteRequest`; `Read` parameters are display-only
-and use the latest good snapshot value. Bool uses a `Вкл/Выкл` switch, while other types
-are parsed by `SignalValueType`. Before `DispatchAsync`, the dialog checks that the
-`SignalId` row exists in `Modbus.DataMap`, access allows writing, and Modbus type
-matches `SignalValueType`.
+and use the latest good snapshot value. Bool uses a `Вкл/Выкл` switch; `Word`/`UInt16`
+accept `0..65535`, `Dword` accepts `0..4294967295`, `Date` accepts date/time text in
+current or invariant culture, and the remaining types are parsed by `SignalValueType`.
+Before `DispatchAsync`, the dialog checks that the `SignalId` row exists in
+`Modbus.DataMap`, access allows writing, Modbus type matches `SignalValueType`, and
+`String` fits into `Length * 2` UTF-8 bytes.
 
 `Latched` writes the supplied value and waits for readback for readable points.
 `Pulse` accepts only `true`, writes `true`, waits `PulseDurationMs`, then writes `false`.

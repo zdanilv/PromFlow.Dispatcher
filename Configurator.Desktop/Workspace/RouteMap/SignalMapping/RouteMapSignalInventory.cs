@@ -49,7 +49,11 @@ internal static class RouteMapSignalInventory
                         IsSystem: true);
                 }
 
-                var types = group.Select(item => item.Binding.ValueType).Distinct().ToArray();
+                var rawTypes = group.Select(item => item.Binding.ValueType).ToArray();
+                var types = rawTypes
+                    .Select(SignalModbusTypeCompatibility.NormalizeEquivalent)
+                    .Distinct()
+                    .ToArray();
                 var categories = group.Select(item => item.Category).Distinct().ToArray();
                 var canRead = group.Any(item => item.Binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite);
                 var canWrite = group.Any(item => item.Binding.Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite);
@@ -62,7 +66,9 @@ internal static class RouteMapSignalInventory
 
                 return new RouteMapSignalInventoryItem(
                     group.First().Binding.SignalId,
-                    types[0],
+                    rawTypes.Contains(SignalValueType.Word) && types[0] == SignalValueType.UInt16
+                        ? SignalValueType.Word
+                        : types[0],
                     access,
                     string.Join(", ", group.Select(item => item.Binding.Role).Distinct()),
                     string.Join(", ", group.Select(item => item.ObjectName).Distinct(StringComparer.Ordinal)),

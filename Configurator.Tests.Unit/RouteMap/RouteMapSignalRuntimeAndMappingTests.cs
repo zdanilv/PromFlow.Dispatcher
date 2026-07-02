@@ -160,6 +160,157 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
     }
 
     [Fact]
+    public void SignalInventory_TreatsWordAndUInt16AsCompatible()
+    {
+        var seed = RouteMapSeed.Create();
+        var card = seed.MapEquipment.Single();
+        var definition = seed with
+        {
+            MapEquipment =
+            [
+                card with
+                {
+                    Parameters =
+                    [
+                        new EquipmentCardParameter(
+                            "WORD",
+                            new SignalBinding(
+                                SignalBindingRole.EquipmentParameter,
+                                "equip.bucket.word",
+                                SignalBindingDirection.ReadWrite,
+                                SignalValueType.Word)),
+                        new EquipmentCardParameter(
+                            "UInt16",
+                            new SignalBinding(
+                                SignalBindingRole.EquipmentParameter,
+                                "equip.bucket.word",
+                                SignalBindingDirection.Read,
+                                SignalValueType.UInt16))
+                    ]
+                }
+            ]
+        };
+
+        var item = RouteMapSignalInventory.Build(definition).Single(x => x.SignalId == "equip.bucket.word");
+
+        Assert.False(item.HasTypeConflict);
+        Assert.Equal(SignalValueType.Word, item.ExpectedType);
+        Assert.Equal(ModbusDataAccess.ReadWrite, item.RequiredAccess);
+    }
+
+    [Theory]
+    [InlineData(SignalValueType.Word, ModbusValueType.Word, 1)]
+    [InlineData(SignalValueType.Dword, ModbusValueType.Dword, 2)]
+    [InlineData(SignalValueType.Date, ModbusValueType.Date, 2)]
+    [InlineData(SignalValueType.String, ModbusValueType.String, 1)]
+    public void MappingRow_CreatesDefaultPointsForNewSignalTypes(
+        SignalValueType signalType,
+        ModbusValueType modbusType,
+        int length)
+    {
+        var item = new RouteMapSignalInventoryItem(
+            $"test.{signalType}",
+            signalType,
+            ModbusDataAccess.ReadWrite,
+            "EquipmentParameter",
+            "Card",
+            HasTypeConflict: false,
+            Category: RouteMapSignalElementCategory.Card);
+
+        var point = RouteMapSignalMappingRow.CreateDefaultPoint(item);
+
+        Assert.Equal(ModbusDataArea.HoldingRegister, point.Area);
+        Assert.Equal(modbusType, point.Type);
+        Assert.Equal(length, point.Length);
+        Assert.Equal(ModbusDataAccess.ReadWrite, point.Access);
+    }
+
+    [Theory]
+    [InlineData(SignalValueType.Word, ModbusValueType.Word, true)]
+    [InlineData(SignalValueType.Word, ModbusValueType.UInt16, true)]
+    [InlineData(SignalValueType.UInt16, ModbusValueType.Word, true)]
+    [InlineData(SignalValueType.UInt16, ModbusValueType.UInt16, true)]
+    [InlineData(SignalValueType.Dword, ModbusValueType.Dword, true)]
+    [InlineData(SignalValueType.Date, ModbusValueType.Date, true)]
+    [InlineData(SignalValueType.Date, ModbusValueType.Dword, false)]
+    public void SignalModbusTypeCompatibility_ChecksNewTypes(
+        SignalValueType signalType,
+        ModbusValueType modbusType,
+        bool expected)
+    {
+        Assert.Equal(expected, SignalModbusTypeCompatibility.IsCompatible(signalType, modbusType));
+    }
+
+    [Fact]
+    public void MappingRow_NormalizesFixedTypeLengths()
+    {
+        var item = new RouteMapSignalInventoryItem(
+            "test.dword",
+            SignalValueType.Dword,
+            ModbusDataAccess.ReadWrite,
+            "EquipmentParameter",
+            "Card",
+            HasTypeConflict: false,
+            Category: RouteMapSignalElementCategory.Card);
+        var row = new RouteMapSignalMappingRow(
+            item,
+            new ModbusDataPointOptions
+            {
+                Name = item.SignalId,
+                Area = ModbusDataArea.HoldingRegister,
+                Address = 0,
+                Length = 1,
+                Access = ModbusDataAccess.ReadWrite,
+                Type = ModbusValueType.Dword
+            },
+            isMapped: true);
+
+        Assert.Equal(2, row.Length);
+
+        row.Type = ModbusValueType.Word;
+        Assert.Equal(1, row.Length);
+
+        row.Type = ModbusValueType.Date;
+        Assert.Equal(2, row.Length);
+
+        row.Type = ModbusValueType.Real;
+        Assert.Equal(2, row.Length);
+    }
+
+    [Fact]
+    public void MappingRow_PreservesManualStringLength()
+    {
+        var item = new RouteMapSignalInventoryItem(
+            "test.string",
+            SignalValueType.String,
+            ModbusDataAccess.ReadWrite,
+            "EquipmentParameter",
+            "Card",
+            HasTypeConflict: false,
+            Category: RouteMapSignalElementCategory.Card);
+        var row = new RouteMapSignalMappingRow(
+            item,
+            new ModbusDataPointOptions
+            {
+                Name = item.SignalId,
+                Area = ModbusDataArea.HoldingRegister,
+                Address = 0,
+                Length = 8,
+                Access = ModbusDataAccess.ReadWrite,
+                Type = ModbusValueType.String
+            },
+            isMapped: true);
+
+        row.Address = 12;
+
+        Assert.Equal(8, row.Length);
+
+        row.Length = 0;
+
+        Assert.Equal(1, row.Length);
+    }
+
+    [Fact]
     public void SignalInventory_AssignsEveryElementCategory()
     {
         var definition = RouteMapSeed.Create();

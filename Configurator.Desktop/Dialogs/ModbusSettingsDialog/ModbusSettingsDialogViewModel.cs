@@ -5,6 +5,7 @@ using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Application.Services.Signals;
 using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
@@ -495,10 +496,12 @@ public sealed class ModbusDataPointEditorRow : ReactiveObject
         _name = options.Name;
         _area = options.Area;
         _address = options.Address;
-        _length = options.Length;
+        _type = options.Area == ModbusDataArea.Coil && options.Type != ModbusValueType.Bool
+            ? ModbusValueType.Bool
+            : options.Type;
+        _length = NormalizeLength(_area, _type, options.Length);
         _access = options.Access;
-        _type = options.Type;
-        _bitIndex = options.BitIndex;
+        _bitIndex = NormalizeBitIndex(_area, _type, options.BitIndex);
         _writeMode = options.WriteMode;
         _pulseDurationMs = options.PulseDurationMs;
         RemoveCommand = ReactiveCommand.Create(() => remove(this));
@@ -523,19 +526,41 @@ public sealed class ModbusDataPointEditorRow : ReactiveObject
     public ModbusDataArea Area
     {
         get => _area;
-        set => this.RaiseAndSetIfChanged(ref _area, value);
+        set
+        {
+            if (_area == value)
+            {
+                return;
+            }
+
+            this.RaiseAndSetIfChanged(ref _area, value);
+            if (_area == ModbusDataArea.Coil && _type != ModbusValueType.Bool)
+            {
+                this.RaiseAndSetIfChanged(ref _type, ModbusValueType.Bool, nameof(Type));
+            }
+
+            NormalizePointShape();
+        }
     }
 
     public int Address
     {
         get => _address;
-        set => this.RaiseAndSetIfChanged(ref _address, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _address, value);
+            NormalizePointShape();
+        }
     }
 
     public int Length
     {
         get => _length;
-        set => this.RaiseAndSetIfChanged(ref _length, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _length, value);
+            NormalizePointShape();
+        }
     }
 
     public ModbusDataAccess Access
@@ -547,13 +572,27 @@ public sealed class ModbusDataPointEditorRow : ReactiveObject
     public ModbusValueType Type
     {
         get => _type;
-        set => this.RaiseAndSetIfChanged(ref _type, value);
+        set
+        {
+            if (_type == value)
+            {
+                return;
+            }
+
+            this.RaiseAndSetIfChanged(ref _type, value);
+            if (_area == ModbusDataArea.Coil && _type != ModbusValueType.Bool)
+            {
+                this.RaiseAndSetIfChanged(ref _area, ModbusDataArea.HoldingRegister, nameof(Area));
+            }
+
+            NormalizePointShape();
+        }
     }
 
     public int? BitIndex
     {
         get => _bitIndex;
-        set => this.RaiseAndSetIfChanged(ref _bitIndex, value);
+        set => this.RaiseAndSetIfChanged(ref _bitIndex, UsesRegisterBit ? value ?? 0 : null);
     }
 
     public ModbusWriteMode WriteMode
@@ -584,4 +623,31 @@ public sealed class ModbusDataPointEditorRow : ReactiveObject
             WriteMode = WriteMode,
             PulseDurationMs = PulseDurationMs
         };
+
+    private bool UsesRegisterBit => Area == ModbusDataArea.HoldingRegister && Type == ModbusValueType.Bool;
+
+    private void NormalizePointShape()
+    {
+        var normalizedLength = NormalizeLength(Area, Type, Length);
+        if (_length != normalizedLength)
+        {
+            this.RaiseAndSetIfChanged(ref _length, normalizedLength, nameof(Length));
+        }
+
+        var normalizedBitIndex = NormalizeBitIndex(Area, Type, BitIndex);
+        if (_bitIndex != normalizedBitIndex)
+        {
+            this.RaiseAndSetIfChanged(ref _bitIndex, normalizedBitIndex, nameof(BitIndex));
+        }
+    }
+
+    private static int NormalizeLength(ModbusDataArea area, ModbusValueType type, int length) =>
+        area == ModbusDataArea.Coil
+            ? 1
+            : SignalModbusTypeCompatibility.NormalizeRegisterLength(type, length);
+
+    private static int? NormalizeBitIndex(ModbusDataArea area, ModbusValueType type, int? bitIndex) =>
+        area == ModbusDataArea.HoldingRegister && type == ModbusValueType.Bool
+            ? bitIndex ?? 0
+            : null;
 }

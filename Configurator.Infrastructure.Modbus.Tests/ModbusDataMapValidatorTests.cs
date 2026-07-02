@@ -215,6 +215,29 @@ public sealed class ModbusDataMapValidatorTests
         Assert.Equal("ModbusDataPointAddressConflict", invalid.ErrorCode);
     }
 
+    [Fact]
+    public void Validate_TreatsWordAsSingleRegister()
+    {
+        var options = CreateOptions();
+        var word = new ModbusDataPointOptions
+        {
+            Name = "Word",
+            Area = ModbusDataArea.HoldingRegister,
+            Address = 2,
+            Length = 1,
+            Type = ModbusValueType.Word,
+            Access = ModbusDataAccess.ReadWrite
+        };
+        options.DataMap.Add(word);
+
+        var valid = _validator.Validate(options, ModbusRunMode.Server);
+        word.Length = 2;
+        var invalid = _validator.Validate(options, ModbusRunMode.Server);
+
+        Assert.True(valid.Succeeded, valid.ErrorMessage);
+        Assert.Equal("ModbusRegisterLengthInvalid", invalid.ErrorCode);
+    }
+
     private static ModbusOptions CreateOptions()
         => new()
         {

@@ -44,9 +44,12 @@ public sealed class EquipmentCardParametersDialogViewModelTests
             Parameter("Bool", "card.bool", SignalBindingDirection.Write, SignalValueType.Bool),
             Parameter("Int16", "card.int16", SignalBindingDirection.Write, SignalValueType.Int16),
             Parameter("UInt16", "card.uint16", SignalBindingDirection.Write, SignalValueType.UInt16),
+            Parameter("Word", "card.word", SignalBindingDirection.Write, SignalValueType.Word),
             Parameter("Int32", "card.int32", SignalBindingDirection.Write, SignalValueType.Int32),
+            Parameter("Dword", "card.dword", SignalBindingDirection.Write, SignalValueType.Dword),
             Parameter("Float32", "card.float32", SignalBindingDirection.Write, SignalValueType.Float32),
-            Parameter("String", "card.string", SignalBindingDirection.ReadWrite, SignalValueType.String));
+            Parameter("String", "card.string", SignalBindingDirection.ReadWrite, SignalValueType.String),
+            Parameter("Date", "card.date", SignalBindingDirection.Write, SignalValueType.Date));
         var viewModel = new EquipmentCardParametersDialogViewModel(card, null, dispatcher);
         var wasClosed = false;
         using var subscription = viewModel.Result.Subscribe(_ => wasClosed = true);
@@ -54,9 +57,12 @@ public sealed class EquipmentCardParametersDialogViewModelTests
         viewModel.Parameters.Single(x => x.SignalId == "card.bool").BoolValue = true;
         viewModel.Parameters.Single(x => x.SignalId == "card.int16").ValueText = "-12";
         viewModel.Parameters.Single(x => x.SignalId == "card.uint16").ValueText = "12";
+        viewModel.Parameters.Single(x => x.SignalId == "card.word").ValueText = "65535";
         viewModel.Parameters.Single(x => x.SignalId == "card.int32").ValueText = "123456";
+        viewModel.Parameters.Single(x => x.SignalId == "card.dword").ValueText = "4294967295";
         viewModel.Parameters.Single(x => x.SignalId == "card.float32").ValueText = "1.5";
         viewModel.Parameters.Single(x => x.SignalId == "card.string").ValueText = "текст";
+        viewModel.Parameters.Single(x => x.SignalId == "card.date").ValueText = "2026-06-30 12:34:56";
 
         await viewModel.SaveCommand.Execute().FirstAsync();
 
@@ -66,9 +72,17 @@ public sealed class EquipmentCardParametersDialogViewModelTests
             request => Assert.Equal(("card.bool", true, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)),
             request => Assert.Equal(("card.int16", (short)-12, SignalValueType.Int16), (request.SignalId, request.Value, request.ValueType)),
             request => Assert.Equal(("card.uint16", (ushort)12, SignalValueType.UInt16), (request.SignalId, request.Value, request.ValueType)),
+            request => Assert.Equal(("card.word", (ushort)65535, SignalValueType.Word), (request.SignalId, request.Value, request.ValueType)),
             request => Assert.Equal(("card.int32", 123456, SignalValueType.Int32), (request.SignalId, request.Value, request.ValueType)),
+            request => Assert.Equal(("card.dword", uint.MaxValue, SignalValueType.Dword), (request.SignalId, request.Value, request.ValueType)),
             request => Assert.Equal(("card.float32", 1.5f, SignalValueType.Float32), (request.SignalId, request.Value, request.ValueType)),
-            request => Assert.Equal(("card.string", "текст", SignalValueType.String), (request.SignalId, request.Value, request.ValueType)));
+            request => Assert.Equal(("card.string", "текст", SignalValueType.String), (request.SignalId, request.Value, request.ValueType)),
+            request =>
+            {
+                Assert.Equal("card.date", request.SignalId);
+                Assert.Equal(SignalValueType.Date, request.ValueType);
+                Assert.IsType<DateTime>(request.Value);
+            });
     }
 
     [Fact]
@@ -79,12 +93,16 @@ public sealed class EquipmentCardParametersDialogViewModelTests
             Parameter("Int16", "card.int16", SignalBindingDirection.Write, SignalValueType.Int16),
             Parameter("UInt16", "card.uint16", SignalBindingDirection.Write, SignalValueType.UInt16),
             Parameter("Int32", "card.int32", SignalBindingDirection.Write, SignalValueType.Int32),
-            Parameter("Float32", "card.float32", SignalBindingDirection.Write, SignalValueType.Float32));
+            Parameter("Dword", "card.dword", SignalBindingDirection.Write, SignalValueType.Dword),
+            Parameter("Float32", "card.float32", SignalBindingDirection.Write, SignalValueType.Float32),
+            Parameter("Date", "card.date", SignalBindingDirection.Write, SignalValueType.Date));
         var viewModel = new EquipmentCardParametersDialogViewModel(card, null, dispatcher);
         viewModel.Parameters.Single(x => x.SignalId == "card.int16").ValueText = "40000";
         viewModel.Parameters.Single(x => x.SignalId == "card.uint16").ValueText = "-1";
         viewModel.Parameters.Single(x => x.SignalId == "card.int32").ValueText = "hello";
+        viewModel.Parameters.Single(x => x.SignalId == "card.dword").ValueText = "-1";
         viewModel.Parameters.Single(x => x.SignalId == "card.float32").ValueText = "NaN";
+        viewModel.Parameters.Single(x => x.SignalId == "card.date").ValueText = "not-a-date";
 
         await viewModel.SaveCommand.Execute().FirstAsync();
 
@@ -145,7 +163,12 @@ public sealed class EquipmentCardParametersDialogViewModelTests
             [
                 Point("read.only", ModbusDataAccess.Read, ModbusValueType.Bool),
                 Point("wrong.type", ModbusDataAccess.ReadWrite, ModbusValueType.UInt16),
-                Point("ok.bool", ModbusDataAccess.ReadWrite, ModbusValueType.Bool)
+                Point("ok.bool", ModbusDataAccess.ReadWrite, ModbusValueType.Bool),
+                Point("ok.word", ModbusDataAccess.ReadWrite, ModbusValueType.Word),
+                Point("ok.dword", ModbusDataAccess.ReadWrite, ModbusValueType.Dword),
+                Point("ok.date", ModbusDataAccess.ReadWrite, ModbusValueType.Date),
+                Point("ok.string", ModbusDataAccess.ReadWrite, ModbusValueType.String, length: 3),
+                Point("short.string", ModbusDataAccess.ReadWrite, ModbusValueType.String, length: 1)
             ]
         };
         var validator = new EquipmentParameterWriteValidator(
@@ -156,6 +179,11 @@ public sealed class EquipmentCardParametersDialogViewModelTests
         Assert.Contains("только для чтения", validator.Validate(new SignalWriteRequest("read.only", true, SignalValueType.Bool)));
         Assert.Contains("не совместим", validator.Validate(new SignalWriteRequest("wrong.type", true, SignalValueType.Bool)));
         Assert.Null(validator.Validate(new SignalWriteRequest("ok.bool", true, SignalValueType.Bool)));
+        Assert.Null(validator.Validate(new SignalWriteRequest("ok.word", (ushort)1, SignalValueType.Word)));
+        Assert.Null(validator.Validate(new SignalWriteRequest("ok.dword", 1u, SignalValueType.Dword)));
+        Assert.Null(validator.Validate(new SignalWriteRequest("ok.date", DateTime.Now, SignalValueType.Date)));
+        Assert.Null(validator.Validate(new SignalWriteRequest("ok.string", "hello", SignalValueType.String)));
+        Assert.Contains("Length", validator.Validate(new SignalWriteRequest("short.string", "hello", SignalValueType.String)));
     }
 
     private static EquipmentCommandCard Card(params EquipmentCardParameter[] parameters) =>
@@ -183,12 +211,14 @@ public sealed class EquipmentCardParametersDialogViewModelTests
     private static ModbusDataPointOptions Point(
         string name,
         ModbusDataAccess access,
-        ModbusValueType type) =>
+        ModbusValueType type,
+        int length = 1) =>
         new()
         {
             Name = name,
             Access = access,
-            Type = type
+            Type = type,
+            Length = length
         };
 
     private sealed class CapturingDispatcher : IEquipmentCommandDispatcher

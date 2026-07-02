@@ -61,7 +61,8 @@
                              TextWrapping="Wrap"/>
                   <TextBlock Text="{Binding SignalCaption}"
                              Classes="caption"
-                             TextWrapping="Wrap"/>
+                             TextWrapping="Wrap"
+                             IsVisible="{Binding ShowTechnicalDetails}"/>
                 </StackPanel>
                 <TextBox Grid.Column="1"
                          Classes="parameter-input"

@@ -68,6 +68,8 @@ Follow these rules when changing RouteMap, Modbus TCP, SignalId mapping, or rela
   `IEquipmentCommandDispatcher`; `Read` rows are display-only, and `Сохранить` does not
   close the dialog. Show Bool as a switch; validate other values by `SignalValueType`,
   and check Modbus mapping before `DispatchAsync`.
+  In `user` mode, hide the technical `SignalId • Type` caption; in `admin` mode, keep it
+  visible for diagnostics.
 - When `connection.connected=false`, cards show `Не в сети` with the muted indicator
   independently from their status/text binding.
 - `Start`/`Stop` mutual exclusion writes `false` to the opposite command before `true`

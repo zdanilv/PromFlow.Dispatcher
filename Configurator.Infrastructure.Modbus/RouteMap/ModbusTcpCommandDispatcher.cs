@@ -68,16 +68,6 @@ public sealed class ModbusTcpCommandDispatcher(
         }
     }
 
-    private static bool IsCompatible(ModbusValueType modbusType, SignalValueType signalType)
-    {
-        return (modbusType, signalType) switch
-        {
-            (ModbusValueType.Bool, SignalValueType.Bool) => true,
-            (ModbusValueType.UInt16, SignalValueType.UInt16) => true,
-            (ModbusValueType.Int, SignalValueType.Int16 or SignalValueType.Int32) => true,
-            (ModbusValueType.Real, SignalValueType.Float32) => true,
-            (ModbusValueType.String, SignalValueType.String) => true,
-            _ => false
-        };
-    }
+    private static bool IsCompatible(ModbusValueType modbusType, SignalValueType signalType) =>
+        SignalModbusTypeCompatibility.IsCompatible(signalType, modbusType);
 }

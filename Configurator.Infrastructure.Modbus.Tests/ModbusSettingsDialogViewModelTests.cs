@@ -68,6 +68,52 @@ public sealed class ModbusSettingsDialogViewModelTests
         Assert.Contains("порт", viewModel.ErrorText, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void DataPointRow_NormalizesLengthWhenTypeChanges()
+    {
+        var row = new ModbusDataPointEditorRow(
+            new ModbusDataPointOptions
+            {
+                Name = "Point",
+                Area = ModbusDataArea.HoldingRegister,
+                Length = 1,
+                Type = ModbusValueType.UInt16
+            },
+            _ => { });
+
+        row.Type = ModbusValueType.Dword;
+        Assert.Equal(2, row.Length);
+
+        row.Type = ModbusValueType.Word;
+        Assert.Equal(1, row.Length);
+
+        row.Type = ModbusValueType.String;
+        row.Length = 6;
+        Assert.Equal(6, row.Length);
+
+        row.Length = 0;
+        Assert.Equal(1, row.Length);
+    }
+
+    [Fact]
+    public void DataPointRow_NormalizesCoilShape()
+    {
+        var row = new ModbusDataPointEditorRow(
+            new ModbusDataPointOptions
+            {
+                Name = "Point",
+                Area = ModbusDataArea.Coil,
+                Length = 2,
+                BitIndex = 3,
+                Type = ModbusValueType.Dword
+            },
+            _ => { });
+
+        Assert.Equal(ModbusValueType.Bool, row.Type);
+        Assert.Equal(1, row.Length);
+        Assert.Null(row.BitIndex);
+    }
+
     private static ModbusOptions CreateOptions()
         => new()
         {

@@ -359,21 +359,51 @@ public sealed class RouteMapConfigurationTests
             Direction = SignalBindingDirection.ReadWrite,
             ValueType = SignalValueType.Float32,
         });
+        card.Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = "Дата",
+            Role = SignalBindingRole.EquipmentParameter,
+            SignalId = "equip.bucket.date",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Date,
+        });
+        card.Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = "DWORD",
+            Role = SignalBindingRole.EquipmentParameter,
+            SignalId = "equip.bucket.dword",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Dword,
+        });
+        card.Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = "WORD",
+            Role = SignalBindingRole.EquipmentParameter,
+            SignalId = "equip.bucket.word",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Word,
+        });
 
         var definition = scope.Mapper.ToDefinition(document);
         var roundTrip = scope.Mapper.ToDocument(definition);
 
-        var modelParameter = Assert.Single(definition.MapEquipment.Single().Parameters);
+        var modelParameter = definition.MapEquipment.Single().Parameters.Single(x => x.Binding.SignalId == "equip.bucket.speed");
         Assert.Equal("Скорость", modelParameter.Title);
         Assert.Equal(new SignalBinding(
             SignalBindingRole.EquipmentParameter,
             "equip.bucket.speed",
             SignalBindingDirection.ReadWrite,
             SignalValueType.Float32), modelParameter.Binding);
-        var configurationParameter = Assert.Single(roundTrip.Cards.Single().Parameters);
+        Assert.Contains(definition.MapEquipment.Single().Parameters, x => x.Binding.ValueType == SignalValueType.Date);
+        Assert.Contains(definition.MapEquipment.Single().Parameters, x => x.Binding.ValueType == SignalValueType.Dword);
+        Assert.Contains(definition.MapEquipment.Single().Parameters, x => x.Binding.ValueType == SignalValueType.Word);
+        var configurationParameter = roundTrip.Cards.Single().Parameters.Single(x => x.SignalId == "equip.bucket.speed");
         Assert.Equal("Скорость", configurationParameter.Title);
         Assert.Equal(SignalBindingRole.EquipmentParameter, configurationParameter.Role);
         Assert.Equal("equip.bucket.speed", configurationParameter.SignalId);
+        Assert.Contains(roundTrip.Cards.Single().Parameters, x => x.ValueType == SignalValueType.Date);
+        Assert.Contains(roundTrip.Cards.Single().Parameters, x => x.ValueType == SignalValueType.Dword);
+        Assert.Contains(roundTrip.Cards.Single().Parameters, x => x.ValueType == SignalValueType.Word);
     }
 
     [Fact]

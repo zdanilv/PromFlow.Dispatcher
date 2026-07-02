@@ -95,9 +95,11 @@ The `Н` button in the card header opens a modal equipment-parameters dialog. Pa
 are stored on the card as `EquipmentParameter`: `Title`, `SignalId`, `Direction`, and
 `ValueType`. On open, `Read` and `ReadWrite` parameters use the latest good runtime
 snapshot values; `Write` parameters start empty. Bool parameters use a `Вкл/Выкл`
-switch; numeric and string parameters are validated by `ValueType`. `Сохранить` checks
-the Modbus mapping for each `SignalId` before dispatch, sends `Write`/`ReadWrite` rows
-through the normal `SignalWriteRequest` path, and does not close the dialog.
+switch; numeric and string parameters are validated by `ValueType`, including `WORD`,
+`DWORD`, and `DATE`. Admin mode shows the technical `SignalId • Type` caption; user mode
+hides it. `Сохранить` checks the Modbus mapping for each `SignalId` before dispatch,
+sends `Write`/`ReadWrite` rows through the normal `SignalWriteRequest` path, and does
+not close the dialog.
 
 ## Right Panel
 
@@ -138,7 +140,8 @@ The `Карточки` tab lets admins configure equipment parameters: add/remov
 title, the single allowed role `EquipmentParameter`, `SignalId`, `Direction`, and
 `ValueType`. These parameters remain domain `SignalId` values and automatically appear in
 `SignalId ↔ Modbus`; physical addresses are configured only there through
-`Modbus.DataMap`.
+`Modbus.DataMap`. New parameters default to `Word`; old `UInt16` configs remain valid
+and compatible.
 
 Validation covers schema version, ID uniqueness, references, binding roles, required
 commands, card parameters, geometry, colors, fragment bindings, placeholder rules, and

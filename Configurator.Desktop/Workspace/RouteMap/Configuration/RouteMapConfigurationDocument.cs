@@ -342,7 +342,7 @@ public sealed class EquipmentCardParameterConfiguration : ReactiveObject
     private SignalBindingRole _role = SignalBindingRole.EquipmentParameter;
     private string _signalId = string.Empty;
     private SignalBindingDirection _direction = SignalBindingDirection.ReadWrite;
-    private SignalValueType _valueType = SignalValueType.UInt16;
+    private SignalValueType _valueType = SignalValueType.Word;
 
     public string Title
     {

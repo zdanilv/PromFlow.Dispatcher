@@ -428,15 +428,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
     }
 
     private static bool TypesMatch(SignalValueType signalType, ModbusValueType modbusType) =>
-        (signalType, modbusType) switch
-        {
-            (SignalValueType.Bool, ModbusValueType.Bool) => true,
-            (SignalValueType.UInt16, ModbusValueType.UInt16) => true,
-            (SignalValueType.Int16 or SignalValueType.Int32, ModbusValueType.Int) => true,
-            (SignalValueType.Float32, ModbusValueType.Real) => true,
-            (SignalValueType.String, ModbusValueType.String) => true,
-            _ => false,
-        };
+        SignalModbusTypeCompatibility.IsCompatible(signalType, modbusType);
 
     private static bool AccessSatisfies(ModbusDataAccess required, ModbusDataAccess actual) =>
         required switch
@@ -523,6 +515,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         Category = inventory.Category;
         IsSystem = inventory.IsSystem;
         PreferPulseWriteMode = inventory.PreferPulseWriteMode;
+        AvailableValueTypes = SignalModbusTypeCompatibility.CompatibleModbusTypes(ExpectedType);
         _isMapped = isMapped;
         ApplyPoint(point);
     }
@@ -536,6 +529,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     internal RouteMapSignalElementCategory Category { get; }
     public bool IsSystem { get; }
     public bool PreferPulseWriteMode { get; }
+    public IReadOnlyList<ModbusValueType> AvailableValueTypes { get; }
 
     public bool IsMapped { get => _isMapped; set { this.RaiseAndSetIfChanged(ref _isMapped, value); RaiseStatus(); } }
 
@@ -551,7 +545,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
 
             ClearPhysicalAddressError();
             this.RaiseAndSetIfChanged(ref _area, value);
-            NormalizeBitIndexForShape();
+            NormalizePointShape();
             RaiseStatus();
         }
     }
@@ -563,11 +557,21 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         {
             ClearPhysicalAddressError();
             this.RaiseAndSetIfChanged(ref _address, value);
+            NormalizePointShape();
             RaiseStatus();
         }
     }
 
-    public int Length { get => _length; set { this.RaiseAndSetIfChanged(ref _length, value); RaiseStatus(); } }
+    public int Length
+    {
+        get => _length;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _length, value);
+            NormalizePointShape();
+            RaiseStatus();
+        }
+    }
     public ModbusDataAccess Access { get => _access; set { this.RaiseAndSetIfChanged(ref _access, value); RaiseStatus(); } }
 
     public ModbusValueType Type
@@ -582,7 +586,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
 
             ClearPhysicalAddressError();
             this.RaiseAndSetIfChanged(ref _type, value);
-            NormalizeBitIndexForShape();
+            NormalizePointShape();
             RaiseStatus();
         }
     }
@@ -660,15 +664,11 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
 
     internal static ModbusDataPointOptions CreateDefaultPoint(RouteMapSignalInventoryItem item)
     {
-        var (area, type, length) = item.ExpectedType switch
-        {
-            SignalValueType.Bool => (ModbusDataArea.Coil, ModbusValueType.Bool, 1),
-            SignalValueType.UInt16 => (ModbusDataArea.HoldingRegister, ModbusValueType.UInt16, 1),
-            SignalValueType.Int16 or SignalValueType.Int32 => (ModbusDataArea.HoldingRegister, ModbusValueType.Int, 1),
-            SignalValueType.Float32 => (ModbusDataArea.HoldingRegister, ModbusValueType.Real, 2),
-            SignalValueType.String => (ModbusDataArea.HoldingRegister, ModbusValueType.String, 1),
-            _ => (ModbusDataArea.HoldingRegister, ModbusValueType.UInt16, 1),
-        };
+        var type = SignalModbusTypeCompatibility.DefaultModbusType(item.ExpectedType);
+        var length = SignalModbusTypeCompatibility.DefaultRegisterLength(item.ExpectedType);
+        var area = type == ModbusValueType.Bool
+            ? ModbusDataArea.Coil
+            : ModbusDataArea.HoldingRegister;
 
         return new ModbusDataPointOptions
         {
@@ -693,6 +693,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         SetBitIndex(UsesRegisterBit ? point.BitIndex ?? 0 : null);
         this.RaiseAndSetIfChanged(ref _writeMode, point.WriteMode, nameof(WriteMode));
         this.RaiseAndSetIfChanged(ref _pulseDurationMs, point.PulseDurationMs, nameof(PulseDurationMs));
+        NormalizePointShape();
         RaiseStatus();
     }
 
@@ -775,6 +776,19 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         }
 
         return $"{start}..{start + count - 1}";
+    }
+
+    private void NormalizePointShape()
+    {
+        NormalizeBitIndexForShape();
+
+        var normalizedLength = Area == ModbusDataArea.Coil
+            ? 1
+            : SignalModbusTypeCompatibility.NormalizeRegisterLength(Type, _length);
+        if (_length != normalizedLength)
+        {
+            this.RaiseAndSetIfChanged(ref _length, normalizedLength, nameof(Length));
+        }
     }
 
     private void NormalizeBitIndexForShape()

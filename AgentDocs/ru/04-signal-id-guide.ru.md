@@ -104,9 +104,12 @@ PLC: создайте для него точку `Modbus.DataMap`.
 |---|---|
 | `Bool` | `Bool` |
 | `UInt16` | `UInt16` |
+| `Word` | `Word` (`UInt16` остается совместимым для старых конфигов) |
 | `Int16`, `Int32` | `Int` |
+| `Dword` | `Dword` |
 | `Float32` | `Real` |
 | `String` | `String` |
+| `Date` | `Date` |
 
 ## Добавление нового сигнала
 
@@ -122,8 +125,10 @@ PLC: создайте для него точку `Modbus.DataMap`.
 `Настройки оборудования`. `Read` параметры показываются в диалоге только для чтения,
 `Write` и `ReadWrite` отправляются через `SignalWriteRequest` при нажатии
 `Сохранить`. Bool-параметры вводятся переключателем, остальные значения должны
-соответствовать `SignalValueType`; для Modbus-источника строка должна быть настроена в
-`SignalId ↔ Modbus` до отправки.
+соответствовать `SignalValueType`; `Word` имеет отдельный Modbus type `Word` и
+совместим со старым `UInt16`, `Dword` — это unsigned 32-bit, `Date` передается как
+`DateTime`. Для Modbus-источника строка должна быть настроена в `SignalId ↔ Modbus` до
+отправки, а `String` требует достаточного `Length`.
 
 SignalId не меняется при переносе сигнала на другой coil/register/bit. Меняется только
 `Modbus.DataMap`.

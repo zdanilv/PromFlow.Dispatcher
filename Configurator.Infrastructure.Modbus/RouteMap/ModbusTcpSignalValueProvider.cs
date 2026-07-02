@@ -146,24 +146,8 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
         _observable.Publish(signals);
     }
 
-    private static bool TryMapType(ModbusValueType type, out SignalValueType signalType)
-    {
-        signalType = type switch
-        {
-            ModbusValueType.Bool => SignalValueType.Bool,
-            ModbusValueType.UInt16 => SignalValueType.UInt16,
-            ModbusValueType.Int => SignalValueType.Int32,
-            ModbusValueType.Real => SignalValueType.Float32,
-            ModbusValueType.String => SignalValueType.String,
-            _ => default
-        };
-
-        return type is ModbusValueType.Bool
-            or ModbusValueType.UInt16
-            or ModbusValueType.Int
-            or ModbusValueType.Real
-            or ModbusValueType.String;
-    }
+    private static bool TryMapType(ModbusValueType type, out SignalValueType signalType) =>
+        SignalModbusTypeCompatibility.TryMapFromModbus(type, out signalType);
 
     private sealed class SignalSnapshotObservable : IObservable<IReadOnlyDictionary<string, SignalValue>>
     {
