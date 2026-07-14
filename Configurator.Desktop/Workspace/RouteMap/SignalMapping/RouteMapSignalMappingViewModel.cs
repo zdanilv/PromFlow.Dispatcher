@@ -363,6 +363,18 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        if (row.RequiresLatchedWriteMode && row.WriteMode != ModbusWriteMode.Latched)
+        {
+            row.SetValidation("Selector-команды требуют режим записи Latched.");
+            return;
+        }
+
+        if (row.RequiresPulseWriteMode && row.WriteMode != ModbusWriteMode.Pulse)
+        {
+            row.SetValidation("ResetCommand требует режим записи Pulse.");
+            return;
+        }
+
         var singlePointOptions = CreateValidationOptions(_baseOptions);
         singlePointOptions.DataMap = [row.ToOptions()];
         var validation = _validator.Validate(singlePointOptions, ModbusRunMode.None);
@@ -515,6 +527,10 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         Category = inventory.Category;
         IsSystem = inventory.IsSystem;
         PreferPulseWriteMode = inventory.PreferPulseWriteMode;
+        PreferHoldingRegisterBit = inventory.PreferHoldingRegisterBit;
+        PreferredBitIndex = inventory.PreferredBitIndex;
+        RequiresLatchedWriteMode = inventory.RequiresLatchedWriteMode;
+        RequiresPulseWriteMode = inventory.RequiresPulseWriteMode;
         AvailableValueTypes = SignalModbusTypeCompatibility.CompatibleModbusTypes(ExpectedType);
         _isMapped = isMapped;
         ApplyPoint(point);
@@ -529,6 +545,10 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     internal RouteMapSignalElementCategory Category { get; }
     public bool IsSystem { get; }
     public bool PreferPulseWriteMode { get; }
+    public bool PreferHoldingRegisterBit { get; }
+    public int? PreferredBitIndex { get; }
+    public bool RequiresLatchedWriteMode { get; }
+    public bool RequiresPulseWriteMode { get; }
     public IReadOnlyList<ModbusValueType> AvailableValueTypes { get; }
 
     public bool IsMapped { get => _isMapped; set { this.RaiseAndSetIfChanged(ref _isMapped, value); RaiseStatus(); } }
@@ -628,7 +648,8 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     }
 
     public void ResetToDefaults() => ApplyPoint(CreateDefaultPoint(new RouteMapSignalInventoryItem(
-        SignalId, ExpectedType, RequiredAccess, Roles, Objects, HasTypeConflict, Category, IsSystem, PreferPulseWriteMode)));
+        SignalId, ExpectedType, RequiredAccess, Roles, Objects, HasTypeConflict, Category, IsSystem,
+        PreferPulseWriteMode, PreferHoldingRegisterBit, PreferredBitIndex, RequiresLatchedWriteMode, RequiresPulseWriteMode)));
 
     public ModbusDataPointOptions ToOptions() => new()
     {
@@ -666,7 +687,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     {
         var type = SignalModbusTypeCompatibility.DefaultModbusType(item.ExpectedType);
         var length = SignalModbusTypeCompatibility.DefaultRegisterLength(item.ExpectedType);
-        var area = type == ModbusValueType.Bool
+        var area = type == ModbusValueType.Bool && !item.PreferHoldingRegisterBit
             ? ModbusDataArea.Coil
             : ModbusDataArea.HoldingRegister;
 
@@ -678,6 +699,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
             Length = length,
             Access = item.RequiredAccess,
             Type = type,
+            BitIndex = item.PreferHoldingRegisterBit ? item.PreferredBitIndex ?? 0 : null,
             WriteMode = item.PreferPulseWriteMode ? ModbusWriteMode.Pulse : ModbusWriteMode.Latched,
             PulseDurationMs = 300,
         };

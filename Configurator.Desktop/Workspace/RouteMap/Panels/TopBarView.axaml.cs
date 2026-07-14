@@ -46,7 +46,7 @@ public partial class TopBarView : ReactiveUserControl<TopBarViewModel>
 
     private void Button_PointerExited(object? sender, PointerEventArgs e)
     {
-        if (e.Source is Control { Name: "AutomaticButton" or "ManualButton" or "EmergencyButton" })
+        if (e.Source is Control { Name: "AutomaticButton" or "ManualButton" or "ResetButton" or "EmergencyButton" })
             SetPressed(e.Source, pressed: false);
     }
 
@@ -63,6 +63,9 @@ public partial class TopBarView : ReactiveUserControl<TopBarViewModel>
             case "ManualButton":
                 ViewModel.SetManualPressed(pressed);
                 break;
+            case "ResetButton":
+                ViewModel.SetResetPressed(pressed);
+                break;
             case "EmergencyButton":
                 ViewModel.SetEmergencyPressed(pressed);
                 break;
@@ -75,7 +78,7 @@ public partial class TopBarView : ReactiveUserControl<TopBarViewModel>
 
         while (control is not null)
         {
-            if (control.Name is "AutomaticButton" or "ManualButton" or "EmergencyButton")
+            if (control.Name is "AutomaticButton" or "ManualButton" or "ResetButton" or "EmergencyButton")
                 return control.Name;
 
             control = control.Parent as Control;

@@ -83,10 +83,15 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             objects,
             IsAutomaticMode: ReadTopBarBool(signals, definition.TopBar?.Automatic, fallback: false),
             IsManualMode: ReadTopBarBool(signals, definition.TopBar?.Manual, fallback: true),
+            IsResetActive: ReadTopBarBool(signals, definition.TopBar?.Reset, fallback: false),
             HasEmergency: ReadTopBarBool(signals, definition.TopBar?.Emergency, fallback: false),
             IsQueueRunning: ReadBool(signals, RouteMapSystemSignalIds.QueueRunning),
             ConnectionStatusText: ReadString(signals, RouteMapSystemSignalIds.ConnectionStatus) ?? "Ожидание",
-            IsConnectionAvailable: isConnectionAvailable);
+            IsConnectionAvailable: isConnectionAvailable,
+            IsAutomaticCommandEnabled: ReadTopBarEnabled(signals, definition.TopBar?.Automatic, isConnectionAvailable),
+            IsManualCommandEnabled: ReadTopBarEnabled(signals, definition.TopBar?.Manual, isConnectionAvailable),
+            IsResetCommandEnabled: ReadTopBarEnabled(signals, definition.TopBar?.Reset, isConnectionAvailable),
+            IsEmergencyCommandEnabled: ReadTopBarEnabled(signals, definition.TopBar?.Emergency, isConnectionAvailable));
     }
 
     private static RouteObjectRuntimeState MapObject(
@@ -111,6 +116,10 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         var isStopChecked = false;
         var isStartOff = false;
         var isStopOff = false;
+        var isUncheckedSelector = false;
+        var isCheckedSelector = false;
+        var isEnabled = true;
+        var hasGoodDisabledSignal = false;
         var isOffline = false;
         var hasFault = false;
         var isActiveRoute = false;
@@ -146,6 +155,17 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 case SignalBindingRole.Visible:
                     isVisible = signal.Value is bool visible && visible;
                     break;
+                case SignalBindingRole.Enabled:
+                    if (signal.Value is bool enabled)
+                    {
+                        isEnabled = enabled;
+                        hasGoodDisabledSignal = !enabled;
+                    }
+                    else
+                    {
+                        isEnabled = true;
+                    }
+                    break;
                 case SignalBindingRole.Fault:
                     if (signal.Value is bool isFault && isFault)
                         hasFault = true;
@@ -175,6 +195,14 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 case SignalBindingRole.StopOffFeedback:
                     isStopOff = ReadBool(signal, isStopOff);
                     break;
+                case SignalBindingRole.UncheckedCommand:
+                    if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
+                        isUncheckedSelector = ReadBool(signal, isUncheckedSelector);
+                    break;
+                case SignalBindingRole.CheckedCommand:
+                    if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
+                        isCheckedSelector = ReadBool(signal, isCheckedSelector);
+                    break;
                 case SignalBindingRole.LoaderCommand:
                     if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
                         isLoader = ReadBool(signal, isLoader ?? false);
@@ -188,6 +216,7 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                     break;
                 case SignalBindingRole.AutomaticModeCommand:
                 case SignalBindingRole.ManualModeCommand:
+                case SignalBindingRole.ResetCommand:
                 case SignalBindingRole.EmergencyCommand:
                 case SignalBindingRole.AutomaticModeOffFeedback:
                 case SignalBindingRole.ManualModeOffFeedback:
@@ -219,11 +248,13 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
 
         var state = forceOffline || isOffline
             ? RouteObjectState.Offline
-            : forceFault || hasFault
-                ? RouteObjectState.Fault
-                : isActiveRoute && activeAsState
-                    ? RouteObjectState.ActiveRoute
-                    : fallbackState;
+            : !isEnabled
+                ? RouteObjectState.Disabled
+                : forceFault || hasFault
+                    ? RouteObjectState.Fault
+                    : isActiveRoute && activeAsState
+                        ? RouteObjectState.ActiveRoute
+                        : fallbackState;
 
         if (isStartOff)
             isStartChecked = false;
@@ -239,6 +270,10 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         if (forceOffline && !string.IsNullOrWhiteSpace(offlineText))
             text = offlineText;
 
+        var shouldResetSelectorCommands = hasGoodDisabledSignal && !forceOffline && !isOffline;
+        var isSelectorCommandEnabled = !forceCommandsDisabled
+            && state is not RouteObjectState.Offline;
+
         return new RouteObjectRuntimeState(
             objectId,
             state,
@@ -252,7 +287,11 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             hasActiveSignal,
             isLoader,
             isTarget,
-            activeFragmentIndexes);
+            activeFragmentIndexes,
+            IsSelectorChecked: isEnabled && isCheckedSelector && !isUncheckedSelector,
+            IsEnabled: state is not RouteObjectState.Offline and not RouteObjectState.Disabled,
+            IsSelectorCommandEnabled: isSelectorCommandEnabled,
+            ShouldResetSelectorCommands: shouldResetSelectorCommands);
     }
 
     private static bool ReadTopBarBool(
@@ -267,6 +306,24 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             ? fallback
             : ReadBool(signals, button.Binding.SignalId, fallback);
         return value;
+    }
+
+    private static bool ReadTopBarEnabled(
+        IReadOnlyDictionary<string, SignalValue> signals,
+        RouteTopBarButtonSettings? button,
+        bool isConnectionAvailable)
+    {
+        if (!isConnectionAvailable)
+            return false;
+
+        var binding = button?.EnabledBinding;
+        if (binding is null || !signals.TryGetValue(binding.SignalId, out var signal))
+            return true;
+
+        if (!signal.IsQualityGood || signal.IsStale)
+            return false;
+
+        return signal.Value is not bool enabled || enabled;
     }
 
     private static bool ReadBool(

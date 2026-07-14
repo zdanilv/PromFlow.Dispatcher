@@ -11,27 +11,36 @@ public sealed class TopBarViewModel : ViewModelBase
 {
     private readonly IEquipmentCommandDispatcher? _commandDispatcher;
     private RouteTopBarSettings _settings;
+    private string _disabledColor;
     private bool _isAutomaticMode;
     private bool _isManualMode = true;
+    private bool _isResetActive;
     private bool _hasEmergency;
     private bool _isAutomaticPressed;
     private bool _isManualPressed;
+    private bool _isResetPressed;
     private bool _isEmergencyPressed;
-    private bool _areCommandsEnabled = true;
+    private bool _isAutomaticCommandEnabled = true;
+    private bool _isManualCommandEnabled = true;
+    private bool _isResetCommandEnabled = true;
+    private bool _isEmergencyCommandEnabled = true;
     private string _connectionStatusText = "Ожидание";
 
     public TopBarViewModel(
         IRouteMapSettingsDialogService? settingsDialogService = null,
         IEquipmentCommandDispatcher? commandDispatcher = null,
         RouteTopBarSettings? settings = null,
-        bool isSettingsVisible = true)
+        bool isSettingsVisible = true,
+        RouteMapPaletteSettings? palette = null)
     {
         _commandDispatcher = commandDispatcher;
         _settings = settings ?? CreateDefaultSettings();
+        _disabledColor = (palette ?? new RouteMapPaletteSettings()).Disabled;
         IsSettingsVisible = isSettingsVisible;
 
         SwitchToAutomaticCommand = ReactiveCommand.CreateFromTask(SwitchToAutomaticAsync);
         SwitchToManualCommand = ReactiveCommand.CreateFromTask(SwitchToManualAsync);
+        ResetCommand = ReactiveCommand.CreateFromTask(ExecuteResetAsync);
         EmergencyCommand = ReactiveCommand.CreateFromTask(ExecuteEmergencyAsync);
         OpenSettingsCommand = ReactiveCommand.CreateFromTask(() =>
             settingsDialogService?.ShowAsync() ?? Task.CompletedTask);
@@ -55,53 +64,96 @@ public sealed class TopBarViewModel : ViewModelBase
         private set => this.RaiseAndSetIfChanged(ref _hasEmergency, value);
     }
 
+    public bool IsResetActive
+    {
+        get => _isResetActive;
+        private set => this.RaiseAndSetIfChanged(ref _isResetActive, value);
+    }
+
     public string ConnectionStatusText
     {
         get => _connectionStatusText;
         private set => this.RaiseAndSetIfChanged(ref _connectionStatusText, value);
     }
 
-    public bool AreCommandsEnabled
+    public bool IsAutomaticCommandEnabled
     {
-        get => _areCommandsEnabled;
-        private set => this.RaiseAndSetIfChanged(ref _areCommandsEnabled, value);
+        get => _isAutomaticCommandEnabled;
+        private set => this.RaiseAndSetIfChanged(ref _isAutomaticCommandEnabled, value);
     }
+
+    public bool IsManualCommandEnabled
+    {
+        get => _isManualCommandEnabled;
+        private set => this.RaiseAndSetIfChanged(ref _isManualCommandEnabled, value);
+    }
+
+    public bool IsEmergencyCommandEnabled
+    {
+        get => _isEmergencyCommandEnabled;
+        private set => this.RaiseAndSetIfChanged(ref _isEmergencyCommandEnabled, value);
+    }
+
+    public bool IsResetCommandEnabled
+    {
+        get => _isResetCommandEnabled;
+        private set => this.RaiseAndSetIfChanged(ref _isResetCommandEnabled, value);
+    }
+
+    public bool AreCommandsEnabled =>
+        IsAutomaticCommandEnabled && IsManualCommandEnabled && IsResetCommandEnabled && IsEmergencyCommandEnabled;
 
     public bool IsSettingsVisible { get; }
 
     public string AutomaticText => _settings.Automatic.Text;
     public string ManualText => _settings.Manual.Text;
+    public string ResetText => _settings.Reset.Text;
     public string EmergencyText => _settings.Emergency.Text;
-    public IBrush AutomaticBackground => ButtonBrush(_settings.Automatic, IsAutomaticMode, _isAutomaticPressed, foreground: false);
-    public IBrush AutomaticForeground => ButtonBrush(_settings.Automatic, IsAutomaticMode, _isAutomaticPressed, foreground: true);
-    public IBrush ManualBackground => ButtonBrush(_settings.Manual, IsManualMode, _isManualPressed, foreground: false);
-    public IBrush ManualForeground => ButtonBrush(_settings.Manual, IsManualMode, _isManualPressed, foreground: true);
-    public IBrush EmergencyBackground => ButtonBrush(_settings.Emergency, HasEmergency, _isEmergencyPressed, foreground: false);
-    public IBrush EmergencyForeground => ButtonBrush(_settings.Emergency, HasEmergency, _isEmergencyPressed, foreground: true);
+    public IBrush AutomaticBackground => CommandBrush(_settings.Automatic, IsAutomaticMode, _isAutomaticPressed, IsAutomaticCommandEnabled, foreground: false);
+    public IBrush AutomaticForeground => CommandBrush(_settings.Automatic, IsAutomaticMode, _isAutomaticPressed, IsAutomaticCommandEnabled, foreground: true);
+    public IBrush ManualBackground => CommandBrush(_settings.Manual, IsManualMode, _isManualPressed, IsManualCommandEnabled, foreground: false);
+    public IBrush ManualForeground => CommandBrush(_settings.Manual, IsManualMode, _isManualPressed, IsManualCommandEnabled, foreground: true);
+    public IBrush ResetBackground => CommandBrush(_settings.Reset, IsResetActive, _isResetPressed, IsResetCommandEnabled, foreground: false);
+    public IBrush ResetForeground => CommandBrush(_settings.Reset, IsResetActive, _isResetPressed, IsResetCommandEnabled, foreground: true);
+    public IBrush EmergencyBackground => CommandBrush(_settings.Emergency, HasEmergency, _isEmergencyPressed, IsEmergencyCommandEnabled, foreground: false);
+    public IBrush EmergencyForeground => CommandBrush(_settings.Emergency, HasEmergency, _isEmergencyPressed, IsEmergencyCommandEnabled, foreground: true);
 
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SwitchToAutomaticCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SwitchToManualCommand { get; }
+    public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> ResetCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> EmergencyCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> OpenSettingsCommand { get; }
 
-    public void ApplySettings(RouteTopBarSettings? settings)
+    public void ApplySettings(RouteTopBarSettings? settings, RouteMapPaletteSettings? palette = null)
     {
         _settings = settings ?? CreateDefaultSettings();
+        if (palette is not null)
+            _disabledColor = palette.Disabled;
         RaiseButtonProperties();
     }
 
     public void ApplyRuntime(
         bool isAutomaticMode,
         bool isManualMode,
+        bool isResetActive,
         bool hasEmergency,
         string connectionStatusText,
-        bool isConnectionAvailable)
+        bool isConnectionAvailable,
+        bool isAutomaticCommandEnabled = true,
+        bool isManualCommandEnabled = true,
+        bool isResetCommandEnabled = true,
+        bool isEmergencyCommandEnabled = true)
     {
         IsAutomaticMode = isAutomaticMode;
         IsManualMode = isManualMode;
+        IsResetActive = isResetActive;
         HasEmergency = hasEmergency;
         ConnectionStatusText = connectionStatusText;
-        AreCommandsEnabled = isConnectionAvailable;
+        IsAutomaticCommandEnabled = isConnectionAvailable && isAutomaticCommandEnabled;
+        IsManualCommandEnabled = isConnectionAvailable && isManualCommandEnabled;
+        IsResetCommandEnabled = isConnectionAvailable && isResetCommandEnabled;
+        IsEmergencyCommandEnabled = isConnectionAvailable && isEmergencyCommandEnabled;
+        this.RaisePropertyChanged(nameof(AreCommandsEnabled));
         RaiseButtonProperties();
     }
 
@@ -135,9 +187,19 @@ public sealed class TopBarViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(EmergencyForeground));
     }
 
+    public void SetResetPressed(bool isPressed)
+    {
+        if (_isResetPressed == isPressed)
+            return;
+
+        _isResetPressed = isPressed;
+        this.RaisePropertyChanged(nameof(ResetBackground));
+        this.RaisePropertyChanged(nameof(ResetForeground));
+    }
+
     private async Task SwitchToAutomaticAsync()
     {
-        if (!AreCommandsEnabled)
+        if (!IsAutomaticCommandEnabled)
             return;
 
         IsAutomaticMode = true;
@@ -149,7 +211,7 @@ public sealed class TopBarViewModel : ViewModelBase
 
     private async Task SwitchToManualAsync()
     {
-        if (!AreCommandsEnabled)
+        if (!IsManualCommandEnabled)
             return;
 
         IsAutomaticMode = false;
@@ -161,12 +223,30 @@ public sealed class TopBarViewModel : ViewModelBase
 
     private async Task ExecuteEmergencyAsync()
     {
-        if (!AreCommandsEnabled)
+        if (!IsEmergencyCommandEnabled)
             return;
 
         HasEmergency = !HasEmergency;
         RaiseButtonProperties();
         await DispatchAsync(_settings.Emergency.Binding, HasEmergency);
+    }
+
+    private async Task ExecuteResetAsync()
+    {
+        if (!IsResetCommandEnabled)
+            return;
+
+        IsResetActive = true;
+        RaiseButtonProperties();
+        try
+        {
+            await DispatchAsync(_settings.Reset.Binding, true);
+        }
+        finally
+        {
+            IsResetActive = false;
+            RaiseButtonProperties();
+        }
     }
 
     private Task DispatchAsync(SignalBinding binding, bool value)
@@ -180,11 +260,14 @@ public sealed class TopBarViewModel : ViewModelBase
     {
         this.RaisePropertyChanged(nameof(AutomaticText));
         this.RaisePropertyChanged(nameof(ManualText));
+        this.RaisePropertyChanged(nameof(ResetText));
         this.RaisePropertyChanged(nameof(EmergencyText));
         this.RaisePropertyChanged(nameof(AutomaticBackground));
         this.RaisePropertyChanged(nameof(AutomaticForeground));
         this.RaisePropertyChanged(nameof(ManualBackground));
         this.RaisePropertyChanged(nameof(ManualForeground));
+        this.RaisePropertyChanged(nameof(ResetBackground));
+        this.RaisePropertyChanged(nameof(ResetForeground));
         this.RaisePropertyChanged(nameof(EmergencyBackground));
         this.RaisePropertyChanged(nameof(EmergencyForeground));
     }
@@ -193,6 +276,16 @@ public sealed class TopBarViewModel : ViewModelBase
         RouteMapPalette.Brush(foreground
             ? isPressed ? button.PressedForeground : isChecked ? button.CheckedForeground : button.NormalForeground
             : isPressed ? button.PressedBackground : isChecked ? button.CheckedBackground : button.NormalBackground);
+
+    private IBrush CommandBrush(
+        RouteTopBarButtonSettings button,
+        bool isChecked,
+        bool isPressed,
+        bool isEnabled,
+        bool foreground) =>
+        isEnabled
+            ? ButtonBrush(button, isChecked, isPressed, foreground)
+            : RouteMapPalette.Brush(foreground ? "#FFFFFF" : _disabledColor);
 
     private static RouteTopBarSettings CreateDefaultSettings() =>
         RouteMapSeed.Create().TopBar ?? throw new InvalidOperationException("RouteMap seed does not define TopBar settings.");

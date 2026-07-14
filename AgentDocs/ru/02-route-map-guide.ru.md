@@ -36,11 +36,11 @@ RouteMap — первая вкладка Workspace и операторская �
 - legacy-заявки и шаблоны заявок из seed;
 - display settings и placeholder rules.
 
-Актуальный пользовательский JSON имеет `schemaVersion = 11`:
+Актуальный пользовательский JSON имеет `schemaVersion = 13`:
 
 ```json
 {
-  "schemaVersion": 11,
+  "schemaVersion": 13,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -72,7 +72,7 @@ enum — строками, размеры и отступы — собствен
 RouteMapRuntimeMapper применяет сигналы к объектам. Приоритет состояния:
 
 ```text
-Offline -> Fault -> ActiveRoute -> static fallback
+Offline -> Disabled -> Fault -> ActiveRoute -> static fallback
 ```
 
 PLC-mapped `system.fault=true` переводит все runtime-объекты RouteMap в тот же `Fault`-вид,
@@ -81,6 +81,15 @@ PLC-mapped `system.fault=true` переводит все runtime-объекты 
 `Visible=false` скрывает объект. `Fault=true` перекрывает active route. Bad quality или
 stale по активному сигналу переводят объект в `Offline`.
 
+Опциональная роль `Enabled` доступна для каждой кнопки TopBar, узла, линии и карточки.
+Это `Read/Bool`: хорошее значение `false` дает состояние `Disabled`, блокирует ввод и
+использует темно-серый `Map.Palette.Disabled`; отсутствие binding или значения оставляет
+элемент доступным. Bad/stale сохраняет обычное состояние `Offline`.
+Для карточки исключение только одно: `Enabled=false` отключает визуал, `Н`, `ПУСК` и
+`СТОП`, но не саму кнопку `С`, пока есть Modbus-связь. При первом хорошем
+`Enabled=false` карточка один раз сбрасывает selector-команды в PLC:
+`CheckedCommand=false`, затем `UncheckedCommand=false`.
+
 Системный `connection.connected=false` означает недоступную Modbus-связь: mapper
 форсирует `Offline` для всех узлов и линий, а карточки показывают текст `Не в сети`
 серым индикатором и блокируют команды независимо от status/text binding.
@@ -88,7 +97,7 @@ stale по активному сигналу переводят объект в 
 
 ## Команды
 
-`ПУСК`, `СТОП`, `АВАРИЯ`, `АВТОМАТ`, `РУЧНОЙ`, `TargetCommand` и `LoaderCommand` работают
+`ПУСК`, `СТОП`, `СБРОС`, `АВАРИЯ`, `АВТОМАТ`, `РУЧНОЙ`, `TargetCommand` и `LoaderCommand` работают
 как toggle/readback-команды. UI пишет `true` при включении и `false` при снятии или
 переключении. PLC должен вернуть readback, чтобы состояние UI стало окончательным.
 
@@ -96,6 +105,17 @@ stale по активному сигналу переводят объект в 
 `StopCommand=false`, затем `StartCommand=true`; включение `СТОП` сначала пишет
 `StartCommand=false`, затем `StopCommand=true`. Если snapshot вернул оба command-бита
 `true`, UI показывает включенным только `СТОП`.
+
+Кнопка `С` размером `40x40` находится слева от `Н` и всегда является ToggleButton.
+Она использует обязательные `ReadWrite/Bool` роли `UncheckedCommand` и
+`CheckedCommand`. Включение пишет `UncheckedCommand=false`, затем
+`CheckedCommand=true`; выключение — `CheckedCommand=false`, затем
+`UncheckedCommand=true`. Readback показывает checked только для пары `false/true`;
+`false/false` и конфликт `true/true` отображаются unchecked без обратной записи.
+Если у карточки хороший `Enabled=false`, `С` визуально становится unchecked и отправляет
+ровно две reset-записи в порядке `CheckedCommand=false`, `UncheckedCommand=false`.
+Повторный snapshot с тем же `Enabled=false` не дублирует записи; missing/bad/stale
+`Enabled` reset-запись не инициируют.
 
 `StartOffFeedback` и `StopOffFeedback` снова являются активными ролями карточек. Это
 `Read/Bool` сигналы: `true` отключает соответствующую кнопку и визуально снимает
@@ -157,6 +177,12 @@ RouteMap справа показывает `NotificationsPanelView`: вклад�
 автоматически попадают в список `SignalId ↔ Modbus`; физические адреса задаются только
 там, через `Modbus.DataMap`. Новые параметры по умолчанию получают тип `Word`; старые
 `UInt16` остаются валидными и совместимыми.
+
+Новые и мигрированные карточки всегда содержат selector-bindings с SignalId
+`<cardId>.selector.off` и `<cardId>.selector.on`. Миграция `v12 -> v13` добавляет TopBar
+`СБРОС` с обязательным `ResetCommand` и SignalId `system.reset`. `Enabled` остается
+опциональным и добавляется администратором. На TopBar опциональный `Enabled` можно
+добавлять и удалять, а основной command-binding остается обязательным.
 
 `ПРИМЕНИТЬ` валидирует и публикует definition без записи файла. `СОХРАНИТЬ` валидирует,
 атомарно сохраняет JSON и публикует definition. Невалидный документ не публикуется.

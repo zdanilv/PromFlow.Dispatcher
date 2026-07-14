@@ -89,6 +89,16 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 11;
                     wasMigrated = true;
                     break;
+                case 11:
+                    ApplyVersion12(document);
+                    document.SchemaVersion = 12;
+                    wasMigrated = true;
+                    break;
+                case 12:
+                    ApplyVersion13(document);
+                    document.SchemaVersion = 13;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }
@@ -361,6 +371,41 @@ public sealed class RouteMapConfigurationMigrator
         }
     }
 
+    private static void ApplyVersion12(RouteMapConfigurationDocument document)
+    {
+        if (string.Equals(document.Map.Palette.Disabled, "#D8DCDF", StringComparison.OrdinalIgnoreCase))
+            document.Map.Palette.Disabled = "#3F474D";
+
+        foreach (var card in document.Cards)
+        {
+            EnsureBinding(
+                card.Bindings,
+                SignalBindingRole.UncheckedCommand,
+                $"{card.Id}.selector.off",
+                SignalBindingDirection.ReadWrite);
+            EnsureBinding(
+                card.Bindings,
+                SignalBindingRole.CheckedCommand,
+                $"{card.Id}.selector.on",
+                SignalBindingDirection.ReadWrite);
+        }
+    }
+
+    private static void ApplyVersion13(RouteMapConfigurationDocument document)
+    {
+        document.TopBar ??= RouteTopBarConfiguration.CreateDefault();
+        document.TopBar.Reset ??= RouteTopBarButtonConfiguration.Create(
+            "СБРОС",
+            SignalBindingRole.ResetCommand,
+            "system.reset",
+            normalBackground: "#F2C94C",
+            checkedBackground: "#B7791F",
+            pressedBackground: "#D6A800",
+            normalForeground: "#101820");
+        EnsureTopBarButton(document.TopBar.Reset, "СБРОС", SignalBindingRole.ResetCommand, "system.reset");
+        ApplyResetDefaults(document.TopBar.Reset);
+    }
+
     private static void ApplyButtonStateDefaults(RouteTopBarButtonConfiguration button)
     {
         if (string.IsNullOrWhiteSpace(button.PressedBackground))
@@ -383,6 +428,26 @@ public sealed class RouteMapConfigurationMigrator
         emergency.PressedBackground = "#949595";
         if (string.IsNullOrWhiteSpace(emergency.PressedForeground))
             emergency.PressedForeground = "#FFFFFF";
+    }
+
+    private static void ApplyResetDefaults(RouteTopBarButtonConfiguration reset)
+    {
+        if (string.IsNullOrWhiteSpace(reset.NormalBackground) ||
+            string.Equals(reset.NormalBackground, "#ECEFF1", StringComparison.OrdinalIgnoreCase))
+            reset.NormalBackground = "#F2C94C";
+        if (string.IsNullOrWhiteSpace(reset.PressedBackground) ||
+            string.Equals(reset.PressedBackground, "#949595", StringComparison.OrdinalIgnoreCase))
+            reset.PressedBackground = "#D6A800";
+        if (string.IsNullOrWhiteSpace(reset.CheckedBackground) ||
+            string.Equals(reset.CheckedBackground, "#3378D6", StringComparison.OrdinalIgnoreCase))
+            reset.CheckedBackground = "#B7791F";
+        if (string.IsNullOrWhiteSpace(reset.NormalForeground) ||
+            string.Equals(reset.NormalForeground, "#59636E", StringComparison.OrdinalIgnoreCase))
+            reset.NormalForeground = "#101820";
+        if (string.IsNullOrWhiteSpace(reset.PressedForeground))
+            reset.PressedForeground = "#FFFFFF";
+        if (string.IsNullOrWhiteSpace(reset.CheckedForeground))
+            reset.CheckedForeground = "#FFFFFF";
     }
 
     private static bool IsDefaultEmergencyNormal(string color) =>

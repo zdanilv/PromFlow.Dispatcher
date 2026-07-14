@@ -92,10 +92,14 @@ public sealed class MockSignalProvider : ISignalValueProvider
             SignalBindingRole.StartOffFeedback => false,
             SignalBindingRole.StopCommand => false,
             SignalBindingRole.StopOffFeedback => false,
+            SignalBindingRole.UncheckedCommand => true,
+            SignalBindingRole.CheckedCommand => false,
+            SignalBindingRole.Enabled => true,
             SignalBindingRole.TargetCommand => definition.Nodes.Any(x => x.IsTarget && x.Bindings.Any(candidate => candidate.SignalId == binding.SignalId)),
             SignalBindingRole.LoaderCommand => definition.Nodes.Any(x => x.IsLoader && x.Bindings.Any(candidate => candidate.SignalId == binding.SignalId)),
             SignalBindingRole.AutomaticModeCommand => false,
             SignalBindingRole.ManualModeCommand => true,
+            SignalBindingRole.ResetCommand => false,
             SignalBindingRole.EmergencyCommand => tick % 20 == 12,
             SignalBindingRole.EmergencyOffFeedback => false,
             _ => false,
@@ -158,8 +162,13 @@ public sealed class MockSignalProvider : ISignalValueProvider
         return new[]
         {
             definition.TopBar.Automatic.Binding,
+            definition.TopBar.Automatic.EnabledBinding,
             definition.TopBar.Manual.Binding,
+            definition.TopBar.Manual.EnabledBinding,
+            definition.TopBar.Reset.Binding,
+            definition.TopBar.Reset.EnabledBinding,
             definition.TopBar.Emergency.Binding,
+            definition.TopBar.Emergency.EnabledBinding,
         }.OfType<SignalBinding>();
     }
 

@@ -10,6 +10,8 @@ public enum SignalBindingRole
     Visible,
     StartCommand,
     StopCommand,
+    UncheckedCommand,
+    CheckedCommand,
     Fault,
     ActiveRoute,
     ActiveRouteFragment,
@@ -17,6 +19,7 @@ public enum SignalBindingRole
     LoaderCommand,
     AutomaticModeCommand,
     ManualModeCommand,
+    ResetCommand,
     EmergencyCommand,
     StartOffFeedback,
     StopOffFeedback,
@@ -25,7 +28,8 @@ public enum SignalBindingRole
     AutomaticModeOffFeedback,
     ManualModeOffFeedback,
     EmergencyOffFeedback,
-    EquipmentParameter
+    EquipmentParameter,
+    Enabled
 }
 
 public enum SignalBindingDirection

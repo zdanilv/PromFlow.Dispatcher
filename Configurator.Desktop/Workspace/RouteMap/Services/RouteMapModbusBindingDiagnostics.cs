@@ -103,8 +103,13 @@ public sealed class RouteMapModbusBindingDiagnostics : IDisposable
             var topBarBindings = new[]
             {
                 definition.TopBar.Automatic.Binding,
+                definition.TopBar.Automatic.EnabledBinding,
                 definition.TopBar.Manual.Binding,
+                definition.TopBar.Manual.EnabledBinding,
+                definition.TopBar.Reset.Binding,
+                definition.TopBar.Reset.EnabledBinding,
                 definition.TopBar.Emergency.Binding,
+                definition.TopBar.Emergency.EnabledBinding,
             }.OfType<SignalBinding>();
 
             bindings = bindings.Concat(topBarBindings);

@@ -107,6 +107,7 @@ plc1.db20.value         # плохо, если это физическое ра�
 |---|---|
 | `AutomaticModeCommand` | `system.mode.automatic` |
 | `ManualModeCommand` | `system.mode.manual` |
+| `ResetCommand` | `system.reset` |
 | `EmergencyCommand` | `system.emergency` |
 | `ActiveRoute` | `route.node.bsu_1.active` |
 | `ActiveRouteFragment` | `route.bsu2_to_bucket.fragment_1.active` |
@@ -381,6 +382,10 @@ SignalId из TopBar, узлов, линий, vehicles и карточек.
 Если физически нужна импульсная запись, выберите `Pulse` вручную для нужной
 точки `Modbus.DataMap`; UI-кнопки `ПУСК`, `СТОП` и `АВАРИЯ` больше не переводят
 mapping в pulse-режим автоматически.
+Selector-роли карточки `UncheckedCommand`/`CheckedCommand` всегда требуют
+`ReadWrite/Bool/Latched`: `Pulse` недопустим, потому что UI пишет как `true`, так и
+явный `false`. TopBar `ResetCommand` является исключением и требует
+`ReadWrite/Bool/Pulse`: UI пишет только `true`, а Modbus runtime делает `true -> false`.
 
 Адрес всегда вводится пользователем по официальной карте PLC. Можно вводить как `Offset`,
 так и физический адрес в колонках Client/Server. Вкладка не пытается самостоятельно
@@ -507,6 +512,7 @@ offset.
 
 - режимов;
 - ролей loader/target;
+- selector-команд карточки `UncheckedCommand`/`CheckedCommand`;
 - toggle-состояний;
 - значений, которые PLC должен удерживать.
 
@@ -515,8 +521,9 @@ offset.
 `Pulse` принимает только запрос `true`, записывает `true`, ждет `PulseDurationMs`, затем
 обязательно пытается записать `false`.
 
-Используйте его только когда PLC ожидает фронт или короткий импульс. Не назначайте Pulse
-режимам и ролям маршрута без подтвержденного PLC-контракта.
+Используйте его только когда PLC ожидает фронт или короткий импульс. `ResetCommand`
+должен использовать `Pulse`; не назначайте Pulse режимам, ролям маршрута и
+selector-командам карточки.
 
 Неидемпотентные команды автоматически не повторяются.
 

@@ -72,6 +72,20 @@ production mapping.
 `Name` должен точно соответствовать `SignalBinding.SignalId`. Сравнение выполняется без
 учета регистра, но используйте единое написание.
 
+Карточная кнопка `С` создает две строки: `UncheckedCommand` и `CheckedCommand`.
+Обе требуют `Bool`, `ReadWrite` и `Latched`, поскольку UI записывает и `false`, и `true`.
+По умолчанию экран предлагает разные биты Holding Register, но разрешены любые две
+различные Bool-точки: coils, разные регистры или разные биты одного регистра. `Pulse`
+для этих ролей отклоняется.
+
+TopBar-кнопка `СБРОС` создает строку `ResetCommand` с SignalId `system.reset`.
+Это `Bool / ReadWrite / Pulse` команда: UI пишет только `true`, а Modbus dispatcher по
+`PulseDurationMs` выполняет сброс `true -> false`. Состояние кнопки берется из
+momentary/readback-индикатора; `Latched` для `ResetCommand` отклоняется.
+
+Роль `Enabled` создает обычную строку `Read/Bool`. Ее физический адрес, как и у других
+RouteMap SignalId, задается только в `Modbus.DataMap`.
+
 Параметры оборудования из карточки RouteMap используют роль `EquipmentParameter` и также
 попадают в `SignalId ↔ Modbus` как обычные доменные `SignalId`. Их `Direction` задает
 требуемый `Access`, а `ValueType` — ожидаемый Modbus type: `Word` пишется как `Word`,
@@ -163,6 +177,13 @@ provider; добавлять их в `DataMap` не нужно. `connection.conn
 `system.fault` — системный, но PLC-mapped SignalId. Он отображается в `SignalId ↔ Modbus`
 как строка системной группы, допускает создание точки `Modbus.DataMap` с `Read/Bool` и
 при `true` переводит RouteMap-объекты и карточки в общий аварийный вид.
+
+Если настроенный `Enabled` имеет good quality, его `false` отключает только связанный
+элемент. Отсутствующее значение не отключает элемент, а bad/stale переводит объект в
+обычное offline-состояние; для кнопки TopBar это означает блокировку команды.
+У карточки `Enabled=false` не блокирует кнопку `С`, пока `connection.connected=true`;
+при первом хорошем `false` карточка один раз пишет `CheckedCommand=false`, затем
+`UncheckedCommand=false`.
 
 ## Запись
 

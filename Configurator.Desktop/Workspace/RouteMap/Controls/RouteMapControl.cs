@@ -274,11 +274,19 @@ public sealed class RouteMapControl : Control
                 : path.PointAt(path.Length / 2);
 
             var style = segment.Style ?? new RouteSegmentStyle();
+            var state = GetState(runtimeState, segment.Id, segment.State);
+            var palette = (definition.Display ?? new RouteMapDisplaySettings()).Palette;
+            var labelBrush = state switch
+            {
+                RouteObjectState.Offline => RouteMapPalette.Brush(palette.Offline),
+                RouteObjectState.Disabled => RouteMapPalette.Brush(palette.Disabled),
+                _ => RouteMapPalette.Brush(style.LabelColor),
+            };
             DrawText(
                 context,
                 segment.Title,
                 new Point(anchor.X + segment.LabelOffsetX, anchor.Y + segment.LabelOffsetY),
-                RouteMapPalette.Brush(style.LabelColor),
+                labelBrush,
                 style.LabelFontSize);
         }
     }
@@ -302,7 +310,10 @@ public sealed class RouteMapControl : Control
             var brush = BrushForNode(node, state, GetRoleState(node.Id), palette);
 
             context.DrawEllipse(brush, new Pen(RouteMapPalette.Brush(style.BorderColor), style.BorderThickness), center, radius, radius);
-            context.DrawEllipse(RouteMapPalette.Brush(style.InnerColor), null, center, radius * style.InnerRadiusRatio, radius * style.InnerRadiusRatio);
+            var innerBrush = state is RouteObjectState.Offline or RouteObjectState.Disabled
+                ? brush
+                : RouteMapPalette.Brush(style.InnerColor);
+            context.DrawEllipse(innerBrush, null, center, radius * style.InnerRadiusRatio, radius * style.InnerRadiusRatio);
 
             var objectRuntime = runtimeState.Find(node.Id);
             if (ShouldDrawActiveOutline(objectRuntime))
@@ -353,7 +364,15 @@ public sealed class RouteMapControl : Control
                 continue;
 
             var style = node.Style ?? new RouteNodeStyle();
-            DrawNodeLabel(context, node, transform, RouteMapPalette.Brush(style.LabelColor), style.LabelFontSize);
+            var state = GetState(runtimeState, node.Id, node.State);
+            var palette = (definition.Display ?? new RouteMapDisplaySettings()).Palette;
+            var labelBrush = state switch
+            {
+                RouteObjectState.Offline => RouteMapPalette.Brush(palette.Offline),
+                RouteObjectState.Disabled => RouteMapPalette.Brush(palette.Disabled),
+                _ => RouteMapPalette.Brush(style.LabelColor),
+            };
+            DrawNodeLabel(context, node, transform, labelBrush, style.LabelFontSize);
         }
 
         foreach (var vehicle in definition.Vehicles)
@@ -395,7 +414,7 @@ public sealed class RouteMapControl : Control
             return;
 
         var node = definition.Nodes.FirstOrDefault(x => x.Id == objectId);
-        if (node is not null && node.IsVisible && IsRuntimeVisible(runtimeState, node.Id))
+        if (node is not null && node.IsVisible && IsRuntimeVisible(runtimeState, node.Id) && IsRuntimeEnabled(runtimeState, node.Id))
         {
             var center = transform.ToViewPoint(node.X, node.Y);
             var style = node.Style ?? new RouteNodeStyle();
@@ -494,6 +513,9 @@ public sealed class RouteMapControl : Control
         RouteNodeRoleState? roleState,
         RouteMapPaletteSettings palette)
     {
+        if (runtimeState == RouteObjectState.Disabled)
+            return RouteMapPalette.Brush(palette.Disabled);
+
         if (roleState?.IsTarget == true)
             return RouteMapPalette.Brush(palette.Ready);
 
@@ -508,13 +530,19 @@ public sealed class RouteMapControl : Control
         return runtimeState.Find(objectId)?.IsVisible ?? true;
     }
 
+    private static bool IsRuntimeEnabled(RouteMapRuntimeState runtimeState, string objectId)
+    {
+        return runtimeState.Find(objectId)?.IsEnabled ?? true;
+    }
+
     private void ShowNodeFlyout(string objectId)
     {
         if (Definition is null)
             return;
 
         var node = Definition.Nodes.FirstOrDefault(x => x.Id == objectId);
-        if (node is null || node.MenuKind == RouteNodeMenuKind.None)
+        if (node is null || node.MenuKind == RouteNodeMenuKind.None ||
+            !AreCommandsEnabled || !IsRuntimeEnabled(RuntimeState ?? RouteMapRuntimeState.Empty, node.Id))
             return;
 
         var roleState = GetRoleState(node.Id) ?? new RouteNodeRoleState(node.Id, node.IsLoader, node.IsTarget);

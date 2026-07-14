@@ -84,6 +84,7 @@ public sealed class RouteMapConfigurationValidator
                 (nameof(node.Style.ActiveOutlineColor), node.Style.ActiveOutlineColor));
             ValidateBindings(errors, "node", node.Id, node.Bindings,
                 [SignalBindingRole.Visible, SignalBindingRole.Fault, SignalBindingRole.ActiveRoute,
+                    SignalBindingRole.Enabled,
                     SignalBindingRole.TargetCommand,
                     SignalBindingRole.LoaderCommand]);
             ValidateRequiredBinding(errors, "node", node.Id, node.Bindings, SignalBindingRole.ActiveRoute, SignalBindingDirection.Read);
@@ -118,7 +119,8 @@ public sealed class RouteMapConfigurationValidator
                 (nameof(segment.Style.ActiveColor), segment.Style.ActiveColor),
                 (nameof(segment.Style.LabelColor), segment.Style.LabelColor));
             ValidateBindings(errors, "segment", segment.Id, segment.Bindings,
-                [SignalBindingRole.Visible, SignalBindingRole.Fault, SignalBindingRole.ActiveRoute]);
+                [SignalBindingRole.Visible, SignalBindingRole.Fault, SignalBindingRole.ActiveRoute,
+                    SignalBindingRole.Enabled]);
             var activeRouteBindings = segment.Bindings.Where(x => x.Role == SignalBindingRole.ActiveRoute).ToArray();
             if (activeRouteBindings.Length != 1)
                 Add(errors, "segment", segment.Id, nameof(segment.Bindings), "Линия должна иметь ровно один binding ActiveRoute.");
@@ -217,9 +219,12 @@ public sealed class RouteMapConfigurationValidator
                 SignalBindingRole.Visible,
                 SignalBindingRole.StartCommand,
                 SignalBindingRole.StopCommand,
+                SignalBindingRole.UncheckedCommand,
+                SignalBindingRole.CheckedCommand,
                 SignalBindingRole.StartOffFeedback,
                 SignalBindingRole.StopOffFeedback,
                 SignalBindingRole.Fault,
+                SignalBindingRole.Enabled,
             };
             ValidateBindings(errors, "card", card.Id, card.Bindings, cardAllowedRoles);
             ValidateCardParameters(errors, card);
@@ -230,6 +235,15 @@ public sealed class RouteMapConfigurationValidator
             if (card.CanStop)
             {
                 ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.StopCommand, SignalBindingDirection.ReadWrite);
+            }
+            ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.UncheckedCommand, SignalBindingDirection.ReadWrite);
+            ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.CheckedCommand, SignalBindingDirection.ReadWrite);
+            var uncheckedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.UncheckedCommand);
+            var checkedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.CheckedCommand);
+            if (uncheckedBinding is not null && checkedBinding is not null &&
+                string.Equals(uncheckedBinding.SignalId, checkedBinding.SignalId, StringComparison.OrdinalIgnoreCase))
+            {
+                Add(errors, "card", card.Id, nameof(card.Bindings), "UncheckedCommand и CheckedCommand должны использовать разные SignalId.");
             }
         }
 
@@ -323,6 +337,13 @@ public sealed class RouteMapConfigurationValidator
                 if (binding.ValueType != Configurator.Application.Services.Signals.SignalValueType.Bool)
                     Add(errors, scope, objectId, nameof(SignalBindingConfiguration.ValueType), $"Binding {binding.Role} must use Bool value type.");
             }
+            if (binding.Role == SignalBindingRole.Enabled)
+            {
+                if (binding.Direction != SignalBindingDirection.Read)
+                    Add(errors, scope, objectId, nameof(SignalBindingConfiguration.Direction), "Binding Enabled должен иметь направление Read.");
+                if (binding.ValueType != Configurator.Application.Services.Signals.SignalValueType.Bool)
+                    Add(errors, scope, objectId, nameof(SignalBindingConfiguration.ValueType), "Binding Enabled должен иметь тип Bool.");
+            }
             if (isCommand && binding.Direction == SignalBindingDirection.Read)
                 Add(errors, scope, objectId, nameof(SignalBindingConfiguration.Direction), "Команда должна иметь направление Write или ReadWrite.");
             if (!isCommand && binding.Direction == SignalBindingDirection.Write)
@@ -346,6 +367,13 @@ public sealed class RouteMapConfigurationValidator
             "manual",
             topBar.Manual,
             SignalBindingRole.ManualModeCommand,
+            offFeedbackRole: null,
+            requireOffFeedback: false);
+        ValidateTopBarButton(
+            errors,
+            "reset",
+            topBar.Reset,
+            SignalBindingRole.ResetCommand,
             offFeedbackRole: null,
             requireOffFeedback: false);
         ValidateTopBarButton(
@@ -382,7 +410,9 @@ public sealed class RouteMapConfigurationValidator
             if (emergency.OffFeedbackEnabled)
                 Add(errors, "topBar", id, nameof(emergency.OffFeedbackEnabled), "OffFeedback для АВАРИЯ больше не поддерживается.");
         }
-        var allowedRoles = offFeedbackRole.HasValue ? [role, offFeedbackRole.Value] : new[] { role };
+        var allowedRoles = offFeedbackRole.HasValue
+            ? [role, offFeedbackRole.Value, SignalBindingRole.Enabled]
+            : new[] { role, SignalBindingRole.Enabled };
         ValidateBindings(errors, "topBar", id, button.Bindings, allowedRoles);
         ValidateRequiredBinding(errors, "topBar", id, button.Bindings, role, SignalBindingDirection.ReadWrite);
         if (requireOffFeedback && offFeedbackRole.HasValue)
@@ -435,10 +465,13 @@ public sealed class RouteMapConfigurationValidator
     private static bool IsCommandRole(SignalBindingRole role) => role is
         SignalBindingRole.StartCommand or
         SignalBindingRole.StopCommand or
+        SignalBindingRole.UncheckedCommand or
+        SignalBindingRole.CheckedCommand or
         SignalBindingRole.TargetCommand or
         SignalBindingRole.LoaderCommand or
         SignalBindingRole.AutomaticModeCommand or
         SignalBindingRole.ManualModeCommand or
+        SignalBindingRole.ResetCommand or
         SignalBindingRole.EmergencyCommand;
 
     private static bool IsOffFeedbackRole(SignalBindingRole role) => role is

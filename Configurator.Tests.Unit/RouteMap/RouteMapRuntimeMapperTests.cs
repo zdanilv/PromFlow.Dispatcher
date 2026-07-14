@@ -437,6 +437,171 @@ public sealed class RouteMapRuntimeMapperTests
     }
 
     [Fact]
+    public void Map_enabled_false_has_priority_over_fault_and_disables_object()
+    {
+        var seed = RouteMapSeed.Create();
+        var segment = seed.Segments.Single(x => x.Id == "bsu2_to_bucket");
+        var definition = seed with
+        {
+            Segments = seed.Segments.Select(item => item.Id == segment.Id
+                ? item with
+                {
+                    Bindings = item.Bindings.Concat(
+                    [
+                        new SignalBinding(
+                            SignalBindingRole.Enabled,
+                            "route.bsu2_to_bucket.enabled",
+                            SignalBindingDirection.Read,
+                            SignalValueType.Bool)
+                    ]).ToArray()
+                }
+                : item).ToArray()
+        };
+        var now = DateTimeOffset.UtcNow;
+        var signals = new Dictionary<string, SignalValue>
+        {
+            ["route.bsu2_to_bucket.enabled"] = new("route.bsu2_to_bucket.enabled", false, SignalValueType.Bool, now, true, false),
+            ["bsu2_to_bucket.fault"] = new("bsu2_to_bucket.fault", true, SignalValueType.Bool, now, true, false),
+            ["route.bsu2_to_bucket.active"] = new("route.bsu2_to_bucket.active", true, SignalValueType.Bool, now, true, false),
+        };
+
+        var runtime = new RouteMapRuntimeMapper(definition).Map(signals).Find(segment.Id);
+
+        Assert.Equal(RouteObjectState.Disabled, runtime?.State);
+        Assert.False(runtime?.IsEnabled);
+    }
+
+    [Fact]
+    public void Map_enabled_missing_keeps_object_enabled_but_bad_quality_forces_offline()
+    {
+        var seed = RouteMapSeed.Create();
+        var node = seed.Nodes.Single(x => x.Id == "bsu_1");
+        var enabledBinding = new SignalBinding(
+            SignalBindingRole.Enabled,
+            "route.node.bsu_1.enabled",
+            SignalBindingDirection.Read,
+            SignalValueType.Bool);
+        var definition = seed with
+        {
+            Nodes = seed.Nodes.Select(item => item.Id == node.Id
+                ? item with { Bindings = item.Bindings.Append(enabledBinding).ToArray() }
+                : item).ToArray()
+        };
+
+        var missing = new RouteMapRuntimeMapper(definition).Map(new Dictionary<string, SignalValue>()).Find(node.Id);
+        var now = DateTimeOffset.UtcNow;
+        var bad = new RouteMapRuntimeMapper(definition).Map(new Dictionary<string, SignalValue>
+        {
+            [enabledBinding.SignalId] = new(enabledBinding.SignalId, false, SignalValueType.Bool, now, IsQualityGood: false, IsStale: false)
+        }).Find(node.Id);
+
+        Assert.Equal(RouteObjectState.Idle, missing?.State);
+        Assert.True(missing?.IsEnabled);
+        Assert.Equal(RouteObjectState.Offline, bad?.State);
+        Assert.False(bad?.IsEnabled);
+    }
+
+    [Fact]
+    public void Map_selector_readback_requires_checked_true_and_unchecked_false()
+    {
+        var definition = RouteMapSeed.Create();
+        var now = DateTimeOffset.UtcNow;
+        var mapper = new RouteMapRuntimeMapper(definition);
+
+        var checkedOnly = mapper.Map(new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.selector.off"] = new("equip.bucket.selector.off", false, SignalValueType.Bool, now, true, false),
+            ["equip.bucket.selector.on"] = new("equip.bucket.selector.on", true, SignalValueType.Bool, now, true, false),
+        }).Find("equip.bucket");
+        var conflict = mapper.Map(new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.selector.off"] = new("equip.bucket.selector.off", true, SignalValueType.Bool, now, true, false),
+            ["equip.bucket.selector.on"] = new("equip.bucket.selector.on", true, SignalValueType.Bool, now, true, false),
+        }).Find("equip.bucket");
+
+        Assert.True(checkedOnly?.IsSelectorChecked);
+        Assert.False(conflict?.IsSelectorChecked);
+    }
+
+    [Fact]
+    public void Map_card_enabled_false_requests_selector_reset_but_keeps_selector_available()
+    {
+        var seed = RouteMapSeed.Create();
+        var card = seed.MapEquipment.Single();
+        var enabledBinding = new SignalBinding(
+            SignalBindingRole.Enabled,
+            "equip.bucket.enabled",
+            SignalBindingDirection.Read,
+            SignalValueType.Bool);
+        var definition = seed with
+        {
+            MapEquipment =
+            [
+                card with { Bindings = card.Bindings.Append(enabledBinding).ToArray() }
+            ]
+        };
+        var now = DateTimeOffset.UtcNow;
+
+        var disabled = new RouteMapRuntimeMapper(definition).Map(new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.enabled"] = new("equip.bucket.enabled", false, SignalValueType.Bool, now, true, false),
+            ["equip.bucket.selector.off"] = new("equip.bucket.selector.off", false, SignalValueType.Bool, now, true, false),
+            ["equip.bucket.selector.on"] = new("equip.bucket.selector.on", true, SignalValueType.Bool, now, true, false),
+        }).Find(card.Id);
+        var offline = new RouteMapRuntimeMapper(definition).Map(new Dictionary<string, SignalValue>
+        {
+            [RouteMapSystemSignalIds.ConnectionConnected] = new(RouteMapSystemSignalIds.ConnectionConnected, false, SignalValueType.Bool, now, true, false),
+            ["equip.bucket.enabled"] = new("equip.bucket.enabled", false, SignalValueType.Bool, now, true, false),
+        }).Find(card.Id);
+
+        Assert.Equal(RouteObjectState.Disabled, disabled?.State);
+        Assert.False(disabled?.IsEnabled);
+        Assert.True(disabled?.IsSelectorCommandEnabled);
+        Assert.True(disabled?.ShouldResetSelectorCommands);
+        Assert.False(disabled?.IsSelectorChecked);
+        Assert.Equal(RouteObjectState.Offline, offline?.State);
+        Assert.False(offline?.IsSelectorCommandEnabled);
+        Assert.False(offline?.ShouldResetSelectorCommands);
+    }
+
+    [Fact]
+    public void Map_exposes_individual_top_bar_enabled_flags()
+    {
+        var seed = RouteMapSeed.Create();
+        var topBar = seed.TopBar! with
+        {
+            Automatic = seed.TopBar!.Automatic with
+            {
+                EnabledBinding = new SignalBinding(SignalBindingRole.Enabled, "system.mode.automatic.enabled", SignalBindingDirection.Read, SignalValueType.Bool)
+            },
+            Reset = seed.TopBar.Reset with
+            {
+                EnabledBinding = new SignalBinding(SignalBindingRole.Enabled, "system.reset.enabled", SignalBindingDirection.Read, SignalValueType.Bool)
+            },
+            Emergency = seed.TopBar.Emergency with
+            {
+                EnabledBinding = new SignalBinding(SignalBindingRole.Enabled, "system.emergency.enabled", SignalBindingDirection.Read, SignalValueType.Bool)
+            }
+        };
+        var definition = seed with { TopBar = topBar };
+        var now = DateTimeOffset.UtcNow;
+        var runtime = new RouteMapRuntimeMapper(definition).Map(new Dictionary<string, SignalValue>
+        {
+            [RouteMapSystemSignalIds.ConnectionConnected] = new(RouteMapSystemSignalIds.ConnectionConnected, true, SignalValueType.Bool, now, true, false),
+            ["system.reset"] = new("system.reset", true, SignalValueType.Bool, now, true, false),
+            ["system.mode.automatic.enabled"] = new("system.mode.automatic.enabled", false, SignalValueType.Bool, now, true, false),
+            ["system.reset.enabled"] = new("system.reset.enabled", false, SignalValueType.Bool, now, true, false),
+            ["system.emergency.enabled"] = new("system.emergency.enabled", true, SignalValueType.Bool, now, IsQualityGood: false, IsStale: false),
+        });
+
+        Assert.False(runtime.IsAutomaticCommandEnabled);
+        Assert.True(runtime.IsManualCommandEnabled);
+        Assert.True(runtime.IsResetActive);
+        Assert.False(runtime.IsResetCommandEnabled);
+        Assert.False(runtime.IsEmergencyCommandEnabled);
+    }
+
+    [Fact]
     public void Map_ignores_non_card_legacy_off_feedback_toggle_readback()
     {
         var definition = RouteMapSeed.Create();

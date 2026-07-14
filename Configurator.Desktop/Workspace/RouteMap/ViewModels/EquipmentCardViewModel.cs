@@ -19,6 +19,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private readonly EquipmentCommandCard _card;
     private readonly SignalBinding? _startBinding;
     private readonly SignalBinding? _stopBinding;
+    private readonly SignalBinding? _uncheckedBinding;
+    private readonly SignalBinding? _checkedBinding;
     private readonly RouteMapPaletteSettings _palette;
     private readonly bool _usesDefaultPalette;
     private string _statusText;
@@ -31,6 +33,10 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private bool _isStopChecked;
     private bool _isStartPressed;
     private bool _isStopPressed;
+    private bool _isSelectorChecked;
+    private bool _isEnabled = true;
+    private bool _isSelectorCommandEnabled = true;
+    private bool _isSelectorResetActive;
     private bool _runtimeVisible = true;
     private bool _isApplyingRuntime;
 
@@ -61,6 +67,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         _signalSnapshotAccessor = signalSnapshotAccessor;
         _startBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.StartCommand);
         _stopBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.StopCommand);
+        _uncheckedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.UncheckedCommand);
+        _checkedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.CheckedCommand);
         OpenParametersCommand = ReactiveCommand.CreateFromTask(OpenParametersAsync);
     }
 
@@ -84,19 +92,60 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public CornerRadius CardCornerRadius => new(Style.CornerRadius.TopLeft, Style.CornerRadius.TopRight, Style.CornerRadius.BottomRight, Style.CornerRadius.BottomLeft);
     public IBrush BackgroundBrush => RouteMapPalette.Brush(Style.BackgroundColor);
     public IBrush BorderBrush => RouteMapPalette.Brush(Style.BorderColor);
-    public IBrush TitleBrush => RouteMapPalette.Brush(Style.TitleColor);
-    public IBrush TextBrush => RouteMapPalette.Brush(Style.TextColor);
+    public IBrush TitleBrush => IsEnabled ? RouteMapPalette.Brush(Style.TitleColor) : DisabledBrush;
+    public IBrush TextBrush => IsEnabled ? RouteMapPalette.Brush(Style.TextColor) : DisabledBrush;
     public double TitleFontSize => Style.TitleFontSize;
     public double StatusFontSize => Style.StatusFontSize;
     public double RouteTextFontSize => Style.RouteTextFontSize;
     public double ActionFontSize => Style.ActionFontSize;
     public string StartText => Style.StartText;
     public string StopText => Style.StopText;
-    public IBrush StartBackground => RouteMapPalette.Brush(StartStateColor(Style.StartColor, Style.StartPressedColor, Style.StartCheckedColor));
-    public IBrush StartForeground => RouteMapPalette.Brush(StartStateColor(Style.StartForegroundColor, Style.StartPressedForegroundColor, Style.StartCheckedForegroundColor));
-    public IBrush StopBackground => RouteMapPalette.Brush(StopStateColor(Style.StopColor, Style.StopPressedColor, Style.StopCheckedColor));
-    public IBrush StopForeground => RouteMapPalette.Brush(StopStateColor(Style.StopForegroundColor, Style.StopPressedForegroundColor, Style.StopCheckedForegroundColor));
+    public IBrush StartBackground => !IsEnabled
+        ? DisabledBrush
+        : RouteMapPalette.Brush(StartStateColor(Style.StartColor, Style.StartPressedColor, Style.StartCheckedColor));
+    public IBrush StartForeground => RouteMapPalette.Brush(!IsEnabled
+        ? "#FFFFFF"
+        : StartStateColor(Style.StartForegroundColor, Style.StartPressedForegroundColor, Style.StartCheckedForegroundColor));
+    public IBrush StopBackground => !IsEnabled
+        ? DisabledBrush
+        : RouteMapPalette.Brush(StopStateColor(Style.StopColor, Style.StopPressedColor, Style.StopCheckedColor));
+    public IBrush StopForeground => RouteMapPalette.Brush(!IsEnabled
+        ? "#FFFFFF"
+        : StopStateColor(Style.StopForegroundColor, Style.StopPressedForegroundColor, Style.StopCheckedForegroundColor));
+    public IBrush SelectorBackground => IsSelectorEnabled
+        ? RouteMapPalette.Brush(IsSelectorChecked ? "#3378D6" : "#D0D0D0")
+        : DisabledBrush;
+    public IBrush SelectorForeground => RouteMapPalette.Brush(IsSelectorEnabled && !IsSelectorChecked ? "#101820" : "#FFFFFF");
+    public IBrush ParameterBackground => IsEnabled ? RouteMapPalette.Brush("#D0D0D0") : DisabledBrush;
+    public IBrush ParameterForeground => RouteMapPalette.Brush(IsEnabled ? "#101820" : "#FFFFFF");
     public ReactiveCommand<Unit, Unit> OpenParametersCommand { get; }
+
+    public bool IsEnabled
+    {
+        get => _isEnabled;
+        private set
+        {
+            if (_isEnabled == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _isEnabled, value);
+            RaiseEnabledVisualProperties();
+        }
+    }
+
+    public bool IsSelectorEnabled
+    {
+        get => _isSelectorCommandEnabled;
+        private set
+        {
+            if (_isSelectorCommandEnabled == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _isSelectorCommandEnabled, value);
+            this.RaisePropertyChanged(nameof(SelectorBackground));
+            this.RaisePropertyChanged(nameof(SelectorForeground));
+        }
+    }
 
     public string SendPointTitle
     {
@@ -144,6 +193,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _state, value);
             this.RaisePropertyChanged(nameof(StateBrush));
+            this.RaisePropertyChanged(nameof(IsSelectorEnabled));
         }
     }
 
@@ -209,6 +259,20 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         }
     }
 
+    public bool IsSelectorChecked
+    {
+        get => _isSelectorChecked;
+        set
+        {
+            if (_isSelectorChecked == value)
+                return;
+
+            SetSelectorChecked(value);
+            if (!_isApplyingRuntime && IsSelectorEnabled)
+                _ = DispatchSelectorAsync(value);
+        }
+    }
+
     public bool IsStartPressed
     {
         get => _isStartPressed;
@@ -249,7 +313,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         _ => PaletteBrush(_palette.MutedText, RouteMapPalette.MutedTextBrush),
     };
 
-    public IBrush StatusBrush => StatusText switch
+    public IBrush StatusBrush => !IsEnabled ? DisabledBrush : StatusText switch
     {
         "Ожидание" => PaletteBrush(_palette.Warning, RouteMapPalette.WarningBrush),
         "Выключено" => PaletteBrush(_palette.MutedText, RouteMapPalette.MutedTextBrush),
@@ -274,9 +338,14 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             StatusText = runtimeState.Text ?? StatusText;
             CanStart = runtimeState.CanStart;
             CanStop = runtimeState.CanStop;
+            IsEnabled = runtimeState.IsEnabled;
+            IsSelectorEnabled = runtimeState.IsSelectorCommandEnabled;
             var isStartChecked = runtimeState.IsStartChecked && !runtimeState.IsStopChecked;
             IsStartChecked = isStartChecked;
             IsStopChecked = runtimeState.IsStopChecked;
+            IsSelectorChecked = runtimeState.ShouldResetSelectorCommands
+                ? false
+                : runtimeState.IsSelectorChecked;
             _runtimeVisible = runtimeState.IsVisible;
             this.RaisePropertyChanged(nameof(IsVisible));
         }
@@ -284,6 +353,11 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         {
             _isApplyingRuntime = false;
         }
+
+        var shouldDispatchSelectorReset = runtimeState.ShouldResetSelectorCommands && !_isSelectorResetActive;
+        _isSelectorResetActive = runtimeState.ShouldResetSelectorCommands;
+        if (shouldDispatchSelectorReset)
+            _ = DispatchSelectorResetAsync();
     }
 
     public void ApplyRouteSelection(
@@ -321,6 +395,25 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         await DispatchAsync(_stopBinding, true);
     }
 
+    private async Task DispatchSelectorAsync(bool isChecked)
+    {
+        if (isChecked)
+        {
+            await DispatchAsync(_uncheckedBinding, false);
+            await DispatchAsync(_checkedBinding, true);
+            return;
+        }
+
+        await DispatchAsync(_checkedBinding, false);
+        await DispatchAsync(_uncheckedBinding, true);
+    }
+
+    private async Task DispatchSelectorResetAsync()
+    {
+        await DispatchAsync(_checkedBinding, false);
+        await DispatchAsync(_uncheckedBinding, false);
+    }
+
     private void SetStartChecked(bool value)
     {
         if (_isStartChecked == value)
@@ -339,6 +432,32 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         this.RaiseAndSetIfChanged(ref _isStopChecked, value, nameof(IsStopChecked));
         this.RaisePropertyChanged(nameof(StopBackground));
         this.RaisePropertyChanged(nameof(StopForeground));
+    }
+
+    private void SetSelectorChecked(bool value)
+    {
+        if (_isSelectorChecked == value)
+            return;
+
+        this.RaiseAndSetIfChanged(ref _isSelectorChecked, value, nameof(IsSelectorChecked));
+        this.RaisePropertyChanged(nameof(SelectorBackground));
+        this.RaisePropertyChanged(nameof(SelectorForeground));
+    }
+
+    private void RaiseEnabledVisualProperties()
+    {
+        this.RaisePropertyChanged(nameof(TitleBrush));
+        this.RaisePropertyChanged(nameof(TextBrush));
+        this.RaisePropertyChanged(nameof(StatusBrush));
+        this.RaisePropertyChanged(nameof(StartBackground));
+        this.RaisePropertyChanged(nameof(StartForeground));
+        this.RaisePropertyChanged(nameof(StopBackground));
+        this.RaisePropertyChanged(nameof(StopForeground));
+        this.RaisePropertyChanged(nameof(SelectorBackground));
+        this.RaisePropertyChanged(nameof(SelectorForeground));
+        this.RaisePropertyChanged(nameof(ParameterBackground));
+        this.RaisePropertyChanged(nameof(ParameterForeground));
+        this.RaisePropertyChanged(nameof(IsSelectorEnabled));
     }
 
     private static string SelectedPointTitle(
@@ -367,6 +486,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
 
     private string StopStateColor(string normal, string pressed, string @checked) =>
         IsStopPressed ? pressed : IsStopChecked ? @checked : normal;
+
+    private IBrush DisabledBrush => PaletteBrush(_palette.Disabled, RouteMapPalette.DisabledBrush);
 
     private IBrush PaletteBrush(string color, IBrush defaultBrush) =>
         _usesDefaultPalette ? defaultBrush : RouteMapPalette.Brush(color);

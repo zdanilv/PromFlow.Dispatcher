@@ -160,6 +160,100 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
     }
 
     [Fact]
+    public void SignalInventory_exposes_selector_commands_and_enabled_bindings()
+    {
+        var seed = RouteMapSeed.Create();
+        var card = seed.MapEquipment.Single();
+        var definition = seed with
+        {
+            TopBar = seed.TopBar! with
+            {
+                Automatic = seed.TopBar.Automatic with
+                {
+                    EnabledBinding = new SignalBinding(
+                        SignalBindingRole.Enabled,
+                        "system.mode.automatic.enabled",
+                        SignalBindingDirection.Read,
+                        SignalValueType.Bool)
+                }
+            },
+            MapEquipment =
+            [
+                card with
+                {
+                    Bindings = card.Bindings.Append(new SignalBinding(
+                        SignalBindingRole.Enabled,
+                        "equip.bucket.enabled",
+                        SignalBindingDirection.Read,
+                        SignalValueType.Bool)).ToArray()
+                }
+            ]
+        };
+
+        var inventory = RouteMapSignalInventory.Build(definition);
+        var uncheckedItem = inventory.Single(x => x.SignalId == "equip.bucket.selector.off");
+        var checkedItem = inventory.Single(x => x.SignalId == "equip.bucket.selector.on");
+        var resetItem = inventory.Single(x => x.SignalId == "system.reset");
+        var cardEnabled = inventory.Single(x => x.SignalId == "equip.bucket.enabled");
+        var topBarEnabled = inventory.Single(x => x.SignalId == "system.mode.automatic.enabled");
+
+        Assert.Equal(ModbusDataAccess.ReadWrite, uncheckedItem.RequiredAccess);
+        Assert.True(uncheckedItem.PreferHoldingRegisterBit);
+        Assert.Equal(0, uncheckedItem.PreferredBitIndex);
+        Assert.True(uncheckedItem.RequiresLatchedWriteMode);
+        Assert.Equal(1, checkedItem.PreferredBitIndex);
+        Assert.Equal(RouteMapSignalElementCategory.TopBar, resetItem.Category);
+        Assert.Equal(SignalValueType.Bool, resetItem.ExpectedType);
+        Assert.Equal(ModbusDataAccess.ReadWrite, resetItem.RequiredAccess);
+        Assert.False(resetItem.RequiresLatchedWriteMode);
+        Assert.True(resetItem.PreferPulseWriteMode);
+        Assert.True(resetItem.RequiresPulseWriteMode);
+        Assert.Contains(nameof(SignalBindingRole.ResetCommand), resetItem.Roles);
+        Assert.Equal(ModbusDataAccess.Read, cardEnabled.RequiredAccess);
+        Assert.Equal(ModbusDataAccess.Read, topBarEnabled.RequiredAccess);
+        Assert.Contains(nameof(SignalBindingRole.Enabled), topBarEnabled.Roles);
+    }
+
+    [Fact]
+    public void Mapping_selector_defaults_to_register_bits_and_rejects_pulse_but_allows_coil_and_reset_requires_pulse()
+    {
+        using var scope = new ConfigurationScope();
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(new ModbusOptions()),
+            new RecordingAppConfigService(),
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+        var uncheckedRow = viewModel.Rows.Single(x => x.SignalId == "equip.bucket.selector.off");
+        var checkedRow = viewModel.Rows.Single(x => x.SignalId == "equip.bucket.selector.on");
+
+        viewModel.CreateMappingCommand.Execute(uncheckedRow).Subscribe();
+        viewModel.CreateMappingCommand.Execute(checkedRow).Subscribe();
+
+        Assert.Equal(ModbusDataArea.HoldingRegister, uncheckedRow.Area);
+        Assert.Equal(0, uncheckedRow.BitIndex);
+        Assert.Equal(ModbusDataArea.HoldingRegister, checkedRow.Area);
+        Assert.Equal(1, checkedRow.BitIndex);
+        Assert.Equal(ModbusWriteMode.Latched, checkedRow.WriteMode);
+
+        checkedRow.WriteMode = ModbusWriteMode.Pulse;
+        Assert.Contains("Latched", checkedRow.ValidationMessage);
+
+        checkedRow.WriteMode = ModbusWriteMode.Latched;
+        checkedRow.Area = ModbusDataArea.Coil;
+        checkedRow.Address = 2;
+        Assert.False(checkedRow.HasError);
+        Assert.Null(checkedRow.BitIndex);
+
+        var resetRow = viewModel.Rows.Single(x => x.SignalId == "system.reset");
+        viewModel.CreateMappingCommand.Execute(resetRow).Subscribe();
+        Assert.Equal(ModbusWriteMode.Pulse, resetRow.WriteMode);
+        Assert.Equal(300, resetRow.PulseDurationMs);
+        resetRow.WriteMode = ModbusWriteMode.Latched;
+        Assert.Contains("Pulse", resetRow.ValidationMessage);
+    }
+
+    [Fact]
     public void SignalInventory_TreatsWordAndUInt16AsCompatible()
     {
         var seed = RouteMapSeed.Create();

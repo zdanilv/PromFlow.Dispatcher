@@ -96,7 +96,7 @@ public sealed record RouteMapPaletteSettings
     public string Warning { get; init; } = "#D99B22";
     public string Fault { get; init; } = "#D95D4E";
     public string Offline { get; init; } = "#3F474D";
-    public string Disabled { get; init; } = "#D8DCDF";
+    public string Disabled { get; init; } = "#3F474D";
     public string NodeFill { get; init; } = "#AEB5BA";
     public string Selection { get; init; } = "#21428E";
     public string Hover { get; init; } = "#1E6BFF";
@@ -137,6 +137,7 @@ public sealed record RouteTopBarButtonSettings
     public RouteCommandButtonKind ButtonKind { get; init; } = RouteCommandButtonKind.Toggle;
     public bool OffFeedbackEnabled { get; init; }
     public SignalBinding? OffFeedbackBinding { get; init; }
+    public SignalBinding? EnabledBinding { get; init; }
     public SignalBinding Binding { get; init; } = new(
         SignalBindingRole.AutomaticModeCommand,
         "system.mode.automatic",
@@ -147,6 +148,7 @@ public sealed record RouteTopBarButtonSettings
 public sealed record RouteTopBarSettings(
     RouteTopBarButtonSettings Automatic,
     RouteTopBarButtonSettings Manual,
+    RouteTopBarButtonSettings Reset,
     RouteTopBarButtonSettings Emergency);
 
 public sealed record RouteSegmentStyle

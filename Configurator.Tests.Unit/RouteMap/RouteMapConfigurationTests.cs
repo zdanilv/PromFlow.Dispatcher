@@ -37,6 +37,7 @@ public sealed class RouteMapConfigurationTests
         Assert.Equal(RouteCommandButtonKind.Toggle, loaded.Cards.Single().StartButtonKind);
         Assert.Equal(RouteCommandButtonKind.Toggle, loaded.Cards.Single().StopButtonKind);
         Assert.Equal(RouteCommandButtonKind.Toggle, loaded.TopBar.Emergency.ButtonKind);
+        Assert.Single(loaded.TopBar.Reset.Bindings, binding => binding.Role == SignalBindingRole.ResetCommand);
         Assert.False(loaded.Cards.Single().StartOffFeedbackEnabled);
         Assert.False(loaded.TopBar.Emergency.OffFeedbackEnabled);
         Assert.DoesNotContain(loaded.Cards.Single().Bindings, binding => binding.Role == SignalBindingRole.StartOffFeedback);
@@ -137,6 +138,68 @@ public sealed class RouteMapConfigurationTests
         Assert.True(result.WasMigrated);
         Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, result.Document.SchemaVersion);
         Assert.All(result.Document.Cards, card => Assert.Empty(card.Parameters));
+    }
+
+    [Fact]
+    public void Migrator_v11_to_current_adds_selector_bindings_reset_and_updates_only_legacy_disabled_color()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.SchemaVersion = 11;
+        document.Map.Palette.Disabled = "#D8DCDF";
+        foreach (var card in document.Cards)
+        {
+            foreach (var binding in card.Bindings
+                         .Where(x => x.Role is SignalBindingRole.UncheckedCommand or SignalBindingRole.CheckedCommand)
+                         .ToArray())
+                card.Bindings.Remove(binding);
+        }
+
+        var result = new RouteMapConfigurationMigrator().Migrate(document);
+
+        Assert.True(result.WasMigrated);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, result.Document.SchemaVersion);
+        var reset = Assert.Single(result.Document.TopBar.Reset.Bindings, x => x.Role == SignalBindingRole.ResetCommand);
+        Assert.Equal("system.reset", reset.SignalId);
+        Assert.Equal("#F2C94C", result.Document.TopBar.Reset.NormalBackground);
+        Assert.Equal("#3F474D", result.Document.Map.Palette.Disabled);
+        Assert.All(result.Document.Cards, card =>
+        {
+            var uncheckedBinding = Assert.Single(card.Bindings, x => x.Role == SignalBindingRole.UncheckedCommand);
+            var checkedBinding = Assert.Single(card.Bindings, x => x.Role == SignalBindingRole.CheckedCommand);
+            Assert.Equal($"{card.Id}.selector.off", uncheckedBinding.SignalId);
+            Assert.Equal($"{card.Id}.selector.on", checkedBinding.SignalId);
+            Assert.Equal(SignalBindingDirection.ReadWrite, uncheckedBinding.Direction);
+            Assert.Equal(SignalValueType.Bool, checkedBinding.ValueType);
+        });
+
+        var custom = scope.Mapper.CreateSeedDocument();
+        custom.SchemaVersion = 11;
+        custom.Map.Palette.Disabled = "#123456";
+        new RouteMapConfigurationMigrator().Migrate(custom);
+        Assert.Equal("#123456", custom.Map.Palette.Disabled);
+    }
+
+    [Fact]
+    public void Migrator_v12_to_v13_adds_reset_top_bar_button()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.SchemaVersion = 12;
+        document.TopBar.Reset = new RouteTopBarButtonConfiguration();
+
+        var result = new RouteMapConfigurationMigrator().Migrate(document);
+
+        Assert.True(result.WasMigrated);
+        Assert.Equal(13, result.Document.SchemaVersion);
+        Assert.Equal("СБРОС", result.Document.TopBar.Reset.Text);
+        Assert.Equal("#F2C94C", result.Document.TopBar.Reset.NormalBackground);
+        Assert.Equal("#D6A800", result.Document.TopBar.Reset.PressedBackground);
+        Assert.Equal("#B7791F", result.Document.TopBar.Reset.CheckedBackground);
+        var binding = Assert.Single(result.Document.TopBar.Reset.Bindings, x => x.Role == SignalBindingRole.ResetCommand);
+        Assert.Equal("system.reset", binding.SignalId);
+        Assert.Equal(SignalBindingDirection.ReadWrite, binding.Direction);
+        Assert.Equal(SignalValueType.Bool, binding.ValueType);
     }
 
     [Fact]
@@ -308,6 +371,73 @@ public sealed class RouteMapConfigurationTests
         Assert.DoesNotContain(viewModel.SelectedCard.Bindings, x => x.Role == SignalBindingRole.StartOffFeedback);
         Assert.Single(viewModel.SelectedCard.Bindings, x => x.Role == SignalBindingRole.StopCommand);
         Assert.DoesNotContain(viewModel.SelectedCard.Bindings, x => x.Role == SignalBindingRole.StopOffFeedback);
+        Assert.Single(viewModel.SelectedCard.Bindings, x => x.Role == SignalBindingRole.UncheckedCommand);
+        Assert.Single(viewModel.SelectedCard.Bindings, x => x.Role == SignalBindingRole.CheckedCommand);
+        Assert.Contains(SignalBindingRole.Enabled, viewModel.NodeBindingRoles);
+        Assert.Contains(SignalBindingRole.Enabled, viewModel.SegmentBindingRoles);
+        Assert.Contains(SignalBindingRole.Enabled, viewModel.CardBindingRoles);
+        Assert.Contains(SignalBindingRole.Enabled, viewModel.AutomaticModeBindingRoles);
+        Assert.Contains(SignalBindingRole.ResetCommand, viewModel.ResetBindingRoles);
+        Assert.Contains(SignalBindingRole.Enabled, viewModel.ResetBindingRoles);
+    }
+
+    [Fact]
+    public void Mapper_preserves_top_bar_enabled_bindings()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.TopBar.Automatic.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.Enabled,
+            SignalId = "system.mode.automatic.enabled",
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.Bool,
+        });
+
+        var definition = scope.Mapper.ToDefinition(document);
+        var roundTrip = scope.Mapper.ToDocument(definition);
+
+        Assert.Equal("system.mode.automatic.enabled", definition.TopBar!.Automatic.EnabledBinding?.SignalId);
+        Assert.Contains(roundTrip.TopBar.Automatic.Bindings, x => x.Role == SignalBindingRole.Enabled);
+    }
+
+    [Fact]
+    public void Settings_duplicate_card_rewrites_selector_signal_ids()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+
+        viewModel.DuplicateCardCommand.Execute().Subscribe();
+
+        var card = viewModel.SelectedCard!;
+        Assert.Equal($"{card.Id}.selector.off", card.Bindings.Single(x => x.Role == SignalBindingRole.UncheckedCommand).SignalId);
+        Assert.Equal($"{card.Id}.selector.on", card.Bindings.Single(x => x.Role == SignalBindingRole.CheckedCommand).SignalId);
+    }
+
+    [Fact]
+    public void Settings_adds_and_removes_optional_top_bar_enabled_binding()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+
+        viewModel.AddBindingCommand.Execute("automatic").Subscribe();
+        var enabled = Assert.Single(viewModel.Draft.TopBar.Automatic.Bindings, x => x.Role == SignalBindingRole.Enabled);
+
+        Assert.Equal("system.mode.automatic.enabled", enabled.SignalId);
+        Assert.Equal(SignalBindingDirection.Read, enabled.Direction);
+        Assert.Equal(SignalValueType.Bool, enabled.ValueType);
+
+        viewModel.RemoveBindingCommand.Execute(enabled).Subscribe();
+        Assert.DoesNotContain(viewModel.Draft.TopBar.Automatic.Bindings, x => x.Role == SignalBindingRole.Enabled);
+
+        viewModel.AddBindingCommand.Execute("reset").Subscribe();
+        var resetEnabled = Assert.Single(viewModel.Draft.TopBar.Reset.Bindings, x => x.Role == SignalBindingRole.Enabled);
+        Assert.Equal("system.reset.enabled", resetEnabled.SignalId);
+
+        viewModel.RemoveBindingCommand.Execute(resetEnabled).Subscribe();
+        Assert.DoesNotContain(viewModel.Draft.TopBar.Reset.Bindings, x => x.Role == SignalBindingRole.Enabled);
     }
 
     [Fact]
@@ -528,6 +658,7 @@ public sealed class RouteMapConfigurationTests
         viewModel.ApplyRuntime(
             isAutomaticMode: false,
             isManualMode: true,
+            isResetActive: false,
             hasEmergency: true,
             connectionStatusText: "Ожидание",
             isConnectionAvailable: true);
@@ -775,6 +906,43 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
+    public void Validator_rejects_invalid_enabled_and_selector_contracts()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var card = document.Cards.Single();
+        card.Bindings.Single(x => x.Role == SignalBindingRole.CheckedCommand).SignalId =
+            card.Bindings.Single(x => x.Role == SignalBindingRole.UncheckedCommand).SignalId;
+        document.Nodes.First().Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.Enabled,
+            SignalId = "route.node.enabled",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.UInt16,
+        });
+
+        var result = new RouteMapConfigurationValidator().Validate(document);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.Message.Contains("разные SignalId"));
+        Assert.Contains(result.Errors, x => x.Message.Contains("Enabled должен иметь направление Read"));
+        Assert.Contains(result.Errors, x => x.Message.Contains("Enabled должен иметь тип Bool"));
+    }
+
+    [Fact]
+    public void Validator_requires_reset_command_binding()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.TopBar.Reset.Bindings.Clear();
+
+        var result = new RouteMapConfigurationValidator().Validate(document);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.Message.Contains(nameof(SignalBindingRole.ResetCommand)));
+    }
+
+    [Fact]
     public async Task Top_bar_commands_use_configured_signal_ids()
     {
         var settings = RouteMapSeed.Create().TopBar! with
@@ -915,6 +1083,21 @@ public sealed class RouteMapConfigurationTests
     {
         public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default) =>
             Task.FromException(new InvalidOperationException("Write failed"));
+    }
+
+    [Fact]
+    public async Task Top_bar_reset_dispatches_single_pulse_true_value()
+    {
+        var dispatcher = new CapturingDispatcher();
+        var viewModel = new TopBarViewModel(commandDispatcher: dispatcher, settings: RouteMapSeed.Create().TopBar);
+
+        await viewModel.ResetCommand.Execute().FirstAsync();
+        await viewModel.ResetCommand.Execute().FirstAsync();
+
+        Assert.False(viewModel.IsResetActive);
+        Assert.Collection(dispatcher.Requests,
+            request => Assert.Equal(("system.reset", true), (request.SignalId, request.Value)),
+            request => Assert.Equal(("system.reset", true), (request.SignalId, request.Value)));
     }
 
     private sealed class NoOpBitWriter : IModbusBitWriter

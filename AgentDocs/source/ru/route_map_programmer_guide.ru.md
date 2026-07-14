@@ -415,7 +415,11 @@ TargetCommand
 LoaderCommand
 AutomaticModeCommand
 ManualModeCommand
+ResetCommand
 EmergencyCommand
+UncheckedCommand
+CheckedCommand
+Enabled
 ```
 
 Команды карточки блокируются для состояний:
@@ -471,13 +475,13 @@ services.AddTransient<RouteMapDashboardViewModel>();
 
 Правильный поток:
 
-В актуальной `schemaVersion = 10` карточные toggle-кнопки `ПУСК`/`СТОП` не поддерживают
+В актуальной схеме карточные toggle-кнопки `ПУСК`/`СТОП` не поддерживают
 `Momentary`, но используют активные роли `StartOffFeedback`/`StopOffFeedback` для
 отключения кнопок по PLC-readback. Пользовательское включение `ПУСК` сначала пишет
 `StopCommand=false`, затем `StartCommand=true`; включение `СТОП` сначала пишет
 `StartCommand=false`, затем `StopCommand=true`; снятие галочки пишет только свою
-команду `false`. TopBar `АВАРИЯ` не использует OffFeedback и пишет `true/false`
-напрямую.
+команду `false`. TopBar `СБРОС` не использует OffFeedback и пишет только `true`
+в pulse-команду, а `АВАРИЯ` пишет `true/false` напрямую.
 
 Toggle-команды узлов `Отправить`/`Возврат` и режимы TopBar `АВТОМАТ`/`РУЧНОЕ`
 также пишут включение и выключение напрямую через `TargetCommand`/`LoaderCommand`
@@ -824,16 +828,17 @@ dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restor
 
 Начиная со `schemaVersion = 4`, TopBar входит в `RouteMapConfigurationDocument`. Вкладка
 `TopBar` редактора позволяет менять тексты, normal/pressed/checked фон, foreground и
-bindings кнопок `АВТОМАТ`, `РУЧНОЙ`, `АВАРИЯ`. Телефон, логотип, пользователь и
+bindings кнопок `АВТОМАТ`, `РУЧНОЙ`, `СБРОС`, `АВАРИЯ`. Телефон, логотип, пользователь и
 статусная область остаются частью фиксированного XAML-шаблона. Для `АВАРИЯ` defaults v10:
 normal `#D95D4E`, pressed `#949595`, checked `#9E2F25`, foreground `#FFFFFF`.
 
-В актуальной `schemaVersion = 10` `ПУСК`, `СТОП` и `АВАРИЯ` всегда работают как
+В актуальной схеме `ПУСК`, `СТОП`, `СБРОС` и `АВАРИЯ` всегда работают как
 `ToggleButton`. `ПУСК` и `СТОП` взаимоисключаются: включение одной кнопки сначала
 снимает противоположную команду, затем пишет `true` в свою; ручное снятие пишет только
 свою команду `false`. Если PLC readback вернул оба command-бита `true`, UI показывает
-только `СТОП` и не пишет исправление обратно в PLC. `АВАРИЯ` пишет `true` при включении
-и `false` при снятии. Legacy-значение `RouteCommandButtonKind.Momentary` остается
+только `СТОП` и не пишет исправление обратно в PLC. `СБРОС` пишет только `true`, а
+сброс `false` выполняет Modbus `Pulse`; `АВАРИЯ` пишет `true` при включении и `false`
+при снятии. Legacy-значение `RouteCommandButtonKind.Momentary` остается
 только для безопасной десериализации старых JSON и миграцией приводится к `Toggle`.
 `АВТОМАТ` и `РУЧНОЙ` остаются взаимоисключающими toggle-кнопками.
 
@@ -842,9 +847,12 @@ normal `#D95D4E`, pressed `#949595`, checked `#9E2F25`, foreground `#FFFFFF`.
 ```text
 AutomaticModeCommand  -> system.mode.automatic
 ManualModeCommand     -> system.mode.manual
+ResetCommand          -> system.reset
 EmergencyCommand      -> system.emergency
 StartCommand           -> кнопка ПУСК карточки
 StopCommand            -> кнопка СТОП карточки
+UncheckedCommand       -> кнопка С карточки, unchecked-бит
+CheckedCommand         -> кнопка С карточки, checked-бит
 StartOffFeedback       -> read-only отключение ПУСК карточки
 StopOffFeedback        -> read-only отключение СТОП карточки
 TargetCommand          -> пункт Отправить узла
@@ -852,7 +860,12 @@ LoaderCommand          -> пункт Возврат узла
 ```
 
 Командные роли используют `Bool` и `ReadWrite`; `StartOffFeedback`/`StopOffFeedback`
-используют `Bool` и `Read`. UI сначала оптимистично меняет checked-состояние, затем
+и `Enabled` используют `Bool` и `Read`. `ResetCommand` требует `Pulse`, потому что UI
+пишет только `true`; selector-команды карточки требуют `Latched`, потому что UI пишет
+явный `false`. При хорошем
+`Enabled=false` карточки кнопка `С` остается доступной при наличии связи и один раз
+сбрасывает selector-команды: `CheckedCommand=false`, затем `UncheckedCommand=false`.
+UI сначала оптимистично меняет checked-состояние, затем
 отправляет `SignalWriteRequest` через `IEquipmentCommandDispatcher`. Для выбора узла
 записываются все изменения: прежняя роль получает `false`, новая — `true`, а
 взаимоисключающая роль выбранного узла при необходимости также сбрасывается. Входное

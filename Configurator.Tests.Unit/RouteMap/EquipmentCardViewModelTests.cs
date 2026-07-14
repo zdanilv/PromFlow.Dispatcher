@@ -66,6 +66,79 @@ public sealed class EquipmentCardViewModelTests
     }
 
     [Fact]
+    public void Selector_toggle_dispatches_mutually_exclusive_values()
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var card = RouteMapSeed.Create().MapEquipment.Single();
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+
+        viewModel.IsSelectorChecked = true;
+        viewModel.IsSelectorChecked = false;
+
+        Assert.Collection(dispatcher.Requests,
+            request => Assert.Equal(("equip.bucket.selector.off", false), (request.SignalId, request.Value)),
+            request => Assert.Equal(("equip.bucket.selector.on", true), (request.SignalId, request.Value)),
+            request => Assert.Equal(("equip.bucket.selector.on", false), (request.SignalId, request.Value)),
+            request => Assert.Equal(("equip.bucket.selector.off", true), (request.SignalId, request.Value)));
+    }
+
+    [Fact]
+    public void ApplyRuntime_keeps_selector_enabled_when_card_is_disabled_without_reset_request()
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var card = RouteMapSeed.Create().MapEquipment.Single();
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+
+        viewModel.ApplyRuntime(new RouteObjectRuntimeState(
+            card.Id,
+            RouteObjectState.Disabled,
+            card.StatusText,
+            ValueText: null,
+            IsVisible: true,
+            CanStart: false,
+            CanStop: false,
+            IsSelectorChecked: true,
+            IsEnabled: false,
+            IsSelectorCommandEnabled: true));
+
+        Assert.True(viewModel.IsSelectorChecked);
+        Assert.False(viewModel.IsEnabled);
+        Assert.True(viewModel.IsSelectorEnabled);
+        Assert.Equal(Avalonia.Media.Color.Parse("#3378D6"), BrushColor(viewModel.SelectorBackground));
+        Assert.Empty(dispatcher.Requests);
+    }
+
+    [Fact]
+    public void ApplyRuntime_resets_selector_commands_once_when_enabled_false_signal_arrives()
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var card = RouteMapSeed.Create().MapEquipment.Single();
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+
+        var runtime = new RouteObjectRuntimeState(
+            card.Id,
+            RouteObjectState.Disabled,
+            card.StatusText,
+            ValueText: null,
+            IsVisible: true,
+            CanStart: false,
+            CanStop: false,
+            IsSelectorChecked: true,
+            IsEnabled: false,
+            IsSelectorCommandEnabled: true,
+            ShouldResetSelectorCommands: true);
+
+        viewModel.ApplyRuntime(runtime);
+        viewModel.ApplyRuntime(runtime);
+
+        Assert.False(viewModel.IsSelectorChecked);
+        Assert.True(viewModel.IsSelectorEnabled);
+        Assert.Collection(dispatcher.Requests,
+            request => Assert.Equal(("equip.bucket.selector.on", false), (request.SignalId, request.Value)),
+            request => Assert.Equal(("equip.bucket.selector.off", false), (request.SignalId, request.Value)));
+    }
+
+    [Fact]
     public void Button_colors_resolve_pressed_checked_normal_priority()
     {
         var viewModel = CreateViewModel();

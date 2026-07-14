@@ -49,6 +49,12 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | Общая авария не окрашивает карту | Точка `Modbus.DataMap` с `Name=system.fault`, `Read/Bool`, good quality и значение `true` |
 | `ПУСК`/`СТОП` не отключается по PLC | Роли `StartOffFeedback`/`StopOffFeedback`, направление `Read`, тип `Bool`, значение `true` |
 | `ПУСК` и `СТОП` одновременно checked | Readback `StartCommand`/`StopCommand`; при конфликте UI должен показывать checked только `СТОП` |
+| `С` не переключается | Проверьте обязательные `UncheckedCommand`/`CheckedCommand`, разные SignalId, `ReadWrite/Bool`, Latched и наличие readback |
+| `С` показывает неверное состояние | Checked допустим только при `Unchecked=false`, `Checked=true`; конфликт двух `true` отображается unchecked |
+| `С` отключилась вместе с карточкой | При good `Enabled=false` карточки должны отключаться `Н`, `ПУСК`, `СТОП` и визуал, но `С` остается активной при `connection.connected=true` |
+| `С` не сбрасывает selector при disabled | При первом хорошем `Enabled=false` должны уйти две записи: `CheckedCommand=false`, затем `UncheckedCommand=false`; повторный snapshot не дублирует запись |
+| `СБРОС` не работает | Проверьте TopBar `ResetCommand`, SignalId `system.reset`, `ReadWrite/Bool`, Pulse, `PulseDurationMs`, readback и optional `Enabled` этой кнопки |
+| Элемент не отключается | Роль `Enabled` должна быть `Read/Bool` с good quality и значением `false`; missing оставляет enabled, bad/stale дает Offline |
 | Параметр карточки не появился в mapping | Настройка добавлена во вкладке `Карточки`, роль `EquipmentParameter`, непустой `SignalId`, применена RouteMap definition |
 | `Н` не отправляет значение | У параметра направление `Write`/`ReadWrite`, валидный тип значения, есть точка `Modbus.DataMap` с совместимым access |
 | `Н` показывает `SignalId ... не настроен` | Создайте/сохраните строку параметра во вкладке `SignalId ↔ Modbus`; Bool вводится переключателем, но mapping всё равно обязателен для Modbus |
@@ -97,13 +103,16 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 11. Проверить quality, stale, reconnect.
 12. Проверить `connection.connected=false`: команды заблокированы, узлы/линии offline, карточки показывают `Не в сети`.
 13. Проверить active nodes, active lines и fragments.
-14. Проверить modes, emergency, loader/target.
+14. Проверить modes, reset, emergency, loader/target.
 15. Проверить диалоги аварии/повторного подтверждения/обычного сообщения и acknowledgement-импульс.
 16. Проверить панель `Уведомления`: элемент появляется после диалога, `Хорошо` снимает unread, `X` и `Очистить список` удаляют только после `Alarm=false`.
 17. Проверить вкладку `История`: панель расширяется, команды/received SignalId/тревоги появляются со стрелками направления, объединенным столбцом `Роли / объекты` и числовым offset-адресом.
 18. Проверить `system.fault=true`: RouteMap переходит в общий аварийный вид, `false` возвращает обычную per-object логику.
 19. По одной разрешить команды оборудования; проверить взаимоисключение `ПУСК`/`СТОП` и `StartOffFeedback`/`StopOffFeedback`.
-20. Проверить параметры карточек: кнопка `Н`, Bool-переключатель, валидацию `WORD`/`DWORD`/`DATE`, read-only строки, сохранение `Write`/`ReadWrite`, скрытие `SignalId • Type` в user-режиме и авто-строки `EquipmentParameter` в `SignalId ↔ Modbus`.
-21. Проверить latched/pulse, timeout и потерю связи во время записи.
-22. Убедиться, что interlock и safety реализованы в PLC.
+20. Проверить кнопку `С`: две последовательные записи, readback, конфликт двух `true`, разные Bool-точки, запрет Pulse и reset selector-команд при good `Enabled=false`.
+21. Проверить `СБРОС`: положение слева от `АВАРИЯ`, yellow normal state, `system.reset`, readback, Pulse и validation error для Latched.
+22. Проверить `Enabled=false` отдельно для каждой TopBar-кнопки, узла, линии и карточки, а также missing/bad/stale.
+23. Проверить параметры карточек: кнопка `Н`, Bool-переключатель, валидацию `WORD`/`DWORD`/`DATE`, read-only строки, сохранение `Write`/`ReadWrite`, скрытие `SignalId • Type` в user-режиме и авто-строки `EquipmentParameter` в `SignalId ↔ Modbus`.
+24. Проверить latched/pulse, timeout и потерю связи во время записи.
+25. Убедиться, что interlock и safety реализованы в PLC.
 

@@ -328,6 +328,7 @@ Role + SignalId + Direction + ValueType
 | `LoaderCommand` | Назначение loader |
 | `AutomaticModeCommand` | Автоматический режим |
 | `ManualModeCommand` | Ручной режим |
+| `ResetCommand` | Сброс |
 | `EmergencyCommand` | Аварийная команда/состояние |
 
 Стандартные SignalId:
@@ -335,6 +336,7 @@ Role + SignalId + Direction + ValueType
 ```text
 system.mode.automatic
 system.mode.manual
+system.reset
 system.emergency
 connection.status
 connection.connected
@@ -623,8 +625,8 @@ Legacy-значение `RouteCommandButtonKind.Momentary` миграция пр
 `WriteConfirmationTimeoutMs`. Если подтверждение не пришло, возвращается ошибка
 `ModbusWriteConfirmationTimeout`.
 
-Используйте `Latched` для режимов, аварийных флагов, ролей маршрута и toggle-состояний,
-если PLC ожидает удерживаемое значение.
+Используйте `Latched` для режимов, selector-команд карточки, аварийных флагов, ролей
+маршрута и toggle-состояний, если PLC ожидает удерживаемое значение.
 
 ### Pulse
 
@@ -634,8 +636,9 @@ Legacy-значение `RouteCommandButtonKind.Momentary` миграция пр
 2. ждет `PulseDurationMs`;
 3. в `finally` пытается записать `false` с отдельным reset timeout 2 секунды.
 
-Запрос `false` игнорируется. Не используйте `Pulse` для режима или состояния, которое UI
-должен удерживать. Автоматические повторы неидемпотентных команд не выполняются.
+Запрос `false` игнорируется. Используйте `Pulse` для TopBar `ResetCommand`; не
+используйте его для режима, selector-команд карточки или состояния, которое UI должен
+удерживать. Автоматические повторы неидемпотентных команд не выполняются.
 
 ### Register-bit read-modify-write
 
@@ -656,6 +659,7 @@ shadow, изменяет только нужный бит и записывае�
 ```text
 AutomaticModeCommand -> system.mode.automatic
 ManualModeCommand    -> system.mode.manual
+ResetCommand         -> system.reset
 EmergencyCommand     -> system.emergency
 ```
 
@@ -693,6 +697,12 @@ holding register. `Fault` линии остается общим для всей
 `StartOffFeedback`/`StopOffFeedback` и runtime видимость. Команды ПУСК/СТОП должны
 иметь отдельные SignalId, даже если PLC упаковывает их в разные биты одного регистра.
 OffFeedback тоже настраивается отдельными read/bool SignalId и не заменяет command-bit.
+Кнопка `С` использует обязательные `UncheckedCommand`/`CheckedCommand` как
+`ReadWrite/Bool/Latched`; `Pulse` недопустим. TopBar `ResetCommand` использует
+`ReadWrite/Bool/Pulse`: UI пишет только `true`, а Modbus dispatcher сбрасывает бит по
+`PulseDurationMs`. При хорошем карточном `Enabled=false`
+кнопка `С` остается доступной при наличии связи и один раз пишет
+`CheckedCommand=false`, затем `UncheckedCommand=false`.
 
 ## 13. Диагностика
 

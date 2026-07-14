@@ -16,7 +16,7 @@ public static class RouteMapPalette
     public static readonly IBrush WarningBrush = new SolidColorBrush(Color.Parse("#D99B22"));
     public static readonly IBrush FaultBrush = new SolidColorBrush(Color.Parse("#D95D4E"));
     public static readonly IBrush OfflineBrush = new SolidColorBrush(Color.Parse("#3F474D"));
-    public static readonly IBrush DisabledBrush = new SolidColorBrush(Color.Parse("#D8DCDF"));
+    public static readonly IBrush DisabledBrush = new SolidColorBrush(Color.Parse("#3F474D"));
     public static readonly IBrush NodeFillBrush = new SolidColorBrush(Color.Parse("#AEB5BA"));
     public static readonly IBrush SelectionBrush = new SolidColorBrush(Color.Parse("#21428E"));
     public static readonly IBrush HoverBrush = new SolidColorBrush(Color.Parse("#1E6BFF"));

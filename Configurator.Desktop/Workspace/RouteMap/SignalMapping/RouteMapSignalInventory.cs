@@ -24,7 +24,11 @@ internal sealed record RouteMapSignalInventoryItem(
     bool HasTypeConflict,
     RouteMapSignalElementCategory Category,
     bool IsSystem = false,
-    bool PreferPulseWriteMode = false);
+    bool PreferPulseWriteMode = false,
+    bool PreferHoldingRegisterBit = false,
+    int? PreferredBitIndex = null,
+    bool RequiresLatchedWriteMode = false,
+    bool RequiresPulseWriteMode = false);
 
 internal static class RouteMapSignalInventory
 {
@@ -55,6 +59,11 @@ internal static class RouteMapSignalInventory
                     .Distinct()
                     .ToArray();
                 var categories = group.Select(item => item.Category).Distinct().ToArray();
+                var hasUncheckedCommand = group.Any(item => item.Binding.Role == SignalBindingRole.UncheckedCommand);
+                var hasCheckedCommand = group.Any(item => item.Binding.Role == SignalBindingRole.CheckedCommand);
+                var hasResetCommand = group.Any(item => item.Binding.Role == SignalBindingRole.ResetCommand);
+                var hasSelectorCommand = hasUncheckedCommand || hasCheckedCommand;
+                var requiresLatchedWriteMode = hasSelectorCommand;
                 var canRead = group.Any(item => item.Binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite);
                 var canWrite = group.Any(item => item.Binding.Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite);
                 var access = (canRead, canWrite) switch
@@ -74,7 +83,11 @@ internal static class RouteMapSignalInventory
                     string.Join(", ", group.Select(item => item.ObjectName).Distinct(StringComparer.Ordinal)),
                     types.Length > 1,
                     categories.Length == 1 ? categories[0] : RouteMapSignalElementCategory.Common,
-                    PreferPulseWriteMode: group.Any(item => item.PreferPulseWriteMode));
+                    PreferPulseWriteMode: hasResetCommand || group.Any(item => item.PreferPulseWriteMode),
+                    PreferHoldingRegisterBit: hasSelectorCommand,
+                    PreferredBitIndex: hasCheckedCommand && !hasUncheckedCommand ? 1 : hasSelectorCommand ? 0 : null,
+                    RequiresLatchedWriteMode: requiresLatchedWriteMode,
+                    RequiresPulseWriteMode: hasResetCommand);
             })
             .OrderBy(item => item.SignalId, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -124,11 +137,21 @@ internal static class RouteMapSignalInventory
         {
             yield return ("TopBar.АВТОМАТ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Automatic.Binding, false);
             yield return ("TopBar.РУЧНОЙ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Manual.Binding, false);
+            yield return ("TopBar.СБРОС", RouteMapSignalElementCategory.TopBar, definition.TopBar.Reset.Binding, true);
             yield return (
                 "TopBar.АВАРИЯ",
                 RouteMapSignalElementCategory.TopBar,
                 definition.TopBar.Emergency.Binding,
                 false);
+
+            if (definition.TopBar.Automatic.EnabledBinding is not null)
+                yield return ("TopBar.АВТОМАТ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Automatic.EnabledBinding, false);
+            if (definition.TopBar.Manual.EnabledBinding is not null)
+                yield return ("TopBar.РУЧНОЙ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Manual.EnabledBinding, false);
+            if (definition.TopBar.Reset.EnabledBinding is not null)
+                yield return ("TopBar.СБРОС", RouteMapSignalElementCategory.TopBar, definition.TopBar.Reset.EnabledBinding, false);
+            if (definition.TopBar.Emergency.EnabledBinding is not null)
+                yield return ("TopBar.АВАРИЯ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Emergency.EnabledBinding, false);
         }
 
         foreach (var node in definition.Nodes)

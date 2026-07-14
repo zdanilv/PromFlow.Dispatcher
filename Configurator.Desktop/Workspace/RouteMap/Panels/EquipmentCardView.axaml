@@ -55,6 +55,11 @@
 			<Setter Property="Background" Value="#D0D0D0"/>
 			<Setter Property="BorderBrush" Value="#D0D0D0"/>
 		</Style>
+		<Style Selector="Button.parameter:disabled">
+			<Setter Property="Background" Value="#3F474D"/>
+			<Setter Property="BorderBrush" Value="#3F474D"/>
+			<Setter Property="Foreground" Value="#FFFFFF"/>
+		</Style>
 	</UserControl.Styles>
 
 	<Border MinWidth="{Binding MinimumCardWidth}"
@@ -71,7 +76,7 @@
 			  RowSpacing="5"
 			  Margin="5">
 			<Grid Grid.ColumnSpan="3"
-				  ColumnDefinitions="*,40"
+				  ColumnDefinitions="*,40,40"
 				  ColumnSpacing="8">
 				<Viewbox Stretch="Uniform"
 						 StretchDirection="DownOnly"
@@ -83,13 +88,30 @@
 							   FontSize="{Binding TitleFontSize}"
 							   TextWrapping="NoWrap"/>
 				</Viewbox>
-				<Button Grid.Column="1"
+				<ToggleButton x:Name="SelectorButton"
+							  Grid.Column="1"
+							  Classes="equipment-action parameter"
+							  Content="С"
+							  Width="40"
+							  Height="40"
+							  MinWidth="40"
+							  MinHeight="40"
+							  Background="{Binding SelectorBackground}"
+							  BorderBrush="{Binding SelectorBackground}"
+							  Foreground="{Binding SelectorForeground}"
+							  IsEnabled="{Binding IsSelectorEnabled}"
+							  IsChecked="{Binding IsSelectorChecked, Mode=TwoWay}"/>
+				<Button Grid.Column="2"
 						Classes="equipment-action parameter"
 						Content="Н"
 						Width="40"
 						Height="40"
 						MinWidth="40"
 						MinHeight="40"
+						Background="{Binding ParameterBackground}"
+						BorderBrush="{Binding ParameterBackground}"
+						Foreground="{Binding ParameterForeground}"
+						IsEnabled="{Binding IsEnabled}"
 						Command="{Binding OpenParametersCommand}"/>
 			</Grid>
 

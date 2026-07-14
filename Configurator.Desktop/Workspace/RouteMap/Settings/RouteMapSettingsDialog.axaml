@@ -125,7 +125,11 @@
                     <StackPanel><TextBlock Classes="label" Text="Pressed текст"/><TextBox Classes="form" Text="{Binding PressedForeground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный текст"/><TextBox Classes="form" Text="{Binding CheckedForeground}"/></StackPanel>
                   </UniformGrid>
-                  <settings:SignalBindingsEditor Bindings="{Binding Bindings}" AllowedRoles="{Binding DataContext.AutomaticModeBindingRoles, ElementName=Root}"/>
+                  <settings:SignalBindingsEditor Bindings="{Binding Bindings}"
+                                                 AllowedRoles="{Binding DataContext.AutomaticModeBindingRoles, ElementName=Root}"
+                                                 AddCommand="{Binding DataContext.AddBindingCommand, ElementName=Root}"
+                                                 AddCommandParameter="automatic"
+                                                 RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
                 </StackPanel>
               </Border>
               <Border Classes="editor" DataContext="{Binding Draft.TopBar.Manual}">
@@ -140,7 +144,30 @@
                     <StackPanel><TextBlock Classes="label" Text="Pressed текст"/><TextBox Classes="form" Text="{Binding PressedForeground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный текст"/><TextBox Classes="form" Text="{Binding CheckedForeground}"/></StackPanel>
                   </UniformGrid>
-                  <settings:SignalBindingsEditor Bindings="{Binding Bindings}" AllowedRoles="{Binding DataContext.ManualModeBindingRoles, ElementName=Root}"/>
+                  <settings:SignalBindingsEditor Bindings="{Binding Bindings}"
+                                                 AllowedRoles="{Binding DataContext.ManualModeBindingRoles, ElementName=Root}"
+                                                 AddCommand="{Binding DataContext.AddBindingCommand, ElementName=Root}"
+                                                 AddCommandParameter="manual"
+                                                 RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
+                </StackPanel>
+              </Border>
+              <Border Classes="editor" DataContext="{Binding Draft.TopBar.Reset}">
+                <StackPanel>
+                  <TextBlock Classes="section" Text="СБРОС"/>
+                  <UniformGrid Columns="3">
+                    <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Text}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Обычный фон"/><TextBox Classes="form" Text="{Binding NormalBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Pressed фон"/><TextBox Classes="form" Text="{Binding PressedBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Активный фон"/><TextBox Classes="form" Text="{Binding CheckedBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Обычный текст"/><TextBox Classes="form" Text="{Binding NormalForeground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Pressed текст"/><TextBox Classes="form" Text="{Binding PressedForeground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Активный текст"/><TextBox Classes="form" Text="{Binding CheckedForeground}"/></StackPanel>
+                  </UniformGrid>
+                  <settings:SignalBindingsEditor Bindings="{Binding Bindings}"
+                                                 AllowedRoles="{Binding DataContext.ResetBindingRoles, ElementName=Root}"
+                                                 AddCommand="{Binding DataContext.AddBindingCommand, ElementName=Root}"
+                                                 AddCommandParameter="reset"
+                                                 RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
                 </StackPanel>
               </Border>
               <Border Classes="editor" DataContext="{Binding Draft.TopBar.Emergency}">
@@ -155,7 +182,11 @@
                     <StackPanel><TextBlock Classes="label" Text="Pressed текст"/><TextBox Classes="form" Text="{Binding PressedForeground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный текст"/><TextBox Classes="form" Text="{Binding CheckedForeground}"/></StackPanel>
                   </UniformGrid>
-                  <settings:SignalBindingsEditor Bindings="{Binding Bindings}" AllowedRoles="{Binding DataContext.EmergencyBindingRoles, ElementName=Root}"/>
+                  <settings:SignalBindingsEditor Bindings="{Binding Bindings}"
+                                                 AllowedRoles="{Binding DataContext.EmergencyBindingRoles, ElementName=Root}"
+                                                 AddCommand="{Binding DataContext.AddBindingCommand, ElementName=Root}"
+                                                 AddCommandParameter="emergency"
+                                                 RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
                 </StackPanel>
               </Border>
             </StackPanel>

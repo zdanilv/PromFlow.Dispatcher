@@ -132,9 +132,18 @@ public sealed class RouteMapConfigurationStorage
         document.TopBar ??= RouteTopBarConfiguration.CreateDefault();
         document.TopBar.Automatic ??= RouteTopBarButtonConfiguration.Create("АВТОМАТ", SignalBindingRole.AutomaticModeCommand, "system.mode.automatic");
         document.TopBar.Manual ??= RouteTopBarButtonConfiguration.Create("РУЧНОЙ", SignalBindingRole.ManualModeCommand, "system.mode.manual");
+        document.TopBar.Reset ??= RouteTopBarButtonConfiguration.Create(
+            "СБРОС",
+            SignalBindingRole.ResetCommand,
+            "system.reset",
+            normalBackground: "#F2C94C",
+            checkedBackground: "#B7791F",
+            pressedBackground: "#D6A800",
+            normalForeground: "#101820");
         document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create("АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency");
         document.TopBar.Automatic.Bindings ??= [];
         document.TopBar.Manual.Bindings ??= [];
+        document.TopBar.Reset.Bindings ??= [];
         document.TopBar.Emergency.Bindings ??= [];
         document.Chains ??= [];
         document.Nodes ??= [];

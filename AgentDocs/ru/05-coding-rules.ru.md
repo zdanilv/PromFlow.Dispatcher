@@ -37,6 +37,14 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
   не переносите его в `Modbus.AlarmMap`.
 - `StartOffFeedback` и `StopOffFeedback` — только карточные `Read/Bool` роли. При
   `true` они отключают кнопку и сбрасывают checked-состояние без записи команды.
+- `UncheckedCommand` и `CheckedCommand` — обязательные карточные `ReadWrite/Bool` роли
+  кнопки `С`; всегда отправляйте `false` в противоположную роль перед `true` в выбранную.
+- `ResetCommand` — обязательная TopBar `ReadWrite/Bool` роль кнопки `СБРОС` с default
+  SignalId `system.reset`; она требует `Pulse`, а UI отправляет только `true`.
+- `Enabled` — опциональная `Read/Bool` роль TopBar-кнопки, узла, линии или карточки.
+  Не считайте отсутствующее значение отключением; bad/stale обрабатывайте как Offline.
+  У карточки не блокируйте кнопку `С` по `Enabled=false`, пока есть Modbus-связь;
+  вместо этого один раз отправьте `CheckedCommand=false`, затем `UncheckedCommand=false`.
 - `EquipmentParameter` — единственная роль для параметров оборудования карточки. Эти
   SignalId автоматически попадают в `SignalId ↔ Modbus`; не создавайте для них
   отдельный ручной список вне `RouteMapSignalInventory`.
@@ -65,6 +73,11 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
 - У `NotificationsPanelView` сохраняйте минимум `400`, но не фиксируйте `MaxWidth`:
   вкладка `История` должна расширять правую колонку RouteMap по ширине таблицы.
 - Runtime readback не должен повторно отправлять команды.
+- Readback кнопки `С` считается checked только для `Unchecked=false` и `Checked=true`;
+  конфликт двух `true` отображается unchecked и не исправляется скрытой записью.
+- Reset selector-команд при хорошем карточном `Enabled=false` — единственное исключение:
+  он выполняется один раз на непрерывный disabled-эпизод и не должен повторяться на
+  каждом polling snapshot.
 - Диалог параметров карточки должен писать только `Write`/`ReadWrite` значения через
   `IEquipmentCommandDispatcher`; `Read` строки отображаются без редактирования, а
   `Сохранить` не закрывает диалог. Bool показывайте переключателем; остальные значения

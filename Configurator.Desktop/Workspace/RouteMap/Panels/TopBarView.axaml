@@ -75,7 +75,7 @@
                           BorderBrush="{Binding AutomaticBackground}"
                           Foreground="{Binding AutomaticForeground}"
                           IsChecked="{Binding IsAutomaticMode}"
-                          IsEnabled="{Binding AreCommandsEnabled}"
+                          IsEnabled="{Binding IsAutomaticCommandEnabled}"
                           Command="{Binding SwitchToAutomaticCommand}"/>
             <ToggleButton x:Name="ManualButton"
                           Classes="mode"
@@ -84,7 +84,7 @@
                           BorderBrush="{Binding ManualBackground}"
                           Foreground="{Binding ManualForeground}"
                           IsChecked="{Binding IsManualMode}"
-                          IsEnabled="{Binding AreCommandsEnabled}"
+                          IsEnabled="{Binding IsManualCommandEnabled}"
                           Command="{Binding SwitchToManualCommand}"/>
         </StackPanel>
 
@@ -93,6 +93,15 @@
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Spacing="10">
+            <ToggleButton x:Name="ResetButton"
+                          Classes="emergency"
+                          Content="{Binding ResetText}"
+                          Background="{Binding ResetBackground}"
+                          BorderBrush="{Binding ResetBackground}"
+                          Foreground="{Binding ResetForeground}"
+                          IsChecked="{Binding IsResetActive, Mode=OneWay}"
+                          IsEnabled="{Binding IsResetCommandEnabled}"
+                          Command="{Binding ResetCommand}"/>
             <ToggleButton x:Name="EmergencyButton"
                           Classes="emergency"
                           Content="{Binding EmergencyText}"
@@ -100,7 +109,7 @@
                           BorderBrush="{Binding EmergencyBackground}"
                           Foreground="{Binding EmergencyForeground}"
                           IsChecked="{Binding HasEmergency}"
-                          IsEnabled="{Binding AreCommandsEnabled}"
+                          IsEnabled="{Binding IsEmergencyCommandEnabled}"
                           Command="{Binding EmergencyCommand}"/>
             <Button Classes="settings"
                     Content="НАСТРОЙКИ"

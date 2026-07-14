@@ -16,6 +16,7 @@ PLC. RouteMap, ViewModel и XAML должны знать только `SignalId`
 ```text
 system.mode.automatic
 system.mode.manual
+system.reset
 system.emergency
 system.fault
 route.node.bsu_1.active
@@ -26,6 +27,9 @@ equip.bucket.start
 equip.bucket.start.off
 equip.bucket.stop
 equip.bucket.stop.off
+equip.bucket.selector.off
+equip.bucket.selector.on
+equip.bucket.enabled
 equip.bucket.text
 equip.bucket.parameter
 connection.status
@@ -72,9 +76,11 @@ Direction должен соответствовать Modbus access:
 | `Value` | любой поддержанный | extra runtime value |
 | `EquipmentParameter` | любой поддержанный | настраиваемый параметр оборудования карточки |
 | `StartCommand`, `StopCommand` | `Bool` | equipment commands |
+| `UncheckedCommand`, `CheckedCommand` | `Bool` | two-bit toggle command for card button `С` |
 | `StartOffFeedback`, `StopOffFeedback` | `Bool` | read-only disable bits for card start/stop buttons |
 | `TargetCommand`, `LoaderCommand` | `Bool` | node menu commands |
-| `AutomaticModeCommand`, `ManualModeCommand`, `EmergencyCommand` | `Bool` | TopBar commands |
+| `AutomaticModeCommand`, `ManualModeCommand`, `ResetCommand`, `EmergencyCommand` | `Bool` | TopBar commands |
+| `Enabled` | `Bool` | optional read-only availability of a configured element |
 
 `StartOffFeedback=true` или `StopOffFeedback=true` отключает соответствующую кнопку
 карточки и визуально сбрасывает `IsChecked=false` без записи команды. Остальные
@@ -84,6 +90,15 @@ Direction должен соответствовать Modbus access:
 Администратор задает `Title`, `SignalId`, `Direction` и `ValueType` во вкладке
 `Карточки`; такие SignalId автоматически появляются в `SignalId ↔ Modbus`, а
 физический адрес по-прежнему задается только в `Modbus.DataMap`.
+
+`UncheckedCommand` и `CheckedCommand` обязательны для каждой карточки и имеют направление
+`ReadWrite`. Они должны использовать разные SignalId и Latched Modbus-точки.
+`ResetCommand` обязателен для TopBar-кнопки `СБРОС`, по умолчанию использует
+`system.reset` и требует `ReadWrite/Bool/Pulse`. `Enabled` всегда имеет
+направление `Read`; `false` отключает элемент, отсутствие binding/значения означает
+enabled, bad/stale означает offline. Для карточки `Enabled=false` не блокирует кнопку
+`С` при наличии связи, но инициирует один reset selector-команд:
+`CheckedCommand=false`, затем `UncheckedCommand=false`.
 
 ## Системные SignalId
 

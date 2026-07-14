@@ -452,8 +452,30 @@ public sealed class RouteMapSettingsDialogVisualTests
         var parameterButton = cardView.GetVisualDescendants()
             .OfType<Button>()
             .Single(button => button.Content?.ToString() == "Н");
+        var selectorButton = cardView.FindControl<ToggleButton>("SelectorButton")!;
         Assert.InRange(parameterButton.Bounds.Width, 39, 41);
         Assert.InRange(parameterButton.Bounds.Height, 39, 41);
+        Assert.InRange(selectorButton.Bounds.Width, 39, 41);
+        Assert.InRange(selectorButton.Bounds.Height, 39, 41);
+        Assert.True(selectorButton.Bounds.Right <= parameterButton.Bounds.Left);
+
+        cardViewModel.IsSelectorChecked = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Color.Parse("#3378D6"), Assert.IsType<SolidColorBrush>(selectorButton.Background).Color);
+
+        cardViewModel.ApplyRuntime(new RouteObjectRuntimeState(
+            card.Id,
+            RouteObjectState.Disabled,
+            card.StatusText,
+            ValueText: null,
+            IsVisible: true,
+            CanStart: false,
+            CanStop: false,
+            IsEnabled: false));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(selectorButton.IsEnabled);
+        Assert.False(parameterButton.IsEffectivelyEnabled);
+        Assert.Equal(Color.Parse("#D0D0D0"), Assert.IsType<SolidColorBrush>(selectorButton.Background).Color);
 
         var dialogViewModel = new EquipmentCardParametersDialogViewModel(card, null, dispatcher);
         var dialog = new EquipmentCardParametersDialogView { DataContext = dialogViewModel };
@@ -579,12 +601,33 @@ public sealed class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
+    public void TopBar_shows_reset_left_of_emergency_with_matching_size_and_yellow_normal_color()
+    {
+        var view = new TopBarView { DataContext = new TopBarViewModel() };
+        var window = new Window { Width = 1200, Height = 96, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var reset = view.FindControl<ToggleButton>("ResetButton")!;
+        var emergency = view.FindControl<ToggleButton>("EmergencyButton")!;
+
+        Assert.Equal("СБРОС", reset.Content);
+        Assert.InRange(reset.Bounds.Width, emergency.Bounds.Width - 1, emergency.Bounds.Width + 1);
+        Assert.InRange(reset.Bounds.Height, emergency.Bounds.Height - 1, emergency.Bounds.Height + 1);
+        Assert.True(reset.Bounds.Right <= emergency.Bounds.Left);
+        Assert.Equal(Color.Parse("#F2C94C"), Assert.IsType<SolidColorBrush>(reset.Background).Color);
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
     public void TopBar_disables_commands_but_keeps_settings_available_when_connection_is_offline()
     {
         var viewModel = new TopBarViewModel();
         viewModel.ApplyRuntime(
             isAutomaticMode: false,
             isManualMode: true,
+            isResetActive: false,
             hasEmergency: false,
             connectionStatusText: "Offline",
             isConnectionAvailable: false);
@@ -595,6 +638,7 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         Assert.False(view.FindControl<ToggleButton>("AutomaticButton")!.IsEnabled);
         Assert.False(view.FindControl<ToggleButton>("ManualButton")!.IsEnabled);
+        Assert.False(view.FindControl<ToggleButton>("ResetButton")!.IsEnabled);
         Assert.False(view.FindControl<ToggleButton>("EmergencyButton")!.IsEnabled);
 
         var settings = view.GetVisualDescendants()
@@ -602,6 +646,35 @@ public sealed class RouteMapSettingsDialogVisualTests
             .Single(button => button.Classes.Contains("settings"));
         Assert.True(settings.IsVisible);
         Assert.True(settings.IsEnabled);
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void TopBar_applies_enabled_role_per_command_and_keeps_settings_available()
+    {
+        var viewModel = new TopBarViewModel();
+        viewModel.ApplyRuntime(
+            isAutomaticMode: false,
+            isManualMode: true,
+            isResetActive: false,
+            hasEmergency: false,
+            connectionStatusText: "Online",
+            isConnectionAvailable: true,
+            isAutomaticCommandEnabled: false,
+            isManualCommandEnabled: true,
+            isResetCommandEnabled: false,
+            isEmergencyCommandEnabled: false);
+        var view = new TopBarView { DataContext = viewModel };
+        var window = new Window { Width = 1200, Height = 96, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(view.FindControl<ToggleButton>("AutomaticButton")!.IsEnabled);
+        Assert.True(view.FindControl<ToggleButton>("ManualButton")!.IsEnabled);
+        Assert.False(view.FindControl<ToggleButton>("ResetButton")!.IsEnabled);
+        Assert.False(view.FindControl<ToggleButton>("EmergencyButton")!.IsEnabled);
+        Assert.True(view.GetVisualDescendants().OfType<Button>().Single(x => x.Classes.Contains("settings")).IsEnabled);
 
         window.Close();
     }

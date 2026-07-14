@@ -174,6 +174,7 @@ public sealed class RouteMapConfigurationMapper
     {
         Automatic = ToConfiguration(topBar.Automatic),
         Manual = ToConfiguration(topBar.Manual),
+        Reset = ToConfiguration(topBar.Reset),
         Emergency = ToEmergencyConfiguration(topBar.Emergency),
     };
 
@@ -203,8 +204,13 @@ public sealed class RouteMapConfigurationMapper
         Bindings = ToButtonBindings(button),
     };
 
-    private static ObservableCollection<SignalBindingConfiguration> ToButtonBindings(RouteTopBarButtonSettings button) =>
-        new([ToConfiguration(button.Binding)]);
+    private static ObservableCollection<SignalBindingConfiguration> ToButtonBindings(RouteTopBarButtonSettings button)
+    {
+        var bindings = new List<SignalBindingConfiguration> { ToConfiguration(button.Binding) };
+        if (button.EnabledBinding is not null)
+            bindings.Add(ToConfiguration(button.EnabledBinding));
+        return new ObservableCollection<SignalBindingConfiguration>(bindings);
+    }
 
     private static RouteTopBarSettings ToModel(RouteTopBarConfiguration topBar) => new(
         ToModel(
@@ -219,6 +225,14 @@ public sealed class RouteMapConfigurationMapper
             topBar.Manual,
             SignalBindingRole.ManualModeCommand,
             "system.mode.manual",
+            offFeedbackRole: null,
+            offFeedbackSignalId: null,
+            offFeedbackEnabled: false,
+            RouteCommandButtonKind.Toggle),
+        ToModel(
+            topBar.Reset,
+            SignalBindingRole.ResetCommand,
+            "system.reset",
             offFeedbackRole: null,
             offFeedbackSignalId: null,
             offFeedbackEnabled: false,
@@ -259,6 +273,9 @@ public sealed class RouteMapConfigurationMapper
                 : offFeedbackEnabled && offFeedbackRole.HasValue && offFeedbackSignalId is not null
                     ? new SignalBinding(offFeedbackRole.Value, offFeedbackSignalId, SignalBindingDirection.Read, Configurator.Application.Services.Signals.SignalValueType.Bool)
                     : null,
+            EnabledBinding = button.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.Enabled) is { } enabled
+                ? ToModel(enabled)
+                : null,
         };
 
     private static RouteTopBarSettings CreateDefaultTopBar()

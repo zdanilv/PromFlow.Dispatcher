@@ -35,7 +35,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 11;
+    public const int CurrentSchemaVersion = 13;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();
@@ -70,7 +70,7 @@ public sealed class RouteMapPaletteConfiguration
     public string Warning { get; set; } = "#D99B22";
     public string Fault { get; set; } = "#D95D4E";
     public string Offline { get; set; } = "#3F474D";
-    public string Disabled { get; set; } = "#D8DCDF";
+    public string Disabled { get; set; } = "#3F474D";
     public string NodeFill { get; set; } = "#AEB5BA";
     public string Selection { get; set; } = "#21428E";
     public string Hover { get; set; } = "#1E6BFF";
@@ -120,6 +120,7 @@ public sealed class RouteTopBarConfiguration
 {
     public RouteTopBarButtonConfiguration Automatic { get; set; } = new();
     public RouteTopBarButtonConfiguration Manual { get; set; } = new();
+    public RouteTopBarButtonConfiguration Reset { get; set; } = new();
     public RouteTopBarEmergencyButtonConfiguration Emergency { get; set; } = new();
 
     public static RouteTopBarConfiguration CreateDefault() => new()
@@ -128,6 +129,12 @@ public sealed class RouteTopBarConfiguration
             "АВТОМАТ", SignalBindingRole.AutomaticModeCommand, "system.mode.automatic"),
         Manual = RouteTopBarButtonConfiguration.Create(
             "РУЧНОЙ", SignalBindingRole.ManualModeCommand, "system.mode.manual"),
+        Reset = RouteTopBarButtonConfiguration.Create(
+            "СБРОС", SignalBindingRole.ResetCommand, "system.reset",
+            normalBackground: "#F2C94C",
+            checkedBackground: "#B7791F",
+            pressedBackground: "#D6A800",
+            normalForeground: "#101820"),
         Emergency = RouteTopBarEmergencyButtonConfiguration.Create(
             "АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency",
             normalBackground: "#D95D4E", checkedBackground: "#9E2F25"),
@@ -151,12 +158,18 @@ public class RouteTopBarButtonConfiguration : ReactiveObject
         string signalId,
         string normalBackground = "#ECEFF1",
         string checkedBackground = "#3378D6",
-        string pressedBackground = "#949595") => new()
+        string pressedBackground = "#949595",
+        string normalForeground = "#59636E",
+        string pressedForeground = "#FFFFFF",
+        string checkedForeground = "#FFFFFF") => new()
         {
             Text = text,
             NormalBackground = normalBackground,
             PressedBackground = pressedBackground,
             CheckedBackground = checkedBackground,
+            NormalForeground = normalForeground,
+            PressedForeground = pressedForeground,
+            CheckedForeground = checkedForeground,
             Bindings = CreateButtonBindings(role, signalId),
         };
 
@@ -198,7 +211,7 @@ public sealed class RouteTopBarEmergencyButtonConfiguration : RouteTopBarButtonC
     [JsonIgnore]
     public bool IsOffFeedbackAvailable => false;
 
-    public static new RouteTopBarEmergencyButtonConfiguration Create(
+    public static RouteTopBarEmergencyButtonConfiguration Create(
         string text,
         SignalBindingRole role,
         string signalId,

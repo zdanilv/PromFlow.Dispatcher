@@ -162,6 +162,8 @@ public static class RouteMapSeed
                 new SignalBinding(SignalBindingRole.Text, $"{id}.text", SignalBindingDirection.Read, SignalValueType.UInt16),
                 new SignalBinding(SignalBindingRole.StartCommand, $"{id}.start", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
                 new SignalBinding(SignalBindingRole.StopCommand, $"{id}.stop", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+                new SignalBinding(SignalBindingRole.UncheckedCommand, $"{id}.selector.off", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+                new SignalBinding(SignalBindingRole.CheckedCommand, $"{id}.selector.on", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
             });
     }
 
@@ -195,6 +197,17 @@ public static class RouteMapSeed
         {
             Text = "РУЧНОЙ",
             Binding = new SignalBinding(SignalBindingRole.ManualModeCommand, "system.mode.manual", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+        },
+        new RouteTopBarButtonSettings
+        {
+            Text = "СБРОС",
+            NormalBackground = "#F2C94C",
+            PressedBackground = "#D6A800",
+            CheckedBackground = "#B7791F",
+            NormalForeground = "#101820",
+            PressedForeground = "#FFFFFF",
+            CheckedForeground = "#FFFFFF",
+            Binding = new SignalBinding(SignalBindingRole.ResetCommand, "system.reset", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
         },
         new RouteTopBarButtonSettings
         {

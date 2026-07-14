@@ -68,4 +68,40 @@ public sealed class RouteMapHitTesterTests
 
         Assert.Null(hit);
     }
+
+    [Fact]
+    public void HitTest_ignores_disabled_node()
+    {
+        var definition = RouteMapSeed.Create();
+        var transform = RouteMapTransform.Create(
+            definition.LogicalWidth,
+            definition.LogicalHeight,
+            1120,
+            700,
+            padding: 0);
+        var bsu1 = definition.Nodes.Single(x => x.Id == "bsu_1");
+        var runtime = RouteMapRuntimeState.Empty with
+        {
+            Objects = new Dictionary<string, RouteObjectRuntimeState>
+            {
+                [bsu1.Id] = new(
+                    bsu1.Id,
+                    RouteObjectState.Disabled,
+                    Text: null,
+                    ValueText: null,
+                    IsVisible: true,
+                    CanStart: false,
+                    CanStop: false,
+                    IsEnabled: false)
+            }
+        };
+
+        var hit = RouteMapHitTester.HitTest(
+            definition,
+            runtime,
+            transform.ToViewPoint(bsu1.X, bsu1.Y),
+            transform);
+
+        Assert.Null(hit);
+    }
 }

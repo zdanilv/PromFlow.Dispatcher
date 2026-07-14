@@ -54,7 +54,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             settingsDialogService,
             commandDispatcher,
             Definition.TopBar,
-            isSettingsVisible: applicationOptions?.Value.IsAdminMode ?? true);
+            isSettingsVisible: applicationOptions?.Value.IsAdminMode ?? true,
+            palette: Definition.Display?.Palette);
         MapEquipmentCards = new ObservableCollection<EquipmentCardViewModel>(
             Definition.MapEquipment.Select(CreateEquipmentCardViewModel));
         NotificationsPanel = notificationsPanel;
@@ -167,7 +168,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         NodeRoleStates = definition.Nodes.ToDictionary(
             x => x.Id,
             x => new RouteNodeRoleState(x.Id, x.IsLoader, x.IsTarget));
-        TopBar.ApplySettings(definition.TopBar);
+        TopBar.ApplySettings(definition.TopBar, definition.Display?.Palette);
 
         if (!ContainsRuntimeObject(definition, SelectedObjectId))
             SelectedObjectId = null;
@@ -195,9 +196,14 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         TopBar.ApplyRuntime(
             runtimeState.IsAutomaticMode,
             runtimeState.IsManualMode,
+            runtimeState.IsResetActive,
             runtimeState.HasEmergency,
             runtimeState.ConnectionStatusText,
-            runtimeState.IsConnectionAvailable);
+            runtimeState.IsConnectionAvailable,
+            runtimeState.IsAutomaticCommandEnabled,
+            runtimeState.IsManualCommandEnabled,
+            runtimeState.IsResetCommandEnabled,
+            runtimeState.IsEmergencyCommandEnabled);
         foreach (var card in MapEquipmentCards)
             card.ApplyRuntime(runtimeState.Find(card.Id));
 

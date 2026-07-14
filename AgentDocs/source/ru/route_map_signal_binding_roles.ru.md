@@ -18,6 +18,7 @@
 | `Visible` | `Read` | `Bool` | Управляет видимостью объекта на карте. |
 | `Fault` | `Read` | `Bool` | Переводит объект в аварийное состояние при `true`. |
 | `ActiveRoute` | `Read` | `Bool` | Показывает, что узел или линия входит в текущий активный маршрут. |
+| `Enabled` | `Read` | `Bool` | При `false` переводит настраиваемый элемент в Disabled; missing оставляет enabled, bad/stale дает Offline. |
 | `connection.status` | `Read` | `String` | Системный SignalId статуса общего Modbus Demo runtime, отображается в TopBar. |
 | `connection.connected` | `Read` | `Bool` | Системный флаг доступности связи; при `false` команды блокируются, узлы и линии offline. |
 
@@ -27,6 +28,7 @@
 | --- | --- | --- | --- |
 | `TargetCommand` | `ReadWrite` | `Bool` | Toggle-команда выбора узла как точки отправки. Клик пишет `true`; снятие выбора или переключение на другой узел пишет `false`. |
 | `LoaderCommand` | `ReadWrite` | `Bool` | Toggle-команда выбора узла как точки возврата/загрузки. Клик пишет `true`; снятие выбора или переключение на другой узел пишет `false`. |
+| `Enabled` | `Read` | `Bool` | Разрешает взаимодействие с конкретным узлом. |
 
 Если у узла `MenuKind = SendOnly`, используется `TargetCommand`. Если `MenuKind = SendAndReturn`, дополнительно используется `LoaderCommand`.
 
@@ -37,6 +39,7 @@
 | `Visible` | `Read` | `Bool` | Показывает или скрывает линию. |
 | `Fault` | `Read` | `Bool` | Помечает линию аварийной. |
 | `ActiveRoute` | `Read` | `Bool` | Подсвечивает линию как часть активного маршрута. |
+| `Enabled` | `Read` | `Bool` | При `false` рисует линию темно-серой в состоянии Disabled. |
 
 ## Карточки
 
@@ -48,8 +51,11 @@
 | `Fault` | `Read` | `Bool` | Помечает карточку аварийной. |
 | `StartCommand` | `ReadWrite` | `Bool` | Адрес команды `ПУСК`. |
 | `StopCommand` | `ReadWrite` | `Bool` | Адрес команды `СТОП`. |
+| `UncheckedCommand` | `ReadWrite` | `Bool` | Неактивный бит ToggleButton `С`; при выключении получает `true` после сброса `CheckedCommand=false`. |
+| `CheckedCommand` | `ReadWrite` | `Bool` | Активный бит ToggleButton `С`; при включении получает `true` после сброса `UncheckedCommand=false`. |
 | `StartOffFeedback` | `Read` | `Bool` | При `true` отключает кнопку `ПУСК` и принудительно показывает `IsChecked=false`; команду в PLC не пишет. |
 | `StopOffFeedback` | `Read` | `Bool` | При `true` отключает кнопку `СТОП` и принудительно показывает `IsChecked=false`; команду в PLC не пишет. |
+| `Enabled` | `Read` | `Bool` | При `false` отключает визуал карточки, `Н`, `ПУСК` и `СТОП`, но не кнопку `С` при наличии Modbus-связи; первый хороший `false` сбрасывает selector-команды. |
 
 Коды `Text` стандартной карточки:
 
@@ -74,9 +80,11 @@
 | --- | --- | --- | --- |
 | `AutomaticModeCommand` | `ReadWrite` | `Bool` | Команда автоматического режима. Включение автомата пишет `AutomaticModeCommand=true` и `ManualModeCommand=false`. |
 | `ManualModeCommand` | `ReadWrite` | `Bool` | Команда ручного режима. Включение ручного режима пишет `ManualModeCommand=true` и `AutomaticModeCommand=false`. |
+| `ResetCommand` | `ReadWrite` | `Bool` | Импульсная команда сброса. `СБРОС` пишет только `true`; `false` выполняет Modbus `Pulse`; default SignalId `system.reset`. |
 | `EmergencyCommand` | `ReadWrite` | `Bool` | Команда аварии. Toggle `АВАРИЯ` пишет `true` при включении и `false` при снятии галочки. |
+| `Enabled` | `Read` | `Bool` | Опционально отключает конкретную кнопку TopBar; кнопка настроек не затрагивается. |
 
-`AutomaticModeCommand`, `ManualModeCommand` и `EmergencyCommand` не используют OffFeedback-роли. `АВТОМАТ` и `РУЧНОЙ` остаются взаимоисключающими toggle-командами.
+`AutomaticModeCommand`, `ManualModeCommand`, `ResetCommand` и `EmergencyCommand` не используют OffFeedback-роли. `АВТОМАТ` и `РУЧНОЙ` остаются взаимоисключающими toggle-командами.
 
 ## Системные SignalId
 
@@ -91,5 +99,9 @@
 1. Узлы `Отправить`/`Возврат` пишут `true` при выборе роли и `false` при снятии или переключении на другой узел.
 2. Режимы `АВТОМАТ`/`РУЧНОЕ` работают взаимоисключающе: включение одного режима пишет `true` в выбранный command и `false` в противоположный.
 3. Карточные `ПУСК`/`СТОП` являются взаимоисключающими toggle-командами: включение одной сначала пишет `false` в противоположную команду, затем `true` в свою.
-4. TopBar `АВАРИЯ` является обычной toggle-командой и пишет `true/false` напрямую в `EmergencyCommand`.
+4. TopBar `СБРОС` является pulse-командой и пишет только `true` в `ResetCommand`; `АВАРИЯ` является обычной toggle-командой и пишет `true/false` напрямую в `EmergencyCommand`.
 5. Snapshot/readback, включая `StartOffFeedback`/`StopOffFeedback`, только меняет UI-состояние и не инициирует записи команд.
+6. Кнопка `С` checked только при `UncheckedCommand=false` и `CheckedCommand=true`; оба `true` имеют безопасный unchecked-приоритет.
+7. Selector-команды используют разные `ReadWrite/Bool/Latched` точки; `Pulse` недопустим.
+8. При good `Enabled=false` карточки кнопка `С` остается доступной при наличии связи и один раз пишет `CheckedCommand=false`, затем `UncheckedCommand=false`; bad/stale/missing reset-запись не инициируют.
+9. `ResetCommand` использует `ReadWrite/Bool/Pulse`; `Latched` недопустим.

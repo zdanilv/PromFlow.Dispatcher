@@ -42,7 +42,7 @@ public static class RouteMapHitTester
 
         foreach (var node in definition.Nodes)
         {
-            if (!node.IsVisible || !IsVisible(runtimeState, node.Id))
+            if (!node.IsVisible || !IsVisible(runtimeState, node.Id) || !IsEnabled(runtimeState, node.Id))
                 continue;
 
             var distance = Distance(viewPoint, transform.ToViewPoint(node.X, node.Y));
@@ -63,7 +63,7 @@ public static class RouteMapHitTester
 
         foreach (var vehicle in definition.Vehicles)
         {
-            if (!IsVisible(runtimeState, vehicle.Id))
+            if (!IsVisible(runtimeState, vehicle.Id) || !IsEnabled(runtimeState, vehicle.Id))
                 continue;
 
             var distance = Distance(logicalPoint, new Point(vehicle.X, vehicle.Y));
@@ -77,6 +77,11 @@ public static class RouteMapHitTester
     private static bool IsVisible(RouteMapRuntimeState runtimeState, string objectId)
     {
         return runtimeState.Find(objectId)?.IsVisible ?? true;
+    }
+
+    private static bool IsEnabled(RouteMapRuntimeState runtimeState, string objectId)
+    {
+        return runtimeState.Find(objectId)?.IsEnabled ?? true;
     }
 
     private static double Distance(Point a, Point b)
