@@ -35,7 +35,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 13;
+    public const int CurrentSchemaVersion = 14;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();
@@ -131,13 +131,14 @@ public sealed class RouteTopBarConfiguration
             "РУЧНОЙ", SignalBindingRole.ManualModeCommand, "system.mode.manual"),
         Reset = RouteTopBarButtonConfiguration.Create(
             "СБРОС", SignalBindingRole.ResetCommand, "system.reset",
-            normalBackground: "#F2C94C",
+            normalBackground: "#FEFFB8",
             checkedBackground: "#B7791F",
-            pressedBackground: "#D6A800",
+            pressedBackground: "#A0A300",
+            hoverBackground: "#FFFFE6",
             normalForeground: "#101820"),
         Emergency = RouteTopBarEmergencyButtonConfiguration.Create(
             "АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency",
-            normalBackground: "#D95D4E", checkedBackground: "#9E2F25"),
+            normalBackground: "#FF8A8A", checkedBackground: "#D10000", pressedBackground: "#FF0000", hoverBackground: "#FFB8B8"),
     };
 }
 
@@ -145,8 +146,9 @@ public class RouteTopBarButtonConfiguration : ReactiveObject
 {
     public string Text { get; set; } = string.Empty;
     public string NormalBackground { get; set; } = "#ECEFF1";
-    public string PressedBackground { get; set; } = "#949595";
-    public string CheckedBackground { get; set; } = "#3378D6";
+    public string HoverBackground { get; set; } = "#ECEFF1";
+    public string PressedBackground { get; set; } = "#8AB5FF";
+    public string CheckedBackground { get; set; } = "#003CA3";
     public string NormalForeground { get; set; } = "#59636E";
     public string PressedForeground { get; set; } = "#FFFFFF";
     public string CheckedForeground { get; set; } = "#FFFFFF";
@@ -157,14 +159,16 @@ public class RouteTopBarButtonConfiguration : ReactiveObject
         SignalBindingRole role,
         string signalId,
         string normalBackground = "#ECEFF1",
-        string checkedBackground = "#3378D6",
-        string pressedBackground = "#949595",
+        string checkedBackground = "#003CA3",
+        string pressedBackground = "#8AB5FF",
+        string hoverBackground = "#ECEFF1",
         string normalForeground = "#59636E",
         string pressedForeground = "#FFFFFF",
         string checkedForeground = "#FFFFFF") => new()
         {
             Text = text,
             NormalBackground = normalBackground,
+            HoverBackground = hoverBackground,
             PressedBackground = pressedBackground,
             CheckedBackground = checkedBackground,
             NormalForeground = normalForeground,
@@ -215,14 +219,16 @@ public sealed class RouteTopBarEmergencyButtonConfiguration : RouteTopBarButtonC
         string text,
         SignalBindingRole role,
         string signalId,
-        string normalBackground = "#ECEFF1",
-        string checkedBackground = "#3378D6",
-        string pressedBackground = "#949595")
+        string normalBackground = "#FF8A8A",
+        string checkedBackground = "#D10000",
+        string pressedBackground = "#FF0000",
+        string hoverBackground = "#FFB8B8")
     {
         return new()
         {
             Text = text,
             NormalBackground = normalBackground,
+            HoverBackground = hoverBackground,
             PressedBackground = pressedBackground,
             CheckedBackground = checkedBackground,
             NormalForeground = "#FFFFFF",

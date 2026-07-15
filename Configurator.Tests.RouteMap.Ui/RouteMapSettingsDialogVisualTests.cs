@@ -2,6 +2,7 @@ using System.Reactive.Linq;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -366,10 +367,12 @@ public sealed class RouteMapSettingsDialogVisualTests
             Dispatcher.UIThread.RunJobs();
 
             var panel = view.GetVisualDescendants().OfType<NotificationsPanelView>().Single();
+            var connectionStatus = view.FindControl<Border>("ConnectionStatusOverlay")!;
             var tabs = panel.GetVisualDescendants().OfType<TabControl>().Single();
             var headers = tabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString() ?? string.Empty).ToArray();
 
             Assert.True(panel.IsVisible);
+            Assert.True(connectionStatus.IsVisible);
             var notificationsWidth = panel.Bounds.Width;
             Assert.True(notificationsWidth >= 400);
             Assert.Equal(["Уведомления", "История"], headers);
@@ -417,6 +420,29 @@ public sealed class RouteMapSettingsDialogVisualTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [AvaloniaFact]
+    public void Notifications_panel_hides_history_tab_in_user_mode()
+    {
+        var journal = new RouteMapSessionJournal();
+        using var viewModel = new NotificationsPanelViewModel(
+            journal,
+            new NoOpDialogService(),
+            new NoOpBitWriter(),
+            Options.Create(new ApplicationOptions { WorkMode = ApplicationOptions.UserWorkMode }));
+        var view = new NotificationsPanelView { DataContext = viewModel };
+        var window = new Window { Width = 500, Height = 500, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var tabs = view.GetVisualDescendants().OfType<TabControl>().Single();
+        var history = tabs.Items.Cast<TabItem>().Single(item => item.Header?.ToString() == "История");
+
+        Assert.False(viewModel.IsHistoryVisible);
+        Assert.False(history.IsVisible);
+
+        window.Close();
     }
 
     [AvaloniaFact]
@@ -601,7 +627,7 @@ public sealed class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
-    public void TopBar_shows_reset_left_of_emergency_with_matching_size_and_yellow_normal_color()
+    public void TopBar_shows_reset_left_of_emergency_with_expected_layout_and_colors()
     {
         var view = new TopBarView { DataContext = new TopBarViewModel() };
         var window = new Window { Width = 1200, Height = 96, Content = view };
@@ -610,12 +636,24 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         var reset = view.FindControl<ToggleButton>("ResetButton")!;
         var emergency = view.FindControl<ToggleButton>("EmergencyButton")!;
+        var automatic = view.FindControl<ToggleButton>("AutomaticButton")!;
+        var manual = view.FindControl<ToggleButton>("ManualButton")!;
 
         Assert.Equal("СБРОС", reset.Content);
         Assert.InRange(reset.Bounds.Width, emergency.Bounds.Width - 1, emergency.Bounds.Width + 1);
         Assert.InRange(reset.Bounds.Height, emergency.Bounds.Height - 1, emergency.Bounds.Height + 1);
         Assert.True(reset.Bounds.Right <= emergency.Bounds.Left);
-        Assert.Equal(Color.Parse("#F2C94C"), Assert.IsType<SolidColorBrush>(reset.Background).Color);
+        Assert.Equal(Color.Parse("#FEFFB8"), Assert.IsType<SolidColorBrush>(reset.Background).Color);
+        Assert.Equal(Color.Parse("#FF8A8A"), Assert.IsType<SolidColorBrush>(emergency.Background).Color);
+        Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(automatic.BorderBrush).Color);
+        Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(manual.BorderBrush).Color);
+        Assert.Equal(HorizontalAlignment.Center, automatic.HorizontalContentAlignment);
+        Assert.Equal(VerticalAlignment.Center, automatic.VerticalContentAlignment);
+        Assert.Equal(HorizontalAlignment.Center, reset.HorizontalContentAlignment);
+        Assert.Equal(VerticalAlignment.Center, reset.VerticalContentAlignment);
+        var phone = view.GetVisualDescendants().OfType<TextBlock>().Single(textBlock => textBlock.Text == "8 800 700 98 82");
+        Assert.InRange(phone.Bounds.Height, 31, 33);
+        Assert.DoesNotContain("Ожидание", view.GetVisualDescendants().OfType<TextBlock>().Select(textBlock => textBlock.Text));
 
         window.Close();
     }
@@ -629,7 +667,6 @@ public sealed class RouteMapSettingsDialogVisualTests
             isManualMode: true,
             isResetActive: false,
             hasEmergency: false,
-            connectionStatusText: "Offline",
             isConnectionAvailable: false);
         var view = new TopBarView { DataContext = viewModel };
         var window = new Window { Width = 1200, Height = 96, Content = view };
@@ -659,7 +696,6 @@ public sealed class RouteMapSettingsDialogVisualTests
             isManualMode: true,
             isResetActive: false,
             hasEmergency: false,
-            connectionStatusText: "Online",
             isConnectionAvailable: true,
             isAutomaticCommandEnabled: false,
             isManualCommandEnabled: true,

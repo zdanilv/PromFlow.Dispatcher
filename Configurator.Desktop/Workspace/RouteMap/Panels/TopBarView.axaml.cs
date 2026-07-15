@@ -28,11 +28,6 @@ public partial class TopBarView : ReactiveUserControl<TopBarViewModel>
             Button_PointerCaptureLost,
             RoutingStrategies.Tunnel | RoutingStrategies.Bubble,
             handledEventsToo: true);
-        AddHandler(
-            InputElement.PointerExitedEvent,
-            Button_PointerExited,
-            RoutingStrategies.Tunnel | RoutingStrategies.Bubble,
-            handledEventsToo: true);
     }
 
     private void Button_PointerPressed(object? sender, PointerPressedEventArgs e) =>
@@ -44,10 +39,13 @@ public partial class TopBarView : ReactiveUserControl<TopBarViewModel>
     private void Button_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e) =>
         SetPressed(e.Source, pressed: false);
 
+    private void Button_PointerEntered(object? sender, PointerEventArgs e) =>
+        SetHovered(sender, hovered: true);
+
     private void Button_PointerExited(object? sender, PointerEventArgs e)
     {
-        if (e.Source is Control { Name: "AutomaticButton" or "ManualButton" or "ResetButton" or "EmergencyButton" })
-            SetPressed(e.Source, pressed: false);
+        SetPressed(sender, pressed: false);
+        SetHovered(sender, hovered: false);
     }
 
     private void SetPressed(object? source, bool pressed)
@@ -68,6 +66,22 @@ public partial class TopBarView : ReactiveUserControl<TopBarViewModel>
                 break;
             case "EmergencyButton":
                 ViewModel.SetEmergencyPressed(pressed);
+                break;
+        }
+    }
+
+    private void SetHovered(object? source, bool hovered)
+    {
+        if (ViewModel is null || FindNamedButton(source) is not { } buttonName)
+            return;
+
+        switch (buttonName)
+        {
+            case "ResetButton":
+                ViewModel.SetResetHovered(hovered);
+                break;
+            case "EmergencyButton":
+                ViewModel.SetEmergencyHovered(hovered);
                 break;
         }
     }

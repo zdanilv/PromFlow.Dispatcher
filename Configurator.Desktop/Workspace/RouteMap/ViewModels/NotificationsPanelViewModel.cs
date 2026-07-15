@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Reactive;
+using Configurator.Application.Services;
 using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Desktop.Workspace.RouteMap.Services;
+using Microsoft.Extensions.Options;
 using ReactiveUI;
 
 namespace Configurator.Desktop.Workspace.RouteMap.ViewModels;
@@ -19,11 +21,13 @@ public sealed class NotificationsPanelViewModel : ViewModelBase, IDisposable
     public NotificationsPanelViewModel(
         RouteMapSessionJournal journal,
         IDialogService dialogService,
-        IModbusBitWriter bitWriter)
+        IModbusBitWriter bitWriter,
+        IOptions<ApplicationOptions>? applicationOptions = null)
     {
         _journal = journal;
         _dialogService = dialogService;
         _bitWriter = bitWriter;
+        IsHistoryVisible = applicationOptions?.Value.IsAdminMode ?? true;
 
         Notifications = journal.Notifications;
         History = journal.History;
@@ -41,6 +45,7 @@ public sealed class NotificationsPanelViewModel : ViewModelBase, IDisposable
     public bool HasNoNotifications => !HasNotifications;
     public bool HasHistory => History.Count > 0;
     public bool HasNoHistory => !HasHistory;
+    public bool IsHistoryVisible { get; }
     public ReactiveCommand<AlarmNotificationItem, Unit> ShowNotificationCommand { get; }
     public ReactiveCommand<AlarmNotificationItem, Unit> DismissNotificationCommand { get; }
     public ReactiveCommand<Unit, Unit> ClearNotificationsCommand { get; }

@@ -11,14 +11,14 @@
              x:Class="Configurator.Desktop.Workspace.RouteMap.RouteMapDashboardView"
              x:DataType="vm:RouteMapDashboardViewModel">
     <Grid RowDefinitions="64,*"
-          Background="#F7F8F8">
+           Background="#F2F4F5">
         <panels:TopBarView Grid.Row="0"
                            DataContext="{Binding TopBar}"/>
 
         <Grid Grid.Row="1"
               ColumnDefinitions="*,Auto">
             <Grid Grid.Column="0">
-                <Border Background="#F7F8F8">
+                <Border Background="#F2F4F5">
                     <Grid>
                         <controls:RouteMapControl Definition="{Binding Definition}"
                                                   RuntimeState="{Binding RuntimeState}"
@@ -30,6 +30,21 @@
                         <panels:RouteMapAttachedCardsLayer Definition="{Binding Definition}"
                                                            Cards="{Binding MapEquipmentCards}"
                                                            ClipToBounds="False"/>
+                        <Border x:Name="ConnectionStatusOverlay"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Top"
+                                Margin="16"
+                                Padding="10,6"
+                                Background="#FFFFFF"
+                                BorderBrush="#DDE2E6"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                IsHitTestVisible="False"
+                                IsVisible="{Binding IsConnectionStatusVisible}">
+                            <TextBlock Text="{Binding ConnectionStatusText}"
+                                       Foreground="#9CA4AA"
+                                       FontSize="12"/>
+                        </Border>
                         <Border HorizontalAlignment="Right"
                                 VerticalAlignment="Bottom"
                                 Margin="0,0,335,16"

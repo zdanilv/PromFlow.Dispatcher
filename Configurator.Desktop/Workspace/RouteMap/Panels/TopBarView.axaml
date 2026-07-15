@@ -15,7 +15,10 @@
             <Setter Property="Margin" Value="4,0"/>
             <Setter Property="Background" Value="#ECEFF1"/>
             <Setter Property="Foreground" Value="#59636E"/>
-            <Setter Property="BorderBrush" Value="#D4D9DD"/>
+            <Setter Property="BorderBrush" Value="#CCD3D8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="ToggleButton.emergency">
             <Setter Property="MinWidth" Value="168"/>
@@ -24,6 +27,8 @@
             <Setter Property="Foreground" Value="#FFFFFF"/>
             <Setter Property="BorderBrush" Value="#D95D4E"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="Button.emergency">
             <Setter Property="MinWidth" Value="168"/>
@@ -32,6 +37,8 @@
             <Setter Property="Foreground" Value="#FFFFFF"/>
             <Setter Property="BorderBrush" Value="#D95D4E"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="Button.settings">
             <Setter Property="MinWidth" Value="142"/>
@@ -40,10 +47,14 @@
             <Setter Property="Foreground" Value="#4E5A65"/>
             <Setter Property="BorderBrush" Value="#CCD3D8"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
     </UserControl.Styles>
 
-    <Border Background="#F4F5F2"
+    <Border Background="#F2F4F5"
+            BorderBrush="#D8DDE1"
+            BorderThickness="0,0,0,1"
             MinHeight="64"
             Padding="16,8">
     <Grid ColumnDefinitions="Auto,Auto,*,Auto">
@@ -72,19 +83,21 @@
                           Classes="mode"
                           Content="{Binding AutomaticText}"
                           Background="{Binding AutomaticBackground}"
-                          BorderBrush="{Binding AutomaticBackground}"
                           Foreground="{Binding AutomaticForeground}"
                           IsChecked="{Binding IsAutomaticMode}"
                           IsEnabled="{Binding IsAutomaticCommandEnabled}"
+                          PointerEntered="Button_PointerEntered"
+                          PointerExited="Button_PointerExited"
                           Command="{Binding SwitchToAutomaticCommand}"/>
             <ToggleButton x:Name="ManualButton"
                           Classes="mode"
                           Content="{Binding ManualText}"
                           Background="{Binding ManualBackground}"
-                          BorderBrush="{Binding ManualBackground}"
                           Foreground="{Binding ManualForeground}"
                           IsChecked="{Binding IsManualMode}"
                           IsEnabled="{Binding IsManualCommandEnabled}"
+                          PointerEntered="Button_PointerEntered"
+                          PointerExited="Button_PointerExited"
                           Command="{Binding SwitchToManualCommand}"/>
         </StackPanel>
 
@@ -101,6 +114,8 @@
                           Foreground="{Binding ResetForeground}"
                           IsChecked="{Binding IsResetActive, Mode=OneWay}"
                           IsEnabled="{Binding IsResetCommandEnabled}"
+                          PointerEntered="Button_PointerEntered"
+                          PointerExited="Button_PointerExited"
                           Command="{Binding ResetCommand}"/>
             <ToggleButton x:Name="EmergencyButton"
                           Classes="emergency"
@@ -110,6 +125,8 @@
                           Foreground="{Binding EmergencyForeground}"
                           IsChecked="{Binding HasEmergency}"
                           IsEnabled="{Binding IsEmergencyCommandEnabled}"
+                          PointerEntered="Button_PointerEntered"
+                          PointerExited="Button_PointerExited"
                           Command="{Binding EmergencyCommand}"/>
             <Button Classes="settings"
                     Content="НАСТРОЙКИ"
@@ -117,17 +134,14 @@
                     Command="{Binding OpenSettingsCommand}"/>
         </StackPanel>
 
-        <StackPanel Grid.Column="3"
-                    VerticalAlignment="Center"
-                    Margin="16,0"
-                    Spacing="2">
-            <TextBlock Text="8 800 700 98 82"
-                       Foreground="#69747E"
-                       FontSize="13"/>
-            <TextBlock Text="{Binding ConnectionStatusText}"
-                       Foreground="#9CA4AA"
-                       FontSize="12"/>
-        </StackPanel>
+        <TextBlock Grid.Column="3"
+                   Height="32"
+                   Margin="16,0"
+                   VerticalAlignment="Center"
+                   Text="8 800 700 98 82"
+                   Foreground="#69747E"
+                   FontSize="13"
+                   TextAlignment="Center"/>
 
     </Grid>
     </Border>

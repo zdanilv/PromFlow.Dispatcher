@@ -129,8 +129,9 @@ public sealed record RouteTopBarButtonSettings
 {
     public string Text { get; init; } = string.Empty;
     public string NormalBackground { get; init; } = "#ECEFF1";
-    public string PressedBackground { get; init; } = "#949595";
-    public string CheckedBackground { get; init; } = "#3378D6";
+    public string HoverBackground { get; init; } = "#ECEFF1";
+    public string PressedBackground { get; init; } = "#8AB5FF";
+    public string CheckedBackground { get; init; } = "#003CA3";
     public string NormalForeground { get; init; } = "#59636E";
     public string PressedForeground { get; init; } = "#FFFFFF";
     public string CheckedForeground { get; init; } = "#FFFFFF";

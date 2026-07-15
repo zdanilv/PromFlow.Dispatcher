@@ -99,6 +99,11 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 13;
                     wasMigrated = true;
                     break;
+                case 13:
+                    ApplyVersion14(document);
+                    document.SchemaVersion = 14;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }
@@ -406,6 +411,71 @@ public sealed class RouteMapConfigurationMigrator
         ApplyResetDefaults(document.TopBar.Reset);
     }
 
+    private static void ApplyVersion14(RouteMapConfigurationDocument document)
+    {
+        document.TopBar ??= RouteTopBarConfiguration.CreateDefault();
+        document.TopBar.Automatic ??= RouteTopBarButtonConfiguration.Create(
+            "АВТОМАТ", SignalBindingRole.AutomaticModeCommand, "system.mode.automatic");
+        document.TopBar.Manual ??= RouteTopBarButtonConfiguration.Create(
+            "РУЧНОЙ", SignalBindingRole.ManualModeCommand, "system.mode.manual");
+        document.TopBar.Reset ??= RouteTopBarButtonConfiguration.Create(
+            "СБРОС", SignalBindingRole.ResetCommand, "system.reset",
+            normalBackground: "#FEFFB8",
+            checkedBackground: "#B7791F",
+            pressedBackground: "#A0A300",
+            hoverBackground: "#FFFFE6",
+            normalForeground: "#101820");
+        document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create(
+            "АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency");
+
+        ApplyModeButtonVersion14Defaults(document.TopBar.Automatic);
+        ApplyModeButtonVersion14Defaults(document.TopBar.Manual);
+        ApplyResetVersion14Defaults(document.TopBar.Reset);
+        ApplyEmergencyVersion14Defaults(document.TopBar.Emergency);
+    }
+
+    private static void ApplyModeButtonVersion14Defaults(RouteTopBarButtonConfiguration button)
+    {
+        if (string.IsNullOrWhiteSpace(button.PressedBackground) ||
+            string.Equals(button.PressedBackground, "#949595", StringComparison.OrdinalIgnoreCase))
+            button.PressedBackground = "#8AB5FF";
+        if (string.IsNullOrWhiteSpace(button.CheckedBackground) ||
+            string.Equals(button.CheckedBackground, "#3378D6", StringComparison.OrdinalIgnoreCase))
+            button.CheckedBackground = "#003CA3";
+
+        // Hover was not configurable before schema v14; preserve the former appearance.
+        button.HoverBackground = button.NormalBackground;
+    }
+
+    private static void ApplyResetVersion14Defaults(RouteTopBarButtonConfiguration reset)
+    {
+        if (string.IsNullOrWhiteSpace(reset.NormalBackground) ||
+            string.Equals(reset.NormalBackground, "#ECEFF1", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(reset.NormalBackground, "#F2C94C", StringComparison.OrdinalIgnoreCase))
+            reset.NormalBackground = "#FEFFB8";
+        if (string.IsNullOrWhiteSpace(reset.PressedBackground) ||
+            string.Equals(reset.PressedBackground, "#949595", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(reset.PressedBackground, "#D6A800", StringComparison.OrdinalIgnoreCase))
+            reset.PressedBackground = "#A0A300";
+
+        reset.HoverBackground = "#FFFFE6";
+    }
+
+    private static void ApplyEmergencyVersion14Defaults(RouteTopBarEmergencyButtonConfiguration emergency)
+    {
+        if (IsDefaultEmergencyNormal(emergency.NormalBackground) ||
+            string.Equals(emergency.NormalBackground, "#ECEFF1", StringComparison.OrdinalIgnoreCase))
+            emergency.NormalBackground = "#FF8A8A";
+        if (string.IsNullOrWhiteSpace(emergency.PressedBackground) ||
+            string.Equals(emergency.PressedBackground, "#949595", StringComparison.OrdinalIgnoreCase))
+            emergency.PressedBackground = "#FF0000";
+        if (IsDefaultEmergencyChecked(emergency.CheckedBackground) ||
+            string.Equals(emergency.CheckedBackground, "#3378D6", StringComparison.OrdinalIgnoreCase))
+            emergency.CheckedBackground = "#D10000";
+
+        emergency.HoverBackground = "#FFB8B8";
+    }
+
     private static void ApplyButtonStateDefaults(RouteTopBarButtonConfiguration button)
     {
         if (string.IsNullOrWhiteSpace(button.PressedBackground))
@@ -436,10 +506,12 @@ public sealed class RouteMapConfigurationMigrator
             string.Equals(reset.NormalBackground, "#ECEFF1", StringComparison.OrdinalIgnoreCase))
             reset.NormalBackground = "#F2C94C";
         if (string.IsNullOrWhiteSpace(reset.PressedBackground) ||
-            string.Equals(reset.PressedBackground, "#949595", StringComparison.OrdinalIgnoreCase))
+            string.Equals(reset.PressedBackground, "#949595", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(reset.PressedBackground, "#8AB5FF", StringComparison.OrdinalIgnoreCase))
             reset.PressedBackground = "#D6A800";
         if (string.IsNullOrWhiteSpace(reset.CheckedBackground) ||
-            string.Equals(reset.CheckedBackground, "#3378D6", StringComparison.OrdinalIgnoreCase))
+            string.Equals(reset.CheckedBackground, "#3378D6", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(reset.CheckedBackground, "#003CA3", StringComparison.OrdinalIgnoreCase))
             reset.CheckedBackground = "#B7791F";
         if (string.IsNullOrWhiteSpace(reset.NormalForeground) ||
             string.Equals(reset.NormalForeground, "#59636E", StringComparison.OrdinalIgnoreCase))

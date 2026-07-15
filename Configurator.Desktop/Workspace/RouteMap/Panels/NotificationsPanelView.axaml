@@ -135,7 +135,8 @@
                 </Grid>
             </TabItem>
 
-            <TabItem Header="История">
+            <TabItem Header="История"
+                     IsVisible="{Binding IsHistoryVisible}">
                 <Grid RowDefinitions="*">
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                                   VerticalScrollBarVisibility="Auto"

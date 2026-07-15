@@ -397,6 +397,7 @@ public sealed class RouteMapConfigurationValidator
             Add(errors, "topBar", id, nameof(button.Text), "Текст кнопки обязателен.");
         ValidateColors(errors, "topBar", id,
             (nameof(button.NormalBackground), button.NormalBackground),
+            (nameof(button.HoverBackground), button.HoverBackground),
             (nameof(button.PressedBackground), button.PressedBackground),
             (nameof(button.CheckedBackground), button.CheckedBackground),
             (nameof(button.NormalForeground), button.NormalForeground),

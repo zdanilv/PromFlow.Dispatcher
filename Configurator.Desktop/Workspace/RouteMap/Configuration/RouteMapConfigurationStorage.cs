@@ -136,9 +136,10 @@ public sealed class RouteMapConfigurationStorage
             "СБРОС",
             SignalBindingRole.ResetCommand,
             "system.reset",
-            normalBackground: "#F2C94C",
+            normalBackground: "#FEFFB8",
             checkedBackground: "#B7791F",
-            pressedBackground: "#D6A800",
+            pressedBackground: "#A0A300",
+            hoverBackground: "#FFFFE6",
             normalForeground: "#101820");
         document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create("АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency");
         document.TopBar.Automatic.Bindings ??= [];

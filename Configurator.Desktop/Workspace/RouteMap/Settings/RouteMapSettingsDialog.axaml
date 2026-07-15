@@ -119,6 +119,7 @@
                   <UniformGrid Columns="3">
                     <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Text}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный фон"/><TextBox Classes="form" Text="{Binding NormalBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Наведение фон"/><TextBox Classes="form" Text="{Binding HoverBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Pressed фон"/><TextBox Classes="form" Text="{Binding PressedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный фон"/><TextBox Classes="form" Text="{Binding CheckedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный текст"/><TextBox Classes="form" Text="{Binding NormalForeground}"/></StackPanel>
@@ -138,6 +139,7 @@
                   <UniformGrid Columns="3">
                     <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Text}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный фон"/><TextBox Classes="form" Text="{Binding NormalBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Наведение фон"/><TextBox Classes="form" Text="{Binding HoverBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Pressed фон"/><TextBox Classes="form" Text="{Binding PressedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный фон"/><TextBox Classes="form" Text="{Binding CheckedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный текст"/><TextBox Classes="form" Text="{Binding NormalForeground}"/></StackPanel>
@@ -157,6 +159,7 @@
                   <UniformGrid Columns="3">
                     <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Text}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный фон"/><TextBox Classes="form" Text="{Binding NormalBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Наведение фон"/><TextBox Classes="form" Text="{Binding HoverBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Pressed фон"/><TextBox Classes="form" Text="{Binding PressedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный фон"/><TextBox Classes="form" Text="{Binding CheckedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный текст"/><TextBox Classes="form" Text="{Binding NormalForeground}"/></StackPanel>
@@ -176,6 +179,7 @@
                   <UniformGrid Columns="3">
                     <StackPanel><TextBlock Classes="label" Text="Текст"/><TextBox Classes="form" Text="{Binding Text}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный фон"/><TextBox Classes="form" Text="{Binding NormalBackground}"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Наведение фон"/><TextBox Classes="form" Text="{Binding HoverBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Pressed фон"/><TextBox Classes="form" Text="{Binding PressedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Активный фон"/><TextBox Classes="form" Text="{Binding CheckedBackground}"/></StackPanel>
                     <StackPanel><TextBlock Classes="label" Text="Обычный текст"/><TextBox Classes="form" Text="{Binding NormalForeground}"/></StackPanel>

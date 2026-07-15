@@ -20,11 +20,12 @@ public sealed class TopBarViewModel : ViewModelBase
     private bool _isManualPressed;
     private bool _isResetPressed;
     private bool _isEmergencyPressed;
+    private bool _isResetHovered;
+    private bool _isEmergencyHovered;
     private bool _isAutomaticCommandEnabled = true;
     private bool _isManualCommandEnabled = true;
     private bool _isResetCommandEnabled = true;
     private bool _isEmergencyCommandEnabled = true;
-    private string _connectionStatusText = "Ожидание";
 
     public TopBarViewModel(
         IRouteMapSettingsDialogService? settingsDialogService = null,
@@ -70,12 +71,6 @@ public sealed class TopBarViewModel : ViewModelBase
         private set => this.RaiseAndSetIfChanged(ref _isResetActive, value);
     }
 
-    public string ConnectionStatusText
-    {
-        get => _connectionStatusText;
-        private set => this.RaiseAndSetIfChanged(ref _connectionStatusText, value);
-    }
-
     public bool IsAutomaticCommandEnabled
     {
         get => _isAutomaticCommandEnabled;
@@ -109,14 +104,14 @@ public sealed class TopBarViewModel : ViewModelBase
     public string ManualText => _settings.Manual.Text;
     public string ResetText => _settings.Reset.Text;
     public string EmergencyText => _settings.Emergency.Text;
-    public IBrush AutomaticBackground => CommandBrush(_settings.Automatic, IsAutomaticMode, _isAutomaticPressed, IsAutomaticCommandEnabled, foreground: false);
-    public IBrush AutomaticForeground => CommandBrush(_settings.Automatic, IsAutomaticMode, _isAutomaticPressed, IsAutomaticCommandEnabled, foreground: true);
-    public IBrush ManualBackground => CommandBrush(_settings.Manual, IsManualMode, _isManualPressed, IsManualCommandEnabled, foreground: false);
-    public IBrush ManualForeground => CommandBrush(_settings.Manual, IsManualMode, _isManualPressed, IsManualCommandEnabled, foreground: true);
-    public IBrush ResetBackground => CommandBrush(_settings.Reset, IsResetActive, _isResetPressed, IsResetCommandEnabled, foreground: false);
-    public IBrush ResetForeground => CommandBrush(_settings.Reset, IsResetActive, _isResetPressed, IsResetCommandEnabled, foreground: true);
-    public IBrush EmergencyBackground => CommandBrush(_settings.Emergency, HasEmergency, _isEmergencyPressed, IsEmergencyCommandEnabled, foreground: false);
-    public IBrush EmergencyForeground => CommandBrush(_settings.Emergency, HasEmergency, _isEmergencyPressed, IsEmergencyCommandEnabled, foreground: true);
+    public IBrush AutomaticBackground => CommandBrush(_settings.Automatic, IsAutomaticMode, _isAutomaticPressed, isHovered: false, IsAutomaticCommandEnabled, foreground: false);
+    public IBrush AutomaticForeground => CommandBrush(_settings.Automatic, IsAutomaticMode, _isAutomaticPressed, isHovered: false, IsAutomaticCommandEnabled, foreground: true);
+    public IBrush ManualBackground => CommandBrush(_settings.Manual, IsManualMode, _isManualPressed, isHovered: false, IsManualCommandEnabled, foreground: false);
+    public IBrush ManualForeground => CommandBrush(_settings.Manual, IsManualMode, _isManualPressed, isHovered: false, IsManualCommandEnabled, foreground: true);
+    public IBrush ResetBackground => CommandBrush(_settings.Reset, IsResetActive, _isResetPressed, _isResetHovered, IsResetCommandEnabled, foreground: false);
+    public IBrush ResetForeground => CommandBrush(_settings.Reset, IsResetActive, _isResetPressed, _isResetHovered, IsResetCommandEnabled, foreground: true);
+    public IBrush EmergencyBackground => CommandBrush(_settings.Emergency, HasEmergency, _isEmergencyPressed, _isEmergencyHovered, IsEmergencyCommandEnabled, foreground: false);
+    public IBrush EmergencyForeground => CommandBrush(_settings.Emergency, HasEmergency, _isEmergencyPressed, _isEmergencyHovered, IsEmergencyCommandEnabled, foreground: true);
 
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SwitchToAutomaticCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> SwitchToManualCommand { get; }
@@ -137,7 +132,6 @@ public sealed class TopBarViewModel : ViewModelBase
         bool isManualMode,
         bool isResetActive,
         bool hasEmergency,
-        string connectionStatusText,
         bool isConnectionAvailable,
         bool isAutomaticCommandEnabled = true,
         bool isManualCommandEnabled = true,
@@ -148,7 +142,6 @@ public sealed class TopBarViewModel : ViewModelBase
         IsManualMode = isManualMode;
         IsResetActive = isResetActive;
         HasEmergency = hasEmergency;
-        ConnectionStatusText = connectionStatusText;
         IsAutomaticCommandEnabled = isConnectionAvailable && isAutomaticCommandEnabled;
         IsManualCommandEnabled = isConnectionAvailable && isManualCommandEnabled;
         IsResetCommandEnabled = isConnectionAvailable && isResetCommandEnabled;
@@ -195,6 +188,26 @@ public sealed class TopBarViewModel : ViewModelBase
         _isResetPressed = isPressed;
         this.RaisePropertyChanged(nameof(ResetBackground));
         this.RaisePropertyChanged(nameof(ResetForeground));
+    }
+
+    public void SetResetHovered(bool isHovered)
+    {
+        if (_isResetHovered == isHovered)
+            return;
+
+        _isResetHovered = isHovered;
+        this.RaisePropertyChanged(nameof(ResetBackground));
+        this.RaisePropertyChanged(nameof(ResetForeground));
+    }
+
+    public void SetEmergencyHovered(bool isHovered)
+    {
+        if (_isEmergencyHovered == isHovered)
+            return;
+
+        _isEmergencyHovered = isHovered;
+        this.RaisePropertyChanged(nameof(EmergencyBackground));
+        this.RaisePropertyChanged(nameof(EmergencyForeground));
     }
 
     private async Task SwitchToAutomaticAsync()
@@ -272,19 +285,20 @@ public sealed class TopBarViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(EmergencyForeground));
     }
 
-    private static IBrush ButtonBrush(RouteTopBarButtonSettings button, bool isChecked, bool isPressed, bool foreground) =>
+    private static IBrush ButtonBrush(RouteTopBarButtonSettings button, bool isChecked, bool isPressed, bool isHovered, bool foreground) =>
         RouteMapPalette.Brush(foreground
             ? isPressed ? button.PressedForeground : isChecked ? button.CheckedForeground : button.NormalForeground
-            : isPressed ? button.PressedBackground : isChecked ? button.CheckedBackground : button.NormalBackground);
+            : isPressed ? button.PressedBackground : isChecked ? button.CheckedBackground : isHovered ? button.HoverBackground : button.NormalBackground);
 
     private IBrush CommandBrush(
         RouteTopBarButtonSettings button,
         bool isChecked,
         bool isPressed,
+        bool isHovered,
         bool isEnabled,
         bool foreground) =>
         isEnabled
-            ? ButtonBrush(button, isChecked, isPressed, foreground)
+            ? ButtonBrush(button, isChecked, isPressed, isHovered, foreground)
             : RouteMapPalette.Brush(foreground ? "#FFFFFF" : _disabledColor);
 
     private static RouteTopBarSettings CreateDefaultSettings() =>

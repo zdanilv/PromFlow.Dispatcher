@@ -29,6 +29,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private IReadOnlyDictionary<string, SignalValue>? _lastSignals;
     private string? _selectedObjectId;
     private string? _commandErrorMessage;
+    private string _connectionStatusText = "Ожидание";
 
     public RouteMapDashboardViewModel(
         RouteMapConfigurationManager configurationManager,
@@ -50,6 +51,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         _modbusOptions = modbusOptions;
         _cardParametersDialogService = cardParametersDialogService;
         _definition = configurationManager.CurrentDefinition;
+        IsConnectionStatusVisible = applicationOptions?.Value.IsAdminMode ?? true;
         TopBar = new TopBarViewModel(
             settingsDialogService,
             commandDispatcher,
@@ -96,6 +98,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     public TopBarViewModel TopBar { get; }
     public ObservableCollection<EquipmentCardViewModel> MapEquipmentCards { get; }
     public NotificationsPanelViewModel NotificationsPanel { get; }
+    public bool IsConnectionStatusVisible { get; }
     public ReactiveCommand<string, System.Reactive.Unit> ToggleNodeTargetCommand { get; }
     public ReactiveCommand<string, System.Reactive.Unit> ToggleNodeLoaderCommand { get; }
 
@@ -132,6 +135,12 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     }
 
     public bool HasCommandError => !string.IsNullOrWhiteSpace(CommandErrorMessage);
+
+    public string ConnectionStatusText
+    {
+        get => _connectionStatusText;
+        private set => this.RaiseAndSetIfChanged(ref _connectionStatusText, value);
+    }
 
     public string SelectedObjectTitle
     {
@@ -193,12 +202,13 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private void ApplyRuntime(RouteMapRuntimeState runtimeState)
     {
         RuntimeState = runtimeState;
+        if (IsConnectionStatusVisible)
+            ConnectionStatusText = runtimeState.ConnectionStatusText;
         TopBar.ApplyRuntime(
             runtimeState.IsAutomaticMode,
             runtimeState.IsManualMode,
             runtimeState.IsResetActive,
             runtimeState.HasEmergency,
-            runtimeState.ConnectionStatusText,
             runtimeState.IsConnectionAvailable,
             runtimeState.IsAutomaticCommandEnabled,
             runtimeState.IsManualCommandEnabled,

@@ -182,6 +182,7 @@ public sealed class RouteMapConfigurationMapper
     {
         Text = button.Text,
         NormalBackground = button.NormalBackground,
+        HoverBackground = button.HoverBackground,
         PressedBackground = button.PressedBackground,
         CheckedBackground = button.CheckedBackground,
         NormalForeground = button.NormalForeground,
@@ -194,6 +195,7 @@ public sealed class RouteMapConfigurationMapper
     {
         Text = button.Text,
         NormalBackground = button.NormalBackground,
+        HoverBackground = button.HoverBackground,
         PressedBackground = button.PressedBackground,
         CheckedBackground = button.CheckedBackground,
         NormalForeground = button.NormalForeground,
@@ -257,6 +259,7 @@ public sealed class RouteMapConfigurationMapper
         {
             Text = button.Text,
             NormalBackground = button.NormalBackground,
+            HoverBackground = button.HoverBackground,
             PressedBackground = button.PressedBackground,
             CheckedBackground = button.CheckedBackground,
             NormalForeground = button.NormalForeground,
