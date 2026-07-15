@@ -1,4 +1,5 @@
 using System.Reactive.Linq;
+using System.Text.Json.Nodes;
 using Avalonia.Media;
 using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
@@ -161,8 +162,6 @@ public sealed class RouteMapConfigurationTests
         Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, result.Document.SchemaVersion);
         var reset = Assert.Single(result.Document.TopBar.Reset.Bindings, x => x.Role == SignalBindingRole.ResetCommand);
         Assert.Equal("system.reset", reset.SignalId);
-        Assert.Equal("#FEFFB8", result.Document.TopBar.Reset.NormalBackground);
-        Assert.Equal("#FFFFE6", result.Document.TopBar.Reset.HoverBackground);
         Assert.Equal("#3F474D", result.Document.Map.Palette.Disabled);
         Assert.All(result.Document.Cards, card =>
         {
@@ -182,7 +181,7 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Migrator_v12_to_current_adds_reset_top_bar_button_and_latest_visual_defaults()
+    public void Migrator_v12_to_current_adds_reset_top_bar_button()
     {
         using var scope = new TempConfigurationScope();
         var document = scope.Mapper.CreateSeedDocument();
@@ -194,10 +193,6 @@ public sealed class RouteMapConfigurationTests
         Assert.True(result.WasMigrated);
         Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, result.Document.SchemaVersion);
         Assert.Equal("СБРОС", result.Document.TopBar.Reset.Text);
-        Assert.Equal("#FEFFB8", result.Document.TopBar.Reset.NormalBackground);
-        Assert.Equal("#FFFFE6", result.Document.TopBar.Reset.HoverBackground);
-        Assert.Equal("#A0A300", result.Document.TopBar.Reset.PressedBackground);
-        Assert.Equal("#B7791F", result.Document.TopBar.Reset.CheckedBackground);
         var binding = Assert.Single(result.Document.TopBar.Reset.Bindings, x => x.Role == SignalBindingRole.ResetCommand);
         Assert.Equal("system.reset", binding.SignalId);
         Assert.Equal(SignalBindingDirection.ReadWrite, binding.Direction);
@@ -205,39 +200,32 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Migrator_v13_to_v14_updates_standard_top_bar_colors_and_preserves_custom_colors()
+    public async Task Manager_migrates_v14_document_and_removes_legacy_button_color_fields()
     {
         using var scope = new TempConfigurationScope();
         var document = scope.Mapper.CreateSeedDocument();
-        document.SchemaVersion = 13;
-        document.TopBar.Automatic.PressedBackground = "#949595";
-        document.TopBar.Automatic.CheckedBackground = "#3378D6";
-        document.TopBar.Manual.PressedBackground = "#123456";
-        document.TopBar.Manual.CheckedBackground = "#654321";
-        document.TopBar.Manual.NormalBackground = "#224466";
-        document.TopBar.Reset.NormalBackground = "#F2C94C";
-        document.TopBar.Reset.PressedBackground = "#D6A800";
-        document.TopBar.Emergency.NormalBackground = "#D95D4E";
-        document.TopBar.Emergency.PressedBackground = "#949595";
-        document.TopBar.Emergency.CheckedBackground = "#9E2F25";
+        document.TopBar.Automatic.Bindings.Single(x => x.Role == SignalBindingRole.AutomaticModeCommand).SignalId = "custom.auto";
+        await scope.Storage.SaveActiveAsync(document);
 
-        var result = new RouteMapConfigurationMigrator().Migrate(document);
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!.AsObject();
+        json["schemaVersion"] = 14;
+        json["topBar"]!["automatic"]!["normalBackground"] = "#123456";
+        json["topBar"]!["emergency"]!["checkedForeground"] = "#654321";
+        json["cards"]![0]!["style"]!["startColor"] = "#ABCDEF";
+        json["cards"]![0]!["style"]!["stopPressedForegroundColor"] = "#FEDCBA";
+        await File.WriteAllTextAsync(scope.Path, json.ToJsonString());
 
-        Assert.True(result.WasMigrated);
-        Assert.Equal(14, result.Document.SchemaVersion);
-        Assert.Equal("#8AB5FF", result.Document.TopBar.Automatic.PressedBackground);
-        Assert.Equal("#003CA3", result.Document.TopBar.Automatic.CheckedBackground);
-        Assert.Equal(result.Document.TopBar.Automatic.NormalBackground, result.Document.TopBar.Automatic.HoverBackground);
-        Assert.Equal("#123456", result.Document.TopBar.Manual.PressedBackground);
-        Assert.Equal("#654321", result.Document.TopBar.Manual.CheckedBackground);
-        Assert.Equal("#224466", result.Document.TopBar.Manual.HoverBackground);
-        Assert.Equal("#FEFFB8", result.Document.TopBar.Reset.NormalBackground);
-        Assert.Equal("#FFFFE6", result.Document.TopBar.Reset.HoverBackground);
-        Assert.Equal("#A0A300", result.Document.TopBar.Reset.PressedBackground);
-        Assert.Equal("#FF8A8A", result.Document.TopBar.Emergency.NormalBackground);
-        Assert.Equal("#FFB8B8", result.Document.TopBar.Emergency.HoverBackground);
-        Assert.Equal("#FF0000", result.Document.TopBar.Emergency.PressedBackground);
-        Assert.Equal("#D10000", result.Document.TopBar.Emergency.CheckedBackground);
+        using var manager = scope.CreateManager();
+
+        Assert.Null(manager.LastLoadError);
+        Assert.Equal(15, manager.CurrentDocument.SchemaVersion);
+        Assert.Equal("custom.auto", manager.CurrentDocument.TopBar.Automatic.Bindings.Single(x => x.Role == SignalBindingRole.AutomaticModeCommand).SignalId);
+
+        var persisted = await File.ReadAllTextAsync(scope.Path);
+        Assert.False(persisted.Contains("normalBackground", StringComparison.Ordinal));
+        Assert.False(persisted.Contains("checkedForeground", StringComparison.Ordinal));
+        Assert.False(persisted.Contains("startColor", StringComparison.Ordinal));
+        Assert.False(persisted.Contains("stopPressedForegroundColor", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -691,16 +679,24 @@ public sealed class RouteMapConfigurationTests
     {
         var viewModel = new TopBarViewModel(settingsDialogService: null, settings: RouteMapSeed.Create().TopBar);
 
+        Assert.Equal(Color.Parse("#ECEFF1"), BrushColor(viewModel.AutomaticBackground));
         Assert.Equal(Color.Parse("#FF8A8A"), BrushColor(viewModel.EmergencyBackground));
+        Assert.Equal(Color.Parse("#101820"), BrushColor(viewModel.EmergencyForeground));
 
         viewModel.ApplyRuntime(
-            isAutomaticMode: false,
-            isManualMode: true,
+            isAutomaticMode: true,
+            isManualMode: false,
             isResetActive: false,
             hasEmergency: true,
             isConnectionAvailable: true);
 
+        Assert.Equal(Color.Parse("#003CA3"), BrushColor(viewModel.AutomaticBackground));
+        Assert.Equal(Color.Parse("#FFFFFF"), BrushColor(viewModel.AutomaticForeground));
         Assert.Equal(Color.Parse("#D10000"), BrushColor(viewModel.EmergencyBackground));
+
+        viewModel.SetAutomaticPressed(true);
+        Assert.Equal(Color.Parse("#8AB5FF"), BrushColor(viewModel.AutomaticBackground));
+        Assert.Equal(Color.Parse("#FFFFFF"), BrushColor(viewModel.AutomaticForeground));
 
         viewModel.SetEmergencyPressed(true);
 
@@ -721,8 +717,13 @@ public sealed class RouteMapConfigurationTests
         viewModel.SetResetHovered(true);
         Assert.Equal(Color.Parse("#FFFFE6"), BrushColor(viewModel.ResetBackground));
 
+        viewModel.SetResetPressed(true);
+        Assert.Equal(Color.Parse("#A0A300"), BrushColor(viewModel.ResetBackground));
+        Assert.Equal(Color.Parse("#FFFFFF"), BrushColor(viewModel.ResetForeground));
+
         viewModel.SetEmergencyHovered(true);
         Assert.Equal(Color.Parse("#FFB8B8"), BrushColor(viewModel.EmergencyBackground));
+        Assert.Equal(Color.Parse("#101820"), BrushColor(viewModel.EmergencyForeground));
 
         viewModel.SetEmergencyPressed(true);
         Assert.Equal(Color.Parse("#FF0000"), BrushColor(viewModel.EmergencyBackground));
@@ -885,32 +886,17 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Migrator_v9_to_v10_adds_fragment_bindings_and_button_state_defaults()
+    public void Migrator_v9_to_current_adds_fragment_bindings()
     {
         using var scope = new TempConfigurationScope();
         var document = scope.Mapper.CreateSeedDocument();
         document.SchemaVersion = 9;
-        document.TopBar.Automatic.CheckedBackground = "#123456";
-        document.TopBar.Emergency.NormalBackground = "#D87868";
-        document.TopBar.Emergency.CheckedBackground = "#C83F30";
-        var card = document.Cards.Single();
-        card.Style.StartCheckedColor = "#0078D4";
-        card.Style.StopCheckedColor = "#0078D4";
         foreach (var segment in document.Segments)
             segment.ActiveFragments.Clear();
 
         var result = new RouteMapConfigurationMigrator().Migrate(document);
 
         Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, result.Document.SchemaVersion);
-        Assert.Equal("#123456", result.Document.TopBar.Automatic.CheckedBackground);
-        Assert.Equal("#8AB5FF", result.Document.TopBar.Automatic.PressedBackground);
-        Assert.Equal("#FF8A8A", result.Document.TopBar.Emergency.NormalBackground);
-        Assert.Equal("#FF0000", result.Document.TopBar.Emergency.PressedBackground);
-        Assert.Equal("#D10000", result.Document.TopBar.Emergency.CheckedBackground);
-        Assert.Equal("#3A9D5D", card.Style.StartCheckedColor);
-        Assert.Equal("#9E2F25", card.Style.StopCheckedColor);
-        Assert.Equal("#949595", card.Style.StartPressedColor);
-        Assert.Equal("#949595", card.Style.StopPressedColor);
         Assert.Equal(
             Enumerable.Range(1, 3).Select(index => $"route.bsu2_to_bucket.fragment_{index}.active"),
             result.Document.Segments.Single(x => x.Id == "bsu2_to_bucket").ActiveFragments.Select(fragment => fragment.Binding.SignalId));

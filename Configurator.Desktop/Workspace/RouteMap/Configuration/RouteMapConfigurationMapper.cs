@@ -181,26 +181,12 @@ public sealed class RouteMapConfigurationMapper
     private static RouteTopBarButtonConfiguration ToConfiguration(RouteTopBarButtonSettings button) => new()
     {
         Text = button.Text,
-        NormalBackground = button.NormalBackground,
-        HoverBackground = button.HoverBackground,
-        PressedBackground = button.PressedBackground,
-        CheckedBackground = button.CheckedBackground,
-        NormalForeground = button.NormalForeground,
-        PressedForeground = button.PressedForeground,
-        CheckedForeground = button.CheckedForeground,
         Bindings = ToButtonBindings(button),
     };
 
     private static RouteTopBarEmergencyButtonConfiguration ToEmergencyConfiguration(RouteTopBarButtonSettings button) => new()
     {
         Text = button.Text,
-        NormalBackground = button.NormalBackground,
-        HoverBackground = button.HoverBackground,
-        PressedBackground = button.PressedBackground,
-        CheckedBackground = button.CheckedBackground,
-        NormalForeground = button.NormalForeground,
-        PressedForeground = button.PressedForeground,
-        CheckedForeground = button.CheckedForeground,
         ButtonKind = RouteCommandButtonKind.Toggle,
         OffFeedbackEnabled = false,
         Bindings = ToButtonBindings(button),
@@ -258,13 +244,6 @@ public sealed class RouteMapConfigurationMapper
         RouteCommandButtonKind buttonKind) => new()
         {
             Text = button.Text,
-            NormalBackground = button.NormalBackground,
-            HoverBackground = button.HoverBackground,
-            PressedBackground = button.PressedBackground,
-            CheckedBackground = button.CheckedBackground,
-            NormalForeground = button.NormalForeground,
-            PressedForeground = button.PressedForeground,
-            CheckedForeground = button.CheckedForeground,
             ButtonKind = buttonKind,
             OffFeedbackEnabled = offFeedbackEnabled,
             Binding = button.Bindings.FirstOrDefault(x => x.Role == role) is { } binding
@@ -478,18 +457,6 @@ public sealed class RouteMapConfigurationMapper
             StopText = style.StopText,
             SendPrefix = style.SendPrefix,
             ReturnPrefix = style.ReturnPrefix,
-            StartColor = style.StartColor,
-            StartPressedColor = style.StartPressedColor,
-            StartCheckedColor = style.StartCheckedColor,
-            StartForegroundColor = style.StartForegroundColor,
-            StartPressedForegroundColor = style.StartPressedForegroundColor,
-            StartCheckedForegroundColor = style.StartCheckedForegroundColor,
-            StopColor = style.StopColor,
-            StopPressedColor = style.StopPressedColor,
-            StopCheckedColor = style.StopCheckedColor,
-            StopForegroundColor = style.StopForegroundColor,
-            StopPressedForegroundColor = style.StopPressedForegroundColor,
-            StopCheckedForegroundColor = style.StopCheckedForegroundColor,
         };
     }
 
@@ -516,18 +483,6 @@ public sealed class RouteMapConfigurationMapper
             StopText = style.StopText,
             SendPrefix = style.SendPrefix,
             ReturnPrefix = style.ReturnPrefix,
-            StartColor = style.StartColor,
-            StartPressedColor = style.StartPressedColor,
-            StartCheckedColor = style.StartCheckedColor,
-            StartForegroundColor = style.StartForegroundColor,
-            StartPressedForegroundColor = style.StartPressedForegroundColor,
-            StartCheckedForegroundColor = style.StartCheckedForegroundColor,
-            StopColor = style.StopColor,
-            StopPressedColor = style.StopPressedColor,
-            StopCheckedColor = style.StopCheckedColor,
-            StopForegroundColor = style.StopForegroundColor,
-            StopPressedForegroundColor = style.StopPressedForegroundColor,
-            StopCheckedForegroundColor = style.StopCheckedForegroundColor,
         };
     }
 

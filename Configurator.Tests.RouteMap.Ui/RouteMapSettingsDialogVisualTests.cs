@@ -1,5 +1,7 @@
 using System.Reactive.Linq;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Layout;
@@ -73,17 +75,12 @@ public sealed class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaTheory]
-    [InlineData(2, "Обычный фон")]
-    [InlineData(2, "Pressed фон")]
-    [InlineData(2, "Pressed текст")]
     [InlineData(3, "Положение подписи")]
     [InlineData(3, "Цвет сигнального контура")]
     [InlineData(3, "Толщина сигнального контура")]
     [InlineData(4, "Зазор от узлов")]
     [InlineData(4, "Края линии")]
     [InlineData(4, "Отрезки")]
-    [InlineData(5, "ПУСК pressed текст")]
-    [InlineData(5, "СТОП checked текст")]
     public void New_visual_properties_are_present_in_settings_tabs(int tabIndex, string label)
     {
         using var fixture = new DialogFixture(1320, 780);
@@ -95,6 +92,26 @@ public sealed class RouteMapSettingsDialogVisualTests
             .ToArray();
 
         Assert.Contains(label, labels);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(2, "Обычный фон")]
+    [InlineData(2, "Pressed фон")]
+    [InlineData(2, "Активный фон")]
+    [InlineData(2, "Pressed текст")]
+    [InlineData(5, "ПУСК фон")]
+    [InlineData(5, "СТОП checked текст")]
+    public void Button_color_properties_are_not_present_in_settings_tabs(int tabIndex, string label)
+    {
+        using var fixture = new DialogFixture(1320, 780);
+        fixture.SelectTab(tabIndex);
+
+        var labels = fixture.Dialog.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .Select(x => x.Text)
+            .ToArray();
+
+        Assert.DoesNotContain(label, labels);
     }
 
     [AvaloniaFact]
@@ -479,11 +496,23 @@ public sealed class RouteMapSettingsDialogVisualTests
             .OfType<Button>()
             .Single(button => button.Content?.ToString() == "Н");
         var selectorButton = cardView.FindControl<ToggleButton>("SelectorButton")!;
+        var startButton = cardView.FindControl<ToggleButton>("StartButton")!;
+        var stopButton = cardView.FindControl<ToggleButton>("StopButton")!;
         Assert.InRange(parameterButton.Bounds.Width, 39, 41);
         Assert.InRange(parameterButton.Bounds.Height, 39, 41);
         Assert.InRange(selectorButton.Bounds.Width, 39, 41);
         Assert.InRange(selectorButton.Bounds.Height, 39, 41);
         Assert.True(selectorButton.Bounds.Right <= parameterButton.Bounds.Left);
+        Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(startButton.BorderBrush).Color);
+        Assert.Equal(new Thickness(1), startButton.BorderThickness);
+        Assert.Equal(HorizontalAlignment.Center, startButton.HorizontalContentAlignment);
+        Assert.Equal(VerticalAlignment.Center, startButton.VerticalContentAlignment);
+        Assert.Equal(HorizontalAlignment.Center, stopButton.HorizontalContentAlignment);
+        Assert.Equal(VerticalAlignment.Center, stopButton.VerticalContentAlignment);
+
+        cardViewModel.IsStopHovered = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Color.Parse("#FFB8B8"), Assert.IsType<SolidColorBrush>(stopButton.Background).Color);
 
         cardViewModel.IsSelectorChecked = true;
         Dispatcher.UIThread.RunJobs();
@@ -657,6 +686,67 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         window.Close();
     }
+
+    [AvaloniaFact]
+    public void RouteMap_toggle_buttons_render_fixed_checked_backgrounds()
+    {
+        var topBarViewModel = new TopBarViewModel();
+        topBarViewModel.ApplyRuntime(
+            isAutomaticMode: true,
+            isManualMode: false,
+            isResetActive: false,
+            hasEmergency: true,
+            isConnectionAvailable: true);
+        var topBar = new TopBarView { DataContext = topBarViewModel };
+        var topBarWindow = new Window { Width = 1200, Height = 96, Content = topBar };
+        topBarWindow.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var automatic = topBar.FindControl<ToggleButton>("AutomaticButton")!;
+        var emergency = topBar.FindControl<ToggleButton>("EmergencyButton")!;
+        Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(automatic.Background).Color);
+        Assert.Equal(Color.Parse("#D10000"), Assert.IsAssignableFrom<ISolidColorBrush>(emergency.Background).Color);
+        Assert.Equal(Color.Parse("#003CA3"), ToggleButtonSurface(automatic));
+        Assert.Equal(Color.Parse("#D10000"), ToggleButtonSurface(emergency));
+
+        topBarViewModel.ApplyRuntime(
+            isAutomaticMode: false,
+            isManualMode: true,
+            isResetActive: false,
+            hasEmergency: true,
+            isConnectionAvailable: true);
+        Dispatcher.UIThread.RunJobs();
+        var manual = topBar.FindControl<ToggleButton>("ManualButton")!;
+        Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(manual.Background).Color);
+        Assert.Equal(Color.Parse("#003CA3"), ToggleButtonSurface(manual));
+
+        var cardViewModel = new EquipmentCardViewModel(RouteMapSeed.Create().MapEquipment.Single(), new NoOpCommandDispatcher());
+        var card = new EquipmentCardView { DataContext = cardViewModel };
+        var cardWindow = new Window { Width = 340, Height = 200, Content = card };
+        cardWindow.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var start = card.FindControl<ToggleButton>("StartButton")!;
+        var stop = card.FindControl<ToggleButton>("StopButton")!;
+        cardViewModel.IsStartChecked = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(start.Background).Color);
+        Assert.Equal(Color.Parse("#003CA3"), ToggleButtonSurface(start));
+
+        cardViewModel.IsStopChecked = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Color.Parse("#D10000"), Assert.IsAssignableFrom<ISolidColorBrush>(stop.Background).Color);
+        Assert.Equal(Color.Parse("#D10000"), ToggleButtonSurface(stop));
+
+        cardWindow.Close();
+        topBarWindow.Close();
+    }
+
+    private static Color ToggleButtonSurface(ToggleButton button) =>
+        Assert.IsAssignableFrom<ISolidColorBrush>(button.GetVisualDescendants()
+            .OfType<ContentPresenter>()
+            .Single(presenter => presenter.Name == "PART_ContentPresenter")
+            .Background).Color;
 
     [AvaloniaFact]
     public void TopBar_disables_commands_but_keeps_settings_available_when_connection_is_offline()

@@ -36,7 +36,7 @@ RouteMap — первая вкладка Workspace и операторская �
 - legacy-заявки и шаблоны заявок из seed;
 - display settings и placeholder rules.
 
-Актуальный пользовательский JSON имеет `schemaVersion = 13`:
+Актуальный пользовательский JSON имеет `schemaVersion = 15`:
 
 ```json
 {
@@ -53,6 +53,10 @@ RouteMap — первая вкладка Workspace и операторская �
 
 JSON не сериализует Avalonia-типы. Цвета хранятся строками `#RRGGBB` или `#AARRGGBB`,
 enum — строками, размеры и отступы — собственными DTO.
+
+Цвета операторских кнопок TopBar и кнопок `ПУСК`/`СТОП` карточки не входят в definition:
+они фиксированы в UI для состояний normal, hover, pressed и checked. В JSON остаются
+тексты кнопок, bindings и стили самой карточки.
 
 ## Узлы, линии и карточки
 

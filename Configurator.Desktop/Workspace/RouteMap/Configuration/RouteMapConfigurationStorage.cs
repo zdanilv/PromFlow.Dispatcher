@@ -135,12 +135,7 @@ public sealed class RouteMapConfigurationStorage
         document.TopBar.Reset ??= RouteTopBarButtonConfiguration.Create(
             "СБРОС",
             SignalBindingRole.ResetCommand,
-            "system.reset",
-            normalBackground: "#FEFFB8",
-            checkedBackground: "#B7791F",
-            pressedBackground: "#A0A300",
-            hoverBackground: "#FFFFE6",
-            normalForeground: "#101820");
+            "system.reset");
         document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create("АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency");
         document.TopBar.Automatic.Bindings ??= [];
         document.TopBar.Manual.Bindings ??= [];

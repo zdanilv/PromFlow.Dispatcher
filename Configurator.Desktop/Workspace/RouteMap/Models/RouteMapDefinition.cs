@@ -128,13 +128,6 @@ public sealed record RouteNodeStyle
 public sealed record RouteTopBarButtonSettings
 {
     public string Text { get; init; } = string.Empty;
-    public string NormalBackground { get; init; } = "#ECEFF1";
-    public string HoverBackground { get; init; } = "#ECEFF1";
-    public string PressedBackground { get; init; } = "#8AB5FF";
-    public string CheckedBackground { get; init; } = "#003CA3";
-    public string NormalForeground { get; init; } = "#59636E";
-    public string PressedForeground { get; init; } = "#FFFFFF";
-    public string CheckedForeground { get; init; } = "#FFFFFF";
     public RouteCommandButtonKind ButtonKind { get; init; } = RouteCommandButtonKind.Toggle;
     public bool OffFeedbackEnabled { get; init; }
     public SignalBinding? OffFeedbackBinding { get; init; }
@@ -187,18 +180,6 @@ public sealed record EquipmentCardStyle
     public string StopText { get; init; } = "СТОП";
     public string SendPrefix { get; init; } = "Отправить";
     public string ReturnPrefix { get; init; } = "Возврат";
-    public string StartColor { get; init; } = "#D0D0D0";
-    public string StartPressedColor { get; init; } = "#949595";
-    public string StartCheckedColor { get; init; } = "#3A9D5D";
-    public string StartForegroundColor { get; init; } = "#101820";
-    public string StartPressedForegroundColor { get; init; } = "#101820";
-    public string StartCheckedForegroundColor { get; init; } = "#FFFFFF";
-    public string StopColor { get; init; } = "#D95D4E";
-    public string StopPressedColor { get; init; } = "#949595";
-    public string StopCheckedColor { get; init; } = "#9E2F25";
-    public string StopForegroundColor { get; init; } = "#FFFFFF";
-    public string StopPressedForegroundColor { get; init; } = "#FFFFFF";
-    public string StopCheckedForegroundColor { get; init; } = "#FFFFFF";
 }
 
 public sealed record RoutePlaceholderStyle

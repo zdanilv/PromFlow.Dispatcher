@@ -29,6 +29,11 @@ public partial class EquipmentCardView : ReactiveUserControl<EquipmentCardViewMo
             RoutingStrategies.Tunnel | RoutingStrategies.Bubble,
             handledEventsToo: true);
         AddHandler(
+            InputElement.PointerEnteredEvent,
+            Button_PointerEntered,
+            RoutingStrategies.Tunnel | RoutingStrategies.Bubble,
+            handledEventsToo: true);
+        AddHandler(
             InputElement.PointerExitedEvent,
             Button_PointerExited,
             RoutingStrategies.Tunnel | RoutingStrategies.Bubble,
@@ -44,10 +49,13 @@ public partial class EquipmentCardView : ReactiveUserControl<EquipmentCardViewMo
     private void Button_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e) =>
         SetPressed(e.Source, pressed: false);
 
+    private void Button_PointerEntered(object? sender, PointerEventArgs e) =>
+        SetHovered(e.Source, hovered: true);
+
     private void Button_PointerExited(object? sender, PointerEventArgs e)
     {
-        if (e.Source is Control { Name: "StartButton" or "StopButton" })
-            SetPressed(e.Source, pressed: false);
+        SetPressed(e.Source, pressed: false);
+        SetHovered(e.Source, hovered: false);
     }
 
     private void SetPressed(object? source, bool pressed)
@@ -59,6 +67,14 @@ public partial class EquipmentCardView : ReactiveUserControl<EquipmentCardViewMo
             ViewModel.IsStartPressed = pressed;
         else if (buttonName == "StopButton")
             ViewModel.IsStopPressed = pressed;
+    }
+
+    private void SetHovered(object? source, bool hovered)
+    {
+        if (ViewModel is null || FindNamedButton(source) != "StopButton")
+            return;
+
+        ViewModel.IsStopHovered = hovered;
     }
 
     private static string? FindNamedButton(object? source)

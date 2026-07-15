@@ -20,6 +20,14 @@
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
+        <Style Selector="ToggleButton.mode:checked">
+            <Setter Property="Background" Value="#003CA3"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+        <Style Selector="ToggleButton.mode:pressed">
+            <Setter Property="Background" Value="#8AB5FF"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
         <Style Selector="ToggleButton.emergency">
             <Setter Property="MinWidth" Value="168"/>
             <Setter Property="Height" Value="38"/>
@@ -29,6 +37,64 @@
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ToggleButton.emergency:pointerover">
+            <Setter Property="Background" Value="#FFB8B8"/>
+            <Setter Property="Foreground" Value="#101820"/>
+        </Style>
+        <Style Selector="ToggleButton.emergency:checked">
+            <Setter Property="Background" Value="#D10000"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+        <Style Selector="ToggleButton.emergency:pressed">
+            <Setter Property="Background" Value="#FF0000"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+        <Style Selector="ToggleButton.reset:pointerover">
+            <Setter Property="Background" Value="#FFFFE6"/>
+            <Setter Property="Foreground" Value="#101820"/>
+        </Style>
+        <Style Selector="ToggleButton.reset:checked">
+            <Setter Property="Background" Value="#FEFFB8"/>
+            <Setter Property="Foreground" Value="#101820"/>
+        </Style>
+        <Style Selector="ToggleButton.reset:pressed">
+            <Setter Property="Background" Value="#A0A300"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+        <!-- Fluent sets its checked brush directly on this template part. Keep the
+             RouteMap action palette authoritative for the rendered surface. -->
+        <Style Selector="ToggleButton.mode:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#003CA3"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+        <Style Selector="ToggleButton.mode:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#8AB5FF"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+        <Style Selector="ToggleButton.emergency:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#FFB8B8"/>
+            <Setter Property="Foreground" Value="#101820"/>
+        </Style>
+        <Style Selector="ToggleButton.emergency:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#FF0000"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+        <Style Selector="ToggleButton.emergency:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#D10000"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+        <Style Selector="ToggleButton.reset:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#FFFFE6"/>
+            <Setter Property="Foreground" Value="#101820"/>
+        </Style>
+        <Style Selector="ToggleButton.reset:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#003CA3"/>
+            <Setter Property="Foreground" Value="#4E5A65"/>
+        </Style>
+        <Style Selector="ToggleButton.reset:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#8AB5FF"/>
+            <Setter Property="Foreground" Value="#4E5A65"/>
         </Style>
         <Style Selector="Button.emergency">
             <Setter Property="MinWidth" Value="168"/>
@@ -61,15 +127,15 @@
         <StackPanel Orientation="Horizontal"
                     VerticalAlignment="Center"
                     Spacing="12">
-            <Border Background="#2C78C6"
+            <Border Background="#003CA3"
                     CornerRadius="3"
                     Padding="10,5">
-                <TextBlock Text="КИП"
+                <TextBlock Text="PROM"
                            Foreground="#FFFFFF"
                            FontWeight="Bold"
                            FontSize="18"/>
             </Border>
-            <TextBlock Text="Сервис"
+            <TextBlock Text="Диспетчер"
                        VerticalAlignment="Center"
                        Foreground="#53606A"
                        FontSize="18"/>
@@ -107,7 +173,7 @@
                     VerticalAlignment="Center"
                     Spacing="10">
             <ToggleButton x:Name="ResetButton"
-                          Classes="emergency"
+                          Classes="emergency reset"
                           Content="{Binding ResetText}"
                           Background="{Binding ResetBackground}"
                           BorderBrush="{Binding ResetBackground}"

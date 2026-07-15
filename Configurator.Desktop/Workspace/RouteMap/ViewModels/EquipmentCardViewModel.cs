@@ -33,6 +33,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private bool _isStopChecked;
     private bool _isStartPressed;
     private bool _isStopPressed;
+    private bool _isStopHovered;
     private bool _isSelectorChecked;
     private bool _isEnabled = true;
     private bool _isSelectorCommandEnabled = true;
@@ -102,16 +103,16 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public string StopText => Style.StopText;
     public IBrush StartBackground => !IsEnabled
         ? DisabledBrush
-        : RouteMapPalette.Brush(StartStateColor(Style.StartColor, Style.StartPressedColor, Style.StartCheckedColor));
+        : RouteMapPalette.Brush(RouteMapCommandButtonPalette.Start.Background(IsStartPressed, IsStartChecked));
     public IBrush StartForeground => RouteMapPalette.Brush(!IsEnabled
         ? "#FFFFFF"
-        : StartStateColor(Style.StartForegroundColor, Style.StartPressedForegroundColor, Style.StartCheckedForegroundColor));
+        : RouteMapCommandButtonPalette.Start.Foreground(IsStartPressed, IsStartChecked));
     public IBrush StopBackground => !IsEnabled
         ? DisabledBrush
-        : RouteMapPalette.Brush(StopStateColor(Style.StopColor, Style.StopPressedColor, Style.StopCheckedColor));
+        : RouteMapPalette.Brush(RouteMapCommandButtonPalette.Emergency.Background(IsStopPressed, IsStopChecked, IsStopHovered));
     public IBrush StopForeground => RouteMapPalette.Brush(!IsEnabled
         ? "#FFFFFF"
-        : StopStateColor(Style.StopForegroundColor, Style.StopPressedForegroundColor, Style.StopCheckedForegroundColor));
+        : RouteMapCommandButtonPalette.Emergency.Foreground(IsStopPressed, IsStopChecked));
     public IBrush SelectorBackground => IsSelectorEnabled
         ? RouteMapPalette.Brush(IsSelectorChecked ? "#3378D6" : "#D0D0D0")
         : DisabledBrush;
@@ -301,6 +302,20 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         }
     }
 
+    public bool IsStopHovered
+    {
+        get => _isStopHovered;
+        set
+        {
+            if (_isStopHovered == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _isStopHovered, value);
+            this.RaisePropertyChanged(nameof(StopBackground));
+            this.RaisePropertyChanged(nameof(StopForeground));
+        }
+    }
+
     public IBrush StateBrush => State switch
     {
         RouteObjectState.Ready => PaletteBrush(_palette.Ready, RouteMapPalette.ReadyBrush),
@@ -480,12 +495,6 @@ public sealed class EquipmentCardViewModel : ViewModelBase
 
     private static Thickness ToThickness(RouteThickness value) =>
         new(value.Left, value.Top, value.Right, value.Bottom);
-
-    private string StartStateColor(string normal, string pressed, string @checked) =>
-        IsStartPressed ? pressed : IsStartChecked ? @checked : normal;
-
-    private string StopStateColor(string normal, string pressed, string @checked) =>
-        IsStopPressed ? pressed : IsStopChecked ? @checked : normal;
 
     private IBrush DisabledBrush => PaletteBrush(_palette.Disabled, RouteMapPalette.DisabledBrush);
 

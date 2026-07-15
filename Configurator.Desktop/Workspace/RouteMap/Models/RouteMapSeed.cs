@@ -201,25 +201,11 @@ public static class RouteMapSeed
         new RouteTopBarButtonSettings
         {
             Text = "СБРОС",
-            NormalBackground = "#FEFFB8",
-            HoverBackground = "#FFFFE6",
-            PressedBackground = "#A0A300",
-            CheckedBackground = "#B7791F",
-            NormalForeground = "#101820",
-            PressedForeground = "#FFFFFF",
-            CheckedForeground = "#FFFFFF",
             Binding = new SignalBinding(SignalBindingRole.ResetCommand, "system.reset", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
         },
         new RouteTopBarButtonSettings
         {
             Text = "АВАРИЯ",
-            NormalBackground = "#FF8A8A",
-            HoverBackground = "#FFB8B8",
-            PressedBackground = "#FF0000",
-            CheckedBackground = "#D10000",
-            NormalForeground = "#FFFFFF",
-            PressedForeground = "#FFFFFF",
-            CheckedForeground = "#FFFFFF",
             Binding = new SignalBinding(SignalBindingRole.EmergencyCommand, "system.emergency", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
         });
 

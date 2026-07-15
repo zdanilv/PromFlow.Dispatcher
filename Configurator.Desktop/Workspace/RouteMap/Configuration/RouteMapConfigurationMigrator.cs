@@ -104,6 +104,10 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 14;
                     wasMigrated = true;
                     break;
+                case 14:
+                    document.SchemaVersion = 15;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }
@@ -228,9 +232,7 @@ public sealed class RouteMapConfigurationMigrator
         document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create(
             "АВАРИЯ",
             SignalBindingRole.EmergencyCommand,
-            "system.emergency",
-            normalBackground: "#D87868",
-            checkedBackground: "#C83F30");
+            "system.emergency");
         document.TopBar.Emergency.ButtonKind = RouteCommandButtonKind.Toggle;
 
         foreach (var card in document.Cards)
@@ -248,9 +250,7 @@ public sealed class RouteMapConfigurationMigrator
         document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create(
             "РђР’РђР РРЇ",
             SignalBindingRole.EmergencyCommand,
-            "system.emergency",
-            normalBackground: "#D87868",
-            checkedBackground: "#C83F30");
+            "system.emergency");
         EnsureBinding(document.TopBar.Automatic.Bindings, SignalBindingRole.AutomaticModeOffFeedback, "system.mode.automatic.off", SignalBindingDirection.Read);
         EnsureBinding(document.TopBar.Manual.Bindings, SignalBindingRole.ManualModeOffFeedback, "system.mode.manual.off", SignalBindingDirection.Read);
         EnsureBinding(document.TopBar.Emergency.Bindings, SignalBindingRole.EmergencyOffFeedback, "system.emergency.off", SignalBindingDirection.Read);
@@ -281,9 +281,7 @@ public sealed class RouteMapConfigurationMigrator
         document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create(
             "АВАРИЯ",
             SignalBindingRole.EmergencyCommand,
-            "system.emergency",
-            normalBackground: "#D87868",
-            checkedBackground: "#C83F30");
+            "system.emergency");
         RemoveBindings(document.TopBar.Automatic.Bindings, SignalBindingRole.AutomaticModeOffFeedback);
         RemoveBindings(document.TopBar.Manual.Bindings, SignalBindingRole.ManualModeOffFeedback);
 
@@ -314,9 +312,7 @@ public sealed class RouteMapConfigurationMigrator
         document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create(
             "РђР’РђР РРЇ",
             SignalBindingRole.EmergencyCommand,
-            "system.emergency",
-            normalBackground: "#D87868",
-            checkedBackground: "#C83F30");
+            "system.emergency");
         RemoveBindings(document.TopBar.Automatic.Bindings, SignalBindingRole.AutomaticModeOffFeedback);
         RemoveBindings(document.TopBar.Manual.Bindings, SignalBindingRole.ManualModeOffFeedback);
         document.TopBar.Emergency.ButtonKind = RouteCommandButtonKind.Toggle;
@@ -356,13 +352,6 @@ public sealed class RouteMapConfigurationMigrator
     private static void ApplyVersion10(RouteMapConfigurationDocument document)
     {
         document.TopBar ??= RouteTopBarConfiguration.CreateDefault();
-        ApplyButtonStateDefaults(document.TopBar.Automatic);
-        ApplyButtonStateDefaults(document.TopBar.Manual);
-        ApplyEmergencyDefaults(document.TopBar.Emergency);
-
-        foreach (var card in document.Cards)
-            ApplyCardButtonStateDefaults(card.Style);
-
         RouteSegmentActiveFragmentSynchronizer.Ensure(document);
     }
 
@@ -402,13 +391,8 @@ public sealed class RouteMapConfigurationMigrator
         document.TopBar.Reset ??= RouteTopBarButtonConfiguration.Create(
             "СБРОС",
             SignalBindingRole.ResetCommand,
-            "system.reset",
-            normalBackground: "#F2C94C",
-            checkedBackground: "#B7791F",
-            pressedBackground: "#D6A800",
-            normalForeground: "#101820");
+            "system.reset");
         EnsureTopBarButton(document.TopBar.Reset, "СБРОС", SignalBindingRole.ResetCommand, "system.reset");
-        ApplyResetDefaults(document.TopBar.Reset);
     }
 
     private static void ApplyVersion14(RouteMapConfigurationDocument document)
@@ -419,147 +403,9 @@ public sealed class RouteMapConfigurationMigrator
         document.TopBar.Manual ??= RouteTopBarButtonConfiguration.Create(
             "РУЧНОЙ", SignalBindingRole.ManualModeCommand, "system.mode.manual");
         document.TopBar.Reset ??= RouteTopBarButtonConfiguration.Create(
-            "СБРОС", SignalBindingRole.ResetCommand, "system.reset",
-            normalBackground: "#FEFFB8",
-            checkedBackground: "#B7791F",
-            pressedBackground: "#A0A300",
-            hoverBackground: "#FFFFE6",
-            normalForeground: "#101820");
+            "СБРОС", SignalBindingRole.ResetCommand, "system.reset");
         document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create(
             "АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency");
-
-        ApplyModeButtonVersion14Defaults(document.TopBar.Automatic);
-        ApplyModeButtonVersion14Defaults(document.TopBar.Manual);
-        ApplyResetVersion14Defaults(document.TopBar.Reset);
-        ApplyEmergencyVersion14Defaults(document.TopBar.Emergency);
-    }
-
-    private static void ApplyModeButtonVersion14Defaults(RouteTopBarButtonConfiguration button)
-    {
-        if (string.IsNullOrWhiteSpace(button.PressedBackground) ||
-            string.Equals(button.PressedBackground, "#949595", StringComparison.OrdinalIgnoreCase))
-            button.PressedBackground = "#8AB5FF";
-        if (string.IsNullOrWhiteSpace(button.CheckedBackground) ||
-            string.Equals(button.CheckedBackground, "#3378D6", StringComparison.OrdinalIgnoreCase))
-            button.CheckedBackground = "#003CA3";
-
-        // Hover was not configurable before schema v14; preserve the former appearance.
-        button.HoverBackground = button.NormalBackground;
-    }
-
-    private static void ApplyResetVersion14Defaults(RouteTopBarButtonConfiguration reset)
-    {
-        if (string.IsNullOrWhiteSpace(reset.NormalBackground) ||
-            string.Equals(reset.NormalBackground, "#ECEFF1", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(reset.NormalBackground, "#F2C94C", StringComparison.OrdinalIgnoreCase))
-            reset.NormalBackground = "#FEFFB8";
-        if (string.IsNullOrWhiteSpace(reset.PressedBackground) ||
-            string.Equals(reset.PressedBackground, "#949595", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(reset.PressedBackground, "#D6A800", StringComparison.OrdinalIgnoreCase))
-            reset.PressedBackground = "#A0A300";
-
-        reset.HoverBackground = "#FFFFE6";
-    }
-
-    private static void ApplyEmergencyVersion14Defaults(RouteTopBarEmergencyButtonConfiguration emergency)
-    {
-        if (IsDefaultEmergencyNormal(emergency.NormalBackground) ||
-            string.Equals(emergency.NormalBackground, "#ECEFF1", StringComparison.OrdinalIgnoreCase))
-            emergency.NormalBackground = "#FF8A8A";
-        if (string.IsNullOrWhiteSpace(emergency.PressedBackground) ||
-            string.Equals(emergency.PressedBackground, "#949595", StringComparison.OrdinalIgnoreCase))
-            emergency.PressedBackground = "#FF0000";
-        if (IsDefaultEmergencyChecked(emergency.CheckedBackground) ||
-            string.Equals(emergency.CheckedBackground, "#3378D6", StringComparison.OrdinalIgnoreCase))
-            emergency.CheckedBackground = "#D10000";
-
-        emergency.HoverBackground = "#FFB8B8";
-    }
-
-    private static void ApplyButtonStateDefaults(RouteTopBarButtonConfiguration button)
-    {
-        if (string.IsNullOrWhiteSpace(button.PressedBackground))
-            button.PressedBackground = "#949595";
-        if (string.IsNullOrWhiteSpace(button.PressedForeground))
-            button.PressedForeground = "#FFFFFF";
-    }
-
-    private static void ApplyEmergencyDefaults(RouteTopBarEmergencyButtonConfiguration emergency)
-    {
-        ApplyButtonStateDefaults(emergency);
-        if (IsDefaultEmergencyNormal(emergency.NormalBackground))
-            emergency.NormalBackground = "#D95D4E";
-        if (IsDefaultEmergencyChecked(emergency.CheckedBackground))
-            emergency.CheckedBackground = "#9E2F25";
-        if (string.IsNullOrWhiteSpace(emergency.NormalForeground))
-            emergency.NormalForeground = "#FFFFFF";
-        if (string.IsNullOrWhiteSpace(emergency.CheckedForeground))
-            emergency.CheckedForeground = "#FFFFFF";
-        emergency.PressedBackground = "#949595";
-        if (string.IsNullOrWhiteSpace(emergency.PressedForeground))
-            emergency.PressedForeground = "#FFFFFF";
-    }
-
-    private static void ApplyResetDefaults(RouteTopBarButtonConfiguration reset)
-    {
-        if (string.IsNullOrWhiteSpace(reset.NormalBackground) ||
-            string.Equals(reset.NormalBackground, "#ECEFF1", StringComparison.OrdinalIgnoreCase))
-            reset.NormalBackground = "#F2C94C";
-        if (string.IsNullOrWhiteSpace(reset.PressedBackground) ||
-            string.Equals(reset.PressedBackground, "#949595", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(reset.PressedBackground, "#8AB5FF", StringComparison.OrdinalIgnoreCase))
-            reset.PressedBackground = "#D6A800";
-        if (string.IsNullOrWhiteSpace(reset.CheckedBackground) ||
-            string.Equals(reset.CheckedBackground, "#3378D6", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(reset.CheckedBackground, "#003CA3", StringComparison.OrdinalIgnoreCase))
-            reset.CheckedBackground = "#B7791F";
-        if (string.IsNullOrWhiteSpace(reset.NormalForeground) ||
-            string.Equals(reset.NormalForeground, "#59636E", StringComparison.OrdinalIgnoreCase))
-            reset.NormalForeground = "#101820";
-        if (string.IsNullOrWhiteSpace(reset.PressedForeground))
-            reset.PressedForeground = "#FFFFFF";
-        if (string.IsNullOrWhiteSpace(reset.CheckedForeground))
-            reset.CheckedForeground = "#FFFFFF";
-    }
-
-    private static bool IsDefaultEmergencyNormal(string color) =>
-        string.Equals(color, "#D87868", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(color, "#D95D4E", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsDefaultEmergencyChecked(string color) =>
-        string.Equals(color, "#C83F30", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(color, "#9E2F25", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(color, "#0078D4", StringComparison.OrdinalIgnoreCase);
-
-    private static void ApplyCardButtonStateDefaults(EquipmentCardStyleConfiguration style)
-    {
-        if (string.IsNullOrWhiteSpace(style.StartColor))
-            style.StartColor = "#D0D0D0";
-        if (string.IsNullOrWhiteSpace(style.StartPressedColor))
-            style.StartPressedColor = "#949595";
-        if (string.IsNullOrWhiteSpace(style.StartCheckedColor) ||
-            string.Equals(style.StartCheckedColor, "#0078D4", StringComparison.OrdinalIgnoreCase))
-            style.StartCheckedColor = "#3A9D5D";
-        if (string.IsNullOrWhiteSpace(style.StartForegroundColor))
-            style.StartForegroundColor = "#101820";
-        if (string.IsNullOrWhiteSpace(style.StartPressedForegroundColor))
-            style.StartPressedForegroundColor = "#101820";
-        if (string.IsNullOrWhiteSpace(style.StartCheckedForegroundColor))
-            style.StartCheckedForegroundColor = "#FFFFFF";
-
-        if (string.IsNullOrWhiteSpace(style.StopColor))
-            style.StopColor = "#D95D4E";
-        if (string.IsNullOrWhiteSpace(style.StopPressedColor))
-            style.StopPressedColor = "#949595";
-        if (string.IsNullOrWhiteSpace(style.StopCheckedColor) ||
-            string.Equals(style.StopCheckedColor, "#0078D4", StringComparison.OrdinalIgnoreCase))
-            style.StopCheckedColor = "#9E2F25";
-        if (string.IsNullOrWhiteSpace(style.StopForegroundColor))
-            style.StopForegroundColor = "#FFFFFF";
-        if (string.IsNullOrWhiteSpace(style.StopPressedForegroundColor))
-            style.StopPressedForegroundColor = "#FFFFFF";
-        if (string.IsNullOrWhiteSpace(style.StopCheckedForegroundColor))
-            style.StopCheckedForegroundColor = "#FFFFFF";
     }
 
     private static void EnsureTopBarButton(

@@ -199,19 +199,7 @@ public sealed class RouteMapConfigurationValidator
                 (nameof(card.Style.BackgroundColor), card.Style.BackgroundColor),
                 (nameof(card.Style.BorderColor), card.Style.BorderColor),
                 (nameof(card.Style.TitleColor), card.Style.TitleColor),
-                (nameof(card.Style.TextColor), card.Style.TextColor),
-                (nameof(card.Style.StartColor), card.Style.StartColor),
-                (nameof(card.Style.StartPressedColor), card.Style.StartPressedColor),
-                (nameof(card.Style.StartCheckedColor), card.Style.StartCheckedColor),
-                (nameof(card.Style.StartForegroundColor), card.Style.StartForegroundColor),
-                (nameof(card.Style.StartPressedForegroundColor), card.Style.StartPressedForegroundColor),
-                (nameof(card.Style.StartCheckedForegroundColor), card.Style.StartCheckedForegroundColor),
-                (nameof(card.Style.StopColor), card.Style.StopColor),
-                (nameof(card.Style.StopPressedColor), card.Style.StopPressedColor),
-                (nameof(card.Style.StopCheckedColor), card.Style.StopCheckedColor),
-                (nameof(card.Style.StopForegroundColor), card.Style.StopForegroundColor),
-                (nameof(card.Style.StopPressedForegroundColor), card.Style.StopPressedForegroundColor),
-                (nameof(card.Style.StopCheckedForegroundColor), card.Style.StopCheckedForegroundColor));
+                (nameof(card.Style.TextColor), card.Style.TextColor));
             var cardAllowedRoles = new List<SignalBindingRole>
             {
                 SignalBindingRole.Text,
@@ -395,14 +383,6 @@ public sealed class RouteMapConfigurationValidator
     {
         if (string.IsNullOrWhiteSpace(button.Text))
             Add(errors, "topBar", id, nameof(button.Text), "Текст кнопки обязателен.");
-        ValidateColors(errors, "topBar", id,
-            (nameof(button.NormalBackground), button.NormalBackground),
-            (nameof(button.HoverBackground), button.HoverBackground),
-            (nameof(button.PressedBackground), button.PressedBackground),
-            (nameof(button.CheckedBackground), button.CheckedBackground),
-            (nameof(button.NormalForeground), button.NormalForeground),
-            (nameof(button.PressedForeground), button.PressedForeground),
-            (nameof(button.CheckedForeground), button.CheckedForeground));
         if (button is RouteTopBarEmergencyButtonConfiguration emergency)
         {
             ValidateEnum(errors, "topBar", id, nameof(emergency.ButtonKind), emergency.ButtonKind);

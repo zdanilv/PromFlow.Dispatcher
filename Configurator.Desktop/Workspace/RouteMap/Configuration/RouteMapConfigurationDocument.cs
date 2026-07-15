@@ -35,7 +35,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 14;
+    public const int CurrentSchemaVersion = 15;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();
@@ -130,50 +130,23 @@ public sealed class RouteTopBarConfiguration
         Manual = RouteTopBarButtonConfiguration.Create(
             "РУЧНОЙ", SignalBindingRole.ManualModeCommand, "system.mode.manual"),
         Reset = RouteTopBarButtonConfiguration.Create(
-            "СБРОС", SignalBindingRole.ResetCommand, "system.reset",
-            normalBackground: "#FEFFB8",
-            checkedBackground: "#B7791F",
-            pressedBackground: "#A0A300",
-            hoverBackground: "#FFFFE6",
-            normalForeground: "#101820"),
+            "СБРОС", SignalBindingRole.ResetCommand, "system.reset"),
         Emergency = RouteTopBarEmergencyButtonConfiguration.Create(
-            "АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency",
-            normalBackground: "#FF8A8A", checkedBackground: "#D10000", pressedBackground: "#FF0000", hoverBackground: "#FFB8B8"),
+            "АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency"),
     };
 }
 
 public class RouteTopBarButtonConfiguration : ReactiveObject
 {
     public string Text { get; set; } = string.Empty;
-    public string NormalBackground { get; set; } = "#ECEFF1";
-    public string HoverBackground { get; set; } = "#ECEFF1";
-    public string PressedBackground { get; set; } = "#8AB5FF";
-    public string CheckedBackground { get; set; } = "#003CA3";
-    public string NormalForeground { get; set; } = "#59636E";
-    public string PressedForeground { get; set; } = "#FFFFFF";
-    public string CheckedForeground { get; set; } = "#FFFFFF";
     public ObservableCollection<SignalBindingConfiguration> Bindings { get; set; } = [];
 
     public static RouteTopBarButtonConfiguration Create(
         string text,
         SignalBindingRole role,
-        string signalId,
-        string normalBackground = "#ECEFF1",
-        string checkedBackground = "#003CA3",
-        string pressedBackground = "#8AB5FF",
-        string hoverBackground = "#ECEFF1",
-        string normalForeground = "#59636E",
-        string pressedForeground = "#FFFFFF",
-        string checkedForeground = "#FFFFFF") => new()
+        string signalId) => new()
         {
             Text = text,
-            NormalBackground = normalBackground,
-            HoverBackground = hoverBackground,
-            PressedBackground = pressedBackground,
-            CheckedBackground = checkedBackground,
-            NormalForeground = normalForeground,
-            PressedForeground = pressedForeground,
-            CheckedForeground = checkedForeground,
             Bindings = CreateButtonBindings(role, signalId),
         };
 
@@ -215,25 +188,14 @@ public sealed class RouteTopBarEmergencyButtonConfiguration : RouteTopBarButtonC
     [JsonIgnore]
     public bool IsOffFeedbackAvailable => false;
 
-    public static RouteTopBarEmergencyButtonConfiguration Create(
+    public new static RouteTopBarEmergencyButtonConfiguration Create(
         string text,
         SignalBindingRole role,
-        string signalId,
-        string normalBackground = "#FF8A8A",
-        string checkedBackground = "#D10000",
-        string pressedBackground = "#FF0000",
-        string hoverBackground = "#FFB8B8")
+        string signalId)
     {
         return new()
         {
             Text = text,
-            NormalBackground = normalBackground,
-            HoverBackground = hoverBackground,
-            PressedBackground = pressedBackground,
-            CheckedBackground = checkedBackground,
-            NormalForeground = "#FFFFFF",
-            PressedForeground = "#FFFFFF",
-            CheckedForeground = "#FFFFFF",
             Bindings = CreateButtonBindings(role, signalId),
             OffFeedbackEnabled = false,
         };
@@ -415,18 +377,6 @@ public sealed class EquipmentCardStyleConfiguration
     public string StopText { get; set; } = "СТОП";
     public string SendPrefix { get; set; } = "Отправить";
     public string ReturnPrefix { get; set; } = "Возврат";
-    public string StartColor { get; set; } = "#D0D0D0";
-    public string StartPressedColor { get; set; } = "#949595";
-    public string StartCheckedColor { get; set; } = "#3A9D5D";
-    public string StartForegroundColor { get; set; } = "#101820";
-    public string StartPressedForegroundColor { get; set; } = "#101820";
-    public string StartCheckedForegroundColor { get; set; } = "#FFFFFF";
-    public string StopColor { get; set; } = "#D95D4E";
-    public string StopPressedColor { get; set; } = "#949595";
-    public string StopCheckedColor { get; set; } = "#9E2F25";
-    public string StopForegroundColor { get; set; } = "#FFFFFF";
-    public string StopPressedForegroundColor { get; set; } = "#FFFFFF";
-    public string StopCheckedForegroundColor { get; set; } = "#FFFFFF";
 }
 
 public sealed class RoutePlaceholderRuleConfiguration : RouteMapConfigurationItem
