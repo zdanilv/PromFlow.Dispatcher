@@ -7,7 +7,8 @@
 			 d:DesignWidth="295"
 			 d:DesignHeight="141"
 			 x:Class="Configurator.Desktop.Workspace.RouteMap.Panels.EquipmentCardView"
-			 x:DataType="vm:EquipmentCardViewModel">
+			 x:DataType="vm:EquipmentCardViewModel"
+			 xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
 	<UserControl.Styles>
 		<Style Selector="ToggleButton.equipment-action">
 			<Setter Property="MinHeight" Value="40"/>
@@ -45,6 +46,18 @@
 			<Setter Property="Background" Value="#8AB5FF"/>
 			<Setter Property="Foreground" Value="#101820"/>
 		</Style>
+		<Style Selector="ToggleButton.selector">
+			<Setter Property="BorderBrush" Value="#CCD3D8"/>
+			<Setter Property="BorderThickness" Value="1"/>
+		</Style>
+		<Style Selector="ToggleButton.selector:checked">
+			<Setter Property="Background" Value="#003CA3"/>
+			<Setter Property="Foreground" Value="#FFFFFF"/>
+		</Style>
+		<Style Selector="ToggleButton.selector:pressed">
+			<Setter Property="Background" Value="#8AB5FF"/>
+			<Setter Property="Foreground" Value="#101820"/>
+		</Style>
 		<Style Selector="ToggleButton.stop:pointerover">
 			<Setter Property="Background" Value="#FFB8B8"/>
 			<Setter Property="Foreground" Value="#101820"/>
@@ -63,6 +76,14 @@
 			<Setter Property="Foreground" Value="#FFFFFF"/>
 		</Style>
 		<Style Selector="ToggleButton.start:pressed /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#8AB5FF"/>
+			<Setter Property="Foreground" Value="#101820"/>
+		</Style>
+		<Style Selector="ToggleButton.selector:checked /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#003CA3"/>
+			<Setter Property="Foreground" Value="#FFFFFF"/>
+		</Style>
+		<Style Selector="ToggleButton.selector:pressed /template/ ContentPresenter#PART_ContentPresenter">
 			<Setter Property="Background" Value="#8AB5FF"/>
 			<Setter Property="Foreground" Value="#101820"/>
 		</Style>
@@ -117,20 +138,21 @@
 				</Viewbox>
 				<ToggleButton x:Name="SelectorButton"
 							  Grid.Column="1"
-							  Classes="equipment-action parameter"
-							  Content="С"
+							  Classes="equipment-action selector"
+							  Content="{materialIcons:MaterialIconExt Kind=PowerStandby}"
+							  FontSize="22"
 							  Width="40"
 							  Height="40"
 							  MinWidth="40"
 							  MinHeight="40"
 							  Background="{Binding SelectorBackground}"
-							  BorderBrush="{Binding SelectorBackground}"
 							  Foreground="{Binding SelectorForeground}"
 							  IsEnabled="{Binding IsSelectorEnabled}"
 							  IsChecked="{Binding IsSelectorChecked, Mode=TwoWay}"/>
 				<Button Grid.Column="2"
 						Classes="equipment-action parameter"
-						Content="Н"
+						Content="{materialIcons:MaterialIconExt Kind=TuneVerticalVariant}"
+						FontSize="22"
 						Width="40"
 						Height="40"
 						MinWidth="40"

@@ -7,7 +7,8 @@
              d:DesignWidth="1200"
              d:DesignHeight="64"
              x:Class="Configurator.Desktop.Workspace.RouteMap.Panels.TopBarView"
-             x:DataType="vm:TopBarViewModel">
+             x:DataType="vm:TopBarViewModel"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
     <UserControl.Styles>
         <Style Selector="ToggleButton.mode">
             <Setter Property="MinWidth" Value="104"/>
@@ -63,7 +64,7 @@
             <Setter Property="Foreground" Value="#FFFFFF"/>
         </Style>
         <!-- Fluent sets its checked brush directly on this template part. Keep the
-             RouteMap action palette authoritative for the rendered surface. -->
+        RouteMap action palette authoritative for the rendered surface. -->
         <Style Selector="ToggleButton.mode:checked /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#003CA3"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
@@ -123,92 +124,93 @@
             BorderThickness="0,0,0,1"
             MinHeight="64"
             Padding="16,8">
-    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-        <StackPanel Orientation="Horizontal"
-                    VerticalAlignment="Center"
-                    Spacing="12">
-            <Border Background="#003CA3"
-                    CornerRadius="3"
-                    Padding="10,5">
-                <TextBlock Text="PROM"
-                           Foreground="#FFFFFF"
-                           FontWeight="Bold"
+        <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+            <StackPanel Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Spacing="12">
+                <Border Background="#003CA3"
+                        CornerRadius="3"
+                        Padding="10,5">
+                    <TextBlock Text="ПРОМ"
+                               Foreground="#FFFFFF"
+                               FontWeight="Bold"
+                               FontSize="18"/>
+                </Border>
+                <TextBlock Text="Диспетчер"
+                           VerticalAlignment="Center"
+                           Foreground="#53606A"
                            FontSize="18"/>
-            </Border>
-            <TextBlock Text="Диспетчер"
-                       VerticalAlignment="Center"
-                       Foreground="#53606A"
-                       FontSize="18"/>
-        </StackPanel>
+            </StackPanel>
 
-        <StackPanel Grid.Column="1"
-                    Orientation="Horizontal"
-                    VerticalAlignment="Center"
-                    Margin="28,0,0,0">
-            <ToggleButton x:Name="AutomaticButton"
-                          Classes="mode"
-                          Content="{Binding AutomaticText}"
-                          Background="{Binding AutomaticBackground}"
-                          Foreground="{Binding AutomaticForeground}"
-                          IsChecked="{Binding IsAutomaticMode}"
-                          IsEnabled="{Binding IsAutomaticCommandEnabled}"
-                          PointerEntered="Button_PointerEntered"
-                          PointerExited="Button_PointerExited"
-                          Command="{Binding SwitchToAutomaticCommand}"/>
-            <ToggleButton x:Name="ManualButton"
-                          Classes="mode"
-                          Content="{Binding ManualText}"
-                          Background="{Binding ManualBackground}"
-                          Foreground="{Binding ManualForeground}"
-                          IsChecked="{Binding IsManualMode}"
-                          IsEnabled="{Binding IsManualCommandEnabled}"
-                          PointerEntered="Button_PointerEntered"
-                          PointerExited="Button_PointerExited"
-                          Command="{Binding SwitchToManualCommand}"/>
-        </StackPanel>
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Margin="28,0,0,0">
+                <ToggleButton x:Name="AutomaticButton"
+                              Classes="mode"
+                              Content="{Binding AutomaticText}"
+                              Background="{Binding AutomaticBackground}"
+                              Foreground="{Binding AutomaticForeground}"
+                              IsChecked="{Binding IsAutomaticMode}"
+                              IsEnabled="{Binding IsAutomaticCommandEnabled}"
+                              PointerEntered="Button_PointerEntered"
+                              PointerExited="Button_PointerExited"
+                              Command="{Binding SwitchToAutomaticCommand}"/>
+                <ToggleButton x:Name="ManualButton"
+                              Classes="mode"
+                              Content="{Binding ManualText}"
+                              Background="{Binding ManualBackground}"
+                              Foreground="{Binding ManualForeground}"
+                              IsChecked="{Binding IsManualMode}"
+                              IsEnabled="{Binding IsManualCommandEnabled}"
+                              PointerEntered="Button_PointerEntered"
+                              PointerExited="Button_PointerExited"
+                              Command="{Binding SwitchToManualCommand}"/>
+            </StackPanel>
 
-        <StackPanel Grid.Column="2"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Spacing="10">
-            <ToggleButton x:Name="ResetButton"
-                          Classes="emergency reset"
-                          Content="{Binding ResetText}"
-                          Background="{Binding ResetBackground}"
-                          BorderBrush="{Binding ResetBackground}"
-                          Foreground="{Binding ResetForeground}"
-                          IsChecked="{Binding IsResetActive, Mode=OneWay}"
-                          IsEnabled="{Binding IsResetCommandEnabled}"
-                          PointerEntered="Button_PointerEntered"
-                          PointerExited="Button_PointerExited"
-                          Command="{Binding ResetCommand}"/>
-            <ToggleButton x:Name="EmergencyButton"
-                          Classes="emergency"
-                          Content="{Binding EmergencyText}"
-                          Background="{Binding EmergencyBackground}"
-                          BorderBrush="{Binding EmergencyBackground}"
-                          Foreground="{Binding EmergencyForeground}"
-                          IsChecked="{Binding HasEmergency}"
-                          IsEnabled="{Binding IsEmergencyCommandEnabled}"
-                          PointerEntered="Button_PointerEntered"
-                          PointerExited="Button_PointerExited"
-                          Command="{Binding EmergencyCommand}"/>
-            <Button Classes="settings"
-                    Content="НАСТРОЙКИ"
-                    IsVisible="{Binding IsSettingsVisible}"
-                    Command="{Binding OpenSettingsCommand}"/>
-        </StackPanel>
+            <StackPanel Grid.Column="2"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="10">
+                <ToggleButton x:Name="ResetButton"
+                              Classes="emergency reset"
+                              Content="{Binding ResetText}"
+                              Background="{Binding ResetBackground}"
+                              BorderBrush="{Binding ResetBackground}"
+                              Foreground="{Binding ResetForeground}"
+                              IsChecked="{Binding IsResetActive, Mode=OneWay}"
+                              IsEnabled="{Binding IsResetCommandEnabled}"
+                              PointerEntered="Button_PointerEntered"
+                              PointerExited="Button_PointerExited"
+                              Command="{Binding ResetCommand}"/>
+                <ToggleButton x:Name="EmergencyButton"
+                              Classes="emergency"
+                              Content="{Binding EmergencyText}"
+                              Background="{Binding EmergencyBackground}"
+                              BorderBrush="{Binding EmergencyBackground}"
+                              Foreground="{Binding EmergencyForeground}"
+                              IsChecked="{Binding HasEmergency}"
+                              IsEnabled="{Binding IsEmergencyCommandEnabled}"
+                              PointerEntered="Button_PointerEntered"
+                              PointerExited="Button_PointerExited"
+                              Command="{Binding EmergencyCommand}"/>
+                <Button Classes="settings"
+                        Content="НАСТРОЙКИ"
+                        IsVisible="{Binding IsSettingsVisible}"
+                        Command="{Binding OpenSettingsCommand}"/>
+            </StackPanel>
 
-        <TextBlock Grid.Column="3"
-                   Height="32"
-                   Margin="16,0"
-                   VerticalAlignment="Center"
-                   Text="8 800 700 98 82"
-                   Foreground="#69747E"
-                   FontSize="13"
-                   TextAlignment="Center"/>
+            <StackPanel Grid.Column="3"
+                        Margin="16,0"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+                <materialIcons:MaterialIcon Foreground="#003CA3" Kind="Phone" Margin="0,0,10,0" FontSize="18"/>
+                <TextBlock Text="8 953 448 31 16"
+                           Foreground="#69747E"
+                           FontSize="16"/>
+            </StackPanel>
 
-    </Grid>
+        </Grid>
     </Border>
 </UserControl>

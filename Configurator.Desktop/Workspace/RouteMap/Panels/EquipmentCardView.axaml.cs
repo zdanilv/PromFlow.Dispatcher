@@ -67,6 +67,8 @@ public partial class EquipmentCardView : ReactiveUserControl<EquipmentCardViewMo
             ViewModel.IsStartPressed = pressed;
         else if (buttonName == "StopButton")
             ViewModel.IsStopPressed = pressed;
+        else if (buttonName == "SelectorButton")
+            ViewModel.IsSelectorPressed = pressed;
     }
 
     private void SetHovered(object? source, bool hovered)
@@ -83,7 +85,7 @@ public partial class EquipmentCardView : ReactiveUserControl<EquipmentCardViewMo
 
         while (control is not null)
         {
-            if (control.Name is "StartButton" or "StopButton")
+            if (control.Name is "StartButton" or "StopButton" or "SelectorButton")
                 return control.Name;
 
             control = control.Parent as Control;

@@ -35,6 +35,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private bool _isStopPressed;
     private bool _isStopHovered;
     private bool _isSelectorChecked;
+    private bool _isSelectorPressed;
     private bool _isEnabled = true;
     private bool _isSelectorCommandEnabled = true;
     private bool _isSelectorResetActive;
@@ -113,10 +114,12 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public IBrush StopForeground => RouteMapPalette.Brush(!IsEnabled
         ? "#FFFFFF"
         : RouteMapCommandButtonPalette.Emergency.Foreground(IsStopPressed, IsStopChecked));
-    public IBrush SelectorBackground => IsSelectorEnabled
-        ? RouteMapPalette.Brush(IsSelectorChecked ? "#3378D6" : "#D0D0D0")
-        : DisabledBrush;
-    public IBrush SelectorForeground => RouteMapPalette.Brush(IsSelectorEnabled && !IsSelectorChecked ? "#101820" : "#FFFFFF");
+    public IBrush SelectorBackground => !IsSelectorEnabled
+        ? DisabledBrush
+        : RouteMapPalette.Brush(RouteMapCommandButtonPalette.Start.Background(IsSelectorPressed, IsSelectorChecked));
+    public IBrush SelectorForeground => RouteMapPalette.Brush(!IsSelectorEnabled
+        ? "#FFFFFF"
+        : RouteMapCommandButtonPalette.Start.Foreground(IsSelectorPressed, IsSelectorChecked));
     public IBrush ParameterBackground => IsEnabled ? RouteMapPalette.Brush("#D0D0D0") : DisabledBrush;
     public IBrush ParameterForeground => RouteMapPalette.Brush(IsEnabled ? "#101820" : "#FFFFFF");
     public ReactiveCommand<Unit, Unit> OpenParametersCommand { get; }
@@ -313,6 +316,20 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             this.RaiseAndSetIfChanged(ref _isStopHovered, value);
             this.RaisePropertyChanged(nameof(StopBackground));
             this.RaisePropertyChanged(nameof(StopForeground));
+        }
+    }
+
+    public bool IsSelectorPressed
+    {
+        get => _isSelectorPressed;
+        set
+        {
+            if (_isSelectorPressed == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _isSelectorPressed, value);
+            this.RaisePropertyChanged(nameof(SelectorBackground));
+            this.RaisePropertyChanged(nameof(SelectorForeground));
         }
     }
 

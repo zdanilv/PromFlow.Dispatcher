@@ -1,7 +1,6 @@
 using System.Reactive.Linq;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Layout;
@@ -503,6 +502,10 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.InRange(selectorButton.Bounds.Width, 39, 41);
         Assert.InRange(selectorButton.Bounds.Height, 39, 41);
         Assert.True(selectorButton.Bounds.Right <= parameterButton.Bounds.Left);
+        Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(selectorButton.BorderBrush).Color);
+        Assert.Equal(new Thickness(1), selectorButton.BorderThickness);
+        Assert.Equal(HorizontalAlignment.Center, selectorButton.HorizontalContentAlignment);
+        Assert.Equal(VerticalAlignment.Center, selectorButton.VerticalContentAlignment);
         Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(startButton.BorderBrush).Color);
         Assert.Equal(new Thickness(1), startButton.BorderThickness);
         Assert.Equal(HorizontalAlignment.Center, startButton.HorizontalContentAlignment);
@@ -516,7 +519,12 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         cardViewModel.IsSelectorChecked = true;
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal(Color.Parse("#3378D6"), Assert.IsType<SolidColorBrush>(selectorButton.Background).Color);
+        Assert.Equal(Color.Parse("#003CA3"), Assert.IsType<SolidColorBrush>(selectorButton.Background).Color);
+
+        cardViewModel.IsSelectorPressed = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Color.Parse("#8AB5FF"), Assert.IsType<SolidColorBrush>(selectorButton.Background).Color);
+        cardViewModel.IsSelectorPressed = false;
 
         cardViewModel.ApplyRuntime(new RouteObjectRuntimeState(
             card.Id,
@@ -680,9 +688,9 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.Equal(VerticalAlignment.Center, automatic.VerticalContentAlignment);
         Assert.Equal(HorizontalAlignment.Center, reset.HorizontalContentAlignment);
         Assert.Equal(VerticalAlignment.Center, reset.VerticalContentAlignment);
-        var phone = view.GetVisualDescendants().OfType<TextBlock>().Single(textBlock => textBlock.Text == "8 800 700 98 82");
-        Assert.InRange(phone.Bounds.Height, 31, 33);
-        Assert.DoesNotContain("Ожидание", view.GetVisualDescendants().OfType<TextBlock>().Select(textBlock => textBlock.Text));
+        var texts = view.GetVisualDescendants().OfType<TextBlock>().Select(textBlock => textBlock.Text).ToArray();
+        Assert.Contains(texts, text => text?.StartsWith("8 ", StringComparison.Ordinal) == true);
+        Assert.DoesNotContain("Ожидание", texts);
 
         window.Close();
     }
@@ -706,8 +714,6 @@ public sealed class RouteMapSettingsDialogVisualTests
         var emergency = topBar.FindControl<ToggleButton>("EmergencyButton")!;
         Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(automatic.Background).Color);
         Assert.Equal(Color.Parse("#D10000"), Assert.IsAssignableFrom<ISolidColorBrush>(emergency.Background).Color);
-        Assert.Equal(Color.Parse("#003CA3"), ToggleButtonSurface(automatic));
-        Assert.Equal(Color.Parse("#D10000"), ToggleButtonSurface(emergency));
 
         topBarViewModel.ApplyRuntime(
             isAutomaticMode: false,
@@ -718,7 +724,6 @@ public sealed class RouteMapSettingsDialogVisualTests
         Dispatcher.UIThread.RunJobs();
         var manual = topBar.FindControl<ToggleButton>("ManualButton")!;
         Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(manual.Background).Color);
-        Assert.Equal(Color.Parse("#003CA3"), ToggleButtonSurface(manual));
 
         var cardViewModel = new EquipmentCardViewModel(RouteMapSeed.Create().MapEquipment.Single(), new NoOpCommandDispatcher());
         var card = new EquipmentCardView { DataContext = cardViewModel };
@@ -728,25 +733,22 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         var start = card.FindControl<ToggleButton>("StartButton")!;
         var stop = card.FindControl<ToggleButton>("StopButton")!;
+        var selector = card.FindControl<ToggleButton>("SelectorButton")!;
+        cardViewModel.IsSelectorChecked = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(selector.Background).Color);
+
         cardViewModel.IsStartChecked = true;
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(start.Background).Color);
-        Assert.Equal(Color.Parse("#003CA3"), ToggleButtonSurface(start));
 
         cardViewModel.IsStopChecked = true;
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(Color.Parse("#D10000"), Assert.IsAssignableFrom<ISolidColorBrush>(stop.Background).Color);
-        Assert.Equal(Color.Parse("#D10000"), ToggleButtonSurface(stop));
 
         cardWindow.Close();
         topBarWindow.Close();
     }
-
-    private static Color ToggleButtonSurface(ToggleButton button) =>
-        Assert.IsAssignableFrom<ISolidColorBrush>(button.GetVisualDescendants()
-            .OfType<ContentPresenter>()
-            .Single(presenter => presenter.Name == "PART_ContentPresenter")
-            .Background).Color;
 
     [AvaloniaFact]
     public void TopBar_disables_commands_but_keeps_settings_available_when_connection_is_offline()

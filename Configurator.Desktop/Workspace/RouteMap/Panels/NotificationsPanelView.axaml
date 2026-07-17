@@ -18,7 +18,8 @@
         <TabControl>
             <TabItem Header="Уведомления">
                 <Grid RowDefinitions="*,Auto"
-                      RowSpacing="10">
+                      RowSpacing="10"
+                      Margin="0,10,0,0">
                     <ScrollViewer VerticalScrollBarVisibility="Auto"
                                   IsVisible="{Binding HasNotifications}">
                         <ItemsControl ItemsSource="{Binding Notifications}">
@@ -127,6 +128,10 @@
                     </Border>
 
                     <Button Grid.Row="1"
+                            Background="#FFFFFF"
+                            BorderBrush="#DDE2E6"
+                            BorderThickness="1"
+                            CornerRadius="6"
                             Content="Очистить список"
                             Height="34"
                             HorizontalAlignment="Stretch"
@@ -137,7 +142,8 @@
 
             <TabItem Header="История"
                      IsVisible="{Binding IsHistoryVisible}">
-                <Grid RowDefinitions="*">
+                <Grid RowDefinitions="*"
+                      Margin="0,10,0,0">
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                                   VerticalScrollBarVisibility="Auto"
                                   IsVisible="{Binding HasHistory}">

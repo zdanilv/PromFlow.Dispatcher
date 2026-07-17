@@ -3,10 +3,12 @@
 			 x:Class="Configurator.Desktop.App"
 			 xmlns:dialogHostAvalonia="clr-namespace:DialogHostAvalonia;assembly=DialogHost.Avalonia"
 			 xmlns:sty="using:FluentAvalonia.Styling"
+			 xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
 			 RequestedThemeVariant="Default">
   <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
   <Application.Styles>
 	<FluentTheme/>
 	<dialogHostAvalonia:DialogHostStyles />
+	<materialIcons:MaterialIconStyles />
   </Application.Styles>
 </Application>

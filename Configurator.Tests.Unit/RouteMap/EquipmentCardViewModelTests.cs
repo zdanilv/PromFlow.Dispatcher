@@ -104,7 +104,7 @@ public sealed class EquipmentCardViewModelTests
         Assert.True(viewModel.IsSelectorChecked);
         Assert.False(viewModel.IsEnabled);
         Assert.True(viewModel.IsSelectorEnabled);
-        Assert.Equal(Avalonia.Media.Color.Parse("#3378D6"), BrushColor(viewModel.SelectorBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#003CA3"), BrushColor(viewModel.SelectorBackground));
         Assert.Empty(dispatcher.Requests);
     }
 
@@ -147,6 +147,20 @@ public sealed class EquipmentCardViewModelTests
         Assert.Equal(Avalonia.Media.Color.Parse("#101820"), BrushColor(viewModel.StartForeground));
         Assert.Equal(Avalonia.Media.Color.Parse("#FF8A8A"), BrushColor(viewModel.StopBackground));
         Assert.Equal(Avalonia.Media.Color.Parse("#101820"), BrushColor(viewModel.StopForeground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#D0D0D0"), BrushColor(viewModel.SelectorBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#101820"), BrushColor(viewModel.SelectorForeground));
+
+        viewModel.IsSelectorChecked = true;
+
+        Assert.Equal(Avalonia.Media.Color.Parse("#003CA3"), BrushColor(viewModel.SelectorBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#FFFFFF"), BrushColor(viewModel.SelectorForeground));
+
+        viewModel.IsSelectorPressed = true;
+
+        Assert.Equal(Avalonia.Media.Color.Parse("#8AB5FF"), BrushColor(viewModel.SelectorBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#101820"), BrushColor(viewModel.SelectorForeground));
+
+        viewModel.IsSelectorPressed = false;
 
         viewModel.IsStartChecked = true;
 
