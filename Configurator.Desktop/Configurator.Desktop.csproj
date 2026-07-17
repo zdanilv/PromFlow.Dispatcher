@@ -53,6 +53,7 @@
 	  <Folder Include="Dialogs\EquipmentCardParametersDialog\" />
 	  <Folder Include="Workspace\Alarms\" />
 	  <Folder Include="Workspace\ModbusDemo\" />
+	  <Folder Include="Workspace\ModbusProfile\" />
 	  <Folder Include="Workspace\Modbus\" />
 	  <Folder Include="Workspace\OpcUa\" />
 	  <Folder Include="Workspace\Startspace\" />

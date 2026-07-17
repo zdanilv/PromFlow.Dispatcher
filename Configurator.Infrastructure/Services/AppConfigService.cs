@@ -87,6 +87,54 @@ namespace Configurator.Infrastructure.Services
             }
         }
 
+        /// <inheritdoc />
+        public async Task SaveSectionsAsync(
+            IReadOnlyDictionary<string, object> sections,
+            CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(sections);
+            if (sections.Count == 0)
+            {
+                return;
+            }
+
+            if (sections.Keys.Any(string.IsNullOrWhiteSpace))
+            {
+                throw new ArgumentException("Section name must not be empty.", nameof(sections));
+            }
+
+            await _saveGate.WaitAsync(ct);
+            try
+            {
+                var directory = Path.GetDirectoryName(_configFilePath);
+                if (!string.IsNullOrWhiteSpace(directory))
+                    Directory.CreateDirectory(directory);
+
+                var root = new JsonObject();
+                if (File.Exists(_configFilePath))
+                {
+                    var json = await File.ReadAllTextAsync(_configFilePath, ct);
+                    if (!string.IsNullOrWhiteSpace(json))
+                        root = JsonNode.Parse(json)?.AsObject() ?? new JsonObject();
+                }
+
+                foreach (var section in sections)
+                {
+                    root[section.Key] = JsonSerializer.SerializeToNode(section.Value, JsonOptions);
+                }
+
+                await File.WriteAllTextAsync(_configFilePath, root.ToJsonString(JsonOptions), ct);
+                if (_configuration is IConfigurationRoot configurationRoot)
+                {
+                    configurationRoot.Reload();
+                }
+            }
+            finally
+            {
+                _saveGate.Release();
+            }
+        }
+
         /// <summary>
         /// Сохранить пользовательские настройки в отдельный файл.
         /// </summary>

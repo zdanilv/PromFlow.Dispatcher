@@ -200,7 +200,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public string SelectedSignalSourceText => UseMockSimulation ? "Mock" : "Modbus";
     public string SignalSourceDescription => UseMockSimulation
         ? "RouteMap получает тестовые значения и команды от встроенной Mock-симуляции."
-        : "RouteMap использует общий Modbus Demo runtime и отдельную карту Modbus.DataMap. Переключение не запускает соединение автоматически.";
+        : "RouteMap использует общий Modbus TCP runtime и отдельную карту Modbus.DataMap. Переключение не запускает соединение автоматически.";
 
     public ReactiveCommand<Unit, Unit> ApplyCommand { get; }
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }

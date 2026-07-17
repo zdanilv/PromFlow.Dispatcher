@@ -22,6 +22,7 @@
     <Folder Include="Services\Modbus\Contracts\" />
     <Folder Include="Services\Modbus\Data\" />
     <Folder Include="Services\Modbus\Encoding\" />
+    <Folder Include="Services\Modbus\Profiles\" />
     <Folder Include="Services\Modbus\Runtime\" />
     <Folder Include="Services\Modbus\Validation\" />
     <Folder Include="Services\OpcUa\Browsing\" />

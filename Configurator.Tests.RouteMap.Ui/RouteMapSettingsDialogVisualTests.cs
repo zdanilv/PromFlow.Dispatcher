@@ -178,7 +178,7 @@ public sealed class RouteMapSettingsDialogVisualTests
         var headers = tabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString() ?? string.Empty).ToArray();
 
         Assert.True(tabs.IsVisible);
-        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Менеджер тревог", "Modbus Demo"], headers);
+        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Менеджер тревог", "Modbus TCP"], headers);
 
         window.Close();
     }

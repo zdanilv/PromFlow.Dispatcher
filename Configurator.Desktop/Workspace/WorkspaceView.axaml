@@ -45,7 +45,7 @@
             <TabItem Header="Менеджер тревог">
                 <alarms:AlarmManagerView DataContext="{Binding AlarmManager}"/>
             </TabItem>
-            <TabItem Header="Modbus Demo">
+            <TabItem Header="Modbus TCP">
                 <modbusDemo:ModbusDemoView DataContext="{Binding ModbusDemo}"/>
             </TabItem>
         </TabControl>

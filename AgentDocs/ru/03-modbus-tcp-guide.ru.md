@@ -1,11 +1,12 @@
 # Modbus TCP guide
 
 RouteMap использует Modbus TCP через доменные `SignalId`. Физическая адресация находится
-в `Modbus.DataMap`, а endpoint и lifecycle принадлежат `ModbusDemo`.
+в `Modbus.DataMap`, а endpoint и lifecycle принадлежат экрану `Modbus TCP`
+(внутренняя совместимая секция конфигурации — `ModbusDemo`).
 
 Рабочие секции `Modbus` и `ModbusDemo` сохраняются в общем
 `%LOCALAPPDATA%\Configurator\appsettings.json`. В `admin` режиме они доступны через
-вкладки `SignalId ↔ Modbus`, `Менеджер тревог` и `Modbus Demo`; в `user` режиме эти
+вкладки `SignalId ↔ Modbus`, `Менеджер тревог` и `Modbus TCP`; в `user` режиме эти
 вкладки скрыты, но runtime, autostart, mapping и тревоги продолжают использовать те же
 сохраненные значения.
 
@@ -15,10 +16,10 @@ RouteMap использует Modbus TCP через доменные `SignalId`.
 |---|---|
 | `Modbus.DataMap` | Production mapping RouteMap `SignalId` к coils/registers/bits |
 | `Modbus.AlarmMap` | User-диалоги аварий/повторных подтверждений и acknowledgement-биты |
-| `ModbusDemo.DataMap` | Только controls экрана `Modbus Demo` |
+| `ModbusDemo.DataMap` | Legacy-данные прежнего demo-экрана; новый UI и экспорт профиля их не используют |
 
-Не добавляйте RouteMap SignalId в `ModbusDemo.DataMap`. Не используйте demo-точки как
-production mapping.
+Не добавляйте RouteMap SignalId в `ModbusDemo.DataMap`. Production mapping всегда
+настраивается через `Modbus.DataMap`.
 Не добавляйте операторские тревоги в `Modbus.DataMap`: они настраиваются отдельно в
 `Modbus.AlarmMap`, чтобы RouteMap не видел их как SignalId.
 Исключение по названию, но не по смыслу: `system.fault` — это не операторский диалог, а
@@ -26,7 +27,7 @@ production mapping.
 
 ## Endpoint и lifecycle
 
-`ModbusDemo` задает:
+`Modbus TCP` задает:
 
 - Client host, port, UnitId;
 - Server bind address, port, UnitId;
@@ -35,7 +36,20 @@ production mapping.
 - autostart и startup mode.
 
 Переключение RouteMap на `SignalSource=Modbus` не запускает TCP runtime. Runtime запускается
-на вкладке `Modbus Demo` или через `ModbusDemo.AutostartOnWorkspaceOpen`.
+на вкладке `Modbus TCP` или через `ModbusDemo.AutostartOnWorkspaceOpen`.
+
+## Импорт и экспорт профиля
+
+Кнопки `ИМПОРТ ПРОФИЛЯ` и `ЭКСПОРТ ПРОФИЛЯ` на административных вкладках
+переносят один versioned JSON-файл `modbus-tcp-profile.json`. В нём находятся
+общие TCP-настройки, `Modbus.DataMap` и `Modbus.AlarmMap`; legacy
+`ModbusDemo.DataMap` намеренно не входит в файл.
+
+Перед импортом проверяются формат/версия JSON, структурные правила карт и диапазоны
+Client/Server. Если карты требуют больше Coils или Holding Registers, UI предлагает
+расширить count до минимального значения и включить используемую область либо отменить
+операцию. При подтверждении обе секции `Modbus` и `ModbusDemo` сохраняются вместе;
+endpoint вступают в силу после запуска или перезапуска роли.
 
 ## DataMap point
 

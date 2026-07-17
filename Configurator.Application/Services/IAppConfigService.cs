@@ -34,6 +34,22 @@ namespace Configurator.Application.Services
         /// </summary>
         Task SaveSectionAsync<T>(string sectionName, T value, CancellationToken ct = default);
         /// <summary>
+        /// Сохраняет несколько секций одним обновлением конфигурационного файла.
+        /// Реализация по умолчанию оставлена для тестовых doubles; production-реализация
+        /// должна записывать все переданные секции атомарно.
+        /// </summary>
+        async Task SaveSectionsAsync(
+            IReadOnlyDictionary<string, object> sections,
+            CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(sections);
+
+            foreach (var section in sections)
+            {
+                await SaveSectionAsync(section.Key, section.Value, ct);
+            }
+        }
+        /// <summary>
         /// Сохранить пользовательские настройки в отдельный файл.
         /// </summary>
         void SaveUserSettings(UserSettings settings);

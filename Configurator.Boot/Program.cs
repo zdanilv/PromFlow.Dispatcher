@@ -18,6 +18,7 @@ using Configurator.Desktop.Workspace;
 using Configurator.Desktop.Workspace.Alarms;
 using Configurator.Desktop.Workspace.Authorization;
 using Configurator.Desktop.Workspace.ModbusDemo;
+using Configurator.Desktop.Workspace.ModbusProfile;
 using Configurator.Desktop.Workspace.RouteMap;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -98,6 +99,8 @@ internal static class Program
                     services.AddSingleton<RouteMapConfigurationMigrator>();
                     services.AddSingleton<RouteMapConfigurationManager>();
                     services.AddSingleton<IRouteMapSettingsFilePicker, RouteMapSettingsFilePicker>();
+                    services.AddSingleton<IModbusTcpProfileFilePicker, ModbusTcpProfileFilePicker>();
+                    services.AddSingleton<IModbusTcpProfileTransferService, ModbusTcpProfileTransferService>();
                     services.AddSingleton<IRouteMapSettingsDialogService, RouteMapSettingsDialogService>();
                     services.AddSingleton<IEquipmentCardParametersDialogService, EquipmentCardParametersDialogService>();
                     services.AddSingleton<IEquipmentParameterWriteValidator, EquipmentParameterWriteValidator>();

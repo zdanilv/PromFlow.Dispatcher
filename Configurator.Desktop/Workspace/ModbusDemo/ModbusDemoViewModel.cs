@@ -5,6 +5,8 @@ using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Desktop.Workspace.ModbusProfile;
+using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
@@ -28,6 +30,8 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     private readonly IModbusDemoOptionsProvider _optionsProvider;
     private readonly IDialogService _dialogService;
     private readonly IAppConfigService _appConfigService;
+    private readonly IModbusTcpProfileFilePicker? _profileFilePicker;
+    private readonly IModbusTcpProfileTransferService? _profileTransferService;
     private readonly Action<Action> _dispatchToUi;
     private readonly Dictionary<string, ModbusTelemetryRegisterGroup> _telemetryByPoint = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ModbusParameterRow> _parametersByPoint = new(StringComparer.OrdinalIgnoreCase);
@@ -43,12 +47,32 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     private ModbusConnectionState _clientState = ModbusConnectionState.Stopped;
     private ModbusConnectionState _serverState = ModbusConnectionState.Stopped;
     private ModbusOptions _currentOptions;
+    private ModbusOptions _draftOptions;
     private string _lastError = string.Empty;
     private string _statusText = "Modbus stopped.";
 
     /// <summary>
     /// Создает модель экрана и подписывается на readable-точки карты ModbusDemo.
     /// </summary>
+    [ActivatorUtilitiesConstructor]
+    public ModbusDemoViewModel(
+        IModbusDemoTcpService modbusTcpService,
+        IModbusDemoOptionsProvider optionsProvider,
+        IDialogService dialogService,
+        IAppConfigService appConfigService,
+        IModbusTcpProfileFilePicker profileFilePicker,
+        IModbusTcpProfileTransferService profileTransferService)
+        : this(
+            modbusTcpService,
+            optionsProvider,
+            dialogService,
+            appConfigService,
+            DispatchToUi,
+            profileFilePicker,
+            profileTransferService)
+    {
+    }
+
     public ModbusDemoViewModel(
         IModbusDemoTcpService modbusTcpService,
         IModbusDemoOptionsProvider optionsProvider,
@@ -63,15 +87,20 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         IModbusDemoOptionsProvider optionsProvider,
         IDialogService dialogService,
         IAppConfigService appConfigService,
-        Action<Action> dispatchToUi)
+        Action<Action> dispatchToUi,
+        IModbusTcpProfileFilePicker? profileFilePicker = null,
+        IModbusTcpProfileTransferService? profileTransferService = null)
     {
         _modbusTcpService = modbusTcpService;
         _optionsProvider = optionsProvider;
         _dialogService = dialogService;
         _appConfigService = appConfigService;
+        _profileFilePicker = profileFilePicker;
+        _profileTransferService = profileTransferService;
         ArgumentNullException.ThrowIfNull(dispatchToUi);
         _dispatchToUi = dispatchToUi;
         _currentOptions = _optionsProvider.CurrentValue.Clone();
+        _draftOptions = _currentOptions.Clone();
 
         TelemetryGroups = CreateTelemetryGroups();
         CommandGroups = CreateCommandGroups();
@@ -111,6 +140,9 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
             StopModbusLifecycleOperation,
             canStop);
         OpenSettingsCommand = ReactiveCommand.CreateFromTask(OpenSettingsAsync, canOpenSettings);
+        SaveSettingsCommand = ReactiveCommand.CreateFromTask(SaveSettingsAsync, canOpenSettings);
+        ImportProfileCommand = ReactiveCommand.CreateFromTask(ImportProfileAsync);
+        ExportProfileCommand = ReactiveCommand.CreateFromTask(ExportProfileAsync);
         ReadParametersCommand = ReactiveCommand.CreateFromTask(
             () => RunUiCommandAsync(ReadParametersCoreAsync),
             canRunCommand);
@@ -119,6 +151,10 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
             canRunCommand);
 
         _modbusTcpService.StateChanged += OnStateChanged;
+        if (_profileTransferService is not null)
+        {
+            _profileTransferService.ProfileApplied += OnProfileApplied;
+        }
         ApplyState(_modbusTcpService.State);
 
         foreach (var pointName in _telemetryByPoint.Keys.Concat(_parametersByPoint.Keys))
@@ -161,6 +197,32 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     /// Открывает настройки секции ModbusDemo.
     /// </summary>
     public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
+
+    /// <summary>
+    /// Сохраняет inline-настройки Modbus TCP.
+    /// </summary>
+    public ReactiveCommand<Unit, Unit> SaveSettingsCommand { get; }
+
+    /// <summary>
+    /// Импортирует единый профиль Modbus TCP.
+    /// </summary>
+    public ReactiveCommand<Unit, Unit> ImportProfileCommand { get; }
+
+    /// <summary>
+    /// Экспортирует единый профиль Modbus TCP.
+    /// </summary>
+    public ReactiveCommand<Unit, Unit> ExportProfileCommand { get; }
+
+    public IReadOnlyList<ModbusRunMode> StartupModes { get; } = Enum.GetValues<ModbusRunMode>();
+
+    /// <summary>
+    /// Черновик endpoint и общих runtime-настроек, отображаемый прямо на экране.
+    /// </summary>
+    public ModbusOptions DraftOptions
+    {
+        get => _draftOptions;
+        private set => this.RaiseAndSetIfChanged(ref _draftOptions, value);
+    }
 
     /// <summary>
     /// Копирует последние прочитанные значения параметров в поля редактирования.
@@ -252,6 +314,10 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     {
         CancelActiveLifecycleOperation();
         _modbusTcpService.StateChanged -= OnStateChanged;
+        if (_profileTransferService is not null)
+        {
+            _profileTransferService.ProfileApplied -= OnProfileApplied;
+        }
 
         foreach (var subscription in _dataSubscriptions)
         {
@@ -491,13 +557,14 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         {
             var options = _appConfigService.GetSection<ModbusOptions>(ModbusOptions.DemoSectionName);
             var savedOptions = await _dialogService.EditModbusSettingsAsync(
-                "Настройки Modbus TCP Demo",
+                "Настройки Modbus TCP",
                 ModbusOptions.DemoSectionName,
                 options);
 
             if (savedOptions is not null)
             {
                 _currentOptions = savedOptions.Clone();
+                DraftOptions = _currentOptions.Clone();
             }
         }
         catch (Exception ex)
@@ -511,7 +578,145 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     }
 
     private ModbusOptions BuildOptions()
-        => _currentOptions.Clone();
+        => DraftOptions.Clone();
+
+    private async Task SaveSettingsAsync()
+    {
+        var options = DraftOptions.Clone();
+        var validationError = ValidateInlineSettings(options);
+        if (!string.IsNullOrWhiteSpace(validationError))
+        {
+            await ShowErrorAsync(validationError);
+            return;
+        }
+
+        try
+        {
+            await _appConfigService.SaveSectionAsync(ModbusOptions.DemoSectionName, options);
+            _currentOptions = options.Clone();
+            DraftOptions = options.Clone();
+            LastError = string.Empty;
+            StatusText = "Настройки Modbus TCP сохранены.";
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync($"Не удалось сохранить настройки Modbus TCP. {ex.Message}");
+        }
+    }
+
+    private async Task ImportProfileAsync()
+    {
+        if (_profileFilePicker is null || _profileTransferService is null)
+        {
+            await ShowErrorAsync("Импорт профиля Modbus TCP недоступен.");
+            return;
+        }
+
+        var path = await _profileFilePicker.PickImportPathAsync();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        var preview = await _profileTransferService.ReadAndValidateAsync(path);
+        if (!preview.Succeeded || preview.Profile is null)
+        {
+            await ShowErrorAsync(preview.ErrorMessage ?? "Профиль Modbus TCP не прошёл проверку.");
+            return;
+        }
+
+        var message = preview.RangeCorrection.HasChanges
+            ? preview.RangeCorrection.ToConfirmationMessage()
+            : "Импорт заменит настройки Modbus TCP, связи SignalId и Менеджер тревог. Продолжить?";
+        if (!await _dialogService.ConfirmAsync(message))
+        {
+            return;
+        }
+
+        var result = await _profileTransferService.ApplyAsync(preview.Profile, preview.RangeCorrection.HasChanges);
+        if (!result.Succeeded)
+        {
+            await ShowErrorAsync(result.ErrorMessage ?? "Не удалось применить профиль Modbus TCP.");
+            return;
+        }
+
+        LastError = string.Empty;
+        StatusText = result.WarningMessage ?? "Профиль Modbus TCP импортирован.";
+    }
+
+    private async Task ExportProfileAsync()
+    {
+        if (_profileFilePicker is null || _profileTransferService is null)
+        {
+            await ShowErrorAsync("Экспорт профиля Modbus TCP недоступен.");
+            return;
+        }
+
+        var path = await _profileFilePicker.PickExportPathAsync();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            await _profileTransferService.ExportAsync(path);
+            LastError = string.Empty;
+            StatusText = $"Профиль Modbus TCP экспортирован: {path}";
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync($"Не удалось экспортировать профиль Modbus TCP. {ex.Message}");
+        }
+    }
+
+    private void OnProfileApplied(object? sender, EventArgs args)
+    {
+        _dispatchToUi(() =>
+        {
+            _currentOptions = _optionsProvider.CurrentValue.Clone();
+            DraftOptions = _currentOptions.Clone();
+        });
+    }
+
+    private static string? ValidateInlineSettings(ModbusOptions options)
+    {
+        if (options.WriteConfirmationTimeoutMs is < 100 or > 60000)
+        {
+            return "Таймаут подтверждения записи должен быть от 100 до 60000 мс.";
+        }
+
+        return ValidateEndpoint("Клиент", options.Client, options.Client.Host)
+               ?? ValidateEndpoint("Сервер", options.Server, options.Server.BindAddress);
+    }
+
+    private static string? ValidateEndpoint(string role, ModbusEndpointOptions endpoint, string address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            return $"{role}: адрес не должен быть пустым.";
+        }
+
+        if (endpoint.Port is < 1 or > 65535 || endpoint.UnitId is < 1 or > 247)
+        {
+            return $"{role}: проверьте Port (1..65535) и UnitId (1..247).";
+        }
+
+        if (endpoint.PollIntervalMs is < 100 or > 60000)
+        {
+            return $"{role}: PollIntervalMs должен быть от 100 до 60000.";
+        }
+
+        if (endpoint.CoilStartAddress is < 0 or > ushort.MaxValue
+            || endpoint.HoldingRegisterStartAddress is < 0 or > ushort.MaxValue
+            || endpoint.CoilCount is < 0 or > 2000
+            || endpoint.RegisterCount is < 0 or > 123)
+        {
+            return $"{role}: проверьте начальные адреса и диапазоны Coils (0..2000) / Holding Registers (0..123).";
+        }
+
+        return null;
+    }
 
     private void OnStateChanged(object? sender, ModbusServiceState state)
     {

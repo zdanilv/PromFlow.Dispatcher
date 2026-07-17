@@ -3,10 +3,12 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Reactive;
 using Configurator.Application.Services;
+using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Desktop.Workspace.ModbusProfile;
 using Microsoft.Extensions.Options;
 using ReactiveUI;
 
@@ -17,6 +19,9 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
     private readonly IOptionsMonitor<ModbusOptions> _optionsMonitor;
     private readonly IAppConfigService _appConfigService;
     private readonly IModbusAlarmMapValidator _validator;
+    private readonly IModbusTcpProfileFilePicker? _profileFilePicker;
+    private readonly IModbusTcpProfileTransferService? _profileTransferService;
+    private readonly IDialogService? _dialogService;
     private readonly IDisposable? _optionsSubscription;
     private ModbusOptions _baseOptions;
     private ModbusOptions _addressOptions;
@@ -30,11 +35,17 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
     public AlarmManagerViewModel(
         IOptionsMonitor<ModbusOptions> optionsMonitor,
         IAppConfigService appConfigService,
-        IModbusAlarmMapValidator validator)
+        IModbusAlarmMapValidator validator,
+        IModbusTcpProfileFilePicker? profileFilePicker = null,
+        IModbusTcpProfileTransferService? profileTransferService = null,
+        IDialogService? dialogService = null)
     {
         _optionsMonitor = optionsMonitor;
         _appConfigService = appConfigService;
         _validator = validator;
+        _profileFilePicker = profileFilePicker;
+        _profileTransferService = profileTransferService;
+        _dialogService = dialogService;
         _baseOptions = optionsMonitor.CurrentValue.Clone();
         _addressOptions = ReadAddressOptions();
 
@@ -43,12 +54,18 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
         ReloadCommand = ReactiveCommand.Create(Reload);
         DuplicateAlarmCommand = ReactiveCommand.Create<AlarmManagerRow>(DuplicateAlarm);
         RemoveAlarmCommand = ReactiveCommand.Create<AlarmManagerRow>(RemoveAlarm);
+        ImportProfileCommand = ReactiveCommand.CreateFromTask(ImportProfileAsync);
+        ExportProfileCommand = ReactiveCommand.CreateFromTask(ExportProfileAsync);
 
         RebuildRows(_baseOptions);
         _optionsSubscription = optionsMonitor.OnChange((options, name) =>
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() => HandleExternalOptions(options, name));
         });
+        if (_profileTransferService is not null)
+        {
+            _profileTransferService.ProfileApplied += OnProfileApplied;
+        }
     }
 
     public ObservableCollection<AlarmManagerRow> Rows { get; } = [];
@@ -63,6 +80,8 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ReloadCommand { get; }
     public ReactiveCommand<AlarmManagerRow, Unit> DuplicateAlarmCommand { get; }
     public ReactiveCommand<AlarmManagerRow, Unit> RemoveAlarmCommand { get; }
+    public ReactiveCommand<Unit, Unit> ImportProfileCommand { get; }
+    public ReactiveCommand<Unit, Unit> ExportProfileCommand { get; }
 
     public bool IsDirty
     {
@@ -109,6 +128,10 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
 
         _disposed = true;
         _optionsSubscription?.Dispose();
+        if (_profileTransferService is not null)
+        {
+            _profileTransferService.ProfileApplied -= OnProfileApplied;
+        }
         DetachRows();
     }
 
@@ -202,6 +225,86 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
         ErrorMessage = null;
         StatusMessage = "Modbus.AlarmMap перечитан из конфигурации.";
         HasExternalChanges = false;
+    }
+
+    private async Task ImportProfileAsync()
+    {
+        if (_profileFilePicker is null || _profileTransferService is null || _dialogService is null)
+        {
+            ErrorMessage = "Импорт профиля Modbus TCP недоступен.";
+            return;
+        }
+
+        var path = await _profileFilePicker.PickImportPathAsync();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        var preview = await _profileTransferService.ReadAndValidateAsync(path);
+        if (!preview.Succeeded || preview.Profile is null)
+        {
+            ErrorMessage = preview.ErrorMessage ?? "Профиль Modbus TCP не прошёл проверку.";
+            return;
+        }
+
+        var message = preview.RangeCorrection.HasChanges
+            ? preview.RangeCorrection.ToConfirmationMessage()
+            : "Импорт заменит настройки Modbus TCP, связи SignalId и Менеджер тревог. Продолжить?";
+        if (IsDirty)
+        {
+            message = "Несохранённый черновик тревог будет заменён.\n\n" + message;
+        }
+
+        if (!await _dialogService.ConfirmAsync(message))
+        {
+            return;
+        }
+
+        var result = await _profileTransferService.ApplyAsync(preview.Profile, preview.RangeCorrection.HasChanges);
+        if (!result.Succeeded)
+        {
+            ErrorMessage = result.ErrorMessage ?? "Не удалось применить профиль Modbus TCP.";
+            return;
+        }
+
+        ErrorMessage = null;
+        StatusMessage = result.WarningMessage ?? "Профиль Modbus TCP импортирован.";
+    }
+
+    private async Task ExportProfileAsync()
+    {
+        if (_profileFilePicker is null || _profileTransferService is null)
+        {
+            ErrorMessage = "Экспорт профиля Modbus TCP недоступен.";
+            return;
+        }
+
+        var path = await _profileFilePicker.PickExportPathAsync();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            await _profileTransferService.ExportAsync(path);
+            ErrorMessage = null;
+            StatusMessage = $"Профиль Modbus TCP экспортирован: {path}";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Не удалось экспортировать профиль Modbus TCP: {ex.Message}";
+        }
+    }
+
+    private void OnProfileApplied(object? sender, EventArgs args)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            RebuildRows(_optionsMonitor.CurrentValue.Clone());
+            HasExternalChanges = false;
+        });
     }
 
     private void HandleExternalOptions(ModbusOptions options, string? name)

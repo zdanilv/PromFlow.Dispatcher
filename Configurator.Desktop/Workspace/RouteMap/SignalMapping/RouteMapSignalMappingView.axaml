@@ -20,6 +20,14 @@
         <TextBlock Text="{Binding ServerAddressBase}" Classes="caption"/>
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+        <Button Content="ИМПОРТ ПРОФИЛЯ" Command="{Binding ImportProfileCommand}">
+          <Button.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Импортировать общий профиль: Modbus TCP, SignalId и тревоги." IsEnabled="False"/>
+            </ContextMenu>
+          </Button.ContextMenu>
+        </Button>
+        <Button Content="ЭКСПОРТ ПРОФИЛЯ" Command="{Binding ExportProfileCommand}"/>
         <Button Content="ПЕРЕЗАГРУЗИТЬ" Command="{Binding ReloadCommand}">
           <Button.ContextMenu>
             <ContextMenu>

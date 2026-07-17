@@ -43,7 +43,7 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | Конфликт адреса | Duplicate coil/bit или пересекающиеся registers |
 | UI остается в mock | `RouteMapRuntime.SignalSource` и флаг источника данных |
 | User сбрасывает admin-настройки | Общий `%LOCALAPPDATA%\Configurator\appsettings.json` и overlay после exe-local defaults |
-| Все stale/offline | Состояние `ModbusDemo`, poll interval и `StaleAfterMs` |
+| Все stale/offline | Состояние `Modbus TCP`, poll interval и `StaleAfterMs` |
 | В user-режиме видны вкладки | `Application.WorkMode` и binding `WorkspaceView.IsUserMode` |
 | Offline lock не сработал | Системный `connection.connected`, mapper и `AreCommandsEnabled` |
 | Общая авария не окрашивает карту | Точка `Modbus.DataMap` с `Name=system.fault`, `Read/Bool`, good quality и значение `true` |
@@ -94,7 +94,7 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 2. Зафиксировать список всех SignalId.
 3. Получить утвержденную PLC карту coils/registers/bits.
 4. Уточнить notation адресов.
-5. Настроить endpoint и start addresses в `Modbus Demo`.
+5. Настроить endpoint и start addresses во вкладке `Modbus TCP`.
 6. Проверить, что `RouteMapRuntime`, `Modbus` и `ModbusDemo` сохранены в общем `%LOCALAPPDATA%\Configurator\appsettings.json`.
 7. Заполнить `Modbus.DataMap` во вкладке `SignalId ↔ Modbus`.
 8. Заполнить `Modbus.AlarmMap` во вкладке `Менеджер тревог`, не дублируя тревоги в `DataMap`.

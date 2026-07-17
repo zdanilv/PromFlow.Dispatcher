@@ -20,6 +20,8 @@
         <TextBlock Text="{Binding ServerAddressBase}" Classes="caption"/>
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+        <Button Content="ИМПОРТ ПРОФИЛЯ" Command="{Binding ImportProfileCommand}"/>
+        <Button Content="ЭКСПОРТ ПРОФИЛЯ" Command="{Binding ExportProfileCommand}"/>
         <Button Content="ДОБАВИТЬ" Command="{Binding AddAlarmCommand}"/>
         <Button Content="ПЕРЕЗАГРУЗИТЬ" Command="{Binding ReloadCommand}"/>
         <Button Content="СОХРАНИТЬ" Command="{Binding SaveCommand}"/>

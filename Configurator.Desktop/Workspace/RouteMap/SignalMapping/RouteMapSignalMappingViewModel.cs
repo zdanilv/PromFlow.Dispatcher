@@ -6,6 +6,7 @@ using System.Reactive.Linq;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Configurator.Application.Services;
+using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -14,6 +15,7 @@ using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
+using Configurator.Desktop.Workspace.ModbusProfile;
 using Microsoft.Extensions.Options;
 using ReactiveUI;
 
@@ -26,6 +28,9 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
     private readonly IAppConfigService _appConfigService;
     private readonly IModbusDataMapValidator _validator;
     private readonly IModbusDataMapRuntime _dataMapRuntime;
+    private readonly IModbusTcpProfileFilePicker? _profileFilePicker;
+    private readonly IModbusTcpProfileTransferService? _profileTransferService;
+    private readonly IDialogService? _dialogService;
     private readonly Dictionary<RouteMapSignalElementCategory, bool> _groupExpansionStates = [];
     private readonly IDisposable _definitionSubscription;
     private readonly IDisposable? _optionsSubscription;
@@ -43,13 +48,19 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         IOptionsMonitor<ModbusOptions> optionsMonitor,
         IAppConfigService appConfigService,
         IModbusDataMapValidator validator,
-        IModbusDataMapRuntime dataMapRuntime)
+        IModbusDataMapRuntime dataMapRuntime,
+        IModbusTcpProfileFilePicker? profileFilePicker = null,
+        IModbusTcpProfileTransferService? profileTransferService = null,
+        IDialogService? dialogService = null)
     {
         _configurationManager = configurationManager;
         _optionsMonitor = optionsMonitor;
         _appConfigService = appConfigService;
         _validator = validator;
         _dataMapRuntime = dataMapRuntime;
+        _profileFilePicker = profileFilePicker;
+        _profileTransferService = profileTransferService;
+        _dialogService = dialogService;
         _baseOptions = optionsMonitor.CurrentValue.Clone();
         _addressOptions = ReadAddressOptions();
 
@@ -57,6 +68,8 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         ReloadCommand = ReactiveCommand.Create(Reload);
         CreateMappingCommand = ReactiveCommand.Create<RouteMapSignalMappingRow>(CreateMapping);
         RemoveMappingCommand = ReactiveCommand.Create<RouteMapSignalMappingRow>(RemoveMapping);
+        ImportProfileCommand = ReactiveCommand.CreateFromTask(ImportProfileAsync);
+        ExportProfileCommand = ReactiveCommand.CreateFromTask(ExportProfileAsync);
 
         RebuildRows(configurationManager.CurrentDefinition, _baseOptions, preserveDraft: false);
         _definitionSubscription = configurationManager.DefinitionChanges
@@ -65,6 +78,10 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
                 RebuildRows(definition, _baseOptions, preserveDraft: IsDirty)));
         _optionsSubscription = optionsMonitor.OnChange((options, name) =>
             Dispatcher.UIThread.Post(() => HandleExternalOptions(options, name)));
+        if (_profileTransferService is not null)
+        {
+            _profileTransferService.ProfileApplied += OnProfileApplied;
+        }
     }
 
     public ObservableCollection<RouteMapSignalMappingRow> Rows { get; } = [];
@@ -77,6 +94,8 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ReloadCommand { get; }
     public ReactiveCommand<RouteMapSignalMappingRow, Unit> CreateMappingCommand { get; }
     public ReactiveCommand<RouteMapSignalMappingRow, Unit> RemoveMappingCommand { get; }
+    public ReactiveCommand<Unit, Unit> ImportProfileCommand { get; }
+    public ReactiveCommand<Unit, Unit> ExportProfileCommand { get; }
 
     public bool IsDirty
     {
@@ -124,6 +143,10 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         _disposed = true;
         _definitionSubscription.Dispose();
         _optionsSubscription?.Dispose();
+        if (_profileTransferService is not null)
+        {
+            _profileTransferService.ProfileApplied -= OnProfileApplied;
+        }
         DetachRows();
     }
 
@@ -213,6 +236,86 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         ErrorMessage = null;
         StatusMessage = "Связи перечитаны из Modbus.DataMap.";
         HasExternalChanges = false;
+    }
+
+    private async Task ImportProfileAsync()
+    {
+        if (_profileFilePicker is null || _profileTransferService is null || _dialogService is null)
+        {
+            ErrorMessage = "Импорт профиля Modbus TCP недоступен.";
+            return;
+        }
+
+        var path = await _profileFilePicker.PickImportPathAsync();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        var preview = await _profileTransferService.ReadAndValidateAsync(path);
+        if (!preview.Succeeded || preview.Profile is null)
+        {
+            ErrorMessage = preview.ErrorMessage ?? "Профиль Modbus TCP не прошёл проверку.";
+            return;
+        }
+
+        var message = preview.RangeCorrection.HasChanges
+            ? preview.RangeCorrection.ToConfirmationMessage()
+            : "Импорт заменит настройки Modbus TCP, связи SignalId и Менеджер тревог. Продолжить?";
+        if (IsDirty)
+        {
+            message = "Несохранённый черновик связей SignalId будет заменён.\n\n" + message;
+        }
+
+        if (!await _dialogService.ConfirmAsync(message))
+        {
+            return;
+        }
+
+        var result = await _profileTransferService.ApplyAsync(preview.Profile, preview.RangeCorrection.HasChanges);
+        if (!result.Succeeded)
+        {
+            ErrorMessage = result.ErrorMessage ?? "Не удалось применить профиль Modbus TCP.";
+            return;
+        }
+
+        ErrorMessage = null;
+        StatusMessage = result.WarningMessage ?? "Профиль Modbus TCP импортирован.";
+    }
+
+    private async Task ExportProfileAsync()
+    {
+        if (_profileFilePicker is null || _profileTransferService is null)
+        {
+            ErrorMessage = "Экспорт профиля Modbus TCP недоступен.";
+            return;
+        }
+
+        var path = await _profileFilePicker.PickExportPathAsync();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            await _profileTransferService.ExportAsync(path);
+            ErrorMessage = null;
+            StatusMessage = $"Профиль Modbus TCP экспортирован: {path}";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Не удалось экспортировать профиль Modbus TCP: {ex.Message}";
+        }
+    }
+
+    private void OnProfileApplied(object? sender, EventArgs args)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            RebuildRows(_configurationManager.CurrentDefinition, _optionsMonitor.CurrentValue.Clone(), preserveDraft: false);
+            HasExternalChanges = false;
+        });
     }
 
     private void HandleExternalOptions(ModbusOptions options, string? name)
