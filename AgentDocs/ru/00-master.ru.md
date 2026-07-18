@@ -14,6 +14,7 @@
 | Добавляю новый сигнал | `04-signal-id-guide.ru.md`, `03-modbus-tcp-guide.ru.md` | `source/ru/signal_id_modbus_tcp_mapping_guide.ru.md` |
 | Чиню runtime, DI или lifecycle | `01-architecture-overview.ru.md`, `05-coding-rules.ru.md` | `source/ru/modbus_tcp_integration_guide.ru.md` |
 | Добавляю или оформляю SVG-иконки в Avalonia | `07-svg-icons-guide.ru.md` | `Configurator.Desktop/Assets/icons` |
+| Собираю EXE/RPM или готовлю релиз | `08-build-and-install.ru.md`, `06-testing-and-diagnostics.ru.md` | `Configurator.Boot/Packaging` |
 | Проверяю перед PR или commit | `06-testing-and-diagnostics.ru.md` | профильные source-гайды |
 
 ## Актуальные документы
@@ -25,6 +26,7 @@
 - `05-coding-rules.ru.md` — правила разработки с учетом текущей архитектуры.
 - `06-testing-and-diagnostics.ru.md` — команды проверки, диагностика и production checklist.
 - `07-svg-icons-guide.ru.md` — хранение, подключение, окрашивание и кеширование SVG-иконок Avalonia.
+- `08-build-and-install.ru.md` — пошаговая Release-сборка, Inno Setup EXE для Windows 10/11, RPM для ALT Linux 11.1, подпись и smoke-проверка.
 
 ## Исходные гайды
 
@@ -62,4 +64,3 @@
 - `ПУСК`, `СТОП`, `АВАРИЯ`, loader/target и modes — toggle/readback-команды;
   `СБРОС` — pulse-команда.
 - Legacy `State` и `*OffFeedback` не возвращаются в актуальное поведение.
-

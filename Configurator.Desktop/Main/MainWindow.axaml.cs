@@ -1,5 +1,4 @@
 
-using Avalonia;
 using Avalonia.Markup.Xaml;
 using Avalonia.Controls;
 using Configurator.Application.Services;
@@ -21,10 +20,14 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
     {
         AvaloniaXamlLoader.Load(this);
 
-        // Получаем сервис конфигурации через DI
-        _configService = (IAppConfigService)Configurator.Desktop.App.Services.GetService(typeof(IAppConfigService))!;
-        // Загружаем пользовательские настройки через интерфейс
-        _userSettings = _configService != null ? _configService.LoadUserSettings() : new UserSettings();
+        // Получаем сервис конфигурации через DI и загружаем пользовательские настройки.
+        _configService = Configurator.Desktop.App.Services.GetRequiredService<IAppConfigService>();
+        _userSettings = _configService.LoadUserSettings();
+
+        // Avalonia определит доступный экран после подключения окна к desktop lifetime.
+        // Это работает и на Windows, и на X11/XWayland, где Screens.Primary в конструкторе
+        // окна ещё может быть null.
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
 #if DEBUG
         Debug.WriteLine($"[MainWindow] Загружены UserSettings: Width={_userSettings.Width}, Height={_userSettings.Height}, FullScreen={_userSettings.IsFullScreen}");
@@ -33,16 +36,11 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
         if (_userSettings.IsFullScreen)
         {
             this.WindowState = WindowState.FullScreen;
-            this.Position = new PixelPoint(0, 0);
         }
         else
         {
             this.Width = _userSettings.Width;
             this.Height = _userSettings.Height;
-            var screen = Screens.Primary;
-            int x = (int)((screen.WorkingArea.Width - this.Width) / 2);
-            int y = (int)((screen.WorkingArea.Height - this.Height) / 2);
-            this.Position = new PixelPoint(x, y);
             this.WindowState = WindowState.Normal;
         }
 
@@ -55,16 +53,13 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
         /// </summary>
         private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
-            if (_configService != null)
-            {
-                var settings = _configService.LoadUserSettings();
-                settings.Width = this.Width;
-                settings.Height = this.Height;
-                settings.IsFullScreen = this.WindowState == WindowState.FullScreen;
+            var settings = _configService.LoadUserSettings();
+            settings.Width = this.Width;
+            settings.Height = this.Height;
+            settings.IsFullScreen = this.WindowState == WindowState.FullScreen;
 #if DEBUG
-                Debug.WriteLine($"[MainWindow] Сохраняются UserSettings: Width={settings.Width}, Height={settings.Height}, FullScreen={settings.IsFullScreen}");
+            Debug.WriteLine($"[MainWindow] Сохраняются UserSettings: Width={settings.Width}, Height={settings.Height}, FullScreen={settings.IsFullScreen}");
 #endif
-                _configService.SaveUserSettings(settings);
-            }
+            _configService.SaveUserSettings(settings);
         }
 }

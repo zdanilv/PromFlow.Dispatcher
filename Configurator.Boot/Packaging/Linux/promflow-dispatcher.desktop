@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=PromFlow Dispatcher
+Comment=RouteMap, Modbus TCP and OPC UA dispatcher
+Exec=/usr/bin/promflow-dispatcher
+Icon=promflow-dispatcher
+Terminal=false
+Categories=Utility;Engineering;
+StartupNotify=true

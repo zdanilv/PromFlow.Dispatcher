@@ -157,9 +157,23 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         }
         ApplyState(_modbusTcpService.State);
 
+        var missingPointNames = new List<string>();
         foreach (var pointName in _telemetryByPoint.Keys.Concat(_parametersByPoint.Keys))
         {
-            _dataSubscriptions.Add(_modbusTcpService.Subscribe(pointName, OnDataValueChanged));
+            try
+            {
+                _dataSubscriptions.Add(_modbusTcpService.Subscribe(pointName, OnDataValueChanged));
+            }
+            catch (ArgumentException exception) when (exception.ParamName == "name")
+            {
+                missingPointNames.Add(pointName);
+            }
+        }
+
+        if (missingPointNames.Count > 0)
+        {
+            StatusText = "Конфигурация ModbusDemo неполна.";
+            LastError = $"В ModbusDemo:DataMap отсутствуют точки: {string.Join(", ", missingPointNames)}.";
         }
     }
 

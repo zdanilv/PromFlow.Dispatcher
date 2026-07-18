@@ -31,6 +31,18 @@ public sealed class ModbusDemoViewModelTests
     }
 
     [Fact]
+    public void MissingDemoDataMapPointsDoNotPreventWorkspaceCreation()
+    {
+        var service = new FakeModbusTcpService { RejectSubscriptions = true };
+
+        using var viewModel = CreateViewModel(service);
+
+        Assert.Equal("Конфигурация ModbusDemo неполна.", viewModel.StatusText);
+        Assert.Contains("Telemetry_1", viewModel.LastError);
+        Assert.Contains("ModbusDemo:DataMap", viewModel.LastError);
+    }
+
+    [Fact]
     public void TelemetrySubscriptionDecodesTelemetry1Bits()
     {
         var service = new FakeModbusTcpService();
@@ -647,6 +659,8 @@ public sealed class ModbusDemoViewModelTests
 
         public Queue<ModbusOperationResult> SetResults { get; } = [];
 
+        public bool RejectSubscriptions { get; init; }
+
         public TaskCompletionSource<int>? SetCallStarted { get; set; }
 
         public TaskCompletionSource<bool>? SetCallRelease { get; set; }
@@ -726,6 +740,11 @@ public sealed class ModbusDemoViewModelTests
 
         public IDisposable Subscribe(string name, Action<ModbusDataValue> onChanged)
         {
+            if (RejectSubscriptions)
+            {
+                throw new ArgumentException($"Point '{name}' was not found.", nameof(name));
+            }
+
             if (!_subscriptions.TryGetValue(name, out var subscribers))
             {
                 subscribers = [];

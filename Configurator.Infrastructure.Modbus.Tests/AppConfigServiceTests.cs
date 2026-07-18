@@ -8,6 +8,7 @@ using Configurator.Application.Services.Signals;
 using Configurator.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Primitives;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Xunit;
 
@@ -169,6 +170,89 @@ public sealed class AppConfigServiceTests
         finally
         {
             Directory.Delete(sharedDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void UserSettingsAreStoredAtExplicitPerUserPath()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"DesktopTemplate-user-settings-{Guid.NewGuid():N}");
+        var appSettingsPath = Path.Combine(directory, "appsettings.json");
+        var userSettingsPath = Path.Combine(directory, "profile", "user_settings.json");
+
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["WindowSettings:Width"] = "1200",
+                    ["WindowSettings:Height"] = "800",
+                    ["WindowSettings:IsFullScreen"] = "false"
+                })
+                .Build();
+            var service = new AppConfigService(configuration, appSettingsPath, userSettingsPath);
+            var expected = new Configurator.Application.Services.UserSettings
+            {
+                Width = 1440,
+                Height = 900,
+                IsFullScreen = true
+            };
+
+            service.SaveUserSettings(expected);
+            var actual = service.LoadUserSettings();
+
+            Assert.True(File.Exists(userSettingsPath));
+            Assert.Equal(expected.Width, actual.Width);
+            Assert.Equal(expected.Height, actual.Height);
+            Assert.Equal(expected.IsFullScreen, actual.IsFullScreen);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LegacyUserSettingsAreMigratedToPerUserPath()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"DesktopTemplate-user-settings-migration-{Guid.NewGuid():N}");
+        var appSettingsPath = Path.Combine(directory, "appsettings.json");
+        var legacyPath = Path.Combine(directory, "portable", "user_settings.json");
+        var userSettingsPath = Path.Combine(directory, "profile", "user_settings.json");
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+            var expected = new Configurator.Application.Services.UserSettings
+            {
+                Width = 1366,
+                Height = 768,
+                IsFullScreen = true
+            };
+            await File.WriteAllTextAsync(
+                legacyPath,
+                JsonSerializer.Serialize(expected, new JsonSerializerOptions { WriteIndented = true }));
+
+            var configuration = new ConfigurationBuilder().Build();
+            var service = new AppConfigService(
+                configuration,
+                appSettingsPath,
+                userSettingsPath,
+                [legacyPath]);
+
+            var actual = service.LoadUserSettings();
+
+            Assert.Equal(expected.Width, actual.Width);
+            Assert.Equal(expected.Height, actual.Height);
+            Assert.Equal(expected.IsFullScreen, actual.IsFullScreen);
+            Assert.True(File.Exists(userSettingsPath));
+            Assert.True(File.Exists(legacyPath));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
         }
     }
 

@@ -59,18 +59,34 @@ internal static class Program
     /// </summary>
     [STAThread]
     public static void Main(string[] args)
-        => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    {
+        var launchConfiguration = BuildLaunchConfiguration();
+        ConfigureLogging(launchConfiguration);
+
+        try
+        {
+            Log.Information("Starting PromFlow Dispatcher.");
+            BuildAvaloniaApp(launchConfiguration).StartWithClassicDesktopLifetime(args);
+        }
+        catch (Exception ex)
+        {
+            Log.Fatal(ex, "PromFlow Dispatcher terminated unexpectedly.");
+            throw;
+        }
+        finally
+        {
+            Log.CloseAndFlush();
+        }
+    }
 
     /// <summary>
     /// Настраивает Avalonia, ReactiveUI и зависимости, включая Modbus/OpcUa инфраструктуру.
     /// </summary>
-    public static AppBuilder BuildAvaloniaApp()
-    {
-        var launchConfiguration = new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-            .Build();
+    public static AppBuilder BuildAvaloniaApp() =>
+        BuildAvaloniaApp(BuildLaunchConfiguration());
 
+    private static AppBuilder BuildAvaloniaApp(IConfiguration launchConfiguration)
+    {
         Directory.CreateDirectory(ApplicationConfigPaths.SharedConfigDirectory);
         var sharedConfigProvider = new PhysicalFileProvider(ApplicationConfigPaths.SharedConfigDirectory);
         var runtimeConfiguration = new ConfigurationBuilder()
@@ -85,7 +101,11 @@ internal static class Program
             .UseReactiveUIWithMicrosoftDependencyResolver(
                 services =>
                 {
-                    services.AddLogging();
+                    services.AddLogging(logging =>
+                    {
+                        logging.ClearProviders();
+                        logging.AddSerilog(Log.Logger, dispose: false);
+                    });
                     services.Configure<ApplicationOptions>(launchConfiguration.GetSection(ApplicationOptions.SectionName));
                     services.AddApplication();
                     services.AddInfrastructure(runtimeConfiguration);
@@ -173,5 +193,23 @@ internal static class Program
                     Configurator.Desktop.App.Services = sp!;
                 }
             );
+    }
+
+    private static IConfigurationRoot BuildLaunchConfiguration() =>
+        new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+            .Build();
+
+    private static void ConfigureLogging(IConfiguration configuration)
+    {
+        Directory.CreateDirectory(ApplicationConfigPaths.LogsDirectory);
+        Log.Logger = new LoggerConfiguration()
+            .ReadFrom.Configuration(configuration)
+            .WriteTo.File(
+                ApplicationConfigPaths.LogFilePattern,
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 14)
+            .CreateLogger();
     }
 }

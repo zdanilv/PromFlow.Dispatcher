@@ -149,7 +149,8 @@
 							  Foreground="{Binding SelectorForeground}"
 							  IsEnabled="{Binding IsSelectorEnabled}"
 							  IsChecked="{Binding IsSelectorChecked, Mode=TwoWay}"/>
-				<Button Grid.Column="2"
+				<Button x:Name="ParametersButton"
+						Grid.Column="2"
 						Classes="equipment-action parameter"
 						Content="{materialIcons:MaterialIconExt Kind=TuneVerticalVariant}"
 						FontSize="22"

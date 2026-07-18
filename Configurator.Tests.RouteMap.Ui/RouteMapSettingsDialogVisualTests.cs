@@ -491,9 +491,7 @@ public sealed class RouteMapSettingsDialogVisualTests
         cardWindow.Show();
         Dispatcher.UIThread.RunJobs();
 
-        var parameterButton = cardView.GetVisualDescendants()
-            .OfType<Button>()
-            .Single(button => button.Content?.ToString() == "Н");
+        var parameterButton = cardView.FindControl<Button>("ParametersButton")!;
         var selectorButton = cardView.FindControl<ToggleButton>("SelectorButton")!;
         var startButton = cardView.FindControl<ToggleButton>("StartButton")!;
         var stopButton = cardView.FindControl<ToggleButton>("StopButton")!;

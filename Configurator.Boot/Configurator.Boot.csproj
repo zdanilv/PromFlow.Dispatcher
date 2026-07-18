@@ -6,6 +6,11 @@
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<AssemblyName>PromFlow.Dispatcher</AssemblyName>
+		<Product>PromFlow Dispatcher</Product>
+		<Company>PromFlow</Company>
+		<Description>Desktop dispatcher for RouteMap, Modbus TCP and OPC UA.</Description>
+		<ApplicationIcon>..\Configurator.Desktop\Assets\avalonia-logo.ico</ApplicationIcon>
 	</PropertyGroup>
 
 
@@ -16,15 +21,15 @@
 
 
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.5" />
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
 		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.5" />
-		<PackageReference Include="ReactiveUI.Avalonia.Microsoft.Extensions.DependencyInjection" Version="11.4.12" />
-		<PackageReference Include="Splat" Version="19.3.1" />
-		<PackageReference Include="Splat.Microsoft.Extensions.DependencyInjection" Version="19.3.1" />
+		<PackageReference Include="ReactiveUI.Avalonia.Microsoft.Extensions.DependencyInjection" Version="11.4.13" />
+		<PackageReference Include="Splat" Version="19.4.1" />
+		<PackageReference Include="Splat.Microsoft.Extensions.DependencyInjection" Version="19.4.1" />
 
 
-		<PackageReference Include="ReactiveUI.Avalonia" Version="11.4.12" />
+		<PackageReference Include="ReactiveUI.Avalonia" Version="11.4.13" />
 
 
 		<PackageReference Include="Serilog" Version="4.3.1" />
@@ -49,7 +54,27 @@
 		<None Update="appsettings.json">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
+		<None Update="Packaging\**\*">
+			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
+		</None>
+		<None Update="Properties\PublishProfiles\*.pubxml">
+			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
+		</None>
+		<None Include="..\global.json" Link="Build\global.json" />
 	</ItemGroup>
+
+	<ItemGroup>
+		<Folder Include="Packaging\Windows\" />
+		<Folder Include="Packaging\Linux\" />
+		<Folder Include="Properties\PublishProfiles\" />
+	</ItemGroup>
+
+	<Target Name="RemoveDebugSymbolsFromPublish" AfterTargets="ComputeFilesToPublish">
+		<ItemGroup>
+			<ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+								   Condition="'%(ResolvedFileToPublish.Extension)' == '.pdb'" />
+		</ItemGroup>
+	</Target>
 
 
 </Project>

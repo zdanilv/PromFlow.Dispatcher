@@ -16,18 +16,41 @@ namespace Configurator.Infrastructure.Services
     {
         private readonly IConfiguration _configuration;
         private readonly string _configFilePath;
+        private readonly string _userSettingsFilePath;
+        private readonly IReadOnlyList<string> _legacyUserSettingsFilePaths;
         private readonly SemaphoreSlim _saveGate = new(1, 1);
-        private const string UserSettingsFile = "user_settings.json";
 
         public AppConfigService(IConfiguration configuration)
-            : this(configuration, ApplicationConfigPaths.SharedAppSettingsPath)
+            : this(
+                configuration,
+                ApplicationConfigPaths.SharedAppSettingsPath,
+                ApplicationConfigPaths.UserSettingsPath)
         {
         }
 
         public AppConfigService(IConfiguration configuration, string configFilePath)
+            : this(configuration, configFilePath, ApplicationConfigPaths.UserSettingsPath)
+        {
+        }
+
+        public AppConfigService(
+            IConfiguration configuration,
+            string configFilePath,
+            string userSettingsFilePath,
+            IEnumerable<string>? legacyUserSettingsFilePaths = null)
         {
             _configuration = configuration;
             _configFilePath = configFilePath;
+            _userSettingsFilePath = userSettingsFilePath;
+            var pathComparer = OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal;
+            var currentPath = Path.GetFullPath(_userSettingsFilePath);
+            _legacyUserSettingsFilePaths = (legacyUserSettingsFilePaths ?? GetDefaultLegacyUserSettingsPaths())
+                .Select(Path.GetFullPath)
+                .Where(path => !pathComparer.Equals(path, currentPath))
+                .Distinct(pathComparer)
+                .ToArray();
         }
 
         /// <summary>
@@ -141,9 +164,13 @@ namespace Configurator.Infrastructure.Services
         public void SaveUserSettings(UserSettings settings)
         {
             var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(UserSettingsFile, json);
+            var directory = Path.GetDirectoryName(_userSettingsFilePath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+
+            File.WriteAllText(_userSettingsFilePath, json);
 #if DEBUG
-            Debug.WriteLine($"[AppConfigService] UserSettings сохранены: {json}");
+            Debug.WriteLine($"[AppConfigService] UserSettings сохранены в {_userSettingsFilePath}: {json}");
 #endif
         }
 
@@ -152,16 +179,51 @@ namespace Configurator.Infrastructure.Services
         /// </summary>
         public UserSettings LoadUserSettings()
         {
-            if (File.Exists(UserSettingsFile))
+            var settings = LoadUserSettingsFromFile(_userSettingsFilePath);
+            if (settings is not null)
             {
-                var json = File.ReadAllText(UserSettingsFile);
-#if DEBUG
-                Debug.WriteLine($"[AppConfigService] UserSettings загружены из user_settings.json: {json}");
-#endif
-                var settings = JsonSerializer.Deserialize<UserSettings>(json);
-                if (settings != null) return settings;
+                return settings;
             }
+
+            foreach (var legacyPath in _legacyUserSettingsFilePaths)
+            {
+                settings = LoadUserSettingsFromFile(legacyPath);
+                if (settings is null)
+                {
+                    continue;
+                }
+
+                SaveUserSettings(settings);
+#if DEBUG
+                Debug.WriteLine($"[AppConfigService] UserSettings перенесены из {legacyPath} в {_userSettingsFilePath}.");
+#endif
+                return settings;
+            }
+
             return GetSection<UserSettings>("WindowSettings"); // пока секция WindowSettings, но можно расширять
+        }
+
+        private static UserSettings? LoadUserSettingsFromFile(string path)
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            var json = File.ReadAllText(path);
+#if DEBUG
+            Debug.WriteLine($"[AppConfigService] UserSettings загружены из {path}: {json}");
+#endif
+            return JsonSerializer.Deserialize<UserSettings>(json);
+        }
+
+        private static IEnumerable<string> GetDefaultLegacyUserSettingsPaths()
+        {
+            // Старые версии читали относительный user_settings.json из текущего каталога.
+            yield return Path.Combine(Environment.CurrentDirectory, ApplicationConfigPaths.UserSettingsFileName);
+
+            // Этот вариант сохраняет совместимость с portable-публикациями, запущенными рядом с файлом настроек.
+            yield return Path.Combine(AppContext.BaseDirectory, ApplicationConfigPaths.UserSettingsFileName);
         }
 
         /*
