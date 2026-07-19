@@ -1,3 +1,4 @@
+using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -35,6 +36,9 @@ public interface IDialogViewFactory
     DialogViewContext<bool> CreateAlarmNotification(
         ModbusAlarmKind kind,
         string message);
+
+    DialogViewContext<bool> CreateAlarmNotification(AlarmNotificationContent notification)
+        => CreateAlarmNotification(notification.Kind, notification.Message);
 
     DialogViewContext<ModbusOptions?> CreateModbusSettings(
         string title,

@@ -117,14 +117,24 @@
                                                                    HorizontalAlignment="Center"
                                                                    VerticalAlignment="Center"/>
                                                     </Border>
-                                                    <TextBlock Classes="alarm-notification-message"
-                                                               Grid.Column="1"
-                                                               Text="{Binding Message}"
-                                                               Foreground="#2F3A45"
-                                                               TextWrapping="WrapWithOverflow"
-                                                               FontSize="13"
-                                                               LineHeight="18"
-                                                               VerticalAlignment="Center"/>
+                                                    <StackPanel Grid.Column="1"
+                                                                VerticalAlignment="Center">
+                                                        <TextBlock Classes="alarm-notification-message"
+                                                                   Text="{Binding Message}"
+                                                                   Foreground="#2F3A45"
+                                                                   TextWrapping="WrapWithOverflow"
+                                                                   FontSize="13"
+                                                                   LineHeight="18"
+                                                                   VerticalAlignment="Center"/>
+                                                        <TextBlock Classes="alarm-notification-register-value"
+                                                                   Text="{Binding RegisterValueText}"
+                                                                   IsVisible="{Binding HasRegisterValueText}"
+                                                                   Foreground="#66717C"
+                                                                   TextWrapping="WrapWithOverflow"
+                                                                   FontSize="13"
+                                                                   LineHeight="18"
+                                                                   Margin="0,4,0,0"/>
+                                                    </StackPanel>
                                                 </Grid>
                                             </Button>
                                         </Grid>

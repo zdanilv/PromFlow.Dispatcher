@@ -192,7 +192,19 @@ public sealed class ModbusTcpProfileTransferServiceTests
                     Type = ModbusValueType.Bool
                 }
             ],
-            AlarmMap = [CreateAlarm(acknowledgementAddress: 10)]
+            AlarmMap =
+            [
+                new ModbusAlarmOptions
+                {
+                    Id = "alarm.range",
+                    Message = "Проверка",
+                    RegisterValueEnabled = true,
+                    RegisterValuePrefix = "Значение: ",
+                    RegisterValueAddress = 9,
+                    Alarm = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 0 },
+                    Acknowledgement = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 10 }
+                }
+            ]
         });
         profile.AddressLabels =
         [
@@ -208,7 +220,7 @@ public sealed class ModbusTcpProfileTransferServiceTests
             Assert.True(preview.Succeeded);
             Assert.True(preview.RangeCorrection.HasChanges);
             Assert.Equal(11, preview.RangeCorrection.ClientCoilCount);
-            Assert.Equal(7, preview.RangeCorrection.ClientRegisterCount);
+            Assert.Equal(10, preview.RangeCorrection.ClientRegisterCount);
 
             var applied = await service.ApplyAsync(preview.Profile!, applyRangeCorrection: true);
 
@@ -218,12 +230,12 @@ public sealed class ModbusTcpProfileTransferServiceTests
             Assert.Contains(ModbusOptions.DemoSectionName, config.LastSections.Keys);
             var savedRuntime = Assert.IsType<ModbusOptions>(config.LastSections[ModbusOptions.DemoSectionName]);
             Assert.Equal(11, savedRuntime.Client.CoilCount);
-            Assert.Equal(7, savedRuntime.Client.RegisterCount);
+            Assert.Equal(10, savedRuntime.Client.RegisterCount);
             Assert.Single(savedRuntime.DataMap); // legacy demo-map is retained, not imported
 
             var savedMap = Assert.IsType<ModbusOptions>(config.LastSections[ModbusOptions.SectionName]);
             Assert.Equal(11, savedMap.Client.CoilCount);
-            Assert.Equal(7, savedMap.Client.RegisterCount);
+            Assert.Equal(10, savedMap.Client.RegisterCount);
             Assert.Equal("Вход", Assert.Single(savedMap.AddressLabels).DisplayName);
             Assert.Equal(2, dataMapRuntime.LastDataMap.Count);
         }

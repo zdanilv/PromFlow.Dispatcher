@@ -42,27 +42,32 @@
     </StackPanel>
 
     <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-      <StackPanel MinWidth="2060">
+      <StackPanel MinWidth="2680">
         <Border Background="White" Padding="6">
-          <Grid ColumnDefinitions="70,150,150,260,120,80,70,130,130,120,80,70,130,130,120,110,150"
+          <Grid ColumnDefinitions="70,150,150,260,80,180,80,130,130,120,80,70,130,130,120,80,70,130,130,120,110,150"
                 ColumnSpacing="6">
             <TextBlock Text="Вкл." FontWeight="SemiBold"/>
             <TextBlock Grid.Column="1" Text="Id" FontWeight="SemiBold"/>
             <TextBlock Grid.Column="2" Text="Тип" FontWeight="SemiBold"/>
             <TextBlock Grid.Column="3" Text="Сообщение" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="4" Text="Alarm area" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="5" Text="Offset" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="6" Text="Bit" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="7" Text="Alarm client" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="8" Text="Alarm server" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="9" Text="OK area" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="4" Text="Показ. знач." FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="5" Text="Текст до значения" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="6" Text="Знач. offset" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="7" Text="Знач. client" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="8" Text="Знач. server" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="9" Text="Alarm area" FontWeight="SemiBold"/>
             <TextBlock Grid.Column="10" Text="Offset" FontWeight="SemiBold"/>
             <TextBlock Grid.Column="11" Text="Bit" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="12" Text="OK client" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="13" Text="OK server" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="14" Text="Repeat ms" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="15" Text="Pulse ms" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="16" Text="Действие" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="12" Text="Alarm client" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="13" Text="Alarm server" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="14" Text="OK area" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="15" Text="Offset" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="16" Text="Bit" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="17" Text="OK client" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="18" Text="OK server" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="19" Text="Repeat ms" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="20" Text="Pulse ms" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="21" Text="Действие" FontWeight="SemiBold"/>
           </Grid>
         </Border>
 
@@ -72,7 +77,7 @@
               <Border BorderBrush="#E1E6EA" BorderThickness="0,0,0,1" Padding="6" Background="White">
                 <StackPanel>
                   <Grid Classes="alarm-manager-row"
-                        ColumnDefinitions="70,150,150,260,120,80,70,130,130,120,80,70,130,130,120,110,150"
+                        ColumnDefinitions="70,150,150,260,80,180,80,130,130,120,80,70,130,130,120,80,70,130,130,120,110,150"
                         ColumnSpacing="6">
                     <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center"/>
                     <TextBox Grid.Column="1" Classes="cell" Text="{Binding Id, Mode=TwoWay}"/>
@@ -80,23 +85,28 @@
                               ItemsSource="{Binding DataContext.AlarmKinds, ElementName=Root}"
                               SelectedItem="{Binding Kind, Mode=TwoWay}"/>
                     <TextBox Grid.Column="3" Classes="cell" Text="{Binding Message, Mode=TwoWay}"/>
-                    <ComboBox Grid.Column="4" Classes="cell"
-                              ItemsSource="{Binding DataContext.DataAreas, ElementName=Root}"
-                              SelectedItem="{Binding AlarmArea, Mode=TwoWay}"/>
-                    <TextBox Grid.Column="5" Classes="cell" Text="{Binding AlarmAddress, Mode=TwoWay}"/>
-                    <TextBox Grid.Column="6" Classes="cell" IsEnabled="{Binding CanEditAlarmBitIndex}" Text="{Binding AlarmBitIndex, Mode=TwoWay}"/>
-                    <TextBox Grid.Column="7" Classes="cell" Text="{Binding AlarmClientPhysicalAddressText, Mode=TwoWay}"/>
-                    <TextBox Grid.Column="8" Classes="cell" Text="{Binding AlarmServerPhysicalAddressText, Mode=TwoWay}"/>
+                    <CheckBox Grid.Column="4" IsChecked="{Binding RegisterValueEnabled}" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="5" Classes="cell" IsEnabled="{Binding RegisterValueEnabled}" Text="{Binding RegisterValuePrefix, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="6" Classes="cell" IsEnabled="{Binding RegisterValueEnabled}" Text="{Binding RegisterValueAddress, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="7" Classes="cell" IsEnabled="{Binding RegisterValueEnabled}" Text="{Binding RegisterValueClientPhysicalAddressText, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="8" Classes="cell" IsEnabled="{Binding RegisterValueEnabled}" Text="{Binding RegisterValueServerPhysicalAddressText, Mode=TwoWay}"/>
                     <ComboBox Grid.Column="9" Classes="cell"
                               ItemsSource="{Binding DataContext.DataAreas, ElementName=Root}"
+                              SelectedItem="{Binding AlarmArea, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="10" Classes="cell" Text="{Binding AlarmAddress, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="11" Classes="cell" IsEnabled="{Binding CanEditAlarmBitIndex}" Text="{Binding AlarmBitIndex, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="12" Classes="cell" Text="{Binding AlarmClientPhysicalAddressText, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="13" Classes="cell" Text="{Binding AlarmServerPhysicalAddressText, Mode=TwoWay}"/>
+                    <ComboBox Grid.Column="14" Classes="cell"
+                              ItemsSource="{Binding DataContext.DataAreas, ElementName=Root}"
                               SelectedItem="{Binding AcknowledgementArea, Mode=TwoWay}"/>
-                    <TextBox Grid.Column="10" Classes="cell" Text="{Binding AcknowledgementAddress, Mode=TwoWay}"/>
-                    <TextBox Grid.Column="11" Classes="cell" IsEnabled="{Binding CanEditAcknowledgementBitIndex}" Text="{Binding AcknowledgementBitIndex, Mode=TwoWay}"/>
-                    <TextBox Grid.Column="12" Classes="cell" Text="{Binding AcknowledgementClientPhysicalAddressText, Mode=TwoWay}"/>
-                    <TextBox Grid.Column="13" Classes="cell" Text="{Binding AcknowledgementServerPhysicalAddressText, Mode=TwoWay}"/>
-                    <TextBox Grid.Column="14" Classes="cell" Text="{Binding RepeatIntervalMs, Mode=TwoWay}"/>
-                    <TextBox Grid.Column="15" Classes="cell" Text="{Binding AcknowledgementPulseDurationMs, Mode=TwoWay}"/>
-                    <StackPanel Grid.Column="16" Orientation="Horizontal" Spacing="6">
+                    <TextBox Grid.Column="15" Classes="cell" Text="{Binding AcknowledgementAddress, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="16" Classes="cell" IsEnabled="{Binding CanEditAcknowledgementBitIndex}" Text="{Binding AcknowledgementBitIndex, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="17" Classes="cell" Text="{Binding AcknowledgementClientPhysicalAddressText, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="18" Classes="cell" Text="{Binding AcknowledgementServerPhysicalAddressText, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="19" Classes="cell" Text="{Binding RepeatIntervalMs, Mode=TwoWay}"/>
+                    <TextBox Grid.Column="20" Classes="cell" Text="{Binding AcknowledgementPulseDurationMs, Mode=TwoWay}"/>
+                    <StackPanel Grid.Column="21" Orientation="Horizontal" Spacing="6">
                       <Button Content="Копия"
                               Command="{Binding DataContext.DuplicateAlarmCommand, ElementName=Root}"
                               CommandParameter="{Binding}"/>

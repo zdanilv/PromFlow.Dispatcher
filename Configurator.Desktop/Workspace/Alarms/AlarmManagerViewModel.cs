@@ -383,6 +383,9 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
                 or nameof(AlarmManagerRow.Id)
                 or nameof(AlarmManagerRow.Kind)
                 or nameof(AlarmManagerRow.Message)
+                or nameof(AlarmManagerRow.RegisterValueEnabled)
+                or nameof(AlarmManagerRow.RegisterValuePrefix)
+                or nameof(AlarmManagerRow.RegisterValueAddress)
                 or nameof(AlarmManagerRow.AlarmArea)
                 or nameof(AlarmManagerRow.AlarmAddress)
                 or nameof(AlarmManagerRow.AlarmBitIndex)
@@ -509,6 +512,9 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
            && left.Enabled == right.Enabled
            && left.Kind == right.Kind
            && left.Message == right.Message
+           && left.RegisterValueEnabled == right.RegisterValueEnabled
+           && left.RegisterValuePrefix == right.RegisterValuePrefix
+           && left.RegisterValueAddress == right.RegisterValueAddress
            && AddressEquivalent(left.Alarm, right.Alarm)
            && AddressEquivalent(left.Acknowledgement, right.Acknowledgement)
            && left.RepeatIntervalMs == right.RepeatIntervalMs
@@ -531,6 +537,9 @@ public sealed class AlarmManagerRow : ReactiveObject
     private string _id = string.Empty;
     private ModbusAlarmKind _kind;
     private string _message = string.Empty;
+    private bool _registerValueEnabled;
+    private string _registerValuePrefix = string.Empty;
+    private int _registerValueAddress;
     private ModbusDataArea _alarmArea;
     private int _alarmAddress;
     private int? _alarmBitIndex;
@@ -550,6 +559,9 @@ public sealed class AlarmManagerRow : ReactiveObject
         _id = options.Id;
         _kind = options.Kind;
         _message = options.Message;
+        _registerValueEnabled = options.RegisterValueEnabled;
+        _registerValuePrefix = options.RegisterValuePrefix;
+        _registerValueAddress = options.RegisterValueAddress;
         ApplyAlarmAddress(options.Alarm);
         ApplyAcknowledgementAddress(options.Acknowledgement);
         _repeatIntervalMs = options.RepeatIntervalMs;
@@ -560,6 +572,24 @@ public sealed class AlarmManagerRow : ReactiveObject
     public string Id { get => _id; set => this.RaiseAndSetIfChanged(ref _id, value); }
     public ModbusAlarmKind Kind { get => _kind; set => this.RaiseAndSetIfChanged(ref _kind, value); }
     public string Message { get => _message; set => this.RaiseAndSetIfChanged(ref _message, value); }
+    public bool RegisterValueEnabled { get => _registerValueEnabled; set => this.RaiseAndSetIfChanged(ref _registerValueEnabled, value); }
+    public string RegisterValuePrefix { get => _registerValuePrefix; set => this.RaiseAndSetIfChanged(ref _registerValuePrefix, value); }
+
+    public int RegisterValueAddress
+    {
+        get => _registerValueAddress;
+        set
+        {
+            if (_registerValueAddress == value)
+            {
+                return;
+            }
+
+            ClearPhysicalAddressError();
+            this.RaiseAndSetIfChanged(ref _registerValueAddress, value);
+            RaiseRegisterValuePhysicalAddressText();
+        }
+    }
 
     public ModbusDataArea AlarmArea
     {
@@ -671,6 +701,18 @@ public sealed class AlarmManagerRow : ReactiveObject
         set => ApplyPhysicalAddress(value, _serverEndpoint, isAlarm: false);
     }
 
+    public string RegisterValueClientPhysicalAddressText
+    {
+        get => FormatPhysicalAddress(_clientEndpoint, ModbusDataArea.HoldingRegister, RegisterValueAddress);
+        set => ApplyRegisterValuePhysicalAddress(value, _clientEndpoint);
+    }
+
+    public string RegisterValueServerPhysicalAddressText
+    {
+        get => FormatPhysicalAddress(_serverEndpoint, ModbusDataArea.HoldingRegister, RegisterValueAddress);
+        set => ApplyRegisterValuePhysicalAddress(value, _serverEndpoint);
+    }
+
     public ModbusAlarmOptions ToOptions()
         => new()
         {
@@ -678,6 +720,9 @@ public sealed class AlarmManagerRow : ReactiveObject
             Enabled = Enabled,
             Kind = Kind,
             Message = Message,
+            RegisterValueEnabled = RegisterValueEnabled,
+            RegisterValuePrefix = RegisterValuePrefix,
+            RegisterValueAddress = RegisterValueAddress,
             Alarm = new ModbusBitAddressOptions
             {
                 Area = AlarmArea,
@@ -706,6 +751,7 @@ public sealed class AlarmManagerRow : ReactiveObject
         _serverEndpoint = server.Clone();
         RaiseAlarmPhysicalAddressText();
         RaiseAcknowledgementPhysicalAddressText();
+        RaiseRegisterValuePhysicalAddressText();
     }
 
     private bool AlarmUsesRegisterBit => AlarmArea == ModbusDataArea.HoldingRegister;
@@ -757,6 +803,28 @@ public sealed class AlarmManagerRow : ReactiveObject
             AcknowledgementArea = area;
             AcknowledgementAddress = physical - BaseAddress(endpoint, area);
         }
+    }
+
+    private void ApplyRegisterValuePhysicalAddress(
+        string? value,
+        ModbusEndpointOptions endpoint)
+    {
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var physical))
+        {
+            SetPhysicalAddressError($"Физический адрес '{value}' должен быть целым числом.");
+            return;
+        }
+
+        if (!Contains(endpoint.HoldingRegisterStartAddress, endpoint.RegisterCount, physical))
+        {
+            SetPhysicalAddressError(
+                $"Физический адрес {physical} не входит в диапазон Holding Register endpoint: " +
+                FormatRange(endpoint.HoldingRegisterStartAddress, endpoint.RegisterCount) + ".");
+            return;
+        }
+
+        ClearPhysicalAddressError();
+        RegisterValueAddress = physical - endpoint.HoldingRegisterStartAddress;
     }
 
     private static string FormatPhysicalAddress(
@@ -867,5 +935,11 @@ public sealed class AlarmManagerRow : ReactiveObject
     {
         this.RaisePropertyChanged(nameof(AcknowledgementClientPhysicalAddressText));
         this.RaisePropertyChanged(nameof(AcknowledgementServerPhysicalAddressText));
+    }
+
+    private void RaiseRegisterValuePhysicalAddressText()
+    {
+        this.RaisePropertyChanged(nameof(RegisterValueClientPhysicalAddressText));
+        this.RaisePropertyChanged(nameof(RegisterValueServerPhysicalAddressText));
     }
 }

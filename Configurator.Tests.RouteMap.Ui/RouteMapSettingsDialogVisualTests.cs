@@ -426,8 +426,8 @@ public sealed class RouteMapSettingsDialogVisualTests
         var scroll = view.GetVisualDescendants().OfType<ScrollViewer>().First();
 
         Assert.True(scroll.Extent.Width > scroll.Viewport.Width);
-        Assert.Equal(17, controls.Length);
-        Assert.Equal(Enumerable.Range(0, 17), controls.Select(Grid.GetColumn));
+        Assert.Equal(22, controls.Length);
+        Assert.Equal(Enumerable.Range(0, 22), controls.Select(Grid.GetColumn));
         for (var index = 1; index < controls.Length; index++)
             Assert.True(controls[index - 1].Bounds.Right <= controls[index].Bounds.Left);
 
@@ -437,7 +437,10 @@ public sealed class RouteMapSettingsDialogVisualTests
     [AvaloniaFact]
     public void Alarm_dialog_kinds_have_distinct_visual_style_and_buttons()
     {
-        var fault = new AlarmNotificationDialogViewModel(ModbusAlarmKind.Fault, "Авария");
+        var fault = new AlarmNotificationDialogViewModel(
+            ModbusAlarmKind.Fault,
+            "Основное сообщение",
+            "Текущее значение: 42");
         var confirmation = new AlarmNotificationDialogViewModel(ModbusAlarmKind.Confirmation, "Повторное подтверждение");
 
         var message = new AlarmNotificationDialogViewModel(ModbusAlarmKind.Message, "Сообщение");
@@ -473,14 +476,24 @@ public sealed class RouteMapSettingsDialogVisualTests
         var closeIcon = closeButton.GetVisualDescendants().OfType<MaterialIcon>().Single();
 
         Assert.Contains("Авария", texts);
+        Assert.Contains("Основное сообщение", texts);
+        Assert.Contains("Текущее значение: 42", texts);
         Assert.Contains(buttons, button => button.Content?.ToString() == "Хорошо");
         Assert.DoesNotContain(buttons, button => button.Content?.ToString() == "X");
         Assert.Equal("Multiply", closeIcon.Kind.ToString());
-        Assert.Equal(14, closeIcon.FontSize);
+        Assert.Equal(18, closeIcon.FontSize);
         Assert.Equal(
             Assert.IsAssignableFrom<ISolidColorBrush>(fault.HeaderBackground).Color,
             Assert.IsAssignableFrom<ISolidColorBrush>(dialogFrame.Background).Color);
         Assert.Equal(Colors.White, Assert.IsAssignableFrom<ISolidColorBrush>(dialogContent.Background).Color);
+        var mainMessage = view.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .Single(text => text.Text == "Основное сообщение");
+        var registerValue = view.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .Single(text => text.Text == "Текущее значение: 42");
+        Assert.True(registerValue.IsVisible);
+        Assert.True(registerValue.Bounds.Top >= mainMessage.Bounds.Bottom);
 
         window.Close();
     }
@@ -518,7 +531,8 @@ public sealed class RouteMapSettingsDialogVisualTests
                     Message = new string('А', 800),
                 },
                 DateTimeOffset.UtcNow,
-                markUnread: true);
+                markUnread: true,
+                registerValueText: "Значение: 42");
             using var notificationsPanel = new NotificationsPanelViewModel(
                 journal,
                 new NoOpDialogService(),
@@ -553,6 +567,9 @@ public sealed class RouteMapSettingsDialogVisualTests
             var message = panel.GetVisualDescendants()
                 .OfType<TextBlock>()
                 .Single(text => text.Classes.Contains("alarm-notification-message"));
+            var registerValue = panel.GetVisualDescendants()
+                .OfType<TextBlock>()
+                .Single(text => text.Classes.Contains("alarm-notification-register-value"));
             var messageContent = panel.GetVisualDescendants()
                 .OfType<Grid>()
                 .Single(grid => grid.Classes.Contains("alarm-notification-message-content"));
@@ -568,6 +585,8 @@ public sealed class RouteMapSettingsDialogVisualTests
             Assert.Equal(14, closeIcon.FontSize);
             Assert.Equal(TextWrapping.WrapWithOverflow, message.TextWrapping);
             Assert.Equal(VerticalAlignment.Center, message.VerticalAlignment);
+            Assert.True(registerValue.IsVisible);
+            Assert.True(registerValue.Bounds.Top >= message.Bounds.Bottom);
             Assert.True(message.Bounds.Height > 74);
             Assert.True(card.Bounds.Height > 120);
             Assert.True(messageContent.Bounds.Height >= message.Bounds.Height);

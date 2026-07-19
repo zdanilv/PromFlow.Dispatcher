@@ -1,5 +1,6 @@
 using Configurator.Desktop.Dialogs.ConfirmDialog;
 using Configurator.Desktop.Dialogs.InputDialog;
+using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -46,11 +47,14 @@ public sealed class DialogViewFactory(IServiceProvider serviceProvider) : IDialo
     public DialogViewContext<bool> CreateAlarmNotification(
         ModbusAlarmKind kind,
         string message)
+        => CreateAlarmNotification(new AlarmNotificationContent(kind, message));
+
+    public DialogViewContext<bool> CreateAlarmNotification(AlarmNotificationContent notification)
     {
-        var vm = ActivatorUtilities.CreateInstance<AlarmNotificationDialogViewModel>(
-            serviceProvider,
-            kind,
-            message);
+        var vm = new AlarmNotificationDialogViewModel(
+            notification.Kind,
+            notification.Message,
+            notification.RegisterValueText);
         var view = serviceProvider.GetRequiredService<AlarmNotificationDialogView>();
         view.DataContext = vm;
 

@@ -210,6 +210,75 @@ public sealed class ModbusAlarmMonitorTests
     }
 
     [Fact]
+    public async Task ProcessSnapshotAsync_CapturesConfiguredRegisterValueForDialogAndNotification()
+    {
+        var options = CreateOptions(repeatIntervalMs: 1000);
+        var alarm = Assert.Single(options.AlarmMap);
+        alarm.RegisterValueEnabled = true;
+        alarm.RegisterValuePrefix = "Температура: ";
+        alarm.RegisterValueAddress = 1;
+        var journal = new RouteMapSessionJournal();
+        var dialog = new RecordingDialogService(confirm: false);
+        var monitor = CreateMonitor(options, dialog, new RecordingBitWriter(), journal);
+        var snapshot = new ModbusSnapshot
+        {
+            Role = ModbusRuntimeRole.Client,
+            Coils = [true, false],
+            HoldingRegisters = [10, 42],
+            Timestamp = DateTimeOffset.UtcNow
+        };
+
+        await monitor.ProcessSnapshotAsync(snapshot, DateTimeOffset.UtcNow);
+
+        var content = Assert.Single(dialog.AlarmContents);
+        Assert.Equal("Температура: 42", content.RegisterValueText);
+        var notification = Assert.Single(journal.Notifications);
+        Assert.Equal("Температура: 42", notification.RegisterValueText);
+        Assert.True(notification.HasRegisterValueText);
+    }
+
+    [Fact]
+    public async Task ProcessSnapshotAsync_UsesPlaceholderForUnavailableConfiguredRegister()
+    {
+        var options = CreateOptions(repeatIntervalMs: 1000);
+        var alarm = Assert.Single(options.AlarmMap);
+        alarm.RegisterValueEnabled = true;
+        alarm.RegisterValuePrefix = "Температура: ";
+        alarm.RegisterValueAddress = 1;
+        var dialog = new RecordingDialogService(confirm: false);
+        var monitor = CreateMonitor(options, dialog, new RecordingBitWriter());
+        var snapshot = new ModbusSnapshot
+        {
+            Role = ModbusRuntimeRole.Client,
+            Coils = [true, false],
+            HoldingRegisters = [10],
+            Timestamp = DateTimeOffset.UtcNow
+        };
+
+        await monitor.ProcessSnapshotAsync(snapshot, DateTimeOffset.UtcNow);
+
+        Assert.Equal("Температура: —", Assert.Single(dialog.AlarmContents).RegisterValueText);
+    }
+
+    [Fact]
+    public async Task ProcessSnapshotAsync_DoesNotCreateSecondLineWhenRegisterValueIsDisabled()
+    {
+        var dialog = new RecordingDialogService(confirm: false);
+        var monitor = CreateMonitor(CreateOptions(repeatIntervalMs: 1000), dialog, new RecordingBitWriter());
+        var snapshot = new ModbusSnapshot
+        {
+            Role = ModbusRuntimeRole.Client,
+            Coils = [true, false],
+            HoldingRegisters = [42],
+            Timestamp = DateTimeOffset.UtcNow
+        };
+
+        await monitor.ProcessSnapshotAsync(snapshot, DateTimeOffset.UtcNow);
+
+        Assert.Null(Assert.Single(dialog.AlarmContents).RegisterValueText);
+    }
+
+    [Fact]
     public async Task ProcessSnapshotAsync_OnlyDismissesNotificationAfterAlarmBitIsFalse()
     {
         var journal = new RouteMapSessionJournal();
@@ -338,6 +407,7 @@ public sealed class ModbusAlarmMonitorTests
     {
         public List<string> AlarmMessages { get; } = [];
         public List<(ModbusAlarmKind Kind, string Message)> AlarmNotifications { get; } = [];
+        public List<AlarmNotificationContent> AlarmContents { get; } = [];
         public Task<bool> ConfirmAsync(string message, CancellationToken ct = default) => Task.FromResult(false);
         public Task<string?> RequestSecretAsync(string message, CancellationToken ct = default) => Task.FromResult<string?>(null);
         public Task ShowErrorAsync(string title, string message, string? details = null, CancellationToken ct = default) => Task.CompletedTask;
@@ -346,6 +416,14 @@ public sealed class ModbusAlarmMonitorTests
         {
             AlarmMessages.Add(message);
             AlarmNotifications.Add((kind, message));
+            return Task.FromResult(confirm);
+        }
+
+        public Task<bool> ShowAlarmNotificationAsync(AlarmNotificationContent notification, CancellationToken ct = default)
+        {
+            AlarmMessages.Add(notification.Message);
+            AlarmNotifications.Add((notification.Kind, notification.Message));
+            AlarmContents.Add(notification);
             return Task.FromResult(confirm);
         }
 

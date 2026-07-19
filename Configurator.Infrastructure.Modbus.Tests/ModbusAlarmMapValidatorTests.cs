@@ -17,9 +17,13 @@ public sealed class ModbusAlarmMapValidatorTests
 
         var clone = options.Clone();
         clone.AlarmMap[0].Message = "Changed";
+        clone.AlarmMap[0].RegisterValuePrefix = "Changed: ";
+        clone.AlarmMap[0].RegisterValueAddress = 3;
         clone.AlarmMap[0].Alarm.Address = 3;
 
         Assert.Equal("Авария", options.AlarmMap[0].Message);
+        Assert.Equal("Значение: ", options.AlarmMap[0].RegisterValuePrefix);
+        Assert.Equal(1, options.AlarmMap[0].RegisterValueAddress);
         Assert.Equal(0, options.AlarmMap[0].Alarm.Address);
     }
 
@@ -89,6 +93,47 @@ public sealed class ModbusAlarmMapValidatorTests
     }
 
     [Theory]
+    [InlineData(-1)]
+    [InlineData(123)]
+    public void Validate_RejectsInvalidRegisterValueAddress(int address)
+    {
+        var options = CreateOptions();
+        options.AlarmMap[0].RegisterValueEnabled = true;
+        options.AlarmMap[0].RegisterValueAddress = address;
+
+        var result = _validator.Validate(options, ModbusRunMode.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ModbusAlarmRegisterValueAddressInvalid", result.ErrorCode);
+    }
+
+    [Fact]
+    public void Validate_RejectsEnabledRegisterValueWhenRegistersAreDisabled()
+    {
+        var options = CreateOptions();
+        options.AlarmMap[0].RegisterValueEnabled = true;
+        options.Client.HoldingRegistersEnabled = false;
+
+        var result = _validator.Validate(options, ModbusRunMode.Client);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ModbusAlarmRegisterValueRegistersDisabled", result.ErrorCode);
+    }
+
+    [Fact]
+    public void Validate_RejectsEnabledRegisterValueOutsideEndpointRange()
+    {
+        var options = CreateOptions();
+        options.AlarmMap[0].RegisterValueEnabled = true;
+        options.AlarmMap[0].RegisterValueAddress = options.Client.RegisterCount;
+
+        var result = _validator.Validate(options, ModbusRunMode.Client);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ModbusAlarmRegisterValueRangeInvalid", result.ErrorCode);
+    }
+
+    [Theory]
     [InlineData(999, "ModbusAlarmRepeatIntervalInvalid")]
     [InlineData(86400001, "ModbusAlarmRepeatIntervalInvalid")]
     public void Validate_RejectsInvalidRepeatInterval(int repeatIntervalMs, string expectedCode)
@@ -126,6 +171,9 @@ public sealed class ModbusAlarmMapValidatorTests
                     Id = "alarm.main",
                     Kind = ModbusAlarmKind.Fault,
                     Message = "Авария",
+                    RegisterValueEnabled = true,
+                    RegisterValuePrefix = "Значение: ",
+                    RegisterValueAddress = 1,
                     Alarm = new ModbusBitAddressOptions
                     {
                         Area = ModbusDataArea.Coil,

@@ -64,7 +64,8 @@ public sealed class NotificationsPanelViewModel : ViewModelBase, IDisposable
 
     private async Task ShowNotificationAsync(AlarmNotificationItem item)
     {
-        var confirmed = await _dialogService.ShowAlarmNotificationAsync(item.Kind, item.Message);
+        var confirmed = await _dialogService.ShowAlarmNotificationAsync(
+            new AlarmNotificationContent(item.Kind, item.Message, item.RegisterValueText));
         if (!confirmed)
         {
             return;

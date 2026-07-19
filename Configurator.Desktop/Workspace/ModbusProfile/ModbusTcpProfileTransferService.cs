@@ -302,6 +302,10 @@ public sealed class ModbusTcpProfileTransferService : IModbusTcpProfileTransferS
         {
             IncludeBit(alarm.Alarm);
             IncludeBit(alarm.Acknowledgement);
+            if (alarm.RegisterValueEnabled)
+            {
+                requiredRegisters = Math.Max(requiredRegisters, alarm.RegisterValueAddress + 1);
+            }
         }
 
         var client = profile.Runtime.Client;

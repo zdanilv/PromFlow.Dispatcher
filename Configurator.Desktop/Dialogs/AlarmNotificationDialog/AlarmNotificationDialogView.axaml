@@ -64,6 +64,13 @@
                    TextAlignment="Center"
                    TextWrapping="Wrap"
                    MaxWidth="390"/>
+        <TextBlock Text="{Binding RegisterValueText}"
+                   IsVisible="{Binding HasRegisterValueText}"
+                   Foreground="#66717C"
+                   FontSize="16"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap"
+                   MaxWidth="390"/>
       </StackPanel>
 
       <Button Grid.Row="2"

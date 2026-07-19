@@ -26,6 +26,21 @@ public sealed class ModbusAlarmOptions
     public string Message { get; set; } = string.Empty;
 
     /// <summary>
+    /// Показывать ли под основным сообщением значение Holding Register.
+    /// </summary>
+    public bool RegisterValueEnabled { get; set; }
+
+    /// <summary>
+    /// Текст, который выводится непосредственно перед значением регистра.
+    /// </summary>
+    public string RegisterValuePrefix { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Zero-based offset Holding Register, значение которого выводится оператору.
+    /// </summary>
+    public int RegisterValueAddress { get; set; }
+
+    /// <summary>
     /// Бит, который активирует диалог.
     /// </summary>
     public ModbusBitAddressOptions Alarm { get; set; } = new();
@@ -55,6 +70,9 @@ public sealed class ModbusAlarmOptions
             Enabled = Enabled,
             Kind = Kind,
             Message = Message,
+            RegisterValueEnabled = RegisterValueEnabled,
+            RegisterValuePrefix = RegisterValuePrefix,
+            RegisterValueAddress = RegisterValueAddress,
             Alarm = Alarm.Clone(),
             Acknowledgement = Acknowledgement.Clone(),
             RepeatIntervalMs = RepeatIntervalMs,

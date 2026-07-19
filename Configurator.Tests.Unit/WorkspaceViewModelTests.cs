@@ -159,6 +159,34 @@ public sealed class WorkspaceViewModelTests
         Assert.Null(row.PhysicalAddressError);
     }
 
+    [Fact]
+    public void AlarmManagerRow_PreservesRegisterValueSettingsAndPhysicalAddress()
+    {
+        var row = new AlarmManagerRow(new ModbusAlarmOptions
+        {
+            Id = "alarm.main",
+            Message = "Alarm",
+            RegisterValueEnabled = true,
+            RegisterValuePrefix = "Температура: ",
+            RegisterValueAddress = 2,
+            Alarm = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 0 },
+            Acknowledgement = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 1 }
+        });
+        row.UpdateAddressBases(
+            new ModbusEndpointOptions { HoldingRegisterStartAddress = 200, RegisterCount = 10 },
+            new ModbusEndpointOptions { HoldingRegisterStartAddress = 400, RegisterCount = 10 });
+
+        Assert.Equal("202", row.RegisterValueClientPhysicalAddressText);
+        Assert.Equal("402", row.RegisterValueServerPhysicalAddressText);
+
+        row.RegisterValueClientPhysicalAddressText = "206";
+        var options = row.ToOptions();
+
+        Assert.Equal(6, options.RegisterValueAddress);
+        Assert.True(options.RegisterValueEnabled);
+        Assert.Equal("Температура: ", options.RegisterValuePrefix);
+    }
+
     private static WorkspaceViewModel CreateWorkspaceViewModel(
         ApplicationOptions applicationOptions,
         ModbusDemoViewModel? modbusDemo = null,

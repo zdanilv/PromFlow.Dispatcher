@@ -1,3 +1,4 @@
+using System.Globalization;
 using Avalonia.Threading;
 using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
@@ -146,11 +147,13 @@ public sealed class ModbusAlarmMonitor : IDisposable
                     state.ShouldMarkNotificationUnread = false;
                 }
 
-                _sessionJournal.ShowAlarmNotification(alarm, createdAt, markUnread);
-                var confirmed = await _dialogService.ShowAlarmNotificationAsync(
-                    alarm.Kind,
-                    alarm.Message,
-                    cancellationToken);
+                var notification = CreateNotificationContent(alarm, snapshot);
+                _sessionJournal.ShowAlarmNotification(
+                    alarm,
+                    createdAt,
+                    markUnread,
+                    notification.RegisterValueText);
+                var confirmed = await _dialogService.ShowAlarmNotificationAsync(notification, cancellationToken);
                 if (confirmed)
                 {
                     _sessionJournal.RecordAlarmAcknowledged(alarm, DateTimeOffset.Now);
@@ -274,6 +277,25 @@ public sealed class ModbusAlarmMonitor : IDisposable
 
         value = false;
         return false;
+    }
+
+    private static AlarmNotificationContent CreateNotificationContent(
+        ModbusAlarmOptions alarm,
+        ModbusSnapshot snapshot)
+    {
+        if (!alarm.RegisterValueEnabled)
+        {
+            return new AlarmNotificationContent(alarm.Kind, alarm.Message);
+        }
+
+        var valueText = alarm.RegisterValueAddress >= 0
+                        && alarm.RegisterValueAddress < snapshot.HoldingRegisters.Count
+            ? snapshot.HoldingRegisters[alarm.RegisterValueAddress].ToString(CultureInfo.InvariantCulture)
+            : "—";
+        return new AlarmNotificationContent(
+            alarm.Kind,
+            alarm.Message,
+            string.Concat(alarm.RegisterValuePrefix, valueText));
     }
 
     private sealed class AlarmRuntimeState

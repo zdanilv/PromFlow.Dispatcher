@@ -60,8 +60,13 @@ public sealed class DialogHostDialogService(
         ModbusAlarmKind kind,
         string message,
         CancellationToken ct = default)
+        => await ShowAlarmNotificationAsync(new AlarmNotificationContent(kind, message), ct);
+
+    public async Task<bool> ShowAlarmNotificationAsync(
+        AlarmNotificationContent notification,
+        CancellationToken ct = default)
     {
-        var context = dialogViewFactory.CreateAlarmNotification(kind, message);
+        var context = dialogViewFactory.CreateAlarmNotification(notification);
         var result = await ShowWithFallbackAsync(context, fallback: false, ct);
         return result is true;
     }

@@ -57,6 +57,14 @@ public interface IDialogService
         string message,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Shows an alarm notification with optional contextual text captured from the Modbus snapshot.
+    /// </summary>
+    Task<bool> ShowAlarmNotificationAsync(
+        AlarmNotificationContent notification,
+        CancellationToken ct = default)
+        => ShowAlarmNotificationAsync(notification.Kind, notification.Message, ct);
+
     Task<ModbusOptions?> EditModbusSettingsAsync(
         string title,
         string sectionName,

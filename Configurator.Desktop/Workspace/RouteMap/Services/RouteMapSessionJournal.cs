@@ -81,17 +81,28 @@ public sealed class RouteMapSessionJournal
     public void ShowAlarmNotification(
         ModbusAlarmOptions alarm,
         DateTimeOffset createdAt,
-        bool markUnread)
+        bool markUnread,
+        string? registerValueText = null)
     {
         var item = Notifications.FirstOrDefault(
             candidate => string.Equals(candidate.Id, alarm.Id, StringComparison.OrdinalIgnoreCase));
         if (item is null)
         {
-            Notifications.Insert(0, new AlarmNotificationItem(alarm, createdAt, isUnread: markUnread, isActive: true));
+            Notifications.Insert(0, new AlarmNotificationItem(
+                alarm,
+                createdAt,
+                isUnread: markUnread,
+                isActive: true,
+                registerValueText: registerValueText));
             return;
         }
 
-        item.Apply(alarm, createdAt, markUnread, isActive: true);
+        item.Apply(
+            alarm,
+            createdAt,
+            markUnread,
+            isActive: true,
+            registerValueText: registerValueText);
         MoveNotificationToTop(item);
     }
 
@@ -239,6 +250,7 @@ public sealed class AlarmNotificationItem : ReactiveObject
 {
     private ModbusAlarmKind _kind;
     private string _message = string.Empty;
+    private string? _registerValueText;
     private DateTimeOffset _createdAt;
     private bool _isUnread;
     private bool _isActive;
@@ -249,10 +261,16 @@ public sealed class AlarmNotificationItem : ReactiveObject
         ModbusAlarmOptions alarm,
         DateTimeOffset createdAt,
         bool isUnread,
-        bool isActive)
+        bool isActive,
+        string? registerValueText = null)
     {
         Id = alarm.Id;
-        Apply(alarm, createdAt, markUnread: isUnread, isActive);
+        Apply(
+            alarm,
+            createdAt,
+            markUnread: isUnread,
+            isActive: isActive,
+            registerValueText: registerValueText);
     }
 
     public string Id { get; }
@@ -272,6 +290,18 @@ public sealed class AlarmNotificationItem : ReactiveObject
         get => _message;
         private set => this.RaiseAndSetIfChanged(ref _message, value);
     }
+
+    public string? RegisterValueText
+    {
+        get => _registerValueText;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _registerValueText, value);
+            this.RaisePropertyChanged(nameof(HasRegisterValueText));
+        }
+    }
+
+    public bool HasRegisterValueText => !string.IsNullOrWhiteSpace(RegisterValueText);
 
     public DateTimeOffset CreatedAt
     {
@@ -341,10 +371,12 @@ public sealed class AlarmNotificationItem : ReactiveObject
         ModbusAlarmOptions alarm,
         DateTimeOffset createdAt,
         bool markUnread,
-        bool isActive)
+        bool isActive,
+        string? registerValueText = null)
     {
         Kind = alarm.Kind;
         Message = alarm.Message;
+        RegisterValueText = registerValueText;
         _acknowledgement = alarm.Acknowledgement.Clone();
         _acknowledgementPulseDurationMs = alarm.AcknowledgementPulseDurationMs;
         IsActive = isActive;

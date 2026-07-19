@@ -12,16 +12,20 @@ public sealed class AlarmNotificationDialogViewModel : ReactiveObject
 
     public AlarmNotificationDialogViewModel(
         ModbusAlarmKind kind,
-        string message)
+        string message,
+        string? registerValueText = null)
     {
         Kind = kind;
         Message = message;
+        RegisterValueText = registerValueText;
         OkCommand = ReactiveCommand.Create(() => _result.OnNext(true));
         CloseCommand = ReactiveCommand.Create(() => _result.OnNext(false));
     }
 
     public ModbusAlarmKind Kind { get; }
     public string Message { get; }
+    public string? RegisterValueText { get; }
+    public bool HasRegisterValueText => !string.IsNullOrWhiteSpace(RegisterValueText);
     public IObservable<bool> Result => _result;
     public ReactiveCommand<Unit, Unit> OkCommand { get; }
     public ReactiveCommand<Unit, Unit> CloseCommand { get; }

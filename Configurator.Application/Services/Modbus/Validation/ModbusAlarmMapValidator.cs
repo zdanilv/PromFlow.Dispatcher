@@ -71,6 +71,14 @@ public sealed class ModbusAlarmMapValidator : IModbusAlarmMapValidator
                 $"Modbus alarm '{alarm.Id}' message must not be empty.");
         }
 
+        if (alarm.RegisterValueEnabled
+            && alarm.RegisterValueAddress is < 0 or >= MaxRegisters)
+        {
+            return ModbusOperationResult.Failure(
+                "ModbusAlarmRegisterValueAddressInvalid",
+                $"Modbus alarm '{alarm.Id}' register value address must be in range 0..{MaxRegisters - 1}.");
+        }
+
         var alarmAddressValidation = ValidateAddress(alarm.Id, alarm.Alarm, "alarm");
         if (!alarmAddressValidation.Succeeded)
         {
@@ -207,7 +215,13 @@ public sealed class ModbusAlarmMapValidator : IModbusAlarmMapValidator
             return alarmRange;
         }
 
-        return ValidateEndpointAddress(alarm.Id, alarm.Acknowledgement, endpoint, role, "acknowledgement");
+        var acknowledgementRange = ValidateEndpointAddress(alarm.Id, alarm.Acknowledgement, endpoint, role, "acknowledgement");
+        if (!acknowledgementRange.Succeeded)
+        {
+            return acknowledgementRange;
+        }
+
+        return ValidateRegisterValueRange(alarm, endpoint, role);
     }
 
     private static ModbusOperationResult ValidateEndpointAddress(
@@ -248,6 +262,33 @@ public sealed class ModbusAlarmMapValidator : IModbusAlarmMapValidator
             return ModbusOperationResult.Failure(
                 "ModbusAlarmRegisterRangeInvalid",
                 $"Modbus alarm '{alarmId}' {addressRole} Holding Register address is outside the configured {runtimeRole} register range.");
+        }
+
+        return ModbusOperationResult.Success();
+    }
+
+    private static ModbusOperationResult ValidateRegisterValueRange(
+        ModbusAlarmOptions alarm,
+        ModbusEndpointOptions endpoint,
+        string runtimeRole)
+    {
+        if (!alarm.RegisterValueEnabled)
+        {
+            return ModbusOperationResult.Success();
+        }
+
+        if (!endpoint.HoldingRegistersEnabled)
+        {
+            return ModbusOperationResult.Failure(
+                "ModbusAlarmRegisterValueRegistersDisabled",
+                $"Holding registers are disabled for the Modbus {runtimeRole}, but alarm '{alarm.Id}' displays a register value.");
+        }
+
+        if (alarm.RegisterValueAddress >= endpoint.RegisterCount)
+        {
+            return ModbusOperationResult.Failure(
+                "ModbusAlarmRegisterValueRangeInvalid",
+                $"Modbus alarm '{alarm.Id}' register value address is outside the configured {runtimeRole} register range.");
         }
 
         return ModbusOperationResult.Success();
