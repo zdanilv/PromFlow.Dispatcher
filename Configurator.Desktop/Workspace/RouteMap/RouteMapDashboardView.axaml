@@ -30,22 +30,82 @@
                         <panels:RouteMapAttachedCardsLayer Definition="{Binding Definition}"
                                                            Cards="{Binding MapEquipmentCards}"
                                                            ClipToBounds="False"/>
-                        <Border x:Name="ConnectionStatusOverlay"
-                                HorizontalAlignment="Left"
-                                VerticalAlignment="Top"
-                                Margin="16"
-                                Padding="10,6"
-                                Background="#FFFFFF"
-                                BorderBrush="#DDE2E6"
-                                BorderThickness="1"
-                                CornerRadius="4"
-                                IsHitTestVisible="False"
-                                IsVisible="{Binding IsConnectionStatusVisible}">
-                            <TextBlock Text="{Binding ConnectionStatusText}"
-                                       Foreground="#9CA4AA"
-                                       FontSize="12"/>
-                        </Border>
-                        <Border HorizontalAlignment="Right"
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    Margin="16"
+                                    Spacing="8"
+                                    IsHitTestVisible="False"
+                                    IsVisible="{Binding IsConnectionStatusVisible}">
+                            <Border x:Name="ConnectionStatusOverlay"
+                                    Padding="10,6"
+                                    Background="#FFFFFF"
+                                    BorderBrush="#DDE2E6"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    IsVisible="{Binding IsConnectionStatusVisible}">
+                                <TextBlock Text="{Binding ConnectionStatusText}"
+                                           Foreground="#9CA4AA"
+                                           FontSize="12"/>
+                            </Border>
+                            <Border x:Name="RouteMapStateLegendOverlay"
+                                    Padding="10,8"
+                                    Background="#FFFFFF"
+                                    BorderBrush="#DDE2E6"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    IsVisible="{Binding IsConnectionStatusVisible}">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Обозначения"
+                                               Foreground="#44505C"
+                                               FontSize="16"
+                                               FontWeight="SemiBold"/>
+                                    <StackPanel Spacing="3" Margin="0,10,0,0">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="SelectedNode"/>
+                                            <TextBlock Text="Выбранный узел" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="HoveredNode"/>
+                                            <TextBlock Text="Наведённый узел" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="ActiveNode"/>
+                                            <TextBlock Text="Активный узел" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="TargetNode"/>
+                                            <TextBlock Text="Узел — точка отправки" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="LoaderNode"/>
+                                            <TextBlock Text="Узел — точка возврата" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="FaultNode"/>
+                                            <TextBlock Text="Авария узла" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="OfflineNode"/>
+                                            <TextBlock Text="Узел не в сети" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="ActiveSegment"/>
+                                            <TextBlock Text="Активная линия" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="FaultSegment"/>
+                                            <TextBlock Text="Авария линии" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="OfflineSegment"/>
+                                            <TextBlock Text="Линия не в сети" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                        <Border x:Name="SelectedObjectOverlay"
+                                HorizontalAlignment="Right"
                                 VerticalAlignment="Bottom"
                                 Margin="0,0,335,16"
                                 Padding="10,6"
@@ -53,9 +113,9 @@
                                 BorderBrush="#DDE2E6"
                                 BorderThickness="1"
                                 CornerRadius="4">
-                            <TextBlock Text="{Binding SelectedObjectTitle}"
+                            <TextBlock x:Name="SelectedObjectText"
                                        Foreground="#65717D"
-                                       FontSize="12"/>
+                                       FontSize="12"><Run Text="Выбран - "/><Run Text="{Binding SelectedObjectTitle}"/></TextBlock>
                         </Border>
                         <Border HorizontalAlignment="Left"
                                 VerticalAlignment="Bottom"

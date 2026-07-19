@@ -1,6 +1,7 @@
 using System.Reactive.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Layout;
@@ -45,6 +46,107 @@ namespace Configurator.Tests.RouteMap.Ui;
 
 public sealed class RouteMapSettingsDialogVisualTests
 {
+    [AvaloniaFact]
+    public void RouteMap_dashboard_shows_admin_legend_and_selected_object_prefix()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "route-map-legend-ui-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            using var manager = new RouteMapConfigurationManager(
+                new RouteMapConfigurationStorage(Path.Combine(directory, "route-map.json")),
+                new RouteMapConfigurationMapper(RouteMapSeed.Create()),
+                new RouteMapConfigurationValidator(),
+                new RouteMapConfigurationMigrator());
+            using var adminNotifications = new NotificationsPanelViewModel(
+                new RouteMapSessionJournal(),
+                new NoOpDialogService(),
+                new NoOpBitWriter());
+            using var adminViewModel = CreateRouteMapDashboardViewModel(
+                manager,
+                adminNotifications,
+                ApplicationOptions.AdminWorkMode);
+            var adminView = new RouteMapDashboardView { DataContext = adminViewModel };
+            var adminWindow = new Window { Width = 1300, Height = 760, Content = adminView };
+            adminWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var connectionStatus = adminView.FindControl<Border>("ConnectionStatusOverlay")!;
+            var legend = adminView.FindControl<Border>("RouteMapStateLegendOverlay")!;
+            var selectedObjectText = adminView.FindControl<TextBlock>("SelectedObjectText")!;
+            var expectedLabels = new[]
+            {
+                "Обозначения",
+                "Выбранный узел",
+                "Наведённый узел",
+                "Активный узел",
+                "Узел — точка отправки",
+                "Узел — точка возврата",
+                "Авария узла",
+                "Узел не в сети",
+                "Активная линия",
+                "Авария линии",
+                "Линия не в сети"
+            };
+            var expectedGlyphKinds = new[]
+            {
+                RouteMapLegendGlyphKind.SelectedNode,
+                RouteMapLegendGlyphKind.HoveredNode,
+                RouteMapLegendGlyphKind.ActiveNode,
+                RouteMapLegendGlyphKind.TargetNode,
+                RouteMapLegendGlyphKind.LoaderNode,
+                RouteMapLegendGlyphKind.FaultNode,
+                RouteMapLegendGlyphKind.OfflineNode,
+                RouteMapLegendGlyphKind.ActiveSegment,
+                RouteMapLegendGlyphKind.FaultSegment,
+                RouteMapLegendGlyphKind.OfflineSegment
+            };
+
+            Assert.True(connectionStatus.IsVisible);
+            Assert.True(legend.IsVisible);
+            Assert.True(legend.Bounds.Top >= connectionStatus.Bounds.Bottom);
+            Assert.Equal(
+                expectedLabels,
+                legend.GetVisualDescendants().OfType<TextBlock>().Select(text => text.Text).ToArray());
+            var glyphs = legend.GetVisualDescendants().OfType<RouteMapLegendGlyph>().ToArray();
+            Assert.Equal(expectedGlyphKinds, glyphs.Select(glyph => glyph.Kind).ToArray());
+            Assert.All(glyphs, glyph => Assert.Same(adminViewModel.Definition, glyph.Definition));
+            Assert.All(glyphs, glyph =>
+            {
+                Assert.Equal(40, glyph.Bounds.Width);
+                Assert.Equal(30, glyph.Bounds.Height);
+            });
+            Assert.Equal("Выбран - Объект не выбран", TextOf(selectedObjectText));
+
+            adminViewModel.SelectedObjectId = "bsu_1";
+            Dispatcher.UIThread.RunJobs();
+            var selectedTitle = adminViewModel.Definition.Nodes.Single(node => node.Id == "bsu_1").Title;
+            Assert.Equal($"Выбран - {selectedTitle}", TextOf(selectedObjectText));
+            adminWindow.Close();
+
+            using var userNotifications = new NotificationsPanelViewModel(
+                new RouteMapSessionJournal(),
+                new NoOpDialogService(),
+                new NoOpBitWriter());
+            using var userViewModel = CreateRouteMapDashboardViewModel(
+                manager,
+                userNotifications,
+                ApplicationOptions.UserWorkMode);
+            var userView = new RouteMapDashboardView { DataContext = userViewModel };
+            var userWindow = new Window { Width = 1300, Height = 760, Content = userView };
+            userWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.False(userView.FindControl<Border>("ConnectionStatusOverlay")!.IsVisible);
+            Assert.False(userView.FindControl<Border>("RouteMapStateLegendOverlay")!.IsVisible);
+            userWindow.Close();
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [AvaloniaFact]
     public void Alarm_notification_dialog_uses_dedicated_unframed_host()
     {
@@ -1215,6 +1317,26 @@ public sealed class RouteMapSettingsDialogVisualTests
                 grid.DataContext is RouteMapSignalMappingRow row
                 && row.SignalId == signalId
                 && grid.Children.OfType<Grid>().Any(control => Grid.GetColumn(control) == 15));
+
+    private static RouteMapDashboardViewModel CreateRouteMapDashboardViewModel(
+        RouteMapConfigurationManager manager,
+        NotificationsPanelViewModel notificationsPanel,
+        string workMode)
+    {
+        return new RouteMapDashboardViewModel(
+            manager,
+            new EmptySignalProvider(),
+            new RouteMapRuntimeMapper(manager.CurrentDefinition),
+            new NoOpCommandDispatcher(),
+            new NoOpSettingsDialogService(),
+            notificationsPanel,
+            new RouteMapSessionJournal(),
+            new StaticOptionsMonitor(new ModbusOptions()),
+            Options.Create(new ApplicationOptions { WorkMode = workMode }));
+    }
+
+    private static string TextOf(TextBlock textBlock) =>
+        string.Concat((textBlock.Inlines?.OfType<Run>() ?? Enumerable.Empty<Run>()).Select(run => run.Text));
 
     private sealed class DialogFixture : IDisposable
     {
