@@ -145,10 +145,14 @@ public sealed class EquipmentCardViewModelTests
 
         Assert.Equal(Avalonia.Media.Color.Parse("#D0D0D0"), BrushColor(viewModel.StartBackground));
         Assert.Equal(Avalonia.Media.Color.Parse("#101820"), BrushColor(viewModel.StartForeground));
-        Assert.Equal(Avalonia.Media.Color.Parse("#FF8A8A"), BrushColor(viewModel.StopBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#FF2626"), BrushColor(viewModel.StopBackground));
         Assert.Equal(Avalonia.Media.Color.Parse("#101820"), BrushColor(viewModel.StopForeground));
         Assert.Equal(Avalonia.Media.Color.Parse("#D0D0D0"), BrushColor(viewModel.SelectorBackground));
         Assert.Equal(Avalonia.Media.Color.Parse("#101820"), BrushColor(viewModel.SelectorForeground));
+
+        viewModel.IsStartHovered = true;
+        Assert.Equal(Avalonia.Media.Color.Parse("#8AFF8E"), BrushColor(viewModel.StartBackground));
+        viewModel.IsStartHovered = false;
 
         viewModel.IsSelectorChecked = true;
 
@@ -164,9 +168,13 @@ public sealed class EquipmentCardViewModelTests
 
         viewModel.IsStartChecked = true;
 
-        Assert.Equal(Avalonia.Media.Color.Parse("#003CA3"), BrushColor(viewModel.StartBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#00D107"), BrushColor(viewModel.StartBackground));
         Assert.Equal(Avalonia.Media.Color.Parse("#FFFFFF"), BrushColor(viewModel.StartForeground));
-        Assert.Equal(Avalonia.Media.Color.Parse("#FF8A8A"), BrushColor(viewModel.StopBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#FF2626"), BrushColor(viewModel.StopBackground));
+
+        viewModel.IsStartPressed = true;
+        Assert.Equal(Avalonia.Media.Color.Parse("#00D107"), BrushColor(viewModel.StartBackground));
+        viewModel.IsStartPressed = false;
 
         viewModel.IsStopChecked = true;
 
@@ -182,14 +190,14 @@ public sealed class EquipmentCardViewModelTests
         viewModel.IsStartPressed = true;
         viewModel.IsStopPressed = true;
 
-        Assert.Equal(Avalonia.Media.Color.Parse("#8AB5FF"), BrushColor(viewModel.StartBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#00D107"), BrushColor(viewModel.StartBackground));
         Assert.Equal(Avalonia.Media.Color.Parse("#101820"), BrushColor(viewModel.StartForeground));
-        Assert.Equal(Avalonia.Media.Color.Parse("#FF0000"), BrushColor(viewModel.StopBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#D10000"), BrushColor(viewModel.StopBackground));
         Assert.Equal(Avalonia.Media.Color.Parse("#FFFFFF"), BrushColor(viewModel.StopForeground));
 
         viewModel.IsStopPressed = false;
         viewModel.IsStopChecked = false;
-        Assert.Equal(Avalonia.Media.Color.Parse("#FFB8B8"), BrushColor(viewModel.StopBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#FF8A8A"), BrushColor(viewModel.StopBackground));
     }
 
     [Theory]

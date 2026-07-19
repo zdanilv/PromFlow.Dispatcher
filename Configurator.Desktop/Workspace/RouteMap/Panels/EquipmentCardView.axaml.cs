@@ -73,10 +73,18 @@ public partial class EquipmentCardView : ReactiveUserControl<EquipmentCardViewMo
 
     private void SetHovered(object? source, bool hovered)
     {
-        if (ViewModel is null || FindNamedButton(source) != "StopButton")
+        if (ViewModel is null)
             return;
 
-        ViewModel.IsStopHovered = hovered;
+        switch (FindNamedButton(source))
+        {
+            case "StartButton":
+                ViewModel.IsStartHovered = hovered;
+                break;
+            case "StopButton":
+                ViewModel.IsStopHovered = hovered;
+                break;
+        }
     }
 
     private static string? FindNamedButton(object? source)

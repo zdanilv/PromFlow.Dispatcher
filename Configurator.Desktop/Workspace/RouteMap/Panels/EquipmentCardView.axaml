@@ -38,12 +38,16 @@
 			<Setter Property="BorderBrush" Value="#CCD3D8"/>
 			<Setter Property="BorderThickness" Value="1"/>
 		</Style>
+		<Style Selector="ToggleButton.start:pointerover">
+			<Setter Property="Background" Value="#8AFF8E"/>
+			<Setter Property="Foreground" Value="#101820"/>
+		</Style>
 		<Style Selector="ToggleButton.start:checked">
-			<Setter Property="Background" Value="#003CA3"/>
+			<Setter Property="Background" Value="#00D107"/>
 			<Setter Property="Foreground" Value="#FFFFFF"/>
 		</Style>
 		<Style Selector="ToggleButton.start:pressed">
-			<Setter Property="Background" Value="#8AB5FF"/>
+			<Setter Property="Background" Value="#00D107"/>
 			<Setter Property="Foreground" Value="#101820"/>
 		</Style>
 		<Style Selector="ToggleButton.selector">
@@ -59,7 +63,7 @@
 			<Setter Property="Foreground" Value="#101820"/>
 		</Style>
 		<Style Selector="ToggleButton.stop:pointerover">
-			<Setter Property="Background" Value="#FFB8B8"/>
+			<Setter Property="Background" Value="#FF8A8A"/>
 			<Setter Property="Foreground" Value="#101820"/>
 		</Style>
 		<Style Selector="ToggleButton.stop:checked">
@@ -67,16 +71,20 @@
 			<Setter Property="Foreground" Value="#FFFFFF"/>
 		</Style>
 		<Style Selector="ToggleButton.stop:pressed">
-			<Setter Property="Background" Value="#FF0000"/>
+			<Setter Property="Background" Value="#D10000"/>
 			<Setter Property="Foreground" Value="#FFFFFF"/>
 		</Style>
 		<!-- Fluent applies its accent colour to this template part when checked. -->
+		<Style Selector="ToggleButton.start:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#8AFF8E"/>
+			<Setter Property="Foreground" Value="#101820"/>
+		</Style>
 		<Style Selector="ToggleButton.start:checked /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#003CA3"/>
+			<Setter Property="Background" Value="#00D107"/>
 			<Setter Property="Foreground" Value="#FFFFFF"/>
 		</Style>
 		<Style Selector="ToggleButton.start:pressed /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#8AB5FF"/>
+			<Setter Property="Background" Value="#00D107"/>
 			<Setter Property="Foreground" Value="#101820"/>
 		</Style>
 		<Style Selector="ToggleButton.selector:checked /template/ ContentPresenter#PART_ContentPresenter">
@@ -88,7 +96,7 @@
 			<Setter Property="Foreground" Value="#101820"/>
 		</Style>
 		<Style Selector="ToggleButton.stop:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#FFB8B8"/>
+			<Setter Property="Background" Value="#FF8A8A"/>
 			<Setter Property="Foreground" Value="#101820"/>
 		</Style>
 		<Style Selector="ToggleButton.stop:checked /template/ ContentPresenter#PART_ContentPresenter">
@@ -96,7 +104,7 @@
 			<Setter Property="Foreground" Value="#FFFFFF"/>
 		</Style>
 		<Style Selector="ToggleButton.stop:pressed /template/ ContentPresenter#PART_ContentPresenter">
-			<Setter Property="Background" Value="#FF0000"/>
+			<Setter Property="Background" Value="#D10000"/>
 			<Setter Property="Foreground" Value="#FFFFFF"/>
 		</Style>
 		<Style Selector="Button.parameter">

@@ -32,15 +32,15 @@
         <Style Selector="ToggleButton.emergency">
             <Setter Property="MinWidth" Value="168"/>
             <Setter Property="Height" Value="38"/>
-            <Setter Property="Background" Value="#D95D4E"/>
+            <Setter Property="Background" Value="#FF2626"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#D95D4E"/>
+            <Setter Property="BorderBrush" Value="#FF2626"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="ToggleButton.emergency:pointerover">
-            <Setter Property="Background" Value="#FFB8B8"/>
+            <Setter Property="Background" Value="#FF8A8A"/>
             <Setter Property="Foreground" Value="#101820"/>
         </Style>
         <Style Selector="ToggleButton.emergency:checked">
@@ -48,19 +48,19 @@
             <Setter Property="Foreground" Value="#FFFFFF"/>
         </Style>
         <Style Selector="ToggleButton.emergency:pressed">
-            <Setter Property="Background" Value="#FF0000"/>
+            <Setter Property="Background" Value="#D10000"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
         </Style>
         <Style Selector="ToggleButton.reset:pointerover">
-            <Setter Property="Background" Value="#FFFFE6"/>
+            <Setter Property="Background" Value="#FFF78A"/>
             <Setter Property="Foreground" Value="#101820"/>
         </Style>
         <Style Selector="ToggleButton.reset:checked">
-            <Setter Property="Background" Value="#FEFFB8"/>
+            <Setter Property="Background" Value="#D1C300"/>
             <Setter Property="Foreground" Value="#101820"/>
         </Style>
         <Style Selector="ToggleButton.reset:pressed">
-            <Setter Property="Background" Value="#A0A300"/>
+            <Setter Property="Background" Value="#D1C300"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
         </Style>
         <!-- Fluent sets its checked brush directly on this template part. Keep the
@@ -74,11 +74,11 @@
             <Setter Property="Foreground" Value="#FFFFFF"/>
         </Style>
         <Style Selector="ToggleButton.emergency:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#FFB8B8"/>
+            <Setter Property="Background" Value="#FF8A8A"/>
             <Setter Property="Foreground" Value="#101820"/>
         </Style>
         <Style Selector="ToggleButton.emergency:checked /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#FF0000"/>
+            <Setter Property="Background" Value="#D10000"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
         </Style>
         <Style Selector="ToggleButton.emergency:pressed /template/ ContentPresenter#PART_ContentPresenter">
@@ -86,23 +86,23 @@
             <Setter Property="Foreground" Value="#FFFFFF"/>
         </Style>
         <Style Selector="ToggleButton.reset:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#FFFFE6"/>
+            <Setter Property="Background" Value="#FFF78A"/>
             <Setter Property="Foreground" Value="#101820"/>
         </Style>
         <Style Selector="ToggleButton.reset:checked /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#003CA3"/>
+            <Setter Property="Background" Value="#D1C300"/>
             <Setter Property="Foreground" Value="#4E5A65"/>
         </Style>
         <Style Selector="ToggleButton.reset:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#8AB5FF"/>
+            <Setter Property="Background" Value="#D1C300"/>
             <Setter Property="Foreground" Value="#4E5A65"/>
         </Style>
         <Style Selector="Button.emergency">
             <Setter Property="MinWidth" Value="168"/>
             <Setter Property="Height" Value="38"/>
-            <Setter Property="Background" Value="#D95D4E"/>
+            <Setter Property="Background" Value="#FF2626"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#D95D4E"/>
+            <Setter Property="BorderBrush" Value="#FF2626"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>

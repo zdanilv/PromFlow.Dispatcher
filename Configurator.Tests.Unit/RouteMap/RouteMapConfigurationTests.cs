@@ -680,27 +680,32 @@ public sealed class RouteMapConfigurationTests
         var viewModel = new TopBarViewModel(settingsDialogService: null, settings: RouteMapSeed.Create().TopBar);
 
         Assert.Equal(Color.Parse("#ECEFF1"), BrushColor(viewModel.AutomaticBackground));
-        Assert.Equal(Color.Parse("#FF8A8A"), BrushColor(viewModel.EmergencyBackground));
+        Assert.Equal(Color.Parse("#FFF026"), BrushColor(viewModel.ResetBackground));
+        Assert.Equal(Color.Parse("#FF2626"), BrushColor(viewModel.EmergencyBackground));
         Assert.Equal(Color.Parse("#101820"), BrushColor(viewModel.EmergencyForeground));
 
         viewModel.ApplyRuntime(
             isAutomaticMode: true,
             isManualMode: false,
-            isResetActive: false,
+            isResetActive: true,
             hasEmergency: true,
             isConnectionAvailable: true);
 
         Assert.Equal(Color.Parse("#003CA3"), BrushColor(viewModel.AutomaticBackground));
         Assert.Equal(Color.Parse("#FFFFFF"), BrushColor(viewModel.AutomaticForeground));
+        Assert.Equal(Color.Parse("#D1C300"), BrushColor(viewModel.ResetBackground));
         Assert.Equal(Color.Parse("#D10000"), BrushColor(viewModel.EmergencyBackground));
 
         viewModel.SetAutomaticPressed(true);
         Assert.Equal(Color.Parse("#8AB5FF"), BrushColor(viewModel.AutomaticBackground));
         Assert.Equal(Color.Parse("#FFFFFF"), BrushColor(viewModel.AutomaticForeground));
 
+        viewModel.SetResetPressed(true);
+        Assert.Equal(Color.Parse("#D1C300"), BrushColor(viewModel.ResetBackground));
+
         viewModel.SetEmergencyPressed(true);
 
-        Assert.Equal(Color.Parse("#FF0000"), BrushColor(viewModel.EmergencyBackground));
+        Assert.Equal(Color.Parse("#D10000"), BrushColor(viewModel.EmergencyBackground));
         Assert.Equal(Color.Parse("#FFFFFF"), BrushColor(viewModel.EmergencyForeground));
 
         viewModel.SetEmergencyPressed(false);
@@ -715,18 +720,18 @@ public sealed class RouteMapConfigurationTests
         var viewModel = new TopBarViewModel(settings: RouteMapSeed.Create().TopBar);
 
         viewModel.SetResetHovered(true);
-        Assert.Equal(Color.Parse("#FFFFE6"), BrushColor(viewModel.ResetBackground));
+        Assert.Equal(Color.Parse("#FFF78A"), BrushColor(viewModel.ResetBackground));
 
         viewModel.SetResetPressed(true);
-        Assert.Equal(Color.Parse("#A0A300"), BrushColor(viewModel.ResetBackground));
+        Assert.Equal(Color.Parse("#D1C300"), BrushColor(viewModel.ResetBackground));
         Assert.Equal(Color.Parse("#FFFFFF"), BrushColor(viewModel.ResetForeground));
 
         viewModel.SetEmergencyHovered(true);
-        Assert.Equal(Color.Parse("#FFB8B8"), BrushColor(viewModel.EmergencyBackground));
+        Assert.Equal(Color.Parse("#FF8A8A"), BrushColor(viewModel.EmergencyBackground));
         Assert.Equal(Color.Parse("#101820"), BrushColor(viewModel.EmergencyForeground));
 
         viewModel.SetEmergencyPressed(true);
-        Assert.Equal(Color.Parse("#FF0000"), BrushColor(viewModel.EmergencyBackground));
+        Assert.Equal(Color.Parse("#D10000"), BrushColor(viewModel.EmergencyBackground));
     }
 
     [Fact]

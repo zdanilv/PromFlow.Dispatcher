@@ -712,7 +712,12 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         cardViewModel.IsStopHovered = true;
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal(Color.Parse("#FFB8B8"), Assert.IsType<SolidColorBrush>(stopButton.Background).Color);
+        Assert.Equal(Color.Parse("#FF8A8A"), Assert.IsType<SolidColorBrush>(stopButton.Background).Color);
+
+        cardViewModel.IsStartHovered = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Color.Parse("#8AFF8E"), Assert.IsType<SolidColorBrush>(startButton.Background).Color);
+        cardViewModel.IsStartHovered = false;
 
         cardViewModel.IsSelectorChecked = true;
         Dispatcher.UIThread.RunJobs();
@@ -877,8 +882,8 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.InRange(reset.Bounds.Width, emergency.Bounds.Width - 1, emergency.Bounds.Width + 1);
         Assert.InRange(reset.Bounds.Height, emergency.Bounds.Height - 1, emergency.Bounds.Height + 1);
         Assert.True(reset.Bounds.Right <= emergency.Bounds.Left);
-        Assert.Equal(Color.Parse("#FEFFB8"), Assert.IsType<SolidColorBrush>(reset.Background).Color);
-        Assert.Equal(Color.Parse("#FF8A8A"), Assert.IsType<SolidColorBrush>(emergency.Background).Color);
+        Assert.Equal(Color.Parse("#FFF026"), Assert.IsType<SolidColorBrush>(reset.Background).Color);
+        Assert.Equal(Color.Parse("#FF2626"), Assert.IsType<SolidColorBrush>(emergency.Background).Color);
         Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(automatic.BorderBrush).Color);
         Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(manual.BorderBrush).Color);
         Assert.Equal(HorizontalAlignment.Center, automatic.HorizontalContentAlignment);
@@ -899,7 +904,7 @@ public sealed class RouteMapSettingsDialogVisualTests
         topBarViewModel.ApplyRuntime(
             isAutomaticMode: true,
             isManualMode: false,
-            isResetActive: false,
+            isResetActive: true,
             hasEmergency: true,
             isConnectionAvailable: true);
         var topBar = new TopBarView { DataContext = topBarViewModel };
@@ -908,8 +913,10 @@ public sealed class RouteMapSettingsDialogVisualTests
         Dispatcher.UIThread.RunJobs();
 
         var automatic = topBar.FindControl<ToggleButton>("AutomaticButton")!;
+        var reset = topBar.FindControl<ToggleButton>("ResetButton")!;
         var emergency = topBar.FindControl<ToggleButton>("EmergencyButton")!;
         Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(automatic.Background).Color);
+        Assert.Equal(Color.Parse("#D1C300"), Assert.IsAssignableFrom<ISolidColorBrush>(reset.Background).Color);
         Assert.Equal(Color.Parse("#D10000"), Assert.IsAssignableFrom<ISolidColorBrush>(emergency.Background).Color);
 
         topBarViewModel.ApplyRuntime(
@@ -937,7 +944,7 @@ public sealed class RouteMapSettingsDialogVisualTests
 
         cardViewModel.IsStartChecked = true;
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(start.Background).Color);
+        Assert.Equal(Color.Parse("#00D107"), Assert.IsAssignableFrom<ISolidColorBrush>(start.Background).Color);
 
         cardViewModel.IsStopChecked = true;
         Dispatcher.UIThread.RunJobs();

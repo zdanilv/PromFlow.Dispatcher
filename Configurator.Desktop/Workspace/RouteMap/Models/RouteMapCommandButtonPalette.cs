@@ -34,6 +34,15 @@ internal static class RouteMapCommandButtonPalette
 
     public static RouteMapCommandButtonColors Start { get; } = new(
         NormalBackground: "#D0D0D0",
+        HoverBackground: "#8AFF8E",
+        PressedBackground: "#00D107",
+        CheckedBackground: "#00D107",
+        NormalForeground: "#101820",
+        PressedForeground: "#101820",
+        CheckedForeground: "#FFFFFF");
+
+    public static RouteMapCommandButtonColors Selector { get; } = new(
+        NormalBackground: "#D0D0D0",
         HoverBackground: "#D0D0D0",
         PressedBackground: "#8AB5FF",
         CheckedBackground: "#003CA3",
@@ -42,18 +51,18 @@ internal static class RouteMapCommandButtonPalette
         CheckedForeground: "#FFFFFF");
 
     public static RouteMapCommandButtonColors Reset { get; } = new(
-        NormalBackground: "#FEFFB8",
-        HoverBackground: "#FFFFE6",
-        PressedBackground: "#A0A300",
-        CheckedBackground: "#FEFFB8",
+        NormalBackground: "#FFF026",
+        HoverBackground: "#FFF78A",
+        PressedBackground: "#D1C300",
+        CheckedBackground: "#D1C300",
         NormalForeground: "#101820",
         PressedForeground: "#FFFFFF",
         CheckedForeground: "#101820");
 
     public static RouteMapCommandButtonColors Emergency { get; } = new(
-        NormalBackground: "#FF8A8A",
-        HoverBackground: "#FFB8B8",
-        PressedBackground: "#FF0000",
+        NormalBackground: "#FF2626",
+        HoverBackground: "#FF8A8A",
+        PressedBackground: "#D10000",
         CheckedBackground: "#D10000",
         NormalForeground: "#101820",
         PressedForeground: "#FFFFFF",

@@ -32,6 +32,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private bool _isStartChecked;
     private bool _isStopChecked;
     private bool _isStartPressed;
+    private bool _isStartHovered;
     private bool _isStopPressed;
     private bool _isStopHovered;
     private bool _isSelectorChecked;
@@ -104,7 +105,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public string StopText => Style.StopText;
     public IBrush StartBackground => !IsEnabled
         ? DisabledBrush
-        : RouteMapPalette.Brush(RouteMapCommandButtonPalette.Start.Background(IsStartPressed, IsStartChecked));
+        : RouteMapPalette.Brush(RouteMapCommandButtonPalette.Start.Background(IsStartPressed, IsStartChecked, IsStartHovered));
     public IBrush StartForeground => RouteMapPalette.Brush(!IsEnabled
         ? "#FFFFFF"
         : RouteMapCommandButtonPalette.Start.Foreground(IsStartPressed, IsStartChecked));
@@ -116,10 +117,10 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         : RouteMapCommandButtonPalette.Emergency.Foreground(IsStopPressed, IsStopChecked));
     public IBrush SelectorBackground => !IsSelectorEnabled
         ? DisabledBrush
-        : RouteMapPalette.Brush(RouteMapCommandButtonPalette.Start.Background(IsSelectorPressed, IsSelectorChecked));
+        : RouteMapPalette.Brush(RouteMapCommandButtonPalette.Selector.Background(IsSelectorPressed, IsSelectorChecked));
     public IBrush SelectorForeground => RouteMapPalette.Brush(!IsSelectorEnabled
         ? "#FFFFFF"
-        : RouteMapCommandButtonPalette.Start.Foreground(IsSelectorPressed, IsSelectorChecked));
+        : RouteMapCommandButtonPalette.Selector.Foreground(IsSelectorPressed, IsSelectorChecked));
     public IBrush ParameterBackground => IsEnabled ? RouteMapPalette.Brush("#D0D0D0") : DisabledBrush;
     public IBrush ParameterForeground => RouteMapPalette.Brush(IsEnabled ? "#101820" : "#FFFFFF");
     public ReactiveCommand<Unit, Unit> OpenParametersCommand { get; }
@@ -286,6 +287,20 @@ public sealed class EquipmentCardViewModel : ViewModelBase
                 return;
 
             this.RaiseAndSetIfChanged(ref _isStartPressed, value);
+            this.RaisePropertyChanged(nameof(StartBackground));
+            this.RaisePropertyChanged(nameof(StartForeground));
+        }
+    }
+
+    public bool IsStartHovered
+    {
+        get => _isStartHovered;
+        set
+        {
+            if (_isStartHovered == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _isStartHovered, value);
             this.RaisePropertyChanged(nameof(StartBackground));
             this.RaisePropertyChanged(nameof(StartForeground));
         }
