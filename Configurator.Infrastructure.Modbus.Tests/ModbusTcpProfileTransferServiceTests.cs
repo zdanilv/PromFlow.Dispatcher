@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
@@ -23,7 +24,8 @@ public sealed class ModbusTcpProfileTransferServiceTests
         var map = new ModbusOptions
         {
             DataMap = [new ModbusDataPointOptions { Name = "system.fault", Area = ModbusDataArea.Coil, Type = ModbusValueType.Bool }],
-            AlarmMap = [CreateAlarm()]
+            AlarmMap = [CreateAlarm()],
+            AddressLabels = [new ModbusAddressLabelOptions { Area = ModbusDataArea.HoldingRegister, Address = 3, BitIndex = 1, DisplayName = "Пуск" }]
         };
         var service = CreateService(runtime, map, out var config, out _);
         var path = CreateTemporaryPath();
@@ -38,8 +40,93 @@ public sealed class ModbusTcpProfileTransferServiceTests
             Assert.NotNull(result.Profile);
             Assert.Single(result.Profile!.DataMap);
             Assert.Single(result.Profile.AlarmMap);
+            var label = Assert.Single(result.Profile.AddressLabels);
+            Assert.Equal((ModbusDataArea.HoldingRegister, 3, 1, "Пуск"), (label.Area, label.Address, label.BitIndex, label.DisplayName));
             Assert.DoesNotContain("LegacyDemo", json, StringComparison.Ordinal);
             Assert.Equal(0, config.SaveSectionsCallCount);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadAndValidate_LegacyProfileWithoutAddressLabels_UsesEmptyCatalog()
+    {
+        var service = CreateService(CreateRuntimeOptions(), new ModbusOptions(), out _, out _);
+        var profile = ModbusTcpProfile.Create(CreateRuntimeOptions(), new ModbusOptions());
+        var path = CreateTemporaryPath();
+
+        try
+        {
+            var node = JsonNode.Parse(JsonSerializer.Serialize(profile, JsonOptions))!.AsObject();
+            node.Remove("AddressLabels");
+            await File.WriteAllTextAsync(path, node.ToJsonString(JsonOptions));
+
+            var result = await service.ReadAndValidateAsync(path);
+
+            Assert.True(result.Succeeded);
+            Assert.Empty(result.Profile!.AddressLabels);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadAndValidate_DuplicateAddressLabels_Fails()
+    {
+        var service = CreateService(CreateRuntimeOptions(), new ModbusOptions(), out _, out _);
+        var profile = ModbusTcpProfile.Create(CreateRuntimeOptions(), new ModbusOptions());
+        profile.AddressLabels =
+        [
+            new ModbusAddressLabelOptions { Area = ModbusDataArea.Coil, Address = 2, DisplayName = "Первый" },
+            new ModbusAddressLabelOptions { Area = ModbusDataArea.Coil, Address = 2, DisplayName = "Второй" }
+        ];
+        var path = CreateTemporaryPath();
+
+        try
+        {
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(profile, JsonOptions));
+
+            var result = await service.ReadAndValidateAsync(path);
+
+            Assert.False(result.Succeeded);
+            Assert.Contains("уже задана", result.ErrorMessage);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadAndValidate_InvalidAddressLabelBit_Fails()
+    {
+        var service = CreateService(CreateRuntimeOptions(), new ModbusOptions(), out _, out _);
+        var profile = ModbusTcpProfile.Create(CreateRuntimeOptions(), new ModbusOptions());
+        profile.AddressLabels =
+        [
+            new ModbusAddressLabelOptions
+            {
+                Area = ModbusDataArea.HoldingRegister,
+                Address = 0,
+                BitIndex = 16,
+                DisplayName = "Некорректный бит"
+            }
+        ];
+        var path = CreateTemporaryPath();
+
+        try
+        {
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(profile, JsonOptions));
+
+            var result = await service.ReadAndValidateAsync(path);
+
+            Assert.False(result.Succeeded);
+            Assert.Contains("0..15", result.ErrorMessage);
         }
         finally
         {
@@ -107,6 +194,10 @@ public sealed class ModbusTcpProfileTransferServiceTests
             ],
             AlarmMap = [CreateAlarm(acknowledgementAddress: 10)]
         });
+        profile.AddressLabels =
+        [
+            new ModbusAddressLabelOptions { Area = ModbusDataArea.Coil, Address = 0, DisplayName = "Вход" }
+        ];
         var path = CreateTemporaryPath();
 
         try
@@ -133,6 +224,7 @@ public sealed class ModbusTcpProfileTransferServiceTests
             var savedMap = Assert.IsType<ModbusOptions>(config.LastSections[ModbusOptions.SectionName]);
             Assert.Equal(11, savedMap.Client.CoilCount);
             Assert.Equal(7, savedMap.Client.RegisterCount);
+            Assert.Equal("Вход", Assert.Single(savedMap.AddressLabels).DisplayName);
             Assert.Equal(2, dataMapRuntime.LastDataMap.Count);
         }
         finally

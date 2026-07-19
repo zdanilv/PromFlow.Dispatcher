@@ -21,12 +21,18 @@ public sealed class ModbusTcpProfile
 
     public List<ModbusAlarmOptions> AlarmMap { get; set; } = [];
 
+    /// <summary>
+    /// Переносимые диагностические имена адресов и битов.
+    /// </summary>
+    public List<ModbusAddressLabelOptions> AddressLabels { get; set; } = [];
+
     public static ModbusTcpProfile Create(ModbusOptions runtimeOptions, ModbusOptions mapOptions)
         => new()
         {
             Runtime = ModbusTcpRuntimeSettings.FromOptions(runtimeOptions),
             DataMap = mapOptions.DataMap.Select(point => point.Clone()).ToList(),
-            AlarmMap = mapOptions.AlarmMap.Select(alarm => alarm.Clone()).ToList()
+            AlarmMap = mapOptions.AlarmMap.Select(alarm => alarm.Clone()).ToList(),
+            AddressLabels = (mapOptions.AddressLabels ?? []).Select(label => label.Clone()).ToList()
         };
 
     public ModbusTcpProfile Clone()
@@ -36,7 +42,8 @@ public sealed class ModbusTcpProfile
             Version = Version,
             Runtime = Runtime.Clone(),
             DataMap = DataMap.Select(point => point.Clone()).ToList(),
-            AlarmMap = AlarmMap.Select(alarm => alarm.Clone()).ToList()
+            AlarmMap = AlarmMap.Select(alarm => alarm.Clone()).ToList(),
+            AddressLabels = (AddressLabels ?? []).Select(label => label.Clone()).ToList()
         };
 }
 

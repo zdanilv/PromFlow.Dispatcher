@@ -125,6 +125,7 @@ public sealed class ModbusTcpProfileTransferService : IModbusTcpProfileTransferS
         mapOptions.Server = actualProfile.Runtime.Server.Clone();
         mapOptions.DataMap = actualProfile.DataMap.Select(point => point.Clone()).ToList();
         mapOptions.AlarmMap = actualProfile.AlarmMap.Select(alarm => alarm.Clone()).ToList();
+        mapOptions.AddressLabels = actualProfile.AddressLabels.Select(label => label.Clone()).ToList();
 
         // Сохраняем runtime вместе с legacy DataMap, чтобы удаление demo-экрана
         // не стирало старые пользовательские настройки без явного действия.
@@ -179,11 +180,18 @@ public sealed class ModbusTcpProfileTransferService : IModbusTcpProfileTransferS
         profile.Runtime.Server ??= new ModbusEndpointOptions();
         profile.DataMap ??= [];
         profile.AlarmMap ??= [];
+        profile.AddressLabels ??= [];
 
         var endpointError = ValidateRuntime(profile.Runtime);
         if (!string.IsNullOrWhiteSpace(endpointError))
         {
             return ModbusTcpProfileValidation.Failure(endpointError);
+        }
+
+        var labelError = ValidateAddressLabels(profile.AddressLabels);
+        if (!string.IsNullOrWhiteSpace(labelError))
+        {
+            return ModbusTcpProfileValidation.Failure(labelError);
         }
 
         var options = new ModbusOptions
@@ -334,6 +342,50 @@ public sealed class ModbusTcpProfileTransferService : IModbusTcpProfileTransferS
                 requiredRegisters = Math.Max(requiredRegisters, address.Address + 1);
             }
         }
+    }
+
+    private static string? ValidateAddressLabels(IEnumerable<ModbusAddressLabelOptions> labels)
+    {
+        var coordinates = new HashSet<(ModbusDataArea Area, int Address, int? BitIndex)>();
+
+        foreach (var label in labels)
+        {
+            if (!Enum.IsDefined(label.Area))
+            {
+                return $"Метка адреса использует неподдерживаемую область '{label.Area}'.";
+            }
+
+            if (string.IsNullOrWhiteSpace(label.DisplayName))
+            {
+                return "Имя диагностической метки Modbus не должно быть пустым.";
+            }
+
+            label.DisplayName = label.DisplayName.Trim();
+            var maxAddress = label.Area == ModbusDataArea.Coil ? MaxCoils : MaxRegisters;
+            if (label.Address is < 0 || label.Address >= maxAddress)
+            {
+                return $"Метка адреса {label.Area}[{label.Address}] выходит за допустимый диапазон.";
+            }
+
+            if (label.Area == ModbusDataArea.Coil && label.BitIndex is not null)
+            {
+                return "Метка Coil не может содержать номер бита.";
+            }
+
+            if (label.Area == ModbusDataArea.HoldingRegister
+                && label.BitIndex is int bitIndex
+                && bitIndex is < 0 or > 15)
+            {
+                return $"Номер бита Holding Register должен быть в диапазоне 0..15, получено {bitIndex}.";
+            }
+
+            if (!coordinates.Add((label.Area, label.Address, label.BitIndex)))
+            {
+                return $"Диагностическая метка для {label.Area}[{label.Address}] уже задана.";
+            }
+        }
+
+        return null;
     }
 
     private static string OperationMessage(ModbusOperationResult result)

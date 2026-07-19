@@ -3,6 +3,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:demo="clr-namespace:Configurator.Desktop.Workspace.ModbusDemo"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Name="Root"
              mc:Ignorable="d"
              d:DesignWidth="1280"
              d:DesignHeight="820"
@@ -17,6 +19,9 @@
     <Style Selector="TextBox.compact"><Setter Property="Height" Value="32"/><Setter Property="MinWidth" Value="120"/></Style>
     <Style Selector="ComboBox.compact"><Setter Property="Height" Value="32"/><Setter Property="MinWidth" Value="170"/></Style>
     <Style Selector="Button.command"><Setter Property="MinWidth" Value="128"/><Setter Property="Height" Value="34"/></Style>
+    <Style Selector="Border.catalog-header"><Setter Property="Background" Value="#EAF0F6"/><Setter Property="BorderBrush" Value="#D7DEE8"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="9,7"/></Style>
+    <Style Selector="Border.catalog-row"><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="#E1E6EA"/><Setter Property="BorderThickness" Value="0,0,0,1"/><Setter Property="Padding" Value="8,6"/></Style>
+    <Style Selector="Button.catalog-edit"><Setter Property="Width" Value="30"/><Setter Property="Height" Value="30"/><Setter Property="Padding" Value="0"/></Style>
   </UserControl.Styles>
 
   <Grid Background="#F4F7FA" RowDefinitions="Auto,*">
@@ -42,55 +47,192 @@
       </Grid>
     </Border>
 
-    <ScrollViewer Grid.Row="1" Margin="16" VerticalScrollBarVisibility="Auto">
-      <Grid ColumnDefinitions="0.8*,1.1*,1.1*" ColumnSpacing="14">
-        <Border Grid.Column="0" Classes="panel">
-          <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
-            <TextBlock Classes="h2" Text="Общие параметры (Modbus TCP)"/>
-            <CheckBox Grid.Row="1" Content="Автозапуск при открытии Workspace" IsChecked="{Binding DraftOptions.AutostartOnWorkspaceOpen, Mode=TwoWay}"/>
-            <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
-              <TextBlock Classes="label" Text="Режим автозапуска" VerticalAlignment="Center"/>
-              <ComboBox Grid.Column="1" Classes="compact" ItemsSource="{Binding StartupModes}" SelectedItem="{Binding DraftOptions.StartupMode, Mode=TwoWay}"/>
-            </Grid>
-            <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="10">
-              <TextBlock Classes="label" Text="Таймаут подтверждения записи, мс" VerticalAlignment="Center"/>
-              <TextBox Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.WriteConfirmationTimeoutMs, Mode=TwoWay}"/>
-            </Grid>
-          </Grid>
-        </Border>
+    <TabControl Grid.Row="1" Margin="16">
+      <TabItem Header="Настройки">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <Grid ColumnDefinitions="0.8*,1.1*,1.1*" ColumnSpacing="14">
+            <Border Grid.Column="0" Classes="panel">
+              <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+                <TextBlock Classes="h2" Text="Общие параметры (Modbus TCP)"/>
+                <CheckBox Grid.Row="1" Content="Автозапуск при открытии Workspace" IsChecked="{Binding DraftOptions.AutostartOnWorkspaceOpen, Mode=TwoWay}"/>
+                <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <TextBlock Classes="label" Text="Режим автозапуска" VerticalAlignment="Center"/>
+                  <ComboBox Grid.Column="1" Classes="compact" ItemsSource="{Binding StartupModes}" SelectedItem="{Binding DraftOptions.StartupMode, Mode=TwoWay}"/>
+                </Grid>
+                <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <TextBlock Classes="label" Text="Таймаут подтверждения записи, мс" VerticalAlignment="Center"/>
+                  <TextBox Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.WriteConfirmationTimeoutMs, Mode=TwoWay}"/>
+                </Grid>
+              </Grid>
+            </Border>
 
-        <Border Grid.Column="1" Classes="panel">
-          <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="9" ColumnDefinitions="*,Auto" ColumnSpacing="10">
-            <TextBlock Grid.ColumnSpan="2" Classes="h2" Text="Настройки клиента (Client / Master)"/>
-            <CheckBox Grid.Row="1" Grid.ColumnSpan="2" Content="Включён" IsChecked="{Binding DraftOptions.Client.Enabled, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="2" Classes="label" Text="Host" VerticalAlignment="Center"/><TextBox Grid.Row="2" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.Host, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="3" Classes="label" Text="Port" VerticalAlignment="Center"/><TextBox Grid.Row="3" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.Port, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="4" Classes="label" Text="UnitId" VerticalAlignment="Center"/><TextBox Grid.Row="4" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.UnitId, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="5" Classes="label" Text="PollIntervalMs" VerticalAlignment="Center"/><TextBox Grid.Row="5" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.PollIntervalMs, Mode=TwoWay}"/>
-            <CheckBox Grid.Row="6" Grid.ColumnSpan="2" Content="Coils включены" IsChecked="{Binding DraftOptions.Client.CoilsEnabled, Mode=TwoWay}"/>
-            <CheckBox Grid.Row="7" Grid.ColumnSpan="2" Content="Holding Registers включены" IsChecked="{Binding DraftOptions.Client.HoldingRegistersEnabled, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="8" Classes="label" Text="CoilStartAddress" VerticalAlignment="Center"/><TextBox Grid.Row="8" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.CoilStartAddress, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="9" Classes="label" Text="HoldingRegisterStartAddress" VerticalAlignment="Center"/><TextBox Grid.Row="9" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.HoldingRegisterStartAddress, Mode=TwoWay}"/>
-            <StackPanel Grid.Row="10" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10"><TextBlock Classes="label" Text="CoilCount" VerticalAlignment="Center"/><TextBox Classes="compact" Text="{Binding DraftOptions.Client.CoilCount, Mode=TwoWay}"/><TextBlock Classes="label" Text="RegisterCount" VerticalAlignment="Center"/><TextBox Classes="compact" Text="{Binding DraftOptions.Client.RegisterCount, Mode=TwoWay}"/></StackPanel>
-          </Grid>
-        </Border>
+            <Border Grid.Column="1" Classes="panel">
+              <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="9" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <TextBlock Grid.ColumnSpan="2" Classes="h2" Text="Настройки клиента (Client / Master)"/>
+                <CheckBox Grid.Row="1" Grid.ColumnSpan="2" Content="Включён" IsChecked="{Binding DraftOptions.Client.Enabled, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="2" Classes="label" Text="Host" VerticalAlignment="Center"/><TextBox Grid.Row="2" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.Host, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="3" Classes="label" Text="Port" VerticalAlignment="Center"/><TextBox Grid.Row="3" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.Port, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="4" Classes="label" Text="UnitId" VerticalAlignment="Center"/><TextBox Grid.Row="4" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.UnitId, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="5" Classes="label" Text="PollIntervalMs" VerticalAlignment="Center"/><TextBox Grid.Row="5" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.PollIntervalMs, Mode=TwoWay}"/>
+                <CheckBox Grid.Row="6" Grid.ColumnSpan="2" Content="Coils включены" IsChecked="{Binding DraftOptions.Client.CoilsEnabled, Mode=TwoWay}"/>
+                <CheckBox Grid.Row="7" Grid.ColumnSpan="2" Content="Holding Registers включены" IsChecked="{Binding DraftOptions.Client.HoldingRegistersEnabled, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="8" Classes="label" Text="CoilStartAddress" VerticalAlignment="Center"/><TextBox Grid.Row="8" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.CoilStartAddress, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="9" Classes="label" Text="HoldingRegisterStartAddress" VerticalAlignment="Center"/><TextBox Grid.Row="9" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Client.HoldingRegisterStartAddress, Mode=TwoWay}"/>
+                <StackPanel Grid.Row="10" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10"><TextBlock Classes="label" Text="CoilCount" VerticalAlignment="Center"/><TextBox Classes="compact" Text="{Binding DraftOptions.Client.CoilCount, Mode=TwoWay}"/><TextBlock Classes="label" Text="RegisterCount" VerticalAlignment="Center"/><TextBox Classes="compact" Text="{Binding DraftOptions.Client.RegisterCount, Mode=TwoWay}"/></StackPanel>
+              </Grid>
+            </Border>
 
-        <Border Grid.Column="2" Classes="panel">
-          <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="9" ColumnDefinitions="*,Auto" ColumnSpacing="10">
-            <TextBlock Grid.ColumnSpan="2" Classes="h2" Text="Настройки сервера (Server / Slave)"/>
-            <CheckBox Grid.Row="1" Grid.ColumnSpan="2" Content="Включён" IsChecked="{Binding DraftOptions.Server.Enabled, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="2" Classes="label" Text="BindAddress" VerticalAlignment="Center"/><TextBox Grid.Row="2" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.BindAddress, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="3" Classes="label" Text="Port" VerticalAlignment="Center"/><TextBox Grid.Row="3" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.Port, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="4" Classes="label" Text="UnitId" VerticalAlignment="Center"/><TextBox Grid.Row="4" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.UnitId, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="5" Classes="label" Text="PollIntervalMs" VerticalAlignment="Center"/><TextBox Grid.Row="5" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.PollIntervalMs, Mode=TwoWay}"/>
-            <CheckBox Grid.Row="6" Grid.ColumnSpan="2" Content="Coils включены" IsChecked="{Binding DraftOptions.Server.CoilsEnabled, Mode=TwoWay}"/>
-            <CheckBox Grid.Row="7" Grid.ColumnSpan="2" Content="Holding Registers включены" IsChecked="{Binding DraftOptions.Server.HoldingRegistersEnabled, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="8" Classes="label" Text="CoilStartAddress" VerticalAlignment="Center"/><TextBox Grid.Row="8" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.CoilStartAddress, Mode=TwoWay}"/>
-            <TextBlock Grid.Row="9" Classes="label" Text="HoldingRegisterStartAddress" VerticalAlignment="Center"/><TextBox Grid.Row="9" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.HoldingRegisterStartAddress, Mode=TwoWay}"/>
-            <StackPanel Grid.Row="10" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10"><TextBlock Classes="label" Text="CoilCount" VerticalAlignment="Center"/><TextBox Classes="compact" Text="{Binding DraftOptions.Server.CoilCount, Mode=TwoWay}"/><TextBlock Classes="label" Text="RegisterCount" VerticalAlignment="Center"/><TextBox Classes="compact" Text="{Binding DraftOptions.Server.RegisterCount, Mode=TwoWay}"/></StackPanel>
+            <Border Grid.Column="2" Classes="panel">
+              <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="9" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <TextBlock Grid.ColumnSpan="2" Classes="h2" Text="Настройки сервера (Server / Slave)"/>
+                <CheckBox Grid.Row="1" Grid.ColumnSpan="2" Content="Включён" IsChecked="{Binding DraftOptions.Server.Enabled, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="2" Classes="label" Text="BindAddress" VerticalAlignment="Center"/><TextBox Grid.Row="2" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.BindAddress, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="3" Classes="label" Text="Port" VerticalAlignment="Center"/><TextBox Grid.Row="3" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.Port, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="4" Classes="label" Text="UnitId" VerticalAlignment="Center"/><TextBox Grid.Row="4" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.UnitId, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="5" Classes="label" Text="PollIntervalMs" VerticalAlignment="Center"/><TextBox Grid.Row="5" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.PollIntervalMs, Mode=TwoWay}"/>
+                <CheckBox Grid.Row="6" Grid.ColumnSpan="2" Content="Coils включены" IsChecked="{Binding DraftOptions.Server.CoilsEnabled, Mode=TwoWay}"/>
+                <CheckBox Grid.Row="7" Grid.ColumnSpan="2" Content="Holding Registers включены" IsChecked="{Binding DraftOptions.Server.HoldingRegistersEnabled, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="8" Classes="label" Text="CoilStartAddress" VerticalAlignment="Center"/><TextBox Grid.Row="8" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.CoilStartAddress, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="9" Classes="label" Text="HoldingRegisterStartAddress" VerticalAlignment="Center"/><TextBox Grid.Row="9" Grid.Column="1" Classes="compact" Text="{Binding DraftOptions.Server.HoldingRegisterStartAddress, Mode=TwoWay}"/>
+                <StackPanel Grid.Row="10" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10"><TextBlock Classes="label" Text="CoilCount" VerticalAlignment="Center"/><TextBox Classes="compact" Text="{Binding DraftOptions.Server.CoilCount, Mode=TwoWay}"/><TextBlock Classes="label" Text="RegisterCount" VerticalAlignment="Center"/><TextBox Classes="compact" Text="{Binding DraftOptions.Server.RegisterCount, Mode=TwoWay}"/></StackPanel>
+              </Grid>
+            </Border>
           </Grid>
-        </Border>
-      </Grid>
-    </ScrollViewer>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Регистры и Coils">
+        <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="2">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="h2" Text="Сводная диагностика адресов"/>
+              <TextBlock Classes="label" Text="Offset соответствует Modbus.DataMap. Полный адрес учитывает StartAddress активных Client и Server. Имя не меняет SignalId и обмен Modbus." TextWrapping="Wrap"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <Button Content="Развернуть все" Command="{Binding AddressCatalog.ExpandAllCommand}"/>
+              <Button Content="Свернуть все" Command="{Binding AddressCatalog.CollapseAllCommand}"/>
+            </StackPanel>
+          </Grid>
+          <TextBlock Grid.Row="1" Classes="error" Text="{Binding AddressCatalog.LastError}" TextWrapping="Wrap"/>
+          <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="16" HorizontalAlignment="Stretch">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="h2" Text="Coils"/>
+                <Border Classes="catalog-header">
+                  <Grid ColumnDefinitions="90,140,1*,1.4*,1*,1.5*,1.5*,1.4*" ColumnSpacing="8">
+                    <TextBlock Text="Offset" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="1" Text="Полный адрес" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="2" Text="Текущее значение" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="3" Text="Имя" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="4" Text="Использование" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="5" Text="SignalId" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="6" Text="Роль / назначение" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="7" Text="Описание" FontWeight="SemiBold"/>
+                  </Grid>
+                </Border>
+                <ItemsControl ItemsSource="{Binding AddressCatalog.CoilRows}" HorizontalAlignment="Stretch">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="demo:ModbusAddressCatalogRow">
+                      <Border Classes="catalog-row" HorizontalAlignment="Stretch">
+                        <Grid ColumnDefinitions="90,140,1*,1.4*,1*,1.5*,1.5*,1.4*" ColumnSpacing="8" HorizontalAlignment="Stretch">
+                          <TextBlock Text="{Binding AddressText}" VerticalAlignment="Center"/>
+                          <TextBlock Grid.Column="1" Text="{Binding FullAddressText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                          <TextBlock Grid.Column="2" Text="{Binding CurrentValueText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                          <Grid Grid.Column="3" ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                            <TextBlock Text="{Binding DisplayNameText}" IsVisible="{Binding IsNotEditing}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            <TextBox Text="{Binding EditDisplayName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsVisible="{Binding IsEditing}" PlaceholderText="Без имени"/>
+                            <Button Grid.Column="1" Classes="catalog-edit" ToolTip.Tip="Изменить имя"
+                                    Command="{Binding DataContext.AddressCatalog.ToggleEditCommand, ElementName=Root}" CommandParameter="{Binding}">
+                              <materialIcons:MaterialIcon Kind="Pencil" Width="16" Height="16"/>
+                            </Button>
+                          </Grid>
+                          <TextBlock Grid.Column="4" Text="{Binding UsageText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                          <TextBlock Grid.Column="5" Text="{Binding SignalIdText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                          <TextBlock Grid.Column="6" Text="{Binding RoleText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                          <TextBlock Grid.Column="7" Text="{Binding DescriptionText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip.Tip="{Binding DescriptionText}"/>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <StackPanel Spacing="6">
+                <TextBlock Classes="h2" Text="Holding Registers"/>
+                <Border Classes="catalog-header">
+                  <Grid ColumnDefinitions="34,90,140,1*,1.4*,1*,1.5*,1.5*,1.4*" ColumnSpacing="8">
+                    <TextBlock/>
+                    <TextBlock Grid.Column="1" Text="Offset" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="2" Text="Полный адрес" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="3" Text="Текущее значение" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="4" Text="Имя" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="5" Text="Использование" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="6" Text="SignalId" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="7" Text="Роль / назначение" FontWeight="SemiBold"/>
+                    <TextBlock Grid.Column="8" Text="Описание" FontWeight="SemiBold"/>
+                  </Grid>
+                </Border>
+                <ItemsControl ItemsSource="{Binding AddressCatalog.HoldingRegisterRows}" HorizontalAlignment="Stretch">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="demo:ModbusAddressCatalogRow">
+                      <Grid RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch">
+                        <Border Classes="catalog-row" HorizontalAlignment="Stretch">
+                          <Grid ColumnDefinitions="34,90,140,1*,1.4*,1*,1.5*,1.5*,1.4*" ColumnSpacing="8" HorizontalAlignment="Stretch">
+                            <ToggleButton Width="30" Height="30" IsChecked="{Binding IsExpanded, Mode=TwoWay}" ToolTip.Tip="Показать или скрыть биты">
+                              <materialIcons:MaterialIcon Kind="ChevronDown" Width="18" Height="18"/>
+                            </ToggleButton>
+                            <TextBlock Grid.Column="1" Text="{Binding AddressText}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Text="{Binding FullAddressText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Column="3" Text="{Binding CurrentValueText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            <Grid Grid.Column="4" ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                              <TextBlock Text="{Binding DisplayNameText}" IsVisible="{Binding IsNotEditing}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                              <TextBox Text="{Binding EditDisplayName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsVisible="{Binding IsEditing}" PlaceholderText="Без имени"/>
+                              <Button Grid.Column="1" Classes="catalog-edit" ToolTip.Tip="Изменить имя"
+                                      Command="{Binding DataContext.AddressCatalog.ToggleEditCommand, ElementName=Root}" CommandParameter="{Binding}">
+                                <materialIcons:MaterialIcon Kind="Pencil" Width="16" Height="16"/>
+                              </Button>
+                            </Grid>
+                            <TextBlock Grid.Column="5" Text="{Binding UsageText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Column="6" Text="{Binding SignalIdText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Column="7" Text="{Binding RoleText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Column="8" Text="{Binding DescriptionText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip.Tip="{Binding DescriptionText}"/>
+                          </Grid>
+                        </Border>
+                        <ItemsControl Grid.Row="1" ItemsSource="{Binding Bits}" IsVisible="{Binding IsExpanded}" HorizontalAlignment="Stretch">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="demo:ModbusAddressCatalogRow">
+                              <Border Classes="catalog-row" Background="#FAFBFC" HorizontalAlignment="Stretch">
+                                <Grid ColumnDefinitions="34,90,140,1*,1.4*,1*,1.5*,1.5*,1.4*" ColumnSpacing="8" HorizontalAlignment="Stretch">
+                                  <TextBlock/>
+                                  <TextBlock Grid.Column="1" Text="{Binding AddressText}" VerticalAlignment="Center"/>
+                                  <TextBlock Grid.Column="2" Text="{Binding FullAddressText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                  <TextBlock Grid.Column="3" Text="{Binding CurrentValueText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                  <Grid Grid.Column="4" ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                                    <TextBlock Text="{Binding DisplayNameText}" IsVisible="{Binding IsNotEditing}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <TextBox Text="{Binding EditDisplayName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsVisible="{Binding IsEditing}" PlaceholderText="Без имени"/>
+                                    <Button Grid.Column="1" Classes="catalog-edit" ToolTip.Tip="Изменить имя"
+                                            Command="{Binding DataContext.AddressCatalog.ToggleEditCommand, ElementName=Root}" CommandParameter="{Binding}">
+                                      <materialIcons:MaterialIcon Kind="Pencil" Width="16" Height="16"/>
+                                    </Button>
+                                  </Grid>
+                                  <TextBlock Grid.Column="5" Text="{Binding UsageText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                  <TextBlock Grid.Column="6" Text="{Binding SignalIdText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                  <TextBlock Grid.Column="7" Text="{Binding RoleText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                  <TextBlock Grid.Column="8" Text="{Binding DescriptionText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip.Tip="{Binding DescriptionText}"/>
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+    </TabControl>
   </Grid>
 </UserControl>

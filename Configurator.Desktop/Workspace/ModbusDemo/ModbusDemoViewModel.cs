@@ -6,7 +6,9 @@ using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Desktop.Workspace.ModbusProfile;
+using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
@@ -61,7 +63,10 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         IDialogService dialogService,
         IAppConfigService appConfigService,
         IModbusTcpProfileFilePicker profileFilePicker,
-        IModbusTcpProfileTransferService profileTransferService)
+        IModbusTcpProfileTransferService profileTransferService,
+        IOptionsMonitor<ModbusOptions> mapOptionsMonitor,
+        RouteMapConfigurationManager routeMapConfigurationManager,
+        IModbusRuntimeService modbusRuntimeService)
         : this(
             modbusTcpService,
             optionsProvider,
@@ -69,7 +74,10 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
             appConfigService,
             DispatchToUi,
             profileFilePicker,
-            profileTransferService)
+            profileTransferService,
+            mapOptionsMonitor,
+            routeMapConfigurationManager,
+            modbusRuntimeService)
     {
     }
 
@@ -89,7 +97,10 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         IAppConfigService appConfigService,
         Action<Action> dispatchToUi,
         IModbusTcpProfileFilePicker? profileFilePicker = null,
-        IModbusTcpProfileTransferService? profileTransferService = null)
+        IModbusTcpProfileTransferService? profileTransferService = null,
+        IOptionsMonitor<ModbusOptions>? mapOptionsMonitor = null,
+        RouteMapConfigurationManager? routeMapConfigurationManager = null,
+        IModbusRuntimeService? modbusRuntimeService = null)
     {
         _modbusTcpService = modbusTcpService;
         _optionsProvider = optionsProvider;
@@ -101,6 +112,14 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         _dispatchToUi = dispatchToUi;
         _currentOptions = _optionsProvider.CurrentValue.Clone();
         _draftOptions = _currentOptions.Clone();
+        AddressCatalog = new ModbusAddressCatalogViewModel(
+            _appConfigService,
+            () => _optionsProvider.CurrentValue,
+            _dispatchToUi,
+            mapOptionsMonitor,
+            routeMapConfigurationManager,
+            modbusRuntimeService);
+        AddressCatalog.MessageChanged += OnAddressCatalogMessageChanged;
 
         TelemetryGroups = CreateTelemetryGroups();
         CommandGroups = CreateCommandGroups();
@@ -191,6 +210,11 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     /// Изменяемые числовые параметры устройства.
     /// </summary>
     public ObservableCollection<ModbusParameterRow> ParameterRows { get; }
+
+    /// <summary>
+    /// Диагностический список активных Coils, Holding Registers и их битов.
+    /// </summary>
+    public ModbusAddressCatalogViewModel AddressCatalog { get; }
 
     /// <summary>
     /// Запускает серверную роль Modbus для демо-стека.
@@ -332,6 +356,8 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         {
             _profileTransferService.ProfileApplied -= OnProfileApplied;
         }
+        AddressCatalog.MessageChanged -= OnAddressCatalogMessageChanged;
+        AddressCatalog.Dispose();
 
         foreach (var subscription in _dataSubscriptions)
         {
@@ -609,6 +635,7 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
             await _appConfigService.SaveSectionAsync(ModbusOptions.DemoSectionName, options);
             _currentOptions = options.Clone();
             DraftOptions = options.Clone();
+            AddressCatalog.Refresh(options);
             LastError = string.Empty;
             StatusText = "Настройки Modbus TCP сохранены.";
         }
@@ -690,7 +717,23 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
         {
             _currentOptions = _optionsProvider.CurrentValue.Clone();
             DraftOptions = _currentOptions.Clone();
+            AddressCatalog.Refresh(_currentOptions);
         });
+    }
+
+    private void OnAddressCatalogMessageChanged(object? sender, ModbusAddressCatalogMessageChangedEventArgs args)
+    {
+        if (!string.IsNullOrWhiteSpace(args.ErrorMessage))
+        {
+            LastError = args.ErrorMessage;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(args.StatusMessage))
+        {
+            LastError = string.Empty;
+            StatusText = args.StatusMessage;
+        }
     }
 
     private static string? ValidateInlineSettings(ModbusOptions options)

@@ -53,6 +53,12 @@ public sealed class ModbusOptions
     public List<ModbusAlarmOptions> AlarmMap { get; set; } = [];
 
     /// <summary>
+    /// Диагностические имена Coils, Holding Registers и их битов.
+    /// Не участвуют в обмене Modbus и адресации SignalId.
+    /// </summary>
+    public List<ModbusAddressLabelOptions> AddressLabels { get; set; } = [];
+
+    /// <summary>
     /// Таймаут ожидания подтверждения записи через последующее чтение readable-точек.
     /// </summary>
     public int WriteConfirmationTimeoutMs { get; set; } = 2000;
@@ -70,6 +76,7 @@ public sealed class ModbusOptions
             Server = Server.Clone(),
             DataMap = DataMap.Select(point => point.Clone()).ToList(),
             AlarmMap = AlarmMap.Select(alarm => alarm.Clone()).ToList(),
+            AddressLabels = (AddressLabels ?? []).Select(label => label.Clone()).ToList(),
             WriteConfirmationTimeoutMs = WriteConfirmationTimeoutMs
         };
     }
