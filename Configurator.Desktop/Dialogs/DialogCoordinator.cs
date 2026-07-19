@@ -17,8 +17,8 @@ public sealed class DialogCoordinator
         ct.ThrowIfCancellationRequested();
 
         using var _ = context.ResultStream.Take(1)
-            .Subscribe(result => DialogHost.Close(DialogHostIds.Root, result));
-        var result = await DialogHost.Show(context.View, DialogHostIds.Root);
+            .Subscribe(result => DialogHost.Close(context.HostIdentifier, result));
+        var result = await DialogHost.Show(context.View, context.HostIdentifier);
 
         ct.ThrowIfCancellationRequested();
         return result is TResult typed ? typed : default;

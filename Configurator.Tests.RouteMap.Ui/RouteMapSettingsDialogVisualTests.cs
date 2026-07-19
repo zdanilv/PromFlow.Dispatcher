@@ -7,6 +7,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using DialogHostAvalonia;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
@@ -19,8 +20,10 @@ using Configurator.Application.Services.Signals;
 using Configurator.Application.Services.OpcUa.Browsing;
 using Configurator.Application.Services.OpcUa.Tags;
 using Configurator.Desktop.Dialogs.AlarmNotificationDialog;
+using Configurator.Desktop.Dialogs;
 using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Dialogs.ModbusSettingsDialog;
+using Configurator.Desktop.Main;
 using Configurator.Desktop.Workspace.Alarms;
 using Configurator.Desktop.Workspace.RouteMap;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
@@ -32,6 +35,8 @@ using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
 using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 using Configurator.Desktop.Workspace;
+using Material.Icons.Avalonia;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -40,6 +45,66 @@ namespace Configurator.Tests.RouteMap.Ui;
 
 public sealed class RouteMapSettingsDialogVisualTests
 {
+    [AvaloniaFact]
+    public void Alarm_notification_dialog_uses_dedicated_unframed_host()
+    {
+        var originalServices = Configurator.Desktop.App.Services;
+        using var serviceProvider = new ServiceCollection()
+            .AddSingleton<IAppConfigService>(new NullAppConfigService())
+            .AddTransient<AlarmNotificationDialogView>()
+            .BuildServiceProvider();
+        Configurator.Desktop.App.Services = serviceProvider;
+        var dialogHostStyles = new DialogHostStyles();
+        Avalonia.Application.Current!.Styles.Add(dialogHostStyles);
+
+        try
+        {
+            var window = new MainWindow { Width = 800, Height = 600 };
+            var rootHost = Assert.IsType<DialogHost>(window.Content);
+            var alarmHost = Assert.IsType<DialogHost>(rootHost.Content);
+            var factory = new DialogViewFactory(serviceProvider);
+            var context = factory.CreateAlarmNotification(ModbusAlarmKind.Fault, "Авария");
+
+            Assert.Equal(DialogHostIds.Root, rootHost.Identifier);
+            Assert.Equal(DialogHostIds.AlarmNotification, alarmHost.Identifier);
+            Assert.Equal(new Thickness(0), alarmHost.DialogMargin);
+            Assert.Equal(Colors.Transparent, Assert.IsAssignableFrom<ISolidColorBrush>(alarmHost.Background).Color);
+            Assert.Equal(
+                new Thickness(0),
+                alarmHost.GetValue(DialogHostStyle.BorderThicknessProperty));
+            Assert.Equal(
+                Colors.Transparent,
+                Assert.IsAssignableFrom<ISolidColorBrush>(
+                    alarmHost.GetValue(DialogHostStyle.BorderBrushProperty)).Color);
+            Assert.Equal(
+                new CornerRadius(0),
+                alarmHost.GetValue(DialogHostStyle.CornerRadiusProperty));
+            Assert.Equal(
+                "none",
+                alarmHost.GetValue(DialogHostStyle.BoxShadowProperty).ToString());
+            Assert.True(alarmHost.GetValue(DialogHostStyle.ClipToBoundsProperty));
+            Assert.Equal(DialogHostIds.AlarmNotification, context.HostIdentifier);
+
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var showTask = DialogHost.Show(context.View, context.HostIdentifier);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.True(context.View.IsVisible);
+            Assert.Equal(new Point(0, 0), context.View.Bounds.Position);
+
+            DialogHost.Close(context.HostIdentifier, false);
+            Dispatcher.UIThread.RunJobs();
+            showTask.GetAwaiter().GetResult();
+            window.Close();
+        }
+        finally
+        {
+            Avalonia.Application.Current?.Styles.Remove(dialogHostStyles);
+            Configurator.Desktop.App.Services = originalServices;
+        }
+    }
+
     [AvaloniaTheory]
     [InlineData(2)]
     [InlineData(3)]
@@ -295,16 +360,150 @@ public sealed class RouteMapSettingsDialogVisualTests
             .OfType<TextBlock>()
             .Select(text => text.Text)
             .ToArray();
-        var buttons = view.GetVisualDescendants()
-            .OfType<Button>()
-            .Select(button => button.Content?.ToString())
-            .ToArray();
+        var buttons = view.GetVisualDescendants().OfType<Button>().ToArray();
+        var dialogFrame = view.GetVisualDescendants()
+            .OfType<Border>()
+            .Single(border => border.Classes.Contains("alarm-notification-dialog-frame"));
+        var dialogContent = view.GetVisualDescendants()
+            .OfType<Border>()
+            .Single(border => border.Classes.Contains("alarm-notification-dialog-content"));
+        var closeButton = buttons.Single(button => button.Classes.Contains("alarm-notification-dialog-close"));
+        var closeIcon = closeButton.GetVisualDescendants().OfType<MaterialIcon>().Single();
 
         Assert.Contains("Авария", texts);
-        Assert.Contains("Хорошо", buttons);
-        Assert.Contains("X", buttons);
+        Assert.Contains(buttons, button => button.Content?.ToString() == "Хорошо");
+        Assert.DoesNotContain(buttons, button => button.Content?.ToString() == "X");
+        Assert.Equal("Multiply", closeIcon.Kind.ToString());
+        Assert.Equal(14, closeIcon.FontSize);
+        Assert.Equal(
+            Assert.IsAssignableFrom<ISolidColorBrush>(fault.HeaderBackground).Color,
+            Assert.IsAssignableFrom<ISolidColorBrush>(dialogFrame.Background).Color);
+        Assert.Equal(Colors.White, Assert.IsAssignableFrom<ISolidColorBrush>(dialogContent.Background).Color);
 
         window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Notifications_panel_wraps_long_alarm_message_without_expanding_panel_width()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "route-map-long-notification-ui-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            using var manager = new RouteMapConfigurationManager(
+                new RouteMapConfigurationStorage(Path.Combine(directory, "route-map.json")),
+                new RouteMapConfigurationMapper(RouteMapSeed.Create()),
+                new RouteMapConfigurationValidator(),
+                new RouteMapConfigurationMigrator());
+            var baselineJournal = new RouteMapSessionJournal();
+            baselineJournal.ShowAlarmNotification(
+                new ModbusAlarmOptions
+                {
+                    Id = "alarm.short-message",
+                    Kind = ModbusAlarmKind.Fault,
+                    Message = "Короткое сообщение",
+                },
+                DateTimeOffset.UtcNow,
+                markUnread: true);
+            var baselinePanelWidth = MeasureNotificationsPanelWidth(baselineJournal);
+
+            var journal = new RouteMapSessionJournal();
+            journal.ShowAlarmNotification(
+                new ModbusAlarmOptions
+                {
+                    Id = "alarm.long-message",
+                    Kind = ModbusAlarmKind.Fault,
+                    Message = new string('А', 800),
+                },
+                DateTimeOffset.UtcNow,
+                markUnread: true);
+            using var notificationsPanel = new NotificationsPanelViewModel(
+                journal,
+                new NoOpDialogService(),
+                new NoOpBitWriter());
+            using var viewModel = new RouteMapDashboardViewModel(
+                manager,
+                new EmptySignalProvider(),
+                new RouteMapRuntimeMapper(manager.CurrentDefinition),
+                new NoOpCommandDispatcher(),
+                new NoOpSettingsDialogService(),
+                notificationsPanel,
+                journal,
+                new StaticOptionsMonitor(new ModbusOptions()));
+            var view = new RouteMapDashboardView { DataContext = viewModel };
+            var window = new Window { Width = 1300, Height = 760, Content = view };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var panel = view.GetVisualDescendants().OfType<NotificationsPanelView>().Single();
+            var card = panel.GetVisualDescendants()
+                .OfType<Border>()
+                .Single(border => border.Classes.Contains("alarm-notification"));
+            var header = panel.GetVisualDescendants()
+                .OfType<Border>()
+                .Single(border => border.Classes.Contains("alarm-notification-header"));
+            var dismissButton = panel.GetVisualDescendants()
+                .OfType<Button>()
+                .Single(button => button.Classes.Contains("alarm-notification-dismiss"));
+            var createdAt = panel.GetVisualDescendants()
+                .OfType<TextBlock>()
+                .Single(text => text.Classes.Contains("alarm-notification-created-at"));
+            var message = panel.GetVisualDescendants()
+                .OfType<TextBlock>()
+                .Single(text => text.Classes.Contains("alarm-notification-message"));
+            var messageContent = panel.GetVisualDescendants()
+                .OfType<Grid>()
+                .Single(grid => grid.Classes.Contains("alarm-notification-message-content"));
+            var closeIcon = dismissButton.GetVisualDescendants().OfType<MaterialIcon>().Single();
+
+            Assert.Equal(baselinePanelWidth, panel.Bounds.Width);
+            Assert.InRange(card.Bounds.Width, 0, 376.01);
+            Assert.True(dismissButton.Bounds.Left >= createdAt.Bounds.Right);
+            Assert.True(dismissButton.Bounds.Top >= header.Bounds.Top);
+            Assert.True(dismissButton.Bounds.Bottom <= header.Bounds.Bottom);
+            // Material Icons maps the Close alias to the Multiply glyph in the resolved control.
+            Assert.Equal("Multiply", closeIcon.Kind.ToString());
+            Assert.Equal(14, closeIcon.FontSize);
+            Assert.Equal(TextWrapping.WrapWithOverflow, message.TextWrapping);
+            Assert.Equal(VerticalAlignment.Center, message.VerticalAlignment);
+            Assert.True(message.Bounds.Height > 74);
+            Assert.True(card.Bounds.Height > 120);
+            Assert.True(messageContent.Bounds.Height >= message.Bounds.Height);
+
+            window.Close();
+
+            double MeasureNotificationsPanelWidth(RouteMapSessionJournal sourceJournal)
+            {
+                using var sourceNotificationsPanel = new NotificationsPanelViewModel(
+                    sourceJournal,
+                    new NoOpDialogService(),
+                    new NoOpBitWriter());
+                using var sourceViewModel = new RouteMapDashboardViewModel(
+                    manager,
+                    new EmptySignalProvider(),
+                    new RouteMapRuntimeMapper(manager.CurrentDefinition),
+                    new NoOpCommandDispatcher(),
+                    new NoOpSettingsDialogService(),
+                    sourceNotificationsPanel,
+                    sourceJournal,
+                    new StaticOptionsMonitor(new ModbusOptions()));
+                var sourceView = new RouteMapDashboardView { DataContext = sourceViewModel };
+                var sourceWindow = new Window { Width = 1300, Height = 760, Content = sourceView };
+                sourceWindow.Show();
+                Dispatcher.UIThread.RunJobs();
+
+                var width = sourceView.GetVisualDescendants()
+                    .OfType<NotificationsPanelView>()
+                    .Single()
+                    .Bounds.Width;
+                sourceWindow.Close();
+                return width;
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [AvaloniaFact]

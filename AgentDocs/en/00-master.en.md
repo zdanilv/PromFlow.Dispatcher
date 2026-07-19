@@ -13,6 +13,7 @@ source guides with deeper Russian detail.
 | Add alarm dialogs or acknowledgements | `03-modbus-tcp-guide.en.md`, `06-testing-and-diagnostics.en.md` | `source/ru/modbus_tcp_integration_guide.ru.md` |
 | Add a new signal | `04-signal-id-guide.en.md`, `03-modbus-tcp-guide.en.md` | `source/ru/signal_id_modbus_tcp_mapping_guide.ru.md` |
 | Fix runtime, DI, or lifecycle | `01-architecture-overview.en.md`, `05-coding-rules.en.md` | `source/ru/modbus_tcp_integration_guide.ru.md` |
+| Add UI icons in Avalonia | `07-svg-icons-guide.en.md` | `Material.Icons.Avalonia`, `Configurator.Desktop/Assets/icons` |
 | Verify before PR or commit | `06-testing-and-diagnostics.en.md` | related source guides |
 
 ## Current Documents
@@ -23,6 +24,7 @@ source guides with deeper Russian detail.
 - `04-signal-id-guide.en.md` — SignalId naming, roles, directions, types, and mapping.
 - `05-coding-rules.en.md` — coding rules for the current architecture.
 - `06-testing-and-diagnostics.en.md` — verification commands, diagnostics, production checklist.
+- `07-svg-icons-guide.en.md` — choosing between Material Icons and embedded SVG files, and their Avalonia setup, colouring, and caching.
 
 ## Core Invariants
 

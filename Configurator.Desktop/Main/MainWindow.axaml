@@ -15,11 +15,20 @@
         <dialogHost:DialogHost.DialogContent>
             <!-- Диалоги будут отображаться здесь -->
         </dialogHost:DialogHost.DialogContent>
-        <Grid RowDefinitions="Auto, Auto, *">
-            <!--<TextBlock Grid.Row="0" Text="{Binding Label}"/>
-            <Svg Grid.Row="1" Path="/Assets/icons/outline/user.svg" 
-                 Width="30" Height="30"/>-->
-            <rxui:RoutedViewHost Grid.Row="2" Router="{Binding Router}"/>
-        </Grid>
+        <dialogHost:DialogHost Identifier="{x:Static dialogs:DialogHostIds.AlarmNotification}"
+                               Background="Transparent"
+                               DialogMargin="-1"
+                               dialogHost:DialogHostStyle.BorderBrush="Transparent"
+                               dialogHost:DialogHostStyle.BorderThickness="0"
+                               dialogHost:DialogHostStyle.BoxShadow="0 0 0 0 #00000000"
+                               dialogHost:DialogHostStyle.ClipToBounds="True"
+                               dialogHost:DialogHostStyle.CornerRadius="5">
+            <Grid RowDefinitions="Auto, Auto, *">
+                <!--<TextBlock Grid.Row="0" Text="{Binding Label}"/>
+                <Svg Grid.Row="1" Path="/Assets/icons/outline/user.svg"
+                     Width="30" Height="30"/>-->
+                <rxui:RoutedViewHost Grid.Row="2" Router="{Binding Router}"/>
+            </Grid>
+        </dialogHost:DialogHost>
     </dialogHost:DialogHost>
 </Window>

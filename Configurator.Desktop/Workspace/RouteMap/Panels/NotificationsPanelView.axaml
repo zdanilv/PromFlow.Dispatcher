@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Configurator.Desktop.Workspace.RouteMap.ViewModels"
              xmlns:services="clr-namespace:Configurator.Desktop.Workspace.RouteMap.Services"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              mc:Ignorable="d"
              d:DesignWidth="400"
              d:DesignHeight="720"
@@ -25,22 +26,25 @@
                         <ItemsControl ItemsSource="{Binding Notifications}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="services:AlarmNotificationItem" x:DataType="services:AlarmNotificationItem">
-                                    <Border Margin="0,0,0,10"
+                                    <Border Classes="alarm-notification"
+                                            Margin="0,0,0,10"
+                                            MaxWidth="376"
                                             Background="White"
                                             BorderBrush="#D0D7DE"
                                             BorderThickness="1"
                                             CornerRadius="6">
-                                        <Grid ColumnDefinitions="*,38">
-                                            <Button Padding="0"
-                                                    Background="Transparent"
-                                                    BorderThickness="0"
-                                                    HorizontalContentAlignment="Stretch"
-                                                    Command="{Binding DataContext.ShowNotificationCommand, ElementName=Root}"
-                                                    CommandParameter="{Binding}">
-                                                <Grid RowDefinitions="Auto,*">
-                                                    <Border Background="{Binding HeaderBackground}"
-                                                            CornerRadius="6,0,0,0"
-                                                            Padding="10,8">
+                                        <Grid RowDefinitions="Auto,Auto">
+                                            <Border Classes="alarm-notification-header"
+                                                    Background="{Binding HeaderBackground}"
+                                                    CornerRadius="6,6,0,0">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <Button Classes="alarm-notification-open-header"
+                                                            Padding="10,8"
+                                                            Background="Transparent"
+                                                            BorderThickness="0"
+                                                            HorizontalContentAlignment="Stretch"
+                                                            Command="{Binding DataContext.ShowNotificationCommand, ElementName=Root}"
+                                                            CommandParameter="{Binding}">
                                                         <Grid ColumnDefinitions="Auto,*,Auto"
                                                               ColumnSpacing="8">
                                                             <Grid Width="14" Height="14" VerticalAlignment="Center">
@@ -61,53 +65,68 @@
                                                                        FontSize="14"
                                                                        TextTrimming="CharacterEllipsis"
                                                                        VerticalAlignment="Center"/>
-                                                            <TextBlock Grid.Column="2"
+                                                            <TextBlock Classes="alarm-notification-created-at"
+                                                                       Grid.Column="2"
                                                                        Text="{Binding CreatedAtText}"
                                                                        Foreground="#F8FAFC"
                                                                        FontSize="11"
                                                                        VerticalAlignment="Center"/>
                                                         </Grid>
-                                                    </Border>
+                                                    </Button>
 
-                                                    <Grid Grid.Row="1"
-                                                          ColumnDefinitions="52,*"
-                                                          ColumnSpacing="10"
-                                                          Margin="10">
-                                                        <Border Width="42"
-                                                                Height="42"
-                                                                CornerRadius="21"
-                                                                Background="{Binding BadgeBackground}"
-                                                                VerticalAlignment="Top">
-                                                            <TextBlock Text="{Binding BadgeText}"
-                                                                       Foreground="{Binding BadgeForeground}"
-                                                                       FontSize="24"
-                                                                       FontWeight="Bold"
-                                                                       HorizontalAlignment="Center"
-                                                                       VerticalAlignment="Center"/>
-                                                        </Border>
-                                                        <TextBlock Grid.Column="1"
-                                                                   Text="{Binding Message}"
-                                                                   Foreground="#2F3A45"
-                                                                   TextWrapping="Wrap"
-                                                                   FontSize="13"
-                                                                   LineHeight="18"
-                                                                   MaxHeight="74"/>
-                                                    </Grid>
+                                                    <Button Classes="alarm-notification-dismiss"
+                                                            Grid.Column="1"
+                                                            Width="28"
+                                                            Height="28"
+                                                            Margin="0,4,6,4"
+                                                            Padding="0"
+                                                            Background="Transparent"
+                                                            BorderThickness="0"
+                                                            Foreground="White"
+                                                            HorizontalContentAlignment="Center"
+                                                            VerticalContentAlignment="Center"
+                                                            Command="{Binding DataContext.DismissNotificationCommand, ElementName=Root}"
+                                                            CommandParameter="{Binding}">
+                                                        <materialIcons:MaterialIcon Kind="Close"
+                                                                                   FontSize="14"/>
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+
+                                            <Button Classes="alarm-notification-open-message"
+                                                    Grid.Row="1"
+                                                    Padding="0"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    HorizontalContentAlignment="Stretch"
+                                                    Command="{Binding DataContext.ShowNotificationCommand, ElementName=Root}"
+                                                    CommandParameter="{Binding}">
+                                                <Grid Classes="alarm-notification-message-content"
+                                                      ColumnDefinitions="52,*"
+                                                      ColumnSpacing="10"
+                                                      Margin="10">
+                                                    <Border Width="42"
+                                                            Height="42"
+                                                            CornerRadius="21"
+                                                            Background="{Binding BadgeBackground}"
+                                                            VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding BadgeText}"
+                                                                   Foreground="{Binding BadgeForeground}"
+                                                                   FontSize="24"
+                                                                   FontWeight="Bold"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <TextBlock Classes="alarm-notification-message"
+                                                               Grid.Column="1"
+                                                               Text="{Binding Message}"
+                                                               Foreground="#2F3A45"
+                                                               TextWrapping="WrapWithOverflow"
+                                                               FontSize="13"
+                                                               LineHeight="18"
+                                                               VerticalAlignment="Center"/>
                                                 </Grid>
                                             </Button>
-
-                                            <Button Grid.Column="1"
-                                                    Content="X"
-                                                    Width="28"
-                                                    Height="28"
-                                                    Margin="0,6,6,0"
-                                                    Padding="0"
-                                                    HorizontalAlignment="Right"
-                                                    VerticalAlignment="Top"
-                                                    HorizontalContentAlignment="Center"
-                                                    VerticalContentAlignment="Center"
-                                                    Command="{Binding DataContext.DismissNotificationCommand, ElementName=Root}"
-                                                    CommandParameter="{Binding}"/>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>

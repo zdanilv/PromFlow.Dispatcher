@@ -13,7 +13,7 @@
 | Добавляю тревоги или подтверждения | `03-modbus-tcp-guide.ru.md`, `06-testing-and-diagnostics.ru.md` | `source/ru/modbus_tcp_integration_guide.ru.md` |
 | Добавляю новый сигнал | `04-signal-id-guide.ru.md`, `03-modbus-tcp-guide.ru.md` | `source/ru/signal_id_modbus_tcp_mapping_guide.ru.md` |
 | Чиню runtime, DI или lifecycle | `01-architecture-overview.ru.md`, `05-coding-rules.ru.md` | `source/ru/modbus_tcp_integration_guide.ru.md` |
-| Добавляю или оформляю SVG-иконки в Avalonia | `07-svg-icons-guide.ru.md` | `Configurator.Desktop/Assets/icons` |
+| Добавляю UI-иконки в Avalonia | `07-svg-icons-guide.ru.md` | `Material.Icons.Avalonia`, `Configurator.Desktop/Assets/icons` |
 | Собираю EXE/RPM или готовлю релиз | `08-build-and-install.ru.md`, `06-testing-and-diagnostics.ru.md` | `Configurator.Boot/Packaging` |
 | Проверяю перед PR или commit | `06-testing-and-diagnostics.ru.md` | профильные source-гайды |
 
@@ -25,7 +25,7 @@
 - `04-signal-id-guide.ru.md` — правила SignalId, роли, направления, типы и mapping.
 - `05-coding-rules.ru.md` — правила разработки с учетом текущей архитектуры.
 - `06-testing-and-diagnostics.ru.md` — команды проверки, диагностика и production checklist.
-- `07-svg-icons-guide.ru.md` — хранение, подключение, окрашивание и кеширование SVG-иконок Avalonia.
+- `07-svg-icons-guide.ru.md` — выбор между Material Icons и встроенными SVG, их подключение, окрашивание и кеширование в Avalonia.
 - `08-build-and-install.ru.md` — пошаговая Release-сборка, Inno Setup EXE для Windows 10/11, RPM для ALT Linux 11.1, подпись и smoke-проверка.
 
 ## Исходные гайды

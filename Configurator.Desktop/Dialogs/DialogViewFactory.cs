@@ -54,7 +54,7 @@ public sealed class DialogViewFactory(IServiceProvider serviceProvider) : IDialo
         var view = serviceProvider.GetRequiredService<AlarmNotificationDialogView>();
         view.DataContext = vm;
 
-        return new DialogViewContext<bool>(view, vm.Result);
+        return new DialogViewContext<bool>(view, vm.Result, DialogHostIds.AlarmNotification);
     }
 
     public DialogViewContext<ModbusOptions?> CreateModbusSettings(

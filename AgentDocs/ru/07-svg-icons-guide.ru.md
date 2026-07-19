@@ -1,21 +1,135 @@
-# SVG-иконки в Configurator.Desktop
+# UI-иконки в Configurator.Desktop: Material Icons и SVG
 
 ## Принятое решение
 
-Для UI-иконок используем уже подключенный пакет `Svg.Controls.Skia.Avalonia` и
-контрол `<svg:Svg>`. Все SVG хранятся в `Configurator.Desktop/Assets/icons` и
-встраиваются в приложение как `AvaloniaResource`.
+В приложении используются два дополняющих способа отображения векторных иконок:
 
-Это предпочтительнее, чем загружать файлы с диска, конвертировать SVG в PNG или
-использовать несколько SVG-библиотек: ресурсы доступны в опубликованном приложении,
-не зависят от текущей папки, масштабируются без потери качества, а цвет можно менять
-без копирования одного файла для каждого состояния кнопки.
+- `Material.Icons.Avalonia` — основной выбор для типовых пиктограмм интерфейса из
+  набора Material Design: телефон, питание, настройки, запуск, обновление и т. п.;
+- `Svg.Controls.Skia.Avalonia` и встроенные SVG — для брендовых, уникальных или
+  многоцветных изображений, которых нет в Material Icons.
 
-Для монохромной иконки применяем именно `<svg:Svg>`, а не `<Image>` с `SvgImage`.
-У `Svg` есть `CurrentColor`, поэтому один экземпляр иконки может корректно менять
-цвет по теме, disabled- или command-state. `SvgImage` подходит, когда изображение
-нужно там, где ожидается `IImage`, но не является стандартным способом для
-перекрашиваемых UI-иконок.
+Стандартные Material-иконки не выгружать в `Configurator.Desktop/Assets/icons` и не
+создавать для них SVG- или PNG-копии. Пакет передает их как SVG Path, дает типобезопасное
+свойство `Kind` и не требует ручного управления файлами. Собственные SVG, напротив,
+остаются встроенными `AvaloniaResource`: они доступны в опубликованном приложении и
+не зависят от текущей рабочей папки.
+
+Текущая версия `Material.Icons.Avalonia` — `3.0.2`; ссылка на официальный контракт и
+все доступные варианты использования: <https://github.com/SKProCH/Material.Icons#getting-started>.
+
+Для монохромной пользовательской SVG-иконки применяем `<svg:Svg>`, а не `<Image>` с
+`SvgImage`. У `Svg` есть `CurrentColor`, поэтому один экземпляр иконки может корректно
+менять цвет по теме, disabled- или command-state. `SvgImage` подходит, когда
+изображение нужно там, где ожидается `IImage`, но не является стандартным способом
+для перекрашиваемых UI-иконок.
+
+## Material Icons в Avalonia
+
+### Подключение уже выполнено
+
+В `Configurator.Desktop.csproj` уже подключен пакет:
+
+```xml
+<PackageReference Include="Material.Icons.Avalonia" Version="3.0.2" />
+```
+
+Для версий 2.0.0 и выше его стили должны быть зарегистрированы один раз на уровне
+приложения. Это уже сделано в `Configurator.Desktop/App.axaml`; не добавлять
+`MaterialIconStyles` повторно в view или локальный словарь ресурсов:
+
+```xml
+<Application xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             ...>
+  <Application.Styles>
+    ...
+    <materialIcons:MaterialIconStyles />
+  </Application.Styles>
+</Application>
+```
+
+В XAML-файле, где нужна иконка, объявить пространство имен на корневом элементе:
+
+```xml
+xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+```
+
+`Kind` выбирает значение типобезопасного перечисления `MaterialIconKind`. Пользоваться
+автодополнением IDE или каталогом Material Design Icons; не передавать путь к SVG и не
+собирать имя иконки строковой конкатенацией.
+
+### Обычный контрол
+
+Если иконка является отдельным визуальным элементом, использовать `MaterialIcon`.
+Его цвет задает `Foreground`; если свойство не задано, оно наследуется от контейнера.
+Размер задавать в месте использования через `Width` и/или `Height`:
+
+```xml
+<materialIcons:MaterialIcon Kind="Phone"
+                            Width="18"
+                            Height="18"
+                            Foreground="#003CA3" />
+```
+
+Для цвета, который зависит от темы или состояния, можно оставить наследование от
+`Foreground` родительской кнопки/контейнера либо передать `IBrush` или ресурс кисти
+явно:
+
+```xml
+<Button Foreground="#FFFFFFFF">
+  <materialIcons:MaterialIcon Kind="PowerStandby"
+                              Width="20"
+                              Height="20" />
+</Button>
+```
+
+### Иконка в `Content`
+
+Для `Button.Content`, `ToggleButton.Content` и аналогичных свойств использовать
+markup extension `MaterialIconExt`, а не создавать SVG-файл только ради кнопки.
+Размер extension задается свойством `Size`:
+
+```xml
+<Button Content="{materialIcons:MaterialIconExt Kind=TuneVerticalVariant, Size=22}" />
+```
+
+Если для extension требуется цвет, отличный от обычного `Foreground` контейнера,
+передать его через `IconForeground`:
+
+```xml
+<Button Content="{materialIcons:MaterialIconExt Kind=PowerStandby,
+                 Size=22,
+                 IconForeground=#FFFFFFFF}" />
+```
+
+Для кнопки с единственным `Content` — пиктограммой и подписью — использовать
+`MaterialIconTextExt`:
+
+```xml
+<Button Content="{materialIcons:MaterialIconTextExt Kind=Play, Text=Запуск}" />
+```
+
+Не заменять текстовые команды `ПУСК`, `СТОП`, `СБРОС` и их контракты RouteMap
+иконками без отдельного UX-решения: библиотека отвечает только за визуальное
+представление.
+
+### Использование как `Image.Source`
+
+`MaterialIcon` реализует `IImage`, поэтому extension можно передать в `Image.Source`:
+
+```xml
+<Image Width="24"
+       Height="24"
+       Source="{materialIcons:MaterialIconExt Kind=Abacus,
+               IconForeground=DeepPink}" />
+```
+
+В этом варианте размеры задаются у `<Image>`; значения размера на `MaterialIcon`
+не влияют на результат. Предопределенные анимации `MaterialIcon` в режиме источника
+изображения не поддерживаются. Если нужна анимация иконки, использовать визуальный
+контрол `MaterialIcon`, а не `Image.Source`.
+
+## Встроенные SVG
 
 ## Хранение и упаковка
 
@@ -184,10 +298,11 @@ xmlns:svg="using:Avalonia.Svg.Skia"
 
 ## Мини-чек-лист
 
-1. Поместить файл в `Assets/icons/outline` или `Assets/icons/filled`.
-2. Проверить `viewBox` и отсутствие внешних ресурсов.
-3. Для изменяемого монохромного слоя использовать `currentColor`.
-4. Открывать ресурс по `avares://Configurator.Desktop/...`.
-5. Рендерить `<svg:Svg Stretch="Uniform" EnableCache="True">`.
-6. Передавать цвет через `CurrentColor` как `Color`, а не через `Foreground`/`IBrush`.
-7. После добавления иконки проверить ее в светлой и темной теме и в disabled-состоянии.
+1. Сначала проверить, есть ли нужный типовой символ в Material Icons.
+2. Собственный SVG поместить в `Assets/icons/outline` или `Assets/icons/filled`.
+3. Проверить `viewBox` и отсутствие внешних ресурсов.
+4. Для изменяемого монохромного слоя использовать `currentColor`.
+5. Открывать ресурс по `avares://Configurator.Desktop/...`.
+6. Рендерить `<svg:Svg Stretch="Uniform" EnableCache="True">`.
+7. Передавать цвет через `CurrentColor` как `Color`, а не через `Foreground`/`IBrush`.
+8. После добавления иконки проверить ее в светлой и темной теме и в disabled-состоянии.

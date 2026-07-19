@@ -106,7 +106,7 @@ public sealed class DialogHostDialogService(
         catch (InvalidOperationException ex) when (IsMissingHostException(ex))
         {
             throw new InvalidOperationException(
-                $"Dialog host '{DialogHostIds.Root}' was not found. Ensure the root host is present in MainWindow.",
+                $"Dialog host '{context.HostIdentifier}' was not found. Ensure it is present in MainWindow.",
                 ex);
         }
         return fallback;

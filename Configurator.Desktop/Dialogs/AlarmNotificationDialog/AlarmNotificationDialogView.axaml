@@ -1,16 +1,18 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:dialog="clr-namespace:Configurator.Desktop.Dialogs.AlarmNotificationDialog"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Configurator.Desktop.Dialogs.AlarmNotificationDialog.AlarmNotificationDialogView"
              x:DataType="dialog:AlarmNotificationDialogViewModel">
-  <Border Width="460"
-          Background="White"
+  <Border Classes="alarm-notification-dialog-frame"
+          Width="460"
+          Background="{Binding HeaderBackground}"
           CornerRadius="8"
           BorderBrush="#D0D7DE"
           BorderThickness="1">
     <Grid RowDefinitions="Auto,*,Auto">
-      <Border Background="{Binding HeaderBackground}"
-              CornerRadius="8,8,0,0"
+      <Border Classes="alarm-notification-dialog-header"
+              Background="{Binding HeaderBackground}"
               Padding="16,12">
         <Grid ColumnDefinitions="*,Auto">
           <TextBlock Text="{Binding Title}"
@@ -18,16 +20,28 @@
                      FontSize="18"
                      FontWeight="SemiBold"
                      VerticalAlignment="Center"/>
-          <Button Grid.Column="1"
-                  Content="X"
+          <Button Classes="alarm-notification-dialog-close"
+                  Grid.Column="1"
                   Width="32"
                   Height="30"
                   Padding="0"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Foreground="White"
                   HorizontalContentAlignment="Center"
                   VerticalContentAlignment="Center"
-                  Command="{Binding CloseCommand}"/>
+                  Command="{Binding CloseCommand}">
+            <materialIcons:MaterialIcon Kind="Close"
+                                       FontSize="18"/>
+          </Button>
         </Grid>
       </Border>
+
+      <Border Classes="alarm-notification-dialog-content"
+              Grid.Row="1"
+              Grid.RowSpan="2"
+              Background="White"
+              CornerRadius="0,0,7,7"/>
 
       <StackPanel Grid.Row="1"
                   Margin="24"
@@ -53,9 +67,16 @@
       </StackPanel>
 
       <Button Grid.Row="2"
+              Background="#ECEFF1"
+              Foreground="#4E5A65"
+              BorderBrush="#CCD3D8"
+              CornerRadius="3"
               Content="Хорошо"
               Width="130"
               HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              HorizontalContentAlignment="Center"
+              VerticalContentAlignment="Center"
               Margin="0,0,0,20"
               Command="{Binding OkCommand}"/>
     </Grid>

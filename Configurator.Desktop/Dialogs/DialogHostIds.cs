@@ -9,4 +9,9 @@ public static class DialogHostIds
     /// Main/root host for global modal dialogs.
     /// </summary>
     public const string Root = "RootDialogHost";
+
+    /// <summary>
+    /// Host for alarm notifications without the default DialogHost popup frame.
+    /// </summary>
+    public const string AlarmNotification = "AlarmNotificationDialogHost";
 }
