@@ -2,6 +2,7 @@ using Configurator.Application.Services;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
+using Configurator.Desktop.Dialogs.HelpDialog;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Configurator.Desktop.Workspace.RouteMap.Services;
@@ -42,7 +43,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         IOptionsMonitor<ModbusOptions> modbusOptions,
         IOptions<ApplicationOptions>? applicationOptions = null,
         RouteMapModbusBindingDiagnostics? bindingDiagnostics = null,
-        IEquipmentCardParametersDialogService? cardParametersDialogService = null)
+        IEquipmentCardParametersDialogService? cardParametersDialogService = null,
+        IHelpDialogService? helpDialogService = null)
     {
         _runtimeMapper = runtimeMapper;
         _commandDispatcher = commandDispatcher;
@@ -57,7 +59,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             commandDispatcher,
             Definition.TopBar,
             isSettingsVisible: applicationOptions?.Value.IsAdminMode ?? true,
-            palette: Definition.Display?.Palette);
+            palette: Definition.Display?.Palette,
+            helpDialogService: helpDialogService);
         MapEquipmentCards = new ObservableCollection<EquipmentCardViewModel>(
             Definition.MapEquipment.Select(CreateEquipmentCardViewModel));
         NotificationsPanel = notificationsPanel;

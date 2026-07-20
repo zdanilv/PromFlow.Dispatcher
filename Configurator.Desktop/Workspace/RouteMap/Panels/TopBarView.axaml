@@ -7,8 +7,7 @@
              d:DesignWidth="1200"
              d:DesignHeight="64"
              x:Class="Configurator.Desktop.Workspace.RouteMap.Panels.TopBarView"
-             x:DataType="vm:TopBarViewModel"
-             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
+             x:DataType="vm:TopBarViewModel">
     <UserControl.Styles>
         <Style Selector="ToggleButton.mode">
             <Setter Property="MinWidth" Value="104"/>
@@ -34,7 +33,7 @@
             <Setter Property="Height" Value="38"/>
             <Setter Property="Background" Value="#FF2626"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#FF2626"/>
+            <Setter Property="BorderBrush" Value="#CCD3D8"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
@@ -102,13 +101,23 @@
             <Setter Property="Height" Value="38"/>
             <Setter Property="Background" Value="#FF2626"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#FF2626"/>
+            <Setter Property="BorderBrush" Value="#CCD3D8"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="Button.settings">
             <Setter Property="MinWidth" Value="142"/>
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="Background" Value="#ECEFF1"/>
+            <Setter Property="Foreground" Value="#4E5A65"/>
+            <Setter Property="BorderBrush" Value="#CCD3D8"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.help">
+            <Setter Property="MinWidth" Value="112"/>
             <Setter Property="Height" Value="38"/>
             <Setter Property="Background" Value="#ECEFF1"/>
             <Setter Property="Foreground" Value="#4E5A65"/>
@@ -177,7 +186,7 @@
                               Classes="emergency reset"
                               Content="{Binding ResetText}"
                               Background="{Binding ResetBackground}"
-                              BorderBrush="{Binding ResetBackground}"
+                              BorderBrush="#CCD3D8"
                               Foreground="{Binding ResetForeground}"
                               IsChecked="{Binding IsResetActive, Mode=OneWay}"
                               IsEnabled="{Binding IsResetCommandEnabled}"
@@ -188,8 +197,8 @@
                               Classes="emergency"
                               Content="{Binding EmergencyText}"
                               Background="{Binding EmergencyBackground}"
-                              BorderBrush="{Binding EmergencyBackground}"
-                              Foreground="{Binding EmergencyForeground}"
+                              BorderBrush="#CCD3D8"
+                              Foreground="#FFFFFF"
                               IsChecked="{Binding HasEmergency}"
                               IsEnabled="{Binding IsEmergencyCommandEnabled}"
                               PointerEntered="Button_PointerEntered"
@@ -205,10 +214,10 @@
                         Margin="16,0"
                         Orientation="Horizontal"
                         VerticalAlignment="Center">
-                <materialIcons:MaterialIcon Foreground="#003CA3" Kind="Phone" Margin="0,0,10,0" FontSize="18"/>
-                <TextBlock Text="8 953 448 31 16"
-                           Foreground="#69747E"
-                           FontSize="16"/>
+                <Button x:Name="HelpButton"
+                        Classes="help"
+                        Content="ПОМОЩЬ"
+                        Command="{Binding OpenHelpCommand}"/>
             </StackPanel>
 
         </Grid>

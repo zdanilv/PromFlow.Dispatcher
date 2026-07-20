@@ -51,6 +51,7 @@
 	  <Folder Include="Assets\icons\filled\" />
 	  <Folder Include="Dialogs\AlarmNotificationDialog\" />
 	  <Folder Include="Dialogs\EquipmentCardParametersDialog\" />
+	  <Folder Include="Dialogs\HelpDialog\" />
 	  <Folder Include="Workspace\Alarms\" />
 	  <Folder Include="Workspace\ModbusDemo\" />
 	  <Folder Include="Workspace\ModbusProfile\" />
@@ -67,6 +68,9 @@
 	    <SubType>Designer</SubType>
 	  </None>
 	  <None Update="Dialogs\EquipmentCardParametersDialog\EquipmentCardParametersDialogView.axaml">
+	    <SubType>Designer</SubType>
+	  </None>
+	  <None Update="Dialogs\HelpDialog\HelpDialogView.axaml">
 	    <SubType>Designer</SubType>
 	  </None>
 	  <None Update="Workspace\RouteMap\Panels\NotificationsPanelView.axaml">

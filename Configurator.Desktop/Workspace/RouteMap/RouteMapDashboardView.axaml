@@ -34,8 +34,7 @@
                                     VerticalAlignment="Top"
                                     Margin="16"
                                     Spacing="8"
-                                    IsHitTestVisible="False"
-                                    IsVisible="{Binding IsConnectionStatusVisible}">
+                                    IsHitTestVisible="False">
                             <Border x:Name="ConnectionStatusOverlay"
                                     Padding="10,6"
                                     Background="#FFFFFF"
@@ -52,8 +51,7 @@
                                     Background="#FFFFFF"
                                     BorderBrush="#DDE2E6"
                                     BorderThickness="1"
-                                    CornerRadius="4"
-                                    IsVisible="{Binding IsConnectionStatusVisible}">
+                                    CornerRadius="4">
                                 <StackPanel Spacing="4">
                                     <TextBlock Text="Обозначения"
                                                Foreground="#44505C"

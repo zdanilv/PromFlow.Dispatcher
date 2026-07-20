@@ -1,6 +1,7 @@
 using Avalonia.Media;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
+using Configurator.Desktop.Dialogs.HelpDialog;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using ReactiveUI;
@@ -10,6 +11,7 @@ namespace Configurator.Desktop.Workspace.RouteMap.ViewModels;
 public sealed class TopBarViewModel : ViewModelBase
 {
     private readonly IEquipmentCommandDispatcher? _commandDispatcher;
+    private readonly IHelpDialogService? _helpDialogService;
     private RouteTopBarSettings _settings;
     private string _disabledColor;
     private bool _isAutomaticMode;
@@ -32,9 +34,11 @@ public sealed class TopBarViewModel : ViewModelBase
         IEquipmentCommandDispatcher? commandDispatcher = null,
         RouteTopBarSettings? settings = null,
         bool isSettingsVisible = true,
-        RouteMapPaletteSettings? palette = null)
+        RouteMapPaletteSettings? palette = null,
+        IHelpDialogService? helpDialogService = null)
     {
         _commandDispatcher = commandDispatcher;
+        _helpDialogService = helpDialogService;
         _settings = settings ?? CreateDefaultSettings();
         _disabledColor = (palette ?? new RouteMapPaletteSettings()).Disabled;
         IsSettingsVisible = isSettingsVisible;
@@ -45,6 +49,8 @@ public sealed class TopBarViewModel : ViewModelBase
         EmergencyCommand = ReactiveCommand.CreateFromTask(ExecuteEmergencyAsync);
         OpenSettingsCommand = ReactiveCommand.CreateFromTask(() =>
             settingsDialogService?.ShowAsync() ?? Task.CompletedTask);
+        OpenHelpCommand = ReactiveCommand.CreateFromTask(() =>
+            _helpDialogService?.ShowAsync() ?? Task.CompletedTask);
     }
 
     public bool IsAutomaticMode
@@ -118,6 +124,7 @@ public sealed class TopBarViewModel : ViewModelBase
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> ResetCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> EmergencyCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> OpenSettingsCommand { get; }
+    public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> OpenHelpCommand { get; }
 
     public void ApplySettings(RouteTopBarSettings? settings, RouteMapPaletteSettings? palette = null)
     {

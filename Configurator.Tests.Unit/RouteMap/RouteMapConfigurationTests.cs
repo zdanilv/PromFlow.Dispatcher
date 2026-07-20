@@ -10,6 +10,7 @@ using Configurator.Application.Services.OpcUa.Browsing;
 using Configurator.Application.Services.OpcUa.Tags;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
+using Configurator.Desktop.Dialogs.HelpDialog;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Configurator.Desktop.Workspace.RouteMap.Services;
@@ -675,12 +676,23 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
+    public async Task Top_bar_help_command_opens_dialog_service()
+    {
+        var service = new RecordingHelpDialogService();
+        var viewModel = new TopBarViewModel(helpDialogService: service);
+
+        await viewModel.OpenHelpCommand.Execute().FirstAsync();
+
+        Assert.Equal(1, service.CallCount);
+    }
+
+    [Fact]
     public void Top_bar_button_colors_resolve_pressed_checked_normal_priority()
     {
         var viewModel = new TopBarViewModel(settingsDialogService: null, settings: RouteMapSeed.Create().TopBar);
 
         Assert.Equal(Color.Parse("#ECEFF1"), BrushColor(viewModel.AutomaticBackground));
-        Assert.Equal(Color.Parse("#FFF026"), BrushColor(viewModel.ResetBackground));
+        Assert.Equal(Color.Parse("#ECEFF1"), BrushColor(viewModel.ResetBackground));
         Assert.Equal(Color.Parse("#FF2626"), BrushColor(viewModel.EmergencyBackground));
         Assert.Equal(Color.Parse("#101820"), BrushColor(viewModel.EmergencyForeground));
 
@@ -1131,6 +1143,12 @@ public sealed class RouteMapConfigurationTests
     {
         public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default) =>
             Task.FromException(new InvalidOperationException("Write failed"));
+    }
+
+    private sealed class RecordingHelpDialogService : IHelpDialogService
+    {
+        public int CallCount { get; private set; }
+        public Task ShowAsync(CancellationToken cancellationToken = default) { CallCount++; return Task.CompletedTask; }
     }
 
     [Fact]

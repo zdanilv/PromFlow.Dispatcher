@@ -23,6 +23,7 @@ using Configurator.Application.Services.OpcUa.Tags;
 using Configurator.Desktop.Dialogs.AlarmNotificationDialog;
 using Configurator.Desktop.Dialogs;
 using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
+using Configurator.Desktop.Dialogs.HelpDialog;
 using Configurator.Desktop.Dialogs.ModbusSettingsDialog;
 using Configurator.Desktop.Main;
 using Configurator.Desktop.Workspace.Alarms;
@@ -138,7 +139,7 @@ public sealed class RouteMapSettingsDialogVisualTests
             Dispatcher.UIThread.RunJobs();
 
             Assert.False(userView.FindControl<Border>("ConnectionStatusOverlay")!.IsVisible);
-            Assert.False(userView.FindControl<Border>("RouteMapStateLegendOverlay")!.IsVisible);
+            Assert.True(userView.FindControl<Border>("RouteMapStateLegendOverlay")!.IsVisible);
             userWindow.Close();
         }
         finally
@@ -1003,7 +1004,7 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.InRange(reset.Bounds.Width, emergency.Bounds.Width - 1, emergency.Bounds.Width + 1);
         Assert.InRange(reset.Bounds.Height, emergency.Bounds.Height - 1, emergency.Bounds.Height + 1);
         Assert.True(reset.Bounds.Right <= emergency.Bounds.Left);
-        Assert.Equal(Color.Parse("#FFF026"), Assert.IsType<SolidColorBrush>(reset.Background).Color);
+        Assert.Equal(Color.Parse("#ECEFF1"), Assert.IsType<SolidColorBrush>(reset.Background).Color);
         Assert.Equal(Color.Parse("#FF2626"), Assert.IsType<SolidColorBrush>(emergency.Background).Color);
         Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(automatic.BorderBrush).Color);
         Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(manual.BorderBrush).Color);
@@ -1012,8 +1013,30 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.Equal(HorizontalAlignment.Center, reset.HorizontalContentAlignment);
         Assert.Equal(VerticalAlignment.Center, reset.VerticalContentAlignment);
         var texts = view.GetVisualDescendants().OfType<TextBlock>().Select(textBlock => textBlock.Text).ToArray();
-        Assert.Contains(texts, text => text?.StartsWith("8 ", StringComparison.Ordinal) == true);
+        var help = view.FindControl<Button>("HelpButton")!;
+        Assert.Equal("ПОМОЩЬ", help.Content);
+        Assert.DoesNotContain(texts, text => text?.StartsWith("8 ", StringComparison.Ordinal) == true);
         Assert.DoesNotContain("Ожидание", texts);
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Help_dialog_shows_template_contacts_and_website_link()
+    {
+        var viewModel = new HelpDialogViewModel(new NoOpExternalLinkLauncher());
+        var view = new HelpDialogView { DataContext = viewModel };
+        var window = new Window { Width = 460, Height = 300, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var texts = view.GetVisualDescendants().OfType<TextBlock>().Select(textBlock => textBlock.Text).ToArray();
+        var website = view.FindControl<Button>("WebsiteButton")!;
+
+        Assert.Contains("8 953 448 31 16", texts);
+        Assert.Contains("example@example.com", texts);
+        Assert.Contains("example.com", texts);
+        Assert.Same(viewModel.OpenWebsiteCommand, website.Command);
 
         window.Close();
     }
@@ -1482,6 +1505,11 @@ public sealed class RouteMapSettingsDialogVisualTests
     {
         public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+    }
+
+    private sealed class NoOpExternalLinkLauncher : IExternalLinkLauncher
+    {
+        public Task OpenAsync(Uri uri, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class NoOpSettingsDialogService : IRouteMapSettingsDialogService

@@ -10,6 +10,7 @@ using Configurator.Desktop.Dialogs.AlarmNotificationDialog;
 using Configurator.Desktop.Dialogs.ConfirmDialog;
 using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Dialogs.InputDialog;
+using Configurator.Desktop.Dialogs.HelpDialog;
 using Configurator.Desktop.Dialogs.ModbusSettingsDialog;
 using Configurator.Desktop.Dialogs.OpcUaTagEditorDialog;
 using Configurator.Desktop.Dialogs.OpcUaTagImportDialog;
@@ -122,6 +123,8 @@ internal static class Program
                     services.AddSingleton<IModbusTcpProfileFilePicker, ModbusTcpProfileFilePicker>();
                     services.AddSingleton<IModbusTcpProfileTransferService, ModbusTcpProfileTransferService>();
                     services.AddSingleton<IRouteMapSettingsDialogService, RouteMapSettingsDialogService>();
+                    services.AddSingleton<IHelpDialogService, HelpDialogService>();
+                    services.AddSingleton<IExternalLinkLauncher, ExternalLinkLauncher>();
                     services.AddSingleton<IEquipmentCardParametersDialogService, EquipmentCardParametersDialogService>();
                     services.AddSingleton<IEquipmentParameterWriteValidator, EquipmentParameterWriteValidator>();
                     services.AddTransient<RouteMapSettingsViewModel>();
@@ -177,6 +180,8 @@ internal static class Program
                     services.AddTransient<EquipmentCardParametersDialogView>();
                     services.AddTransient<ConfirmDialogView>();
                     services.AddTransient<InputDialogView>();
+                    services.AddTransient<HelpDialogViewModel>();
+                    services.AddTransient<HelpDialogView>();
                     services.AddTransient<ModbusSettingsDialogView>();
                     services.AddTransient<OpcUaTagEditorDialogView>();
                     services.AddTransient<OpcUaTagImportDialogView>();

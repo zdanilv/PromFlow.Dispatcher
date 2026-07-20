@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Configurator.Desktop.Dialogs.HelpDialog"
+             x:Class="Configurator.Desktop.Dialogs.HelpDialog.HelpDialogView"
+             x:DataType="vm:HelpDialogViewModel">
+    <UserControl.Styles>
+        <Style Selector="Button.website-link">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Foreground" Value="#003CA3"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+    </UserControl.Styles>
+    <StackPanel Width="380"
+                Margin="24"
+                Spacing="16">
+        <TextBlock Text="Помощь"
+                   FontSize="22"
+                   FontWeight="SemiBold"
+                   Foreground="#44505C"/>
+        <Grid RowDefinitions="Auto,Auto,Auto"
+              ColumnDefinitions="120,*"
+              RowSpacing="10">
+            <TextBlock Grid.Row="0"
+                       Text="Телефон"
+                       Foreground="#65717D"/>
+            <TextBlock Grid.Row="0"
+                       Grid.Column="1"
+                       Text="{x:Static vm:HelpDialogViewModel.Phone}"
+                       Foreground="#44505C"/>
+            <TextBlock Grid.Row="1"
+                       Text="E-mail"
+                       Foreground="#65717D"/>
+            <TextBlock Grid.Row="1"
+                       Grid.Column="1"
+                       Text="{x:Static vm:HelpDialogViewModel.Email}"
+                       Foreground="#44505C"/>
+            <TextBlock Grid.Row="2"
+                       Text="Сайт"
+                       Foreground="#65717D"/>
+            <Button x:Name="WebsiteButton"
+                    Grid.Row="2"
+                    Grid.Column="1"
+                    Classes="website-link"
+                    Command="{Binding OpenWebsiteCommand}">
+                <TextBlock Text="{x:Static vm:HelpDialogViewModel.Website}"
+                           TextDecorations="Underline"/>
+            </Button>
+        </Grid>
+        <Button Content="Закрыть"
+                HorizontalAlignment="Right"
+                MinWidth="96"
+                Command="{Binding CloseCommand}"/>
+    </StackPanel>
+</UserControl>

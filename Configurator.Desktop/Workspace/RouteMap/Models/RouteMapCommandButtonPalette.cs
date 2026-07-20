@@ -51,7 +51,7 @@ internal static class RouteMapCommandButtonPalette
         CheckedForeground: "#FFFFFF");
 
     public static RouteMapCommandButtonColors Reset { get; } = new(
-        NormalBackground: "#FFF026",
+        NormalBackground: "#ECEFF1",
         HoverBackground: "#FFF78A",
         PressedBackground: "#D1C300",
         CheckedBackground: "#D1C300",

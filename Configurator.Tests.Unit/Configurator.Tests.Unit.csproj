@@ -20,4 +20,8 @@
     <ProjectReference Include="..\Configurator.Desktop\Configurator.Desktop.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Dialogs\HelpDialog\" />
+  </ItemGroup>
+
 </Project>
