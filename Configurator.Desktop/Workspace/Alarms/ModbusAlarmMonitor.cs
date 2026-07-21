@@ -157,7 +157,7 @@ public sealed class ModbusAlarmMonitor : IDisposable
                 if (confirmed)
                 {
                     _sessionJournal.RecordAlarmAcknowledged(alarm, DateTimeOffset.Now);
-                    if (_sessionJournal.IsAlarmActive(alarm.Id))
+                    if (alarm.AcknowledgementEnabled && _sessionJournal.IsAlarmActive(alarm.Id))
                     {
                         var acknowledgement = await _bitWriter.PulseAsync(
                             alarm.Acknowledgement,

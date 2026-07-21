@@ -12,6 +12,7 @@ using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Dialogs.HelpDialog;
 using Configurator.Desktop.Workspace.RouteMap.Models;
+using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
@@ -465,6 +466,32 @@ public sealed class RouteMapConfigurationTests
 
         viewModel.RemoveBindingCommand.Execute(resetEnabled).Subscribe();
         Assert.DoesNotContain(viewModel.Draft.TopBar.Reset.Bindings, x => x.Role == SignalBindingRole.Enabled);
+    }
+
+    [Fact]
+    public void Settings_removes_card_parameter_from_draft_and_published_signal_inventory()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        var card = viewModel.SelectedCard!;
+        var parameter = new EquipmentCardParameterConfiguration
+        {
+            Title = "Скорость",
+            Role = SignalBindingRole.EquipmentParameter,
+            SignalId = "equip.bucket.speed",
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.Word
+        };
+        card.Parameters.Add(parameter);
+
+        viewModel.RemoveCardParameterCommand.Execute(parameter).Subscribe();
+        viewModel.ApplyCommand.Execute().Subscribe();
+
+        Assert.DoesNotContain(card.Parameters, item => item.SignalId == "equip.bucket.speed");
+        Assert.DoesNotContain(
+            RouteMapSignalInventory.Build(manager.CurrentDefinition),
+            item => item.SignalId == "equip.bucket.speed");
     }
 
     [Fact]

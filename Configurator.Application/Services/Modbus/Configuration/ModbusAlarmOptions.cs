@@ -51,6 +51,11 @@ public sealed class ModbusAlarmOptions
     public ModbusBitAddressOptions Acknowledgement { get; set; } = new();
 
     /// <summary>
+    /// Отправлять ли acknowledgement-импульс после нажатия "Хорошо".
+    /// </summary>
+    public bool AcknowledgementEnabled { get; set; } = true;
+
+    /// <summary>
     /// Интервал повторного показа, пока Alarm остается активным.
     /// </summary>
     public int RepeatIntervalMs { get; set; } = 60000;
@@ -75,6 +80,7 @@ public sealed class ModbusAlarmOptions
             RegisterValueAddress = RegisterValueAddress,
             Alarm = Alarm.Clone(),
             Acknowledgement = Acknowledgement.Clone(),
+            AcknowledgementEnabled = AcknowledgementEnabled,
             RepeatIntervalMs = RepeatIntervalMs,
             AcknowledgementPulseDurationMs = AcknowledgementPulseDurationMs
         };

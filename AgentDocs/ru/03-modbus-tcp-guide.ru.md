@@ -118,14 +118,16 @@ legacy `UInt16` — как `UInt16`, `Dword` — как `Dword`, `Date` — ка
   "Message": "Авария привода",
   "Alarm": { "Area": "HoldingRegister", "Address": 5, "BitIndex": 0 },
   "Acknowledgement": { "Area": "HoldingRegister", "Address": 5, "BitIndex": 1 },
+  "AcknowledgementEnabled": true,
   "RepeatIntervalMs": 60000,
   "AcknowledgementPulseDurationMs": 300
 }
 ```
 
 `ModbusAlarmMonitor` работает при открытом Workspace и в `admin`, и в `user` режиме.
-Он показывает диалог на фронте `Alarm=true`. Кнопка `Хорошо` пишет
-acknowledgement-импульс `true/false` только если alarm-бит все еще активен; если
+Он показывает диалог на фронте `Alarm=true`. Кнопка `Хорошо` отмечает уведомление
+подтвержденным и, если включен `AcknowledgementEnabled`, пишет acknowledgement-импульс
+`true/false` только когда alarm-бит все еще активен; если
 alarm-бит остается `true`, диалог повторяется через `RepeatIntervalMs`.
 После показа диалога тревога добавляется во вкладку `Уведомления` правой панели RouteMap.
 `Хорошо` снимает маркер непрочитанного, а `X` элемента списка удаляет его только после
@@ -152,6 +154,7 @@ alarm-бит остается `true`, диалог повторяется чер
 | `Bit` после `Alarm area` | `Alarm.BitIndex` | Бит `0..15` для `HoldingRegister`; для `Coil` не используется |
 | `Alarm client` | вычисляется из `Alarm.*` и `ModbusDemo.Client` | Физический адрес alarm-бита для client start address; ввод пересчитывает `Alarm.Area` и `Alarm.Address` |
 | `Alarm server` | вычисляется из `Alarm.*` и `ModbusDemo.Server` | Физический адрес alarm-бита для server start address; ввод пересчитывает `Alarm.Area` и `Alarm.Address` |
+| `OK feedback` | `AcknowledgementEnabled` | Включает запись acknowledgement-импульса после `Хорошо`; старые профили по умолчанию имеют значение `true` |
 | `OK area` | `Acknowledgement.Area` | Область отдельного acknowledgement-бита, куда пишет кнопка `Хорошо` |
 | `Offset` после `OK area` | `Acknowledgement.Address` | Zero-based offset acknowledgement-бита |
 | `Bit` после `OK area` | `Acknowledgement.BitIndex` | Бит `0..15` для acknowledgement в `HoldingRegister`; для `Coil` не используется |
@@ -161,8 +164,10 @@ alarm-бит остается `true`, диалог повторяется чер
 | `Pulse ms` | `AcknowledgementPulseDurationMs` | Длительность acknowledgement-импульса `true/false`; допустимо `1..60000` |
 | `Действие` | — | `Копия` дублирует строку с новым `Id`; `Удалить` удаляет строку из черновика |
 
-`Alarm` и `Acknowledgement` должны указывать на разные биты и попадать в диапазоны
-активных endpoint из `ModbusDemo`. Закрытие диалога кнопкой `X` не пишет
+Когда `OK feedback` выключен, OK-поля и `Pulse ms` сохраняют введенные значения, но
+не редактируются, не валидируются и не считаются используемыми адресами. Когда он
+включен, `Alarm` и `Acknowledgement` должны указывать на разные биты и попадать в
+диапазоны активных endpoint из `ModbusDemo`. Закрытие диалога кнопкой `X` не пишет
 acknowledgement; импульс отправляется только по `Хорошо`, пока alarm-бит активен.
 
 ## Address и physical address

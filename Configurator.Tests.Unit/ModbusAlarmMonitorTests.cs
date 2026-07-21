@@ -88,6 +88,24 @@ public sealed class ModbusAlarmMonitorTests
     }
 
     [Fact]
+    public async Task ProcessSnapshotAsync_DisabledAcknowledgementRecordsOkWithoutWritingPulse()
+    {
+        var options = CreateOptions(repeatIntervalMs: 1000);
+        Assert.Single(options.AlarmMap).AcknowledgementEnabled = false;
+        var dialog = new RecordingDialogService(confirm: true);
+        var writer = new RecordingBitWriter();
+        var journal = new RouteMapSessionJournal();
+        var monitor = CreateMonitor(options, dialog, writer, journal);
+
+        await monitor.ProcessSnapshotAsync(CreateSnapshot(alarmActive: true), DateTimeOffset.UtcNow);
+
+        Assert.Single(dialog.AlarmMessages);
+        Assert.Empty(writer.Pulses);
+        Assert.Contains(journal.History, item => item.EventText == "OK");
+        Assert.False(Assert.Single(journal.Notifications).IsUnread);
+    }
+
+    [Fact]
     public async Task ProcessSnapshotAsync_AfterOptionsChangeUsesNewAlarmMapWithoutRestart()
     {
         var options = new MutableOptionsMonitor(CreateOptions(repeatIntervalMs: 1000));

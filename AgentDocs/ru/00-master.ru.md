@@ -15,6 +15,7 @@
 | Чиню runtime, DI или lifecycle | `01-architecture-overview.ru.md`, `05-coding-rules.ru.md` | `source/ru/modbus_tcp_integration_guide.ru.md` |
 | Добавляю UI-иконки в Avalonia | `07-svg-icons-guide.ru.md` | `Material.Icons.Avalonia`, `Configurator.Desktop/Assets/icons` |
 | Собираю EXE/RPM или готовлю релиз | `08-build-and-install.ru.md`, `06-testing-and-diagnostics.ru.md` | `Configurator.Boot/Packaging` |
+| Ищу или переношу пользовательскую конфигурацию | `09-configuration-file-locations.ru.md` | `appsettings.json`, `user_settings.json`, `RouteMap/route-map.json` |
 | Проверяю перед PR или commit | `06-testing-and-diagnostics.ru.md` | профильные source-гайды |
 
 ## Актуальные документы
@@ -27,6 +28,7 @@
 - `06-testing-and-diagnostics.ru.md` — команды проверки, диагностика и production checklist.
 - `07-svg-icons-guide.ru.md` — выбор между Material Icons и встроенными SVG, их подключение, окрашивание и кеширование в Avalonia.
 - `08-build-and-install.ru.md` — пошаговая Release-сборка, Inno Setup EXE для Windows 10/11, RPM для ALT Linux 11.1, подпись и smoke-проверка.
+- `09-configuration-file-locations.ru.md` — расположение пользовательских конфигураций, defaults, временных файлов RouteMap и логов в Windows и Linux.
 
 ## Исходные гайды
 

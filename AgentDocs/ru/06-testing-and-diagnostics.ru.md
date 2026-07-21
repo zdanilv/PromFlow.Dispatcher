@@ -70,8 +70,8 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 |---|---|
 | Диалог не появляется | Открытый Workspace в `admin` или `user`, активный runtime snapshot и `Modbus.AlarmMap[].Enabled` |
 | Диалог появляется повторно слишком часто | `RepeatIntervalMs` конкретной тревоги |
-| `Хорошо` не подтверждает | Отдельный `Acknowledgement` address/bit и `AcknowledgementPulseDurationMs` |
-| Ошибка адреса в менеджере | Попадание Alarm/Acknowledgement в ranges `ModbusDemo.Client/Server` |
+| `Хорошо` не подтверждает | Включен `AcknowledgementEnabled`, заданы отдельный `Acknowledgement` address/bit и `AcknowledgementPulseDurationMs` |
+| Ошибка адреса в менеджере | Попадание Alarm/Acknowledgement в ranges `ModbusDemo.Client/Server`; выключенный `AcknowledgementEnabled` OK-поля не валидирует |
 | RouteMap видит тревогу как SignalId | Тревога ошибочно добавлена в `Modbus.DataMap` вместо `Modbus.AlarmMap` |
 | Уведомление не удаляется кнопкой `X` | Текущий alarm-бит еще `true`; удаление разрешено только после `Alarm=false` |
 | `Очистить список` оставляет элементы | Эти тревоги все еще активны; массовая очистка использует ту же проверку, что `X` |
@@ -82,10 +82,11 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | В `Истории` нет выгрузки в БД | Реализован только `NoopSessionJournalExporter`; схема и подключение БД не реализованы |
 
 При проверке таблицы `Менеджер тревог` читайте группы колонок так: `Alarm area/Offset/Bit`
-это входной бит показа диалога, `OK area/Offset/Bit` это отдельный бит подтверждения,
+это входной бит показа диалога, `OK feedback` включает отдельный бит подтверждения
+`OK area/Offset/Bit`,
 `Alarm client/server` и `OK client/server` это физические адреса по базам
 `ModbusDemo.Client/Server`. `Repeat ms` должен быть `1000..86400000`, `Pulse ms` —
-`1..60000`; для `HoldingRegister` `Bit` обязателен в диапазоне `0..15`, для `Coil`
+`1..60000`; для включенного `OK feedback` `HoldingRegister`-`Bit` обязателен в диапазоне `0..15`, для `Coil`
 бит должен отсутствовать.
 
 ## Production checklist

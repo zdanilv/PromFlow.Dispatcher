@@ -85,17 +85,20 @@ public sealed class ModbusAlarmMapValidator : IModbusAlarmMapValidator
             return alarmAddressValidation;
         }
 
-        var acknowledgementAddressValidation = ValidateAddress(alarm.Id, alarm.Acknowledgement, "acknowledgement");
-        if (!acknowledgementAddressValidation.Succeeded)
+        if (alarm.AcknowledgementEnabled)
         {
-            return acknowledgementAddressValidation;
-        }
+            var acknowledgementAddressValidation = ValidateAddress(alarm.Id, alarm.Acknowledgement, "acknowledgement");
+            if (!acknowledgementAddressValidation.Succeeded)
+            {
+                return acknowledgementAddressValidation;
+            }
 
-        if (SameAddress(alarm.Alarm, alarm.Acknowledgement))
-        {
-            return ModbusOperationResult.Failure(
-                "ModbusAlarmAcknowledgementAddressConflict",
-                $"Modbus alarm '{alarm.Id}' uses the same bit for alarm and acknowledgement.");
+            if (SameAddress(alarm.Alarm, alarm.Acknowledgement))
+            {
+                return ModbusOperationResult.Failure(
+                    "ModbusAlarmAcknowledgementAddressConflict",
+                    $"Modbus alarm '{alarm.Id}' uses the same bit for alarm and acknowledgement.");
+            }
         }
 
         if (alarm.RepeatIntervalMs is < MinRepeatIntervalMs or > MaxRepeatIntervalMs)
@@ -105,7 +108,8 @@ public sealed class ModbusAlarmMapValidator : IModbusAlarmMapValidator
                 $"Modbus alarm '{alarm.Id}' repeat interval must be in range {MinRepeatIntervalMs}..{MaxRepeatIntervalMs} ms.");
         }
 
-        if (alarm.AcknowledgementPulseDurationMs is < MinPulseDurationMs or > MaxPulseDurationMs)
+        if (alarm.AcknowledgementEnabled
+            && alarm.AcknowledgementPulseDurationMs is < MinPulseDurationMs or > MaxPulseDurationMs)
         {
             return ModbusOperationResult.Failure(
                 "ModbusAlarmPulseDurationInvalid",
@@ -215,10 +219,13 @@ public sealed class ModbusAlarmMapValidator : IModbusAlarmMapValidator
             return alarmRange;
         }
 
-        var acknowledgementRange = ValidateEndpointAddress(alarm.Id, alarm.Acknowledgement, endpoint, role, "acknowledgement");
-        if (!acknowledgementRange.Succeeded)
+        if (alarm.AcknowledgementEnabled)
         {
-            return acknowledgementRange;
+            var acknowledgementRange = ValidateEndpointAddress(alarm.Id, alarm.Acknowledgement, endpoint, role, "acknowledgement");
+            if (!acknowledgementRange.Succeeded)
+            {
+                return acknowledgementRange;
+            }
         }
 
         return ValidateRegisterValueRange(alarm, endpoint, role);

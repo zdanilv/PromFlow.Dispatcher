@@ -16,7 +16,9 @@ using Configurator.Application.Services.OpcUa.Security;
 using Configurator.Application.Services.OpcUa.Tags;
 using Configurator.Application.Services.OpcUa.Validation;
 using Configurator.Desktop.Workspace.Modbus;
+using Configurator.Desktop.Workspace.Alarms;
 using Microsoft.Extensions.Options;
+using System.Reactive.Disposables;
 using ReactiveUI.Builder;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
@@ -355,5 +357,71 @@ public sealed class ModbusViewModelTests
         public Task SetRegisterAsync(int address, ushort value, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task SetRegistersAsync(int startAddress, ushort[] values, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+}
+
+public sealed class AlarmManagerViewModelTests
+{
+    [Fact]
+    public async Task RemoveAlarm_SavePersistsEmptyAlarmMap()
+    {
+        var current = new ModbusOptions
+        {
+            AlarmMap =
+            [
+                new ModbusAlarmOptions
+                {
+                    Id = "alarm.main",
+                    Message = "Авария",
+                    Alarm = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 0 },
+                    Acknowledgement = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 1 },
+                    RepeatIntervalMs = 1000,
+                    AcknowledgementPulseDurationMs = 1
+                }
+            ]
+        };
+        var configuration = new RecordingConfiguration(current);
+        using var viewModel = new AlarmManagerViewModel(
+            new StaticOptionsMonitor(current),
+            configuration,
+            new ModbusAlarmMapValidator());
+        var row = Assert.Single(viewModel.Rows);
+
+        viewModel.RemoveAlarmCommand.Execute(row).Subscribe();
+        await viewModel.SaveCommand.Execute().FirstAsync().ToTask();
+
+        Assert.Empty(viewModel.Rows);
+        Assert.Empty(Assert.IsType<ModbusOptions>(configuration.LastSaved).AlarmMap);
+    }
+
+    private sealed class StaticOptionsMonitor(ModbusOptions options) : IOptionsMonitor<ModbusOptions>
+    {
+        public ModbusOptions CurrentValue => options;
+
+        public ModbusOptions Get(string? name) => options;
+
+        public IDisposable OnChange(Action<ModbusOptions, string?> listener) => Disposable.Empty;
+    }
+
+    private sealed class RecordingConfiguration(ModbusOptions options) : IAppConfigService
+    {
+        public object? LastSaved { get; private set; }
+
+        public T GetSection<T>(string sectionName) where T : class, new() =>
+            options.Clone() as T ?? new T();
+
+        public string GetValue(string key) => string.Empty;
+
+        public Task SaveSectionAsync<T>(string sectionName, T value, CancellationToken ct = default)
+        {
+            LastSaved = value;
+            return Task.CompletedTask;
+        }
+
+        public void SaveUserSettings(UserSettings settings)
+        {
+        }
+
+        public UserSettings LoadUserSettings() => new();
     }
 }

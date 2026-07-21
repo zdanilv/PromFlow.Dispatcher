@@ -183,6 +183,70 @@ public sealed class ModbusAddressCatalogViewModelTests
     }
 
     [Fact]
+    public void Catalog_MarksEnabledAlarmRegisterValueAsUsedWithoutMarkingDisabledAcknowledgement()
+    {
+        var runtime = CreateRuntimeOptions();
+        runtime.Client.CoilCount = 2;
+        runtime.Client.RegisterCount = 2;
+        runtime.Server.CoilCount = 2;
+        runtime.Server.RegisterCount = 2;
+        var map = new ModbusOptions
+        {
+            AlarmMap =
+            [
+                new ModbusAlarmOptions
+                {
+                    Id = "alarm.temperature",
+                    Alarm = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 0 },
+                    AcknowledgementEnabled = false,
+                    Acknowledgement = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 1 },
+                    RegisterValueEnabled = true,
+                    RegisterValueAddress = 1
+                }
+            ]
+        };
+
+        using var viewModel = new ModbusAddressCatalogViewModel(
+            new RecordingAppConfigService(map),
+            () => runtime,
+            action => action(),
+            new StaticOptionsMonitor(map));
+
+        Assert.Equal("Да", viewModel.HoldingRegisterRows[1].UsageText);
+        Assert.Contains("Значение диалога: alarm.temperature", viewModel.HoldingRegisterRows[1].RoleText);
+        Assert.Equal("Не используется", viewModel.CoilRows[1].UsageText);
+    }
+
+    [Fact]
+    public void Catalog_DoesNotMarkDisabledAlarmRegisterValueAsUsed()
+    {
+        var runtime = CreateRuntimeOptions();
+        runtime.Client.RegisterCount = 1;
+        runtime.Server.RegisterCount = 1;
+        var map = new ModbusOptions
+        {
+            AlarmMap =
+            [
+                new ModbusAlarmOptions
+                {
+                    Id = "alarm.temperature",
+                    Alarm = new ModbusBitAddressOptions { Area = ModbusDataArea.Coil, Address = 0 },
+                    RegisterValueEnabled = false,
+                    RegisterValueAddress = 0
+                }
+            ]
+        };
+
+        using var viewModel = new ModbusAddressCatalogViewModel(
+            new RecordingAppConfigService(map),
+            () => runtime,
+            action => action(),
+            new StaticOptionsMonitor(map));
+
+        Assert.Equal("Нет", Assert.Single(viewModel.HoldingRegisterRows).UsageText);
+    }
+
+    [Fact]
     public void Catalog_UpdatesRegisterAndBitValuesFromRuntimeSnapshots()
     {
         var runtimeOptions = CreateRuntimeOptions();

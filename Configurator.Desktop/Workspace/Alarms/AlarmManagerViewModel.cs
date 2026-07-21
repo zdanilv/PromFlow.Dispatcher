@@ -540,6 +540,7 @@ public sealed class AlarmManagerRow : ReactiveObject
     private bool _registerValueEnabled;
     private string _registerValuePrefix = string.Empty;
     private int _registerValueAddress;
+    private bool _acknowledgementEnabled = true;
     private ModbusDataArea _alarmArea;
     private int _alarmAddress;
     private int? _alarmBitIndex;
@@ -564,6 +565,7 @@ public sealed class AlarmManagerRow : ReactiveObject
         _registerValueAddress = options.RegisterValueAddress;
         ApplyAlarmAddress(options.Alarm);
         ApplyAcknowledgementAddress(options.Acknowledgement);
+        _acknowledgementEnabled = options.AcknowledgementEnabled;
         _repeatIntervalMs = options.RepeatIntervalMs;
         _acknowledgementPulseDurationMs = options.AcknowledgementPulseDurationMs;
     }
@@ -574,6 +576,21 @@ public sealed class AlarmManagerRow : ReactiveObject
     public string Message { get => _message; set => this.RaiseAndSetIfChanged(ref _message, value); }
     public bool RegisterValueEnabled { get => _registerValueEnabled; set => this.RaiseAndSetIfChanged(ref _registerValueEnabled, value); }
     public string RegisterValuePrefix { get => _registerValuePrefix; set => this.RaiseAndSetIfChanged(ref _registerValuePrefix, value); }
+
+    public bool AcknowledgementEnabled
+    {
+        get => _acknowledgementEnabled;
+        set
+        {
+            if (_acknowledgementEnabled == value)
+            {
+                return;
+            }
+
+            this.RaiseAndSetIfChanged(ref _acknowledgementEnabled, value);
+            this.RaisePropertyChanged(nameof(CanEditAcknowledgementBitIndex));
+        }
+    }
 
     public int RegisterValueAddress
     {
@@ -675,7 +692,7 @@ public sealed class AlarmManagerRow : ReactiveObject
     public bool HasError => !string.IsNullOrWhiteSpace(ValidationMessage);
     public string? PhysicalAddressError => _physicalAddressError;
     public bool CanEditAlarmBitIndex => AlarmUsesRegisterBit;
-    public bool CanEditAcknowledgementBitIndex => AcknowledgementUsesRegisterBit;
+    public bool CanEditAcknowledgementBitIndex => AcknowledgementEnabled && AcknowledgementUsesRegisterBit;
 
     public string AlarmClientPhysicalAddressText
     {
@@ -735,6 +752,7 @@ public sealed class AlarmManagerRow : ReactiveObject
                 Address = AcknowledgementAddress,
                 BitIndex = AcknowledgementUsesRegisterBit ? AcknowledgementBitIndex : null
             },
+            AcknowledgementEnabled = AcknowledgementEnabled,
             RepeatIntervalMs = RepeatIntervalMs,
             AcknowledgementPulseDurationMs = AcknowledgementPulseDurationMs
         };

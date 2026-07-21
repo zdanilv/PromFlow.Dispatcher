@@ -428,7 +428,23 @@ public sealed class ModbusAddressCatalogViewModel : ViewModelBase, IDisposable
         foreach (var alarm in alarms)
         {
             AddAlarmUsage(alarm.Alarm, "Alarm", alarm);
-            AddAlarmUsage(alarm.Acknowledgement, "OK", alarm);
+            if (alarm.AcknowledgementEnabled)
+            {
+                AddAlarmUsage(alarm.Acknowledgement, "OK", alarm);
+            }
+
+            if (alarm.RegisterValueEnabled)
+            {
+                var state = alarm.Enabled ? string.Empty : " (выкл.)";
+                AddUsage(
+                    rows,
+                    ModbusDataArea.HoldingRegister,
+                    alarm.RegisterValueAddress,
+                    null,
+                    "Менеджер тревог",
+                    string.Empty,
+                    $"Значение диалога: {alarm.Id}{state}");
+            }
         }
 
         void AddAlarmUsage(ModbusBitAddressOptions bitAddress, string role, ModbusAlarmOptions alarm)

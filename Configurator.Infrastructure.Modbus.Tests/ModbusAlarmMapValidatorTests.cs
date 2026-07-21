@@ -20,11 +20,22 @@ public sealed class ModbusAlarmMapValidatorTests
         clone.AlarmMap[0].RegisterValuePrefix = "Changed: ";
         clone.AlarmMap[0].RegisterValueAddress = 3;
         clone.AlarmMap[0].Alarm.Address = 3;
+        clone.AlarmMap[0].AcknowledgementEnabled = false;
 
         Assert.Equal("Авария", options.AlarmMap[0].Message);
         Assert.Equal("Значение: ", options.AlarmMap[0].RegisterValuePrefix);
         Assert.Equal(1, options.AlarmMap[0].RegisterValueAddress);
         Assert.Equal(0, options.AlarmMap[0].Alarm.Address);
+        Assert.True(options.AlarmMap[0].AcknowledgementEnabled);
+        Assert.False(clone.AlarmMap[0].AcknowledgementEnabled);
+    }
+
+    [Fact]
+    public void ModbusAlarmOptions_DefaultAcknowledgementEnabledPreservesLegacyBehavior()
+    {
+        var alarm = new ModbusAlarmOptions();
+
+        Assert.True(alarm.AcknowledgementEnabled);
     }
 
     [Fact]
@@ -57,6 +68,20 @@ public sealed class ModbusAlarmMapValidatorTests
 
         Assert.False(result.Succeeded);
         Assert.Equal("ModbusAlarmAcknowledgementAddressConflict", result.ErrorCode);
+    }
+
+    [Fact]
+    public void Validate_AllowsDisabledAcknowledgementWithUnusedInvalidSettings()
+    {
+        var options = CreateOptions();
+        var alarm = Assert.Single(options.AlarmMap);
+        alarm.AcknowledgementEnabled = false;
+        alarm.Acknowledgement = alarm.Alarm.Clone();
+        alarm.AcknowledgementPulseDurationMs = 0;
+
+        var result = _validator.Validate(options, ModbusRunMode.Client);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
     }
 
     [Theory]

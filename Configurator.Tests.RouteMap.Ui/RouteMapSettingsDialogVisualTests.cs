@@ -427,8 +427,8 @@ public sealed class RouteMapSettingsDialogVisualTests
         var scroll = view.GetVisualDescendants().OfType<ScrollViewer>().First();
 
         Assert.True(scroll.Extent.Width > scroll.Viewport.Width);
-        Assert.Equal(22, controls.Length);
-        Assert.Equal(Enumerable.Range(0, 22), controls.Select(Grid.GetColumn));
+        Assert.Equal(23, controls.Length);
+        Assert.Equal(Enumerable.Range(0, 23), controls.Select(Grid.GetColumn));
         for (var index = 1; index < controls.Length; index++)
             Assert.True(controls[index - 1].Bounds.Right <= controls[index].Bounds.Left);
 
