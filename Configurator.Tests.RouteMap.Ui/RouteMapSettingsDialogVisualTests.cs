@@ -74,6 +74,7 @@ public sealed class RouteMapSettingsDialogVisualTests
 
             var connectionStatus = adminView.FindControl<Border>("ConnectionStatusOverlay")!;
             var legend = adminView.FindControl<Border>("RouteMapStateLegendOverlay")!;
+            Assert.True(adminViewModel.MapEquipmentCards.Single().IsParametersButtonEnabled);
             var selectedObjectText = adminView.FindControl<TextBlock>("SelectedObjectText")!;
             var expectedLabels = new[]
             {
@@ -140,6 +141,7 @@ public sealed class RouteMapSettingsDialogVisualTests
 
             Assert.False(userView.FindControl<Border>("ConnectionStatusOverlay")!.IsVisible);
             Assert.True(userView.FindControl<Border>("RouteMapStateLegendOverlay")!.IsVisible);
+            Assert.True(userViewModel.MapEquipmentCards.Single().IsParametersButtonEnabled);
             userWindow.Close();
         }
         finally
@@ -861,8 +863,43 @@ public sealed class RouteMapSettingsDialogVisualTests
             IsEnabled: false));
         Dispatcher.UIThread.RunJobs();
         Assert.True(selectorButton.IsEnabled);
-        Assert.False(parameterButton.IsEffectivelyEnabled);
+        Assert.True(parameterButton.IsEffectivelyEnabled);
+        Assert.Equal(Color.Parse("#D0D0D0"), Assert.IsType<SolidColorBrush>(parameterButton.Background).Color);
         Assert.Equal(Color.Parse("#D0D0D0"), Assert.IsType<SolidColorBrush>(selectorButton.Background).Color);
+
+        var userCardViewModel = new EquipmentCardViewModel(card, dispatcher);
+        var userCardView = new EquipmentCardView { DataContext = userCardViewModel };
+        var userCardWindow = new Window { Width = 340, Height = 200, Content = userCardView };
+        userCardWindow.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var userParameterButton = userCardView.FindControl<Button>("ParametersButton")!;
+        Assert.True(userParameterButton.IsEffectivelyEnabled);
+
+        userCardViewModel.ApplyRuntime(new RouteObjectRuntimeState(
+            card.Id,
+            RouteObjectState.Disabled,
+            card.StatusText,
+            ValueText: null,
+            IsVisible: true,
+            CanStart: false,
+            CanStop: false,
+            IsEnabled: false), isConnectionAvailable: true);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(userParameterButton.IsEffectivelyEnabled);
+
+        userCardViewModel.ApplyRuntime(new RouteObjectRuntimeState(
+            card.Id,
+            RouteObjectState.Offline,
+            "Не в сети",
+            ValueText: null,
+            IsVisible: true,
+            CanStart: false,
+            CanStop: false,
+            IsEnabled: false), isConnectionAvailable: false);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(userParameterButton.IsEffectivelyEnabled);
+        userCardWindow.Close();
 
         var dialogViewModel = new EquipmentCardParametersDialogViewModel(card, null, dispatcher);
         var dialog = new EquipmentCardParametersDialogView { DataContext = dialogViewModel };

@@ -119,6 +119,7 @@ internal static class Program
                     services.AddSingleton<RouteMapConfigurationValidator>();
                     services.AddSingleton<RouteMapConfigurationMigrator>();
                     services.AddSingleton<RouteMapConfigurationManager>();
+                    services.AddSingleton<IEquipmentParameterValueStore, RouteMapEquipmentParameterValueStore>();
                     services.AddSingleton<IRouteMapSettingsFilePicker, RouteMapSettingsFilePicker>();
                     services.AddSingleton<IModbusTcpProfileFilePicker, ModbusTcpProfileFilePicker>();
                     services.AddSingleton<IModbusTcpProfileTransferService, ModbusTcpProfileTransferService>();
@@ -127,6 +128,7 @@ internal static class Program
                     services.AddSingleton<IExternalLinkLauncher, ExternalLinkLauncher>();
                     services.AddSingleton<IEquipmentCardParametersDialogService, EquipmentCardParametersDialogService>();
                     services.AddSingleton<IEquipmentParameterWriteValidator, EquipmentParameterWriteValidator>();
+                    services.AddSingleton<IEquipmentParameterAutoDispatcher, EquipmentParameterAutoDispatcher>();
                     services.AddTransient<RouteMapSettingsViewModel>();
                     services.AddTransient<RouteMapSettingsDialog>();
                     services.AddSingleton<IRouteMapRuntimeMapper<RouteMapRuntimeState>, RouteMapRuntimeMapper>();

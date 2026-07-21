@@ -16,14 +16,18 @@ public sealed class EquipmentCardParametersDialogService(
     public async Task ShowAsync(
         EquipmentCommandCard card,
         IReadOnlyDictionary<string, SignalValue>? signals,
+        bool isConnectionAvailable = true,
         CancellationToken cancellationToken = default)
     {
         var snapshot = signals ?? new Dictionary<string, SignalValue>(StringComparer.Ordinal);
-        var viewModel = ActivatorUtilities.CreateInstance<EquipmentCardParametersDialogViewModel>(
-            serviceProvider,
+        var viewModel = new EquipmentCardParametersDialogViewModel(
             card,
             snapshot,
-            applicationOptions.Value.IsAdminMode);
+            serviceProvider.GetRequiredService<IEquipmentCommandDispatcher>(),
+            serviceProvider.GetRequiredService<IEquipmentParameterWriteValidator>(),
+            applicationOptions.Value.IsAdminMode,
+            isConnectionAvailable,
+            serviceProvider.GetRequiredService<IEquipmentParameterValueStore>());
         var view = serviceProvider.GetRequiredService<EquipmentCardParametersDialogView>();
         view.DataContext = viewModel;
         try

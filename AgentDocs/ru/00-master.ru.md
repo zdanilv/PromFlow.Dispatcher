@@ -56,10 +56,14 @@
   SignalId `system.reset`; это `ReadWrite/Bool/Pulse` команда.
 - Опциональная роль `Enabled` имеет контракт `Read/Bool`: хорошее `false` переводит
   настраиваемую кнопку TopBar, узел, линию или карточку в disabled-состояние.
-  Для карточки `Enabled=false` не блокирует кнопку `С` при наличии Modbus-связи, но
-  один раз сбрасывает selector-команды `CheckedCommand=false`, затем `UncheckedCommand=false`.
+  Для карточки `Enabled=false` не управляет кнопкой `Н`: она доступна offline в обоих
+  режимах и сохраняет editable setpoint в RouteMap-профиле. Кнопка `С` при наличии
+  Modbus-связи остается доступной и один раз сбрасывает selector-команды
+  `CheckedCommand=false`, затем `UncheckedCommand=false`.
 - Параметры оборудования карточек живут в RouteMap definition как `EquipmentParameter`
-  SignalId; физические адреса для них настраиваются только в `Modbus.DataMap`.
+  SignalId; их локальные значения, pending-статус и ошибка автоотправки входят в
+  `RouteMap/route-map.json`. Физические адреса для них настраиваются только в
+  `Modbus.DataMap`.
 - `ModbusDemo` владеет TCP endpoint и lifecycle общего runtime.
 - `RouteMapConfigurationManager` владеет актуальной definition; не регистрируйте `RouteMapDefinition` как immutable singleton.
 - UI не обновляется напрямую из Modbus callback: поток идет через provider, mapper и ViewModel.

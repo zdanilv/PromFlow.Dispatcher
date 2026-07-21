@@ -528,7 +528,9 @@ system.fault
 `ModbusTcpSignalValueProvider` получает heartbeat snapshots через
 `IModbusDataSnapshotSource`, формирует quality/stale и синтезирует `connection.status` и
 `connection.connected`. При `connection.connected=false` mapper переводит все узлы и
-линии в `Offline`, а UI-команды блокируются, кроме кнопки `НАСТРОЙКИ`. `system.fault`
+линии в `Offline`, а UI-команды блокируются, кроме кнопки `НАСТРОЙКИ` и кнопки `Н`
+карточки в обоих режимах: она открывает локальное сохранение editable-параметров.
+`system.fault`
 не синтезируется provider-ом: это обычная read/bool точка `Modbus.DataMap`, которую PLC
 поднимает для общей аварии всей карты.
 `ModbusTcpCommandDispatcher` проверяет тип и доступ, затем выполняет latched или pulse
@@ -702,6 +704,10 @@ JSON не сериализует Avalonia-типы. Цвета записыва�
 %LocalAppData%\Configurator\RouteMap\route-map.json
 ```
 
+Editable setpoint параметров карточек, pending-флаг одноразовой автоотправки после Modbus
+reconnect и последняя ошибка отправки — часть этого JSON, поэтому они переживают
+перезапуск и переносятся экспортом/импортом RouteMap.
+
 `RouteMapConfigurationStorage` читает и форматированно записывает JSON. Запись идет во
 временный файл рядом с целевым с последующей заменой, поэтому manager не публикует
 частично записанный документ. При отсутствии файла используется seed. Поврежденный или
@@ -862,8 +868,9 @@ LoaderCommand          -> пункт Возврат узла
 Командные роли используют `Bool` и `ReadWrite`; `StartOffFeedback`/`StopOffFeedback`
 и `Enabled` используют `Bool` и `Read`. `ResetCommand` требует `Pulse`, потому что UI
 пишет только `true`; selector-команды карточки требуют `Latched`, потому что UI пишет
-явный `false`. При хорошем
-`Enabled=false` карточки кнопка `С` остается доступной при наличии связи и один раз
+явный `false`. При хорошем `Enabled=false` карточки `Н` не зависит от этого регистра:
+в `user` она зависит только от подключения, а в `admin` всегда доступна. Кнопка `С`
+остается доступной при наличии связи и один раз
 сбрасывает selector-команды: `CheckedCommand=false`, затем `UncheckedCommand=false`.
 UI сначала оптимистично меняет checked-состояние, затем
 отправляет `SignalWriteRequest` через `IEquipmentCommandDispatcher`. Для выбора узла

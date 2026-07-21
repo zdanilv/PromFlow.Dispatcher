@@ -39,6 +39,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private bool _isSelectorPressed;
     private bool _isEnabled = true;
     private bool _isSelectorCommandEnabled = true;
+    private bool _isConnectionAvailable;
     private bool _isSelectorResetActive;
     private bool _runtimeVisible = true;
     private bool _isApplyingRuntime;
@@ -121,8 +122,9 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public IBrush SelectorForeground => RouteMapPalette.Brush(!IsSelectorEnabled
         ? "#FFFFFF"
         : RouteMapCommandButtonPalette.Selector.Foreground(IsSelectorPressed, IsSelectorChecked));
-    public IBrush ParameterBackground => IsEnabled ? RouteMapPalette.Brush("#D0D0D0") : DisabledBrush;
-    public IBrush ParameterForeground => RouteMapPalette.Brush(IsEnabled ? "#101820" : "#FFFFFF");
+    public bool IsParametersButtonEnabled => true;
+    public IBrush ParameterBackground => RouteMapPalette.Brush("#D0D0D0");
+    public IBrush ParameterForeground => RouteMapPalette.Brush("#101820");
     public ReactiveCommand<Unit, Unit> OpenParametersCommand { get; }
 
     public bool IsEnabled
@@ -373,8 +375,9 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         _ => PaletteBrush(_palette.MutedText, RouteMapPalette.MutedTextBrush),
     };
 
-    public void ApplyRuntime(RouteObjectRuntimeState? runtimeState)
+    public void ApplyRuntime(RouteObjectRuntimeState? runtimeState, bool isConnectionAvailable = true)
     {
+        IsConnectionAvailable = isConnectionAvailable;
         if (runtimeState is null)
             return;
 
@@ -426,7 +429,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
 
     private Task OpenParametersAsync()
     {
-        return _parametersDialogService?.ShowAsync(_card, _signalSnapshotAccessor?.Invoke())
+        return _parametersDialogService?.ShowAsync(_card, _signalSnapshotAccessor?.Invoke(), _isConnectionAvailable)
             ?? Task.CompletedTask;
     }
 
@@ -502,9 +505,19 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(StopForeground));
         this.RaisePropertyChanged(nameof(SelectorBackground));
         this.RaisePropertyChanged(nameof(SelectorForeground));
-        this.RaisePropertyChanged(nameof(ParameterBackground));
-        this.RaisePropertyChanged(nameof(ParameterForeground));
         this.RaisePropertyChanged(nameof(IsSelectorEnabled));
+    }
+
+    private bool IsConnectionAvailable
+    {
+        get => _isConnectionAvailable;
+        set
+        {
+            if (_isConnectionAvailable == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _isConnectionAvailable, value);
+        }
     }
 
     private static string SelectedPointTitle(

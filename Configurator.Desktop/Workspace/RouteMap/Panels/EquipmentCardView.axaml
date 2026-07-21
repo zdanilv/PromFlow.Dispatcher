@@ -169,7 +169,7 @@
 						Background="{Binding ParameterBackground}"
 						BorderBrush="{Binding ParameterBackground}"
 						Foreground="{Binding ParameterForeground}"
-						IsEnabled="{Binding IsEnabled}"
+						IsEnabled="{Binding IsParametersButtonEnabled}"
 						Command="{Binding OpenParametersCommand}"/>
 			</Grid>
 

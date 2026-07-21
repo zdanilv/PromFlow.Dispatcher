@@ -4,6 +4,7 @@ using System.Reactive;
 using System.Reactive.Subjects;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Models;
+using Configurator.Desktop.Workspace.RouteMap.Settings;
 using ReactiveUI;
 
 namespace Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
@@ -12,6 +13,9 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
 {
     private readonly IEquipmentCommandDispatcher _dispatcher;
     private readonly IEquipmentParameterWriteValidator _writeValidator;
+    private readonly IEquipmentParameterValueStore _valueStore;
+    private readonly EquipmentCommandCard _card;
+    private readonly bool _isConnectionAvailable;
     private readonly Subject<bool> _result = new();
     private string? _errorMessage;
     private string? _statusMessage;
@@ -22,10 +26,15 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
         IReadOnlyDictionary<string, SignalValue>? signals,
         IEquipmentCommandDispatcher dispatcher,
         IEquipmentParameterWriteValidator? writeValidator = null,
-        bool showTechnicalDetails = true)
+        bool showTechnicalDetails = true,
+        bool isConnectionAvailable = true,
+        IEquipmentParameterValueStore? valueStore = null)
     {
+        _card = card;
         _dispatcher = dispatcher;
         _writeValidator = writeValidator ?? NoopEquipmentParameterWriteValidator.Instance;
+        _valueStore = valueStore ?? NoopEquipmentParameterValueStore.Instance;
+        _isConnectionAvailable = isConnectionAvailable;
         ShowTechnicalDetails = showTechnicalDetails;
         Title = card.Title;
         foreach (var parameter in card.Parameters)
@@ -91,9 +100,10 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
             }
         }
 
-        foreach (var item in requests)
+        if (_isConnectionAvailable)
         {
-            item.Parameter.ValidationMessage = _writeValidator.Validate(item.Request);
+            foreach (var item in requests)
+                item.Parameter.ValidationMessage = _writeValidator.Validate(item.Request);
         }
 
         if (Parameters.Any(parameter => parameter.HasValidationError))
@@ -110,10 +120,44 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
 
         try
         {
-            foreach (var item in requests)
-                await _dispatcher.DispatchAsync(item.Request);
+            var values = requests
+                .Select(item => new EquipmentParameterSetpoint(
+                    item.Request.SignalId,
+                    item.Parameter.SerializeValue(item.Request)))
+                .ToArray();
 
-            StatusMessage = $"Отправлено параметров: {requests.Count}.";
+            await _valueStore.SaveAsync(
+                _card.Id,
+                values,
+                pendingAutoDispatch: !_isConnectionAvailable);
+
+            if (!_isConnectionAvailable)
+            {
+                StatusMessage = "Сохранено локально. Отправка будет выполнена после подключения.";
+                return;
+            }
+
+            var failures = new List<string>();
+            var sent = 0;
+            foreach (var item in requests)
+            {
+                var savedValue = item.Parameter.SerializeValue(item.Request);
+                try
+                {
+                    await _dispatcher.DispatchAsync(item.Request);
+                    await _valueStore.CompleteDispatchAsync(_card.Id, item.Request.SignalId, savedValue, null);
+                    sent++;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    await _valueStore.CompleteDispatchAsync(_card.Id, item.Request.SignalId, savedValue, ex.Message);
+                    failures.Add($"{item.Parameter.Title}: {ex.Message}");
+                }
+            }
+
+            StatusMessage = $"Отправлено параметров: {sent}.";
+            if (failures.Count > 0)
+                ErrorMessage = $"Не удалось сохранить параметры: {string.Join("; ", failures)}";
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -122,6 +166,26 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
     }
 
     private void Close() => _result.OnNext(false);
+}
+
+internal sealed class NoopEquipmentParameterValueStore : IEquipmentParameterValueStore
+{
+    public static NoopEquipmentParameterValueStore Instance { get; } = new();
+
+    public Task SaveAsync(
+        string cardId,
+        IReadOnlyCollection<EquipmentParameterSetpoint> values,
+        bool pendingAutoDispatch,
+        CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public IReadOnlyList<PendingEquipmentParameter> GetPending() => [];
+
+    public Task CompleteDispatchAsync(
+        string cardId,
+        string signalId,
+        string expectedSavedValue,
+        string? errorMessage,
+        CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
 
 public sealed class EquipmentCardParameterRow : ReactiveObject
@@ -138,8 +202,9 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
         Title = parameter.Title;
         Binding = parameter.Binding;
         ShowTechnicalDetails = showTechnicalDetails;
-        _valueText = InitialValue(parameter.Binding, signals);
-        _boolValue = InitialBoolValue(parameter.Binding, signals);
+        DispatchError = parameter.LastDispatchError;
+        _valueText = InitialValue(parameter, signals);
+        _boolValue = InitialBoolValue(parameter, signals);
     }
 
     public string Title { get; }
@@ -153,6 +218,8 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
     public bool UsesTextInput => !IsBool;
     public bool CanEdit => Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite;
     public bool IsReadOnly => !CanEdit;
+    public string? DispatchError { get; }
+    public bool HasDispatchError => !string.IsNullOrWhiteSpace(DispatchError);
 
     public string ValueText
     {
@@ -209,13 +276,40 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
         return true;
     }
 
+    public string SerializeValue(SignalWriteRequest request)
+    {
+        if (request.ValueType == SignalValueType.Bool)
+            return (request.Value is true).ToString().ToLowerInvariant();
+
+        if (request.ValueType == SignalValueType.Date && request.Value is DateTime dateTime)
+            return dateTime.ToString("O", CultureInfo.InvariantCulture);
+
+        if (request.Value is float float32)
+            return float32.ToString("R", CultureInfo.InvariantCulture);
+
+        if (request.Value is double float64)
+            return float64.ToString("R", CultureInfo.InvariantCulture);
+
+        if (request.Value is IFormattable formattable)
+            return formattable.ToString(null, CultureInfo.InvariantCulture);
+
+        return request.Value?.ToString() ?? string.Empty;
+    }
+
     private static string InitialValue(
-        SignalBinding binding,
+        EquipmentCardParameter parameter,
         IReadOnlyDictionary<string, SignalValue>? signals)
     {
+        var binding = parameter.Binding;
         if (binding.ValueType == SignalValueType.Bool)
         {
             return string.Empty;
+        }
+
+        if (binding.Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite &&
+            parameter.SavedValue is not null)
+        {
+            return parameter.SavedValue;
         }
 
         if (binding.Direction == SignalBindingDirection.Write ||
@@ -231,9 +325,17 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
     }
 
     private static bool InitialBoolValue(
-        SignalBinding binding,
+        EquipmentCardParameter parameter,
         IReadOnlyDictionary<string, SignalValue>? signals)
     {
+        var binding = parameter.Binding;
+        if (binding.ValueType == SignalValueType.Bool &&
+            binding.Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite &&
+            bool.TryParse(parameter.SavedValue, out var savedValue))
+        {
+            return savedValue;
+        }
+
         if (binding.ValueType != SignalValueType.Bool ||
             binding.Direction == SignalBindingDirection.Write ||
             signals is null ||

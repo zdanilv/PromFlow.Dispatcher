@@ -108,6 +108,11 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 15;
                     wasMigrated = true;
                     break;
+                case 15:
+                    ApplyVersion16(document);
+                    document.SchemaVersion = 16;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }
@@ -406,6 +411,12 @@ public sealed class RouteMapConfigurationMigrator
             "СБРОС", SignalBindingRole.ResetCommand, "system.reset");
         document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create(
             "АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency");
+    }
+
+    private static void ApplyVersion16(RouteMapConfigurationDocument document)
+    {
+        foreach (var parameter in document.Cards.SelectMany(card => card.Parameters ?? []))
+            parameter.ClearSavedSetpoint();
     }
 
     private static void EnsureTopBarButton(

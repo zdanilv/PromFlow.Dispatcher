@@ -5,6 +5,7 @@ using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Workspace.RouteMap.Models;
+using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -143,6 +144,136 @@ public sealed class EquipmentCardParametersDialogViewModelTests
     }
 
     [Fact]
+    public async Task Save_offline_persists_editable_values_without_mapping_or_dispatching()
+    {
+        var dispatcher = new CapturingDispatcher();
+        var store = new RecordingValueStore();
+        var card = Card(
+            Parameter("Read", "card.read", SignalBindingDirection.Read, SignalValueType.Word),
+            Parameter("Speed", "card.speed", SignalBindingDirection.ReadWrite, SignalValueType.Float32),
+            Parameter("Enabled", "card.enabled", SignalBindingDirection.Write, SignalValueType.Bool));
+        var viewModel = new EquipmentCardParametersDialogViewModel(
+            card,
+            null,
+            dispatcher,
+            new StaticWriteValidator("Нет Modbus DataMap"),
+            isConnectionAvailable: false,
+            valueStore: store);
+        viewModel.Parameters.Single(parameter => parameter.SignalId == "card.speed").ValueText = "1.5";
+        viewModel.Parameters.Single(parameter => parameter.SignalId == "card.enabled").BoolValue = true;
+
+        await viewModel.SaveCommand.Execute().FirstAsync();
+
+        Assert.Empty(dispatcher.Requests);
+        Assert.Null(viewModel.ErrorMessage);
+        Assert.Equal("Сохранено локально. Отправка будет выполнена после подключения.", viewModel.StatusMessage);
+        Assert.True(store.LastPendingAutoDispatch);
+        Assert.Collection(store.Saved,
+            value => Assert.Equal(("card.speed", "1.5"), (value.SignalId, value.Value)),
+            value => Assert.Equal(("card.enabled", "true"), (value.SignalId, value.Value)));
+    }
+
+    [Fact]
+    public async Task Save_invalid_offline_batch_does_not_persist_anything()
+    {
+        var dispatcher = new CapturingDispatcher();
+        var store = new RecordingValueStore();
+        var card = Card(
+            Parameter("Correct", "card.correct", SignalBindingDirection.Write, SignalValueType.Word),
+            Parameter("Invalid", "card.invalid", SignalBindingDirection.Write, SignalValueType.Int16));
+        var viewModel = new EquipmentCardParametersDialogViewModel(
+            card,
+            null,
+            dispatcher,
+            isConnectionAvailable: false,
+            valueStore: store);
+        viewModel.Parameters[0].ValueText = "15";
+        viewModel.Parameters[1].ValueText = "40000";
+
+        await viewModel.SaveCommand.Execute().FirstAsync();
+
+        Assert.True(viewModel.HasError);
+        Assert.Empty(store.Saved);
+        Assert.Empty(dispatcher.Requests);
+    }
+
+    [Fact]
+    public void Constructor_prefers_saved_editable_setpoints_and_keeps_read_runtime_value()
+    {
+        var now = DateTimeOffset.Now;
+        var card = Card(
+            Parameter("Read", "card.read", SignalBindingDirection.Read, SignalValueType.Word, savedValue: "999"),
+            Parameter("Bool", "card.bool", SignalBindingDirection.Write, SignalValueType.Bool, savedValue: "true"),
+            Parameter("String", "card.string", SignalBindingDirection.ReadWrite, SignalValueType.String, savedValue: "локально"),
+            Parameter("Date", "card.date", SignalBindingDirection.Write, SignalValueType.Date, savedValue: "2026-06-30T12:34:56.0000000+03:00", error: "Не удалось отправить"));
+        var signals = new Dictionary<string, SignalValue>
+        {
+            ["card.read"] = new("card.read", (ushort)42, SignalValueType.Word, now, true, false),
+        };
+
+        var viewModel = new EquipmentCardParametersDialogViewModel(card, signals, new CapturingDispatcher());
+
+        Assert.Equal("42", viewModel.Parameters.Single(parameter => parameter.SignalId == "card.read").ValueText);
+        Assert.True(viewModel.Parameters.Single(parameter => parameter.SignalId == "card.bool").BoolValue);
+        Assert.Equal("локально", viewModel.Parameters.Single(parameter => parameter.SignalId == "card.string").ValueText);
+        var date = viewModel.Parameters.Single(parameter => parameter.SignalId == "card.date");
+        Assert.Equal("2026-06-30T12:34:56.0000000+03:00", date.ValueText);
+        Assert.True(date.HasDispatchError);
+        Assert.Equal("Не удалось отправить", date.DispatchError);
+    }
+
+    [Fact]
+    public async Task Auto_dispatch_sends_pending_value_once_and_records_dispatch_result()
+    {
+        var runtime = new RuntimeSource(RouteMapSignalSource.Modbus);
+        var dispatcher = new CapturingDispatcher();
+        var store = new RecordingValueStore();
+        var parameter = Parameter(
+            "Speed",
+            "card.speed",
+            SignalBindingDirection.Write,
+            SignalValueType.Float32,
+            savedValue: "1.5",
+            pending: true);
+        store.Pending.Add(new PendingEquipmentParameter("card", parameter));
+        var autoDispatcher = new EquipmentParameterAutoDispatcher(store, dispatcher, new StaticWriteValidator(null), runtime);
+
+        await autoDispatcher.DispatchPendingAsync();
+        await autoDispatcher.DispatchPendingAsync();
+
+        var request = Assert.Single(dispatcher.Requests);
+        Assert.Equal(("card.speed", 1.5f, SignalValueType.Float32), (request.SignalId, request.Value, request.ValueType));
+        var completion = Assert.Single(store.Completions);
+        Assert.Null(completion.ErrorMessage);
+        Assert.Empty(store.GetPending());
+    }
+
+    [Fact]
+    public async Task Auto_dispatch_error_is_saved_and_not_retried()
+    {
+        var runtime = new RuntimeSource(RouteMapSignalSource.Modbus);
+        var dispatcher = new CapturingDispatcher(new InvalidOperationException("PLC недоступен"));
+        var store = new RecordingValueStore();
+        var parameter = Parameter(
+            "Enabled",
+            "card.enabled",
+            SignalBindingDirection.Write,
+            SignalValueType.Bool,
+            savedValue: "true",
+            pending: true);
+        store.Pending.Add(new PendingEquipmentParameter("card", parameter));
+        var autoDispatcher = new EquipmentParameterAutoDispatcher(store, dispatcher, new StaticWriteValidator(null), runtime);
+
+        await autoDispatcher.DispatchPendingAsync();
+        await autoDispatcher.DispatchPendingAsync();
+
+        Assert.Single(dispatcher.Requests);
+        var completion = Assert.Single(store.Completions);
+        Assert.Equal("PLC недоступен", completion.ErrorMessage);
+        Assert.Empty(store.GetPending());
+    }
+
+    [Fact]
     public void WriteValidator_skips_datamap_for_mock_source()
     {
         var validator = new EquipmentParameterWriteValidator(
@@ -203,10 +334,16 @@ public sealed class EquipmentCardParametersDialogViewModelTests
         string title,
         string signalId,
         SignalBindingDirection direction,
-        SignalValueType valueType) =>
+        SignalValueType valueType,
+        string? savedValue = null,
+        bool pending = false,
+        string? error = null) =>
         new(
             title,
-            new SignalBinding(SignalBindingRole.EquipmentParameter, signalId, direction, valueType));
+            new SignalBinding(SignalBindingRole.EquipmentParameter, signalId, direction, valueType),
+            savedValue,
+            pending,
+            error);
 
     private static ModbusDataPointOptions Point(
         string name,
@@ -221,13 +358,51 @@ public sealed class EquipmentCardParametersDialogViewModelTests
             Length = length
         };
 
-    private sealed class CapturingDispatcher : IEquipmentCommandDispatcher
+    private sealed class CapturingDispatcher(Exception? exception = null) : IEquipmentCommandDispatcher
     {
         public List<SignalWriteRequest> Requests { get; } = [];
 
         public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
+            if (exception is not null)
+                throw exception;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingValueStore : IEquipmentParameterValueStore
+    {
+        public List<EquipmentParameterSetpoint> Saved { get; } = [];
+        public List<PendingEquipmentParameter> Pending { get; } = [];
+        public List<(string CardId, string SignalId, string? ErrorMessage)> Completions { get; } = [];
+        public bool LastPendingAutoDispatch { get; private set; }
+
+        public Task SaveAsync(
+            string cardId,
+            IReadOnlyCollection<EquipmentParameterSetpoint> values,
+            bool pendingAutoDispatch,
+            CancellationToken cancellationToken = default)
+        {
+            Saved.AddRange(values);
+            LastPendingAutoDispatch = pendingAutoDispatch;
+            return Task.CompletedTask;
+        }
+
+        public IReadOnlyList<PendingEquipmentParameter> GetPending() => Pending.ToArray();
+
+        public Task CompleteDispatchAsync(
+            string cardId,
+            string signalId,
+            string expectedSavedValue,
+            string? errorMessage,
+            CancellationToken cancellationToken = default)
+        {
+            Completions.Add((cardId, signalId, errorMessage));
+            Pending.RemoveAll(item =>
+                item.CardId == cardId &&
+                item.Parameter.Binding.SignalId == signalId &&
+                item.Parameter.SavedValue == expectedSavedValue);
             return Task.CompletedTask;
         }
     }

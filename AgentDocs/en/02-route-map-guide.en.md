@@ -26,11 +26,11 @@ admin mode is preserved for the next user-mode launch.
 
 ## Definition And Schema
 
-The current user profile schema is version `11`:
+The current user profile schema is version `16`:
 
 ```json
 {
-  "schemaVersion": 11,
+  "schemaVersion": 16,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -73,7 +73,8 @@ or stale active signals put the object offline.
 
 System `connection.connected=false` means Modbus is unavailable: the mapper forces all
 nodes and segments to `Offline`; cards show `Не в сети` with the muted indicator and
-disable commands independently from their status/text binding. `IsTarget` and `IsLoader`
+disable commands independently from their status/text binding. The `Н` button stays
+available in both modes, so editable values can be saved locally without PLC access. `IsTarget` and `IsLoader`
 still visually mark selected nodes until those roles are cleared.
 
 ## Commands
@@ -93,13 +94,18 @@ back to PLC. Other `*OffFeedback` roles and `State` remain legacy.
 
 The `Н` button in the card header opens a modal equipment-parameters dialog. Parameters
 are stored on the card as `EquipmentParameter`: `Title`, `SignalId`, `Direction`, and
-`ValueType`. On open, `Read` and `ReadWrite` parameters use the latest good runtime
-snapshot values; `Write` parameters start empty. Bool parameters use a `Вкл/Выкл`
+`ValueType`. Its availability is independent from both the card `Enabled` binding and
+connection state in both modes. Editable parameters also persist a local setpoint,
+pending-auto-dispatch flag, and last dispatch error in `route-map.json`. On open, `Read`
+uses the latest good runtime snapshot while `Write`/`ReadWrite` use a saved setpoint when
+one exists. Bool parameters use a `Вкл/Выкл`
 switch; numeric and string parameters are validated by `ValueType`, including `WORD`,
 `DWORD`, and `DATE`. Admin mode shows the technical `SignalId • Type` caption; user mode
-hides it. `Сохранить` checks the Modbus mapping for each `SignalId` before dispatch,
-sends `Write`/`ReadWrite` rows through the normal `SignalWriteRequest` path, and does
-not close the dialog.
+hides it. Offline `Сохранить` validates and stores editable rows locally without a
+Modbus mapping or dispatch. The first Modbus reconnect dispatches each pending value once;
+both success and failure clear pending, and failures remain visible until a manual save
+retries. Online save uses normal mapping validation and `SignalWriteRequest` dispatch
+without closing the dialog.
 
 ## Right Panel
 
@@ -141,7 +147,8 @@ title, the single allowed role `EquipmentParameter`, `SignalId`, `Direction`, an
 `ValueType`. These parameters remain domain `SignalId` values and automatically appear in
 `SignalId ↔ Modbus`; physical addresses are configured only there through
 `Modbus.DataMap`. New parameters default to `Word`; old `UInt16` configs remain valid
-and compatible.
+and compatible. Changing `SignalId`, `Direction`, or `ValueType` clears the stored
+setpoint metadata; duplicating a card does not copy it.
 
 Validation covers schema version, ID uniqueness, references, binding roles, required
 commands, card parameters, geometry, colors, fragment bindings, placeholder rules, and

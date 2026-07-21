@@ -339,7 +339,10 @@ public sealed record RouteVehicle(
 
 public sealed record EquipmentCardParameter(
     string Title,
-    SignalBinding Binding);
+    SignalBinding Binding,
+    string? SavedValue = null,
+    bool PendingAutoDispatch = false,
+    string? LastDispatchError = null);
 
 public sealed record EquipmentCommandCard(
     string Id,

@@ -24,6 +24,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private readonly RouteMapSessionJournal _sessionJournal;
     private readonly IOptionsMonitor<ModbusOptions> _modbusOptions;
     private readonly IEquipmentCardParametersDialogService? _cardParametersDialogService;
+    private readonly IEquipmentParameterAutoDispatcher? _parameterAutoDispatcher;
+    private readonly bool _isAdminMode;
     private RouteMapRuntimeState _runtimeState = RouteMapRuntimeState.Empty;
     private IReadOnlyDictionary<string, RouteNodeRoleState> _nodeRoleStates;
     private RouteMapDefinition _definition;
@@ -31,6 +33,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private string? _selectedObjectId;
     private string? _commandErrorMessage;
     private string _connectionStatusText = "Ожидание";
+    private bool _wasConnectionAvailable;
+    private int _isDispatchingPendingParameters;
 
     public RouteMapDashboardViewModel(
         RouteMapConfigurationManager configurationManager,
@@ -44,7 +48,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         IOptions<ApplicationOptions>? applicationOptions = null,
         RouteMapModbusBindingDiagnostics? bindingDiagnostics = null,
         IEquipmentCardParametersDialogService? cardParametersDialogService = null,
-        IHelpDialogService? helpDialogService = null)
+        IHelpDialogService? helpDialogService = null,
+        IEquipmentParameterAutoDispatcher? parameterAutoDispatcher = null)
     {
         _runtimeMapper = runtimeMapper;
         _commandDispatcher = commandDispatcher;
@@ -52,13 +57,15 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         _sessionJournal = sessionJournal;
         _modbusOptions = modbusOptions;
         _cardParametersDialogService = cardParametersDialogService;
+        _parameterAutoDispatcher = parameterAutoDispatcher;
+        _isAdminMode = applicationOptions?.Value.IsAdminMode ?? true;
         _definition = configurationManager.CurrentDefinition;
-        IsConnectionStatusVisible = applicationOptions?.Value.IsAdminMode ?? true;
+        IsConnectionStatusVisible = _isAdminMode;
         TopBar = new TopBarViewModel(
             settingsDialogService,
             commandDispatcher,
             Definition.TopBar,
-            isSettingsVisible: applicationOptions?.Value.IsAdminMode ?? true,
+            isSettingsVisible: _isAdminMode,
             palette: Definition.Display?.Palette,
             helpDialogService: helpDialogService);
         MapEquipmentCards = new ObservableCollection<EquipmentCardViewModel>(
@@ -204,6 +211,9 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
 
     private void ApplyRuntime(RouteMapRuntimeState runtimeState)
     {
+        var shouldDispatchPendingParameters =
+            runtimeState.IsConnectionAvailable && !_wasConnectionAvailable;
+        _wasConnectionAvailable = runtimeState.IsConnectionAvailable;
         RuntimeState = runtimeState;
         if (IsConnectionStatusVisible)
             ConnectionStatusText = runtimeState.ConnectionStatusText;
@@ -218,9 +228,16 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             runtimeState.IsResetCommandEnabled,
             runtimeState.IsEmergencyCommandEnabled);
         foreach (var card in MapEquipmentCards)
-            card.ApplyRuntime(runtimeState.Find(card.Id));
+            card.ApplyRuntime(runtimeState.Find(card.Id), runtimeState.IsConnectionAvailable);
 
         ApplyNodeRoleReadback(runtimeState);
+
+        if (shouldDispatchPendingParameters &&
+            _parameterAutoDispatcher is not null &&
+            Interlocked.CompareExchange(ref _isDispatchingPendingParameters, 1, 0) == 0)
+        {
+            _ = DispatchPendingParametersAsync();
+        }
     }
 
     private EquipmentCardViewModel CreateEquipmentCardViewModel(EquipmentCommandCard card) =>
@@ -230,6 +247,22 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             Definition.Display?.Palette,
             _cardParametersDialogService,
             () => _lastSignals);
+
+    private async Task DispatchPendingParametersAsync()
+    {
+        try
+        {
+            await _parameterAutoDispatcher!.DispatchPendingAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            CommandErrorMessage = $"Не удалось автоматически отправить сохранённые параметры: {ex.Message}";
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isDispatchingPendingParameters, 0);
+        }
+    }
 
     private async Task ToggleNodeTargetAsync(string objectId)
     {

@@ -8,5 +8,6 @@ public interface IEquipmentCardParametersDialogService
     Task ShowAsync(
         EquipmentCommandCard card,
         IReadOnlyDictionary<string, SignalValue>? signals,
+        bool isConnectionAvailable = true,
         CancellationToken cancellationToken = default);
 }

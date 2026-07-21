@@ -64,14 +64,18 @@ Follow these rules when changing RouteMap, Modbus TCP, SignalId mapping, or rela
 - Keep `NotificationsPanelView` at minimum width `400`, but do not set a fixed
   `MaxWidth`; the `История` tab must expand the RouteMap right column to table width.
 - Runtime readback must not send commands back.
-- The card-parameters dialog should write only `Write`/`ReadWrite` values through
-  `IEquipmentCommandDispatcher`; `Read` rows are display-only, and `Сохранить` does not
-  close the dialog. Show Bool as a switch; validate other values by `SignalValueType`,
-  and check Modbus mapping before `DispatchAsync`.
+- The card-parameters dialog persists only `Write`/`ReadWrite` values; `Read` rows are
+  display-only, and `Сохранить` does not close the dialog. Offline save validates input,
+  requires no `Modbus.DataMap`, does not call the dispatcher, and marks the value pending.
+  On the first Modbus reconnect each pending setpoint is dispatched once; its result
+  clears pending, preserves any error for the dialog, and only manual save may retry.
+  Online dispatch uses `IEquipmentCommandDispatcher` after Modbus preflight. Show Bool
+  as a switch and validate other values by `SignalValueType`.
   In `user` mode, hide the technical `SignalId • Type` caption; in `admin` mode, keep it
   visible for diagnostics.
 - When `connection.connected=false`, cards show `Не в сети` with the muted indicator
-  independently from their status/text binding.
+  independently from their status/text binding. The `Н` button stays available in both
+  modes for local parameter save; do not control it with card `Enabled` or connection.
 - `Start`/`Stop` mutual exclusion writes `false` to the opposite command before `true`
   to the selected command; a readback conflict of two `true` values displays only `Stop`
   as checked.

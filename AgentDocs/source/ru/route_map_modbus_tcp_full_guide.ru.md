@@ -149,11 +149,11 @@ RouteMap не знает IP-адресов, UnitId, номеров регист�
 
 ### Корневая структура JSON
 
-Текущая версия схемы — `10`:
+Текущая версия схемы — `16`:
 
 ```json
 {
-  "schemaVersion": 10,
+  "schemaVersion": 16,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -593,7 +593,9 @@ timestamp и состояние Modbus.
 
 `connection.connected=false` означает, что runtime не running или snapshot stale. В этом
 состоянии RouteMap блокирует команды и рисует все узлы/линии offline-цветом, кроме
-визуального выделения текущих `IsTarget`/`IsLoader` ролей.
+визуального выделения текущих `IsTarget`/`IsLoader` ролей. Кнопка `Н` карточки остаётся
+доступной в обоих режимах: editable-значение сохраняется локально без DataMap и будет
+один раз автоматически отправлено после первого Modbus reconnect.
 
 `StaleAfterMs` ограничивается диапазоном `250..60000 ms`. Практически порог должен быть
 больше `PollIntervalMs` с запасом на задержки сети и планировщика.
@@ -700,8 +702,9 @@ OffFeedback тоже настраивается отдельными read/bool S
 Кнопка `С` использует обязательные `UncheckedCommand`/`CheckedCommand` как
 `ReadWrite/Bool/Latched`; `Pulse` недопустим. TopBar `ResetCommand` использует
 `ReadWrite/Bool/Pulse`: UI пишет только `true`, а Modbus dispatcher сбрасывает бит по
-`PulseDurationMs`. При хорошем карточном `Enabled=false`
-кнопка `С` остается доступной при наличии связи и один раз пишет
+`PulseDurationMs`. При хорошем карточном `Enabled=false` кнопка `Н` не зависит от
+регистра: в `user` она доступна только после подключения, в `admin` — всегда. Кнопка
+`С` остается доступной при наличии связи и один раз пишет
 `CheckedCommand=false`, затем `UncheckedCommand=false`.
 
 ## 13. Диагностика

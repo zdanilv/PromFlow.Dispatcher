@@ -23,7 +23,8 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
 - Новые bindings должны валидироваться через `RouteMapConfigurationValidator`.
 - Любые изменения schema требуют миграции в `RouteMapConfigurationMigrator` и тестов.
 - Параметры оборудования карточки хранятся в карточке как `EquipmentParameter` binding
-  с настраиваемыми `Title`, `SignalId`, `Direction` и `ValueType`.
+  с настраиваемыми `Title`, `SignalId`, `Direction` и `ValueType`. У editable-параметра
+  setpoint, pending-флаг и ошибка автоотправки — часть RouteMap-профиля.
 - Не возвращайте старые rails, sensors, item-list, vehicles или bottom panel без отдельного требования.
 
 ## SignalId
@@ -43,8 +44,10 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
   SignalId `system.reset`; она требует `Pulse`, а UI отправляет только `true`.
 - `Enabled` — опциональная `Read/Bool` роль TopBar-кнопки, узла, линии или карточки.
   Не считайте отсутствующее значение отключением; bad/stale обрабатывайте как Offline.
-  У карточки не блокируйте кнопку `С` по `Enabled=false`, пока есть Modbus-связь;
-  вместо этого один раз отправьте `CheckedCommand=false`, затем `UncheckedCommand=false`.
+  У карточки не управляйте кнопкой `Н` через `Enabled` или `connection.connected`: она
+  доступна offline в обоих режимах. Не блокируйте кнопку `С` по
+  `Enabled=false`, пока есть Modbus-связь; вместо этого один раз отправьте
+  `CheckedCommand=false`, затем `UncheckedCommand=false`.
 - `EquipmentParameter` — единственная роль для параметров оборудования карточки. Эти
   SignalId автоматически попадают в `SignalId ↔ Modbus`; не создавайте для них
   отдельный ручной список вне `RouteMapSignalInventory`.
@@ -78,14 +81,19 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
 - Reset selector-команд при хорошем карточном `Enabled=false` — единственное исключение:
   он выполняется один раз на непрерывный disabled-эпизод и не должен повторяться на
   каждом polling snapshot.
-- Диалог параметров карточки должен писать только `Write`/`ReadWrite` значения через
-  `IEquipmentCommandDispatcher`; `Read` строки отображаются без редактирования, а
-  `Сохранить` не закрывает диалог. Bool показывайте переключателем; остальные значения
-  валидируйте по `SignalValueType`, а Modbus mapping проверяйте до `DispatchAsync`.
+- Диалог параметров карточки должен сохранять только `Write`/`ReadWrite` значения;
+  `Read` строки отображаются без редактирования, а `Сохранить` не закрывает диалог.
+  Offline-сохранение валидирует ввод, но не требует `Modbus.DataMap`, не вызывает
+  dispatcher и ставит pending-флаг. После первого Modbus reconnect каждый pending
+  setpoint отправляется только раз; результат снимает pending, ошибку храните для
+  показа в диалоге, а повтор разрешает только ручное сохранение. Онлайн-отправка идёт
+  через `IEquipmentCommandDispatcher` после Modbus preflight. Bool показывайте
+  переключателем; остальные значения валидируйте по `SignalValueType`.
   В `user` режиме скрывайте техническую подпись `SignalId • Type`; в `admin` режиме
   оставляйте ее видимой для диагностики.
 - При `connection.connected=false` карточки показывают `Не в сети` серым индикатором
-  независимо от status/text binding.
+  независимо от status/text binding. Кнопка `Н` остаётся доступной в обоих режимах для
+  локального сохранения параметров.
 - Взаимоисключение `ПУСК`/`СТОП` должно писать `false` в противоположную команду перед
   `true` в выбранную; snapshot-конфликт двух `true` отображается как checked только `СТОП`.
 - Optimistic UI state допустим только как временное состояние до readback.

@@ -220,7 +220,7 @@ public sealed class RouteMapConfigurationTests
         using var manager = scope.CreateManager();
 
         Assert.Null(manager.LastLoadError);
-        Assert.Equal(15, manager.CurrentDocument.SchemaVersion);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, manager.CurrentDocument.SchemaVersion);
         Assert.Equal("custom.auto", manager.CurrentDocument.TopBar.Automatic.Bindings.Single(x => x.Role == SignalBindingRole.AutomaticModeCommand).SignalId);
 
         var persisted = await File.ReadAllTextAsync(scope.Path);
@@ -228,6 +228,68 @@ public sealed class RouteMapConfigurationTests
         Assert.False(persisted.Contains("checkedForeground", StringComparison.Ordinal));
         Assert.False(persisted.Contains("startColor", StringComparison.Ordinal));
         Assert.False(persisted.Contains("stopPressedForegroundColor", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Migrator_v15_to_v16_clears_local_setpoint_metadata()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.SchemaVersion = 15;
+        document.Cards.Single().Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = "Скорость",
+            SignalId = "equip.bucket.speed",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Float32,
+            SavedValue = "1.5",
+            PendingAutoDispatch = true,
+            LastDispatchError = "PLC недоступен",
+        });
+
+        var result = new RouteMapConfigurationMigrator().Migrate(document);
+
+        var parameter = Assert.Single(result.Document.Cards.Single().Parameters);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, result.Document.SchemaVersion);
+        Assert.Null(parameter.SavedValue);
+        Assert.False(parameter.PendingAutoDispatch);
+        Assert.Null(parameter.LastDispatchError);
+    }
+
+    [Fact]
+    public async Task Parameter_value_store_persists_pending_value_and_dispatch_error_across_restart()
+    {
+        using var scope = new TempConfigurationScope();
+        using (var manager = scope.CreateManager())
+        {
+            var draft = manager.CreateDraft();
+            draft.Cards.Single().Parameters.Add(new EquipmentCardParameterConfiguration
+            {
+                Title = "Скорость",
+                SignalId = "equip.bucket.speed",
+                Direction = SignalBindingDirection.ReadWrite,
+                ValueType = SignalValueType.Float32,
+            });
+            Assert.True((await manager.SaveAndApplyAsync(draft)).IsSuccess);
+
+            using var store = new RouteMapEquipmentParameterValueStore(manager);
+            await store.SaveAsync(
+                "equip.bucket",
+                [new EquipmentParameterSetpoint("equip.bucket.speed", "1.5")],
+                pendingAutoDispatch: true);
+            Assert.Single(store.GetPending());
+            await store.CompleteDispatchAsync(
+                "equip.bucket",
+                "equip.bucket.speed",
+                "1.5",
+                "PLC недоступен");
+        }
+
+        using var restarted = scope.CreateManager();
+        var parameter = Assert.Single(restarted.CurrentDocument.Cards.Single().Parameters);
+        Assert.Equal("1.5", parameter.SavedValue);
+        Assert.False(parameter.PendingAutoDispatch);
+        Assert.Equal("PLC недоступен", parameter.LastDispatchError);
     }
 
     [Fact]
@@ -542,6 +604,9 @@ public sealed class RouteMapConfigurationTests
             SignalId = "equip.bucket.speed",
             Direction = SignalBindingDirection.ReadWrite,
             ValueType = SignalValueType.Float32,
+            SavedValue = "1.25",
+            PendingAutoDispatch = true,
+            LastDispatchError = "PLC недоступен",
         });
         card.Parameters.Add(new EquipmentCardParameterConfiguration
         {
@@ -585,6 +650,12 @@ public sealed class RouteMapConfigurationTests
         Assert.Equal("Скорость", configurationParameter.Title);
         Assert.Equal(SignalBindingRole.EquipmentParameter, configurationParameter.Role);
         Assert.Equal("equip.bucket.speed", configurationParameter.SignalId);
+        Assert.Equal("1.25", modelParameter.SavedValue);
+        Assert.True(modelParameter.PendingAutoDispatch);
+        Assert.Equal("PLC недоступен", modelParameter.LastDispatchError);
+        Assert.Equal("1.25", configurationParameter.SavedValue);
+        Assert.True(configurationParameter.PendingAutoDispatch);
+        Assert.Equal("PLC недоступен", configurationParameter.LastDispatchError);
         Assert.Contains(roundTrip.Cards.Single().Parameters, x => x.ValueType == SignalValueType.Date);
         Assert.Contains(roundTrip.Cards.Single().Parameters, x => x.ValueType == SignalValueType.Dword);
         Assert.Contains(roundTrip.Cards.Single().Parameters, x => x.ValueType == SignalValueType.Word);

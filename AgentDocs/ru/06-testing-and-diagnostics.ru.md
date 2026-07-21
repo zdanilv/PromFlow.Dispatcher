@@ -51,12 +51,14 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | `ПУСК` и `СТОП` одновременно checked | Readback `StartCommand`/`StopCommand`; при конфликте UI должен показывать checked только `СТОП` |
 | `С` не переключается | Проверьте обязательные `UncheckedCommand`/`CheckedCommand`, разные SignalId, `ReadWrite/Bool`, Latched и наличие readback |
 | `С` показывает неверное состояние | Checked допустим только при `Unchecked=false`, `Checked=true`; конфликт двух `true` отображается unchecked |
-| `С` отключилась вместе с карточкой | При good `Enabled=false` карточки должны отключаться `Н`, `ПУСК`, `СТОП` и визуал, но `С` остается активной при `connection.connected=true` |
+| `С` отключилась вместе с карточкой | При good `Enabled=false` карточки должны отключаться визуал, `ПУСК` и `СТОП`; `Н` остаётся доступной offline в обоих режимах, а `С` остается активной при `connection.connected=true` |
+| `Н` недоступна или зависит от регистра | `Enabled=false` и `connection.connected=false` не должны отключать `Н` ни в одном режиме |
+| Offline setpoint не отправился | Проверьте `route-map.json`: `pendingAutoDispatch=true` до первого Modbus reconnect; после попытки pending снимается, а ошибка остаётся в `lastDispatchError` |
 | `С` не сбрасывает selector при disabled | При первом хорошем `Enabled=false` должны уйти две записи: `CheckedCommand=false`, затем `UncheckedCommand=false`; повторный snapshot не дублирует запись |
 | `СБРОС` не работает | Проверьте TopBar `ResetCommand`, SignalId `system.reset`, `ReadWrite/Bool`, Pulse, `PulseDurationMs`, readback и optional `Enabled` этой кнопки |
 | Элемент не отключается | Роль `Enabled` должна быть `Read/Bool` с good quality и значением `false`; missing оставляет enabled, bad/stale дает Offline |
 | Параметр карточки не появился в mapping | Настройка добавлена во вкладке `Карточки`, роль `EquipmentParameter`, непустой `SignalId`, применена RouteMap definition |
-| `Н` не отправляет значение | У параметра направление `Write`/`ReadWrite`, валидный тип значения, есть точка `Modbus.DataMap` с совместимым access |
+| `Н` не отправляет значение online | У параметра направление `Write`/`ReadWrite`, валидный тип значения, есть точка `Modbus.DataMap` с совместимым access; offline-сохранение mapping не требует |
 | `Н` показывает `SignalId ... не настроен` | Создайте/сохраните строку параметра во вкладке `SignalId ↔ Modbus`; Bool вводится переключателем, но mapping всё равно обязателен для Modbus |
 | `WORD`/`DWORD`/`DATE` не пишется | Проверьте совместимость `Word → Word`, legacy `UInt16 → UInt16`, `Dword → Dword`, `Date → Date`, длину register-точки и writable access |
 | `String` из `Н` не пишется | Увеличьте `Length` строки во вкладке `SignalId ↔ Modbus`; емкость равна `Length * 2` UTF-8 байт |
@@ -102,7 +104,7 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 9. Устранить все `Не настроен` и `Ошибка`.
 10. Сначала включить read-only сигналы.
 11. Проверить quality, stale, reconnect.
-12. Проверить `connection.connected=false`: команды заблокированы, узлы/линии offline, карточки показывают `Не в сети`.
+12. Проверить `connection.connected=false`: команды заблокированы, узлы/линии offline, карточки показывают `Не в сети`; `Н` остаётся доступной для локального сохранения в обоих режимах.
 13. Проверить active nodes, active lines и fragments.
 14. Проверить modes, reset, emergency, loader/target.
 15. Проверить диалоги аварии/повторного подтверждения/обычного сообщения и acknowledgement-импульс.
@@ -113,7 +115,7 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 20. Проверить кнопку `С`: две последовательные записи, readback, конфликт двух `true`, разные Bool-точки, запрет Pulse и reset selector-команд при good `Enabled=false`.
 21. Проверить `СБРОС`: положение слева от `АВАРИЯ`, yellow normal state, `system.reset`, readback, Pulse и validation error для Latched.
 22. Проверить `Enabled=false` отдельно для каждой TopBar-кнопки, узла, линии и карточки, а также missing/bad/stale.
-23. Проверить параметры карточек: кнопка `Н`, Bool-переключатель, валидацию `WORD`/`DWORD`/`DATE`, read-only строки, сохранение `Write`/`ReadWrite`, скрытие `SignalId • Type` в user-режиме и авто-строки `EquipmentParameter` в `SignalId ↔ Modbus`.
+23. Проверить параметры карточек: `Н` доступна offline в обоих режимах независимо от `Enabled`; проверить локальное сохранение `Write`/`ReadWrite` без DataMap/dispatcher, восстановление после перезапуска, единственную автоотправку всех pending после reconnect, сохранение ошибки без автоповтора и ручную повторную попытку. Также проверить Bool-переключатель, `WORD`/`DWORD`/`DATE`, read-only строки, скрытие `SignalId • Type` в user-режиме и авто-строки `EquipmentParameter` в `SignalId ↔ Modbus`.
 24. Проверить latched/pulse, timeout и потерю связи во время записи.
 25. Убедиться, что interlock и safety реализованы в PLC.
 

@@ -83,6 +83,59 @@ public sealed class EquipmentCardViewModelTests
     }
 
     [Fact]
+    public void Parameters_button_in_user_mode_is_available_without_connection()
+    {
+        var card = RouteMapSeed.Create().MapEquipment.Single();
+        var viewModel = new EquipmentCardViewModel(card, new CapturingEquipmentCommandDispatcher());
+        var disabledRuntime = new RouteObjectRuntimeState(
+            card.Id,
+            RouteObjectState.Disabled,
+            card.StatusText,
+            ValueText: null,
+            IsVisible: true,
+            CanStart: false,
+            CanStop: false,
+            IsEnabled: false);
+
+        Assert.True(viewModel.IsParametersButtonEnabled);
+
+        viewModel.ApplyRuntime(disabledRuntime, isConnectionAvailable: true);
+
+        Assert.False(viewModel.IsEnabled);
+        Assert.True(viewModel.IsParametersButtonEnabled);
+        Assert.Equal(Avalonia.Media.Color.Parse("#D0D0D0"), BrushColor(viewModel.ParameterBackground));
+
+        viewModel.ApplyRuntime(disabledRuntime, isConnectionAvailable: false);
+
+        Assert.True(viewModel.IsParametersButtonEnabled);
+        Assert.Equal(Avalonia.Media.Color.Parse("#D0D0D0"), BrushColor(viewModel.ParameterBackground));
+    }
+
+    [Fact]
+    public void Parameters_button_in_admin_mode_is_available_before_and_without_connection()
+    {
+        var card = RouteMapSeed.Create().MapEquipment.Single();
+        var viewModel = new EquipmentCardViewModel(card, new CapturingEquipmentCommandDispatcher());
+        var offlineRuntime = new RouteObjectRuntimeState(
+            card.Id,
+            RouteObjectState.Offline,
+            "Не в сети",
+            ValueText: null,
+            IsVisible: true,
+            CanStart: false,
+            CanStop: false,
+            IsEnabled: false);
+
+        Assert.True(viewModel.IsParametersButtonEnabled);
+
+        viewModel.ApplyRuntime(offlineRuntime, isConnectionAvailable: false);
+
+        Assert.False(viewModel.IsEnabled);
+        Assert.True(viewModel.IsParametersButtonEnabled);
+        Assert.Equal(Avalonia.Media.Color.Parse("#D0D0D0"), BrushColor(viewModel.ParameterBackground));
+    }
+
+    [Fact]
     public void ApplyRuntime_keeps_selector_enabled_when_card_is_disabled_without_reset_request()
     {
         var dispatcher = new CapturingEquipmentCommandDispatcher();

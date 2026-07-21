@@ -35,7 +35,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 15;
+    public const int CurrentSchemaVersion = 16;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();
@@ -324,6 +324,9 @@ public sealed class EquipmentCardParameterConfiguration : ReactiveObject
     private string _signalId = string.Empty;
     private SignalBindingDirection _direction = SignalBindingDirection.ReadWrite;
     private SignalValueType _valueType = SignalValueType.Word;
+    private string? _savedValue;
+    private bool _pendingAutoDispatch;
+    private string? _lastDispatchError;
 
     public string Title
     {
@@ -340,19 +343,65 @@ public sealed class EquipmentCardParameterConfiguration : ReactiveObject
     public string SignalId
     {
         get => _signalId;
-        set => this.RaiseAndSetIfChanged(ref _signalId, value);
+        set
+        {
+            if (string.Equals(_signalId, value, StringComparison.Ordinal))
+                return;
+
+            this.RaiseAndSetIfChanged(ref _signalId, value);
+            ClearSavedSetpoint();
+        }
     }
 
     public SignalBindingDirection Direction
     {
         get => _direction;
-        set => this.RaiseAndSetIfChanged(ref _direction, value);
+        set
+        {
+            if (_direction == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _direction, value);
+            ClearSavedSetpoint();
+        }
     }
 
     public SignalValueType ValueType
     {
         get => _valueType;
-        set => this.RaiseAndSetIfChanged(ref _valueType, value);
+        set
+        {
+            if (_valueType == value)
+                return;
+
+            this.RaiseAndSetIfChanged(ref _valueType, value);
+            ClearSavedSetpoint();
+        }
+    }
+
+    public string? SavedValue
+    {
+        get => _savedValue;
+        set => this.RaiseAndSetIfChanged(ref _savedValue, value);
+    }
+
+    public bool PendingAutoDispatch
+    {
+        get => _pendingAutoDispatch;
+        set => this.RaiseAndSetIfChanged(ref _pendingAutoDispatch, value);
+    }
+
+    public string? LastDispatchError
+    {
+        get => _lastDispatchError;
+        set => this.RaiseAndSetIfChanged(ref _lastDispatchError, value);
+    }
+
+    public void ClearSavedSetpoint()
+    {
+        SavedValue = null;
+        PendingAutoDispatch = false;
+        LastDispatchError = null;
     }
 }
 

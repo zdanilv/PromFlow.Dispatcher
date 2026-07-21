@@ -424,6 +424,9 @@ public sealed class RouteMapConfigurationMapper
         SignalId = parameter.Binding.SignalId,
         Direction = parameter.Binding.Direction,
         ValueType = parameter.Binding.ValueType,
+        SavedValue = parameter.SavedValue,
+        PendingAutoDispatch = parameter.PendingAutoDispatch,
+        LastDispatchError = parameter.LastDispatchError,
     };
 
     private static EquipmentCardParameter ToModel(EquipmentCardParameterConfiguration parameter) => new(
@@ -432,7 +435,10 @@ public sealed class RouteMapConfigurationMapper
             SignalBindingRole.EquipmentParameter,
             parameter.SignalId,
             parameter.Direction,
-            parameter.ValueType));
+            parameter.ValueType),
+        parameter.SavedValue,
+        parameter.PendingAutoDispatch,
+        parameter.LastDispatchError);
 
     private static EquipmentCardStyleConfiguration ToConfiguration(EquipmentCardStyle style)
     {

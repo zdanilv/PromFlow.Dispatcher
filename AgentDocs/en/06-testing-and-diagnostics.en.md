@@ -49,8 +49,10 @@ dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructu
 | `Start`/`Stop` does not disable from PLC | `StartOffFeedback`/`StopOffFeedback`, `Read`, `Bool`, value `true` |
 | `Start` and `Stop` both checked | `StartCommand`/`StopCommand` readback; on conflict UI should show only `Stop` checked |
 | Card parameter is missing from mapping | Parameter was added on `Карточки`, role is `EquipmentParameter`, `SignalId` is not empty, and the RouteMap definition was applied |
-| `Н` does not send a value | Parameter direction is `Write`/`ReadWrite`, value type parses, and a compatible `Modbus.DataMap` point exists |
+| `Н` does not send a value online | Parameter direction is `Write`/`ReadWrite`, value type parses, and a compatible `Modbus.DataMap` point exists; offline save does not require mapping |
 | `Н` shows `SignalId ... не настроен` | Create/save the parameter row in `SignalId ↔ Modbus`; Bool uses a switch, but mapping is still required for Modbus |
+| `Н` is unavailable or follows a register | Neither card `Enabled` nor `connection.connected=false` may disable it in either mode |
+| Offline setpoint was not sent | Check `route-map.json`: `pendingAutoDispatch=true` before the first Modbus reconnect; after the attempt pending clears and `lastDispatchError` keeps a failure |
 | `WORD`/`DWORD`/`DATE` does not write | Check compatibility `Word → Word`, legacy `UInt16 → UInt16`, `Dword → Dword`, `Date → Date`, register-point length, and writable access |
 | `String` from `Н` does not write | Increase row `Length` in `SignalId ↔ Modbus`; capacity is `Length * 2` UTF-8 bytes |
 | Bit write rejected | Missing first raw holding-register snapshot |
@@ -94,7 +96,7 @@ physical addresses based on `ModbusDemo.Client/Server`. `Repeat ms` must be
 9. Clear all unconfigured/error rows.
 10. Enable read-only signals first.
 11. Verify quality, stale, and reconnect.
-12. Verify `connection.connected=false`: commands disabled, nodes/segments offline, and cards show `Не в сети`.
+12. Verify `connection.connected=false`: commands disabled, nodes/segments offline, and cards show `Не в сети`; `Н` remains available for local save in both modes.
 13. Verify active nodes, lines, and fragments.
 14. Verify modes, emergency, loader, and target.
 15. Verify fault/confirmation/message dialogs and the acknowledgement pulse.
@@ -102,7 +104,7 @@ physical addresses based on `ModbusDemo.Client/Server`. `Repeat ms` must be
 17. Verify `История`: the panel expands, commands/received SignalIds/alarms appear with direction arrows, combined `Роли / объекты`, and numeric offset address.
 18. Verify `system.fault=true`: RouteMap enters the global fault visual state, then returns to per-object logic at `false`.
 19. Enable equipment commands one by one; verify `Start`/`Stop` mutual exclusion and `StartOffFeedback`/`StopOffFeedback`.
-20. Verify card parameters: `Н` button, Bool switch, `WORD`/`DWORD`/`DATE` validation, read-only rows, `Write`/`ReadWrite` save behavior, hidden `SignalId • Type` in user mode, and automatic `EquipmentParameter` rows in `SignalId ↔ Modbus`.
+20. Verify card parameters: `Н` stays enabled offline in both modes regardless of `Enabled`; verify local `Write`/`ReadWrite` save without DataMap/dispatcher, restart restore, one pending dispatch after reconnect, saved failure without auto-retry, and manual retry. Also verify the Bool switch, `WORD`/`DWORD`/`DATE` validation, read-only rows, hidden `SignalId • Type` in user mode, and automatic `EquipmentParameter` rows in `SignalId ↔ Modbus`.
 21. Verify latched/pulse behavior, timeout, and connection loss during write.
 22. Confirm interlocks and safety remain in PLC.
 
