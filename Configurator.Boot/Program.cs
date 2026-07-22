@@ -1,5 +1,6 @@
 ﻿using Avalonia;
 using Configurator.Application;
+using Configurator.Boot.Console;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
@@ -62,12 +63,23 @@ internal static class Program
     public static void Main(string[] args)
     {
         var launchConfiguration = BuildLaunchConfiguration();
-        ConfigureLogging(launchConfiguration);
+        var isAdminMode = launchConfiguration
+            .GetSection(ApplicationOptions.SectionName)
+            .Get<ApplicationOptions>()?.IsAdminMode ?? true;
+
+        if (ConsoleVisibilityController.TryRelaunchLinuxAdminProcess(isAdminMode, args, out var linuxConsoleFailure))
+            return;
+
+        ConsoleVisibilityController.ConfigureWindowsConsole(isAdminMode);
+        ConfigureLogging(launchConfiguration, isAdminMode);
 
         try
         {
+            if (linuxConsoleFailure is not null)
+                Log.Warning(linuxConsoleFailure, "Failed to open xterm for the admin session.");
             Log.Information("Starting PromFlow Dispatcher.");
-            BuildAvaloniaApp(launchConfiguration).StartWithClassicDesktopLifetime(args);
+            BuildAvaloniaApp(launchConfiguration).StartWithClassicDesktopLifetime(
+                ConsoleVisibilityController.RemoveInternalArguments(args));
         }
         catch (Exception ex)
         {
@@ -90,10 +102,12 @@ internal static class Program
     {
         Directory.CreateDirectory(ApplicationConfigPaths.SharedConfigDirectory);
         var sharedConfigProvider = new PhysicalFileProvider(ApplicationConfigPaths.SharedConfigDirectory);
-        var runtimeConfiguration = new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+        var sharedConfiguration = new ConfigurationBuilder()
             .AddJsonFile(sharedConfigProvider, ApplicationConfigPaths.AppSettingsFileName, optional: true, reloadOnChange: true)
+            .Build();
+        var runtimeConfiguration = new ConfigurationBuilder()
+            .AddConfiguration(launchConfiguration)
+            .AddConfiguration(sharedConfiguration)
             .Build();
 
         return AppBuilder
@@ -108,8 +122,12 @@ internal static class Program
                         logging.AddSerilog(Log.Logger, dispose: false);
                     });
                     services.Configure<ApplicationOptions>(launchConfiguration.GetSection(ApplicationOptions.SectionName));
+                    services.Configure<StartupOptions>(runtimeConfiguration.GetSection(StartupOptions.SectionName));
                     services.AddApplication();
                     services.AddInfrastructure(runtimeConfiguration);
+                    services.AddSingleton<IHelpOptionsProvider>(_ => new HelpOptionsProvider(
+                        launchConfiguration,
+                        sharedConfiguration));
                     // Modbus/OpcUa регистрируются в boot-слое, чтобы Desktop зависел только от application-контрактов.
                     services.AddModbusInfrastructure(runtimeConfiguration);
                     services.AddOpcUaInfrastructure(runtimeConfiguration);
@@ -208,15 +226,18 @@ internal static class Program
             .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
             .Build();
 
-    private static void ConfigureLogging(IConfiguration configuration)
+    private static void ConfigureLogging(IConfiguration configuration, bool isAdminMode)
     {
         Directory.CreateDirectory(ApplicationConfigPaths.LogsDirectory);
-        Log.Logger = new LoggerConfiguration()
+        var loggerConfiguration = new LoggerConfiguration()
             .ReadFrom.Configuration(configuration)
             .WriteTo.File(
                 ApplicationConfigPaths.LogFilePattern,
                 rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 14)
-            .CreateLogger();
+                retainedFileCountLimit: 14);
+        if (isAdminMode)
+            loggerConfiguration.WriteTo.Console();
+
+        Log.Logger = loggerConfiguration.CreateLogger();
     }
 }

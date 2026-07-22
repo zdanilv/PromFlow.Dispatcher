@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Configurator.Application.Services;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -31,6 +32,7 @@ public partial class App : Avalonia.Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            Services.GetService<IAutostartRegistrationService>()?.Synchronize();
             var window = Services.GetRequiredService<MainWindow>();
             window.DataContext = Services.GetRequiredService<MainViewModel>(); // “проводок” здесь
             window.Closing += OnMainWindowClosing;

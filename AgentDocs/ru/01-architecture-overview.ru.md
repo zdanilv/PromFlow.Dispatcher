@@ -7,10 +7,23 @@ Application и Infrastructure. RouteMap находится в desktop-слое, 
 ## Workspace
 
 `Application.WorkMode` — режим запуска оболочки, а не рабочая настройка оборудования.
-Он читается из локального `Configurator.Boot/appsettings.json`. Изменяемые секции
-`RouteMapRuntime`, `Modbus` и `ModbusDemo` читаются поверх defaults из общего файла
+Он читается только из локального `Configurator.Boot/appsettings.json`: в `user` режиме
+Windows-приложение не создаёт консоль, а в `admin` подключает родительскую либо создаёт
+новую. На ALT Linux GUI-запуск admin перезапускается в `xterm`.
+Изменяемые секции `RouteMapRuntime`, `Modbus`, `ModbusDemo`, `Help` и `Startup`
+читаются поверх defaults из общего файла
 `%LOCALAPPDATA%\Configurator\appsettings.json`, поэтому admin и user используют одну
-и ту же конфигурацию маршрута, SignalId mapping и Modbus TCP.
+и ту же конфигурацию маршрута, SignalId mapping, Modbus TCP, помощи и автозапуска.
+
+`Help.Contacts` — список до десяти строк `{ Label, Value, Uri? }`. Если в общем
+файле существует раздел `Help`, он целиком заменяет поставляемый список, поэтому
+контакты не смешиваются по индексам JSON-массива. `Uri` разрешён только для `http`,
+`https`, `mailto` и `tel`.
+
+`Startup.Enabled` по умолчанию `true` и синхронизируется при старте: в Windows это
+`HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run`, в ALT Linux —
+`$XDG_CONFIG_HOME/autostart/promflow-dispatcher.desktop`. Linux desktop entry использует
+`Terminal=true` только для admin-режима.
 
 `Configurator.Boot/appsettings.json` содержит `Application.WorkMode`:
 

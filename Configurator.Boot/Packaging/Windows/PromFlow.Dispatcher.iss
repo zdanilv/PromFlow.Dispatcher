@@ -52,3 +52,29 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+const
+  RunKeyPath = 'Software\Microsoft\Windows\CurrentVersion\Run';
+  RunValueName = 'PromFlow Dispatcher';
+
+function HasExistingUserConfiguration: Boolean;
+begin
+  Result := FileExists(ExpandConstant('{localappdata}\Configurator\appsettings.json'));
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if (CurStep = ssPostInstall) and not HasExistingUserConfiguration then
+    RegWriteStringValue(
+      HKCU,
+      RunKeyPath,
+      RunValueName,
+      '"' + ExpandConstant('{app}\{#AppExeName}') + '"');
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+    RegDeleteValue(HKCU, RunKeyPath, RunValueName);
+end;

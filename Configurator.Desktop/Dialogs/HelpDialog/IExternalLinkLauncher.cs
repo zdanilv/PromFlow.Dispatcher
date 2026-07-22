@@ -1,7 +1,7 @@
 namespace Configurator.Desktop.Dialogs.HelpDialog;
 
 /// <summary>
-/// Opens an external web link through the operating system's default handler.
+/// Opens a permitted external contact URI through the operating system's default handler.
 /// </summary>
 public interface IExternalLinkLauncher
 {

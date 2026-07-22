@@ -172,7 +172,7 @@ public sealed class RouteMapSettingsDialogVisualTests
 
             Assert.Equal(DialogHostIds.Root, rootHost.Identifier);
             Assert.Equal(DialogHostIds.AlarmNotification, alarmHost.Identifier);
-            Assert.Equal(new Thickness(0), alarmHost.DialogMargin);
+            Assert.Equal(new Thickness(-1), alarmHost.DialogMargin);
             Assert.Equal(Colors.Transparent, Assert.IsAssignableFrom<ISolidColorBrush>(alarmHost.Background).Color);
             Assert.Equal(
                 new Thickness(0),
@@ -182,7 +182,7 @@ public sealed class RouteMapSettingsDialogVisualTests
                 Assert.IsAssignableFrom<ISolidColorBrush>(
                     alarmHost.GetValue(DialogHostStyle.BorderBrushProperty)).Color);
             Assert.Equal(
-                new CornerRadius(0),
+                new CornerRadius(5),
                 alarmHost.GetValue(DialogHostStyle.CornerRadiusProperty));
             Assert.Equal(
                 "none",
@@ -196,7 +196,7 @@ public sealed class RouteMapSettingsDialogVisualTests
             Dispatcher.UIThread.RunJobs();
 
             Assert.True(context.View.IsVisible);
-            Assert.Equal(new Point(0, 0), context.View.Bounds.Position);
+            Assert.Equal(new Point(-1, -1), context.View.Bounds.Position);
 
             DialogHost.Close(context.HostIdentifier, false);
             Dispatcher.UIThread.RunJobs();
@@ -1059,21 +1059,35 @@ public sealed class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
-    public void Help_dialog_shows_template_contacts_and_website_link()
+    public void Help_dialog_shows_configured_contacts_and_website_link()
     {
-        var viewModel = new HelpDialogViewModel(new NoOpExternalLinkLauncher());
+        var viewModel = new HelpDialogViewModel(
+            new StaticHelpOptionsProvider(new HelpOptions
+            {
+                Contacts =
+                [
+                    new() { Label = "Телефон", Value = "8 953 448 31 16" },
+                    new() { Label = "E-mail", Value = "example@example.com" },
+                    new() { Label = "Сайт", Value = "example.com", Uri = "https://example.com" }
+                ]
+            }),
+            new NoOpExternalLinkLauncher(),
+            NullLogger<HelpDialogViewModel>.Instance);
         var view = new HelpDialogView { DataContext = viewModel };
         var window = new Window { Width = 460, Height = 300, Content = view };
         window.Show();
         Dispatcher.UIThread.RunJobs();
 
         var texts = view.GetVisualDescendants().OfType<TextBlock>().Select(textBlock => textBlock.Text).ToArray();
-        var website = view.FindControl<Button>("WebsiteButton")!;
+        var websiteContact = viewModel.Contacts.Single(contact => contact.Label == "Сайт");
+        var website = view.GetVisualDescendants()
+            .OfType<Button>()
+            .Single(button => ReferenceEquals(button.Command, websiteContact.OpenLinkCommand));
 
         Assert.Contains("8 953 448 31 16", texts);
         Assert.Contains("example@example.com", texts);
         Assert.Contains("example.com", texts);
-        Assert.Same(viewModel.OpenWebsiteCommand, website.Command);
+        Assert.Same(websiteContact.OpenLinkCommand, website.Command);
 
         window.Close();
     }
@@ -1547,6 +1561,11 @@ public sealed class RouteMapSettingsDialogVisualTests
     private sealed class NoOpExternalLinkLauncher : IExternalLinkLauncher
     {
         public Task OpenAsync(Uri uri, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class StaticHelpOptionsProvider(HelpOptions options) : IHelpOptionsProvider
+    {
+        public HelpOptions GetCurrent() => options;
     }
 
     private sealed class NoOpSettingsDialogService : IRouteMapSettingsDialogService

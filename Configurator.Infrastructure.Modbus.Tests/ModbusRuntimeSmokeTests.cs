@@ -123,7 +123,8 @@ public sealed class ModbusRuntimeSmokeTests
         var source = File.ReadAllText(programPath);
 
         Assert.Contains("[STAThread]", source);
-        Assert.Contains("StartWithClassicDesktopLifetime(args)", source);
+        Assert.Contains("StartWithClassicDesktopLifetime(", source);
+        Assert.Contains("RemoveInternalArguments(args)", source);
     }
 
     [Fact]

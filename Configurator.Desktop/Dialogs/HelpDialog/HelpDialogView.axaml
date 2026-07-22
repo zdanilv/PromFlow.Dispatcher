@@ -19,35 +19,36 @@
                    FontSize="22"
                    FontWeight="SemiBold"
                    Foreground="#44505C"/>
-        <Grid RowDefinitions="Auto,Auto,Auto"
-              ColumnDefinitions="120,*"
-              RowSpacing="10">
-            <TextBlock Grid.Row="0"
-                       Text="Телефон"
-                       Foreground="#65717D"/>
-            <TextBlock Grid.Row="0"
-                       Grid.Column="1"
-                       Text="{x:Static vm:HelpDialogViewModel.Phone}"
-                       Foreground="#44505C"/>
-            <TextBlock Grid.Row="1"
-                       Text="E-mail"
-                       Foreground="#65717D"/>
-            <TextBlock Grid.Row="1"
-                       Grid.Column="1"
-                       Text="{x:Static vm:HelpDialogViewModel.Email}"
-                       Foreground="#44505C"/>
-            <TextBlock Grid.Row="2"
-                       Text="Сайт"
-                       Foreground="#65717D"/>
-            <Button x:Name="WebsiteButton"
-                    Grid.Row="2"
-                    Grid.Column="1"
-                    Classes="website-link"
-                    Command="{Binding OpenWebsiteCommand}">
-                <TextBlock Text="{x:Static vm:HelpDialogViewModel.Website}"
-                           TextDecorations="Underline"/>
-            </Button>
-        </Grid>
+        <ScrollViewer MaxHeight="420"
+                      VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Contacts}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:HelpContactViewModel">
+                        <Grid Margin="0,0,0,10"
+                              ColumnDefinitions="120,*">
+                            <TextBlock Text="{Binding Label}"
+                                       Foreground="#65717D"/>
+                            <TextBlock Grid.Column="1"
+                                       IsVisible="{Binding IsPlainText}"
+                                       Text="{Binding Value}"
+                                       TextWrapping="Wrap"
+                                       Foreground="#44505C"/>
+                            <Button Grid.Column="1"
+                                    IsVisible="{Binding IsLink}"
+                                    Classes="website-link"
+                                    Command="{Binding OpenLinkCommand}">
+                                <TextBlock Text="{Binding Value}"
+                                           TextWrapping="Wrap"
+                                           TextDecorations="Underline"/>
+                            </Button>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+        <TextBlock IsVisible="{Binding HasNoContacts}"
+                   Text="Контакты не настроены."
+                   Foreground="#65717D"/>
         <Button Content="Закрыть"
                 HorizontalAlignment="Right"
                 MinWidth="96"

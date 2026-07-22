@@ -11,6 +11,7 @@
 | Настройки окна | `%LOCALAPPDATA%\Configurator\user_settings.json` | `${XDG_DATA_HOME:-$HOME/.local/share}/Configurator/user_settings.json` |
 | Определение RouteMap | `%LOCALAPPDATA%\Configurator\RouteMap\route-map.json` | `${XDG_DATA_HOME:-$HOME/.local/share}/Configurator/RouteMap/route-map.json` |
 | Временный файл при сохранении RouteMap | `%LOCALAPPDATA%\Configurator\RouteMap\route-map.json.tmp` | `${XDG_DATA_HOME:-$HOME/.local/share}/Configurator/RouteMap/route-map.json.tmp` |
+| Автозапуск текущего пользователя | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | `${XDG_CONFIG_HOME:-$HOME/.config}/autostart/promflow-dispatcher.desktop` |
 | Логи — не конфигурация | `%LOCALAPPDATA%\Configurator\logs\app-YYYYMMDD.log` | `${XDG_DATA_HOME:-$HOME/.local/share}/Configurator/logs/app-YYYYMMDD.log` |
 
 Например, для пользователя `ivan` стандартный Windows-путь начинается с `C:\Users\ivan\AppData\Local\Configurator`. В Linux, если `XDG_DATA_HOME` не задана, используется `~/.local/share/Configurator`.
@@ -25,6 +26,13 @@
 - `Modbus` — параметры Modbus TCP, `DataMap`, `AlarmMap` и метки адресов;
 - `ModbusDemo` — совместимая конфигурация demo runtime;
 - `OpcUa` — параметры OPC UA клиента, сервера, безопасности и адресного пространства.
+- `Help` — до десяти строк контактов `{ Label, Value, Uri? }` для диалога `ПОМОЩЬ`;
+- `Startup.Enabled` — регистрация приложения в автозапуске текущего пользователя.
+
+Если общий файл содержит `Help`, этот раздел целиком заменяет список контактов из
+поставляемого defaults-файла. Это важно для JSON-массивов: контакты из двух файлов не
+смешиваются по номерам строк. Изменение `Startup.Enabled` вступает в силу при следующем
+старте приложения; контакты применяются при следующем открытии диалога после reload.
 
 Файл создаётся при первом сохранении соответствующей настройки. Он накладывается на defaults, поставляемые вместе с приложением, поэтому в нём могут находиться не все разделы базового `appsettings.json`.
 
@@ -48,7 +56,12 @@
 |---|---|
 | `C:\Program Files\PromFlow Dispatcher\appsettings.json` | `/opt/promflow-dispatcher/appsettings.json` |
 
-Он содержит исходные значения, конфигурацию Serilog и режим запуска `Application.WorkMode`. Приложение не записывает в этот файл. Не редактируйте его для повседневной настройки: обновление или переустановка заменит изменения, а у обычного пользователя нет прав записи в эти каталоги.
+Он содержит исходные значения, конфигурацию Serilog, `Application.WorkMode`, defaults
+для `Help` и `Startup.Enabled=true`. Приложение не записывает в этот файл. Режим
+`Application.WorkMode` остаётся install-level: `user` скрывает Windows-консоль, а
+`admin` показывает её; в ALT Linux admin GUI-сессия открывается в `xterm`. Не
+редактируйте файл для повседневной настройки: обновление или переустановка заменит
+изменения, а у обычного пользователя нет прав записи в эти каталоги.
 
 ## Импорт, экспорт и резервное копирование
 

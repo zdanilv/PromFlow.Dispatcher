@@ -1,6 +1,8 @@
 ﻿using Configurator.Application.Services.Authorization;
+using Configurator.Application.Services;
 using Configurator.Infrastructure.Services;
 using Configurator.Infrastructure.Services.Authorization;
+using Configurator.Infrastructure.Services.Autostart;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,6 +21,11 @@ namespace Configurator.Infrastructure
             //services.AddSingleton<IProjectService, ProjectService>();
             services.AddSingleton<IAuthApp, AuthApp>();
             services.AddSingleton<IConfiguration>(configuration);
+            services.AddSingleton<IWindowsRunRegistry, WindowsRunRegistry>();
+            services.AddSingleton<IAutostartRegistrationBackend, WindowsAutostartRegistrationBackend>();
+            services.AddSingleton<IAutostartRegistrationBackend, LinuxAutostartRegistrationBackend>();
+            services.AddSingleton<IApplicationExecutablePathProvider, RuntimeExecutablePathProvider>();
+            services.AddSingleton<IAutostartRegistrationService, ApplicationAutostartRegistrationService>();
             services.AddSingleton<Configurator.Application.Services.IAppConfigService>(sp => new AppConfigService(
                 sp.GetRequiredService<IConfiguration>(),
                 ApplicationConfigPaths.SharedAppSettingsPath));

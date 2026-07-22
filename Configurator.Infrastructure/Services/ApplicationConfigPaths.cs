@@ -21,6 +21,16 @@ public static class ApplicationConfigPaths
     public static string LogsDirectory =>
         Path.Combine(SharedConfigDirectory, LogsDirectoryName);
 
+    public static string LinuxConfigDirectory =>
+        Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") is { Length: > 0 } xdgConfigHome
+            ? xdgConfigHome
+            : Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".config");
+
+    public static string LinuxAutostartEntryPath =>
+        Path.Combine(LinuxConfigDirectory, "autostart", "promflow-dispatcher.desktop");
+
     public static string LogFilePattern =>
         Path.Combine(LogsDirectory, "app-.log");
 }

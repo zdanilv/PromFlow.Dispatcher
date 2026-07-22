@@ -24,4 +24,8 @@
     <ProjectReference Include="..\Configurator.Infrastructure.Modbus\Configurator.Infrastructure.Modbus.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Autostart\" />
+  </ItemGroup>
+
 </Project>

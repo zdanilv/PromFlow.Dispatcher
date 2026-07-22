@@ -18,6 +18,7 @@ Requires: libkrb5
 Requires: zlib
 Requires: ca-certificates
 Requires: tzdata
+Requires: xterm
 
 %description
 PromFlow Dispatcher is an Avalonia desktop application for RouteMap,
