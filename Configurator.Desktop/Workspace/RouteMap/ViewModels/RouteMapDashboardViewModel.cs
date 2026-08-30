@@ -67,7 +67,9 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             Definition.TopBar,
             isSettingsVisible: _isAdminMode,
             palette: Definition.Display?.Palette,
-            helpDialogService: helpDialogService);
+            helpDialogService: helpDialogService,
+            commandErrorHandler: message => CommandErrorMessage = message,
+            commandSuccessHandler: () => CommandErrorMessage = null);
         MapEquipmentCards = new ObservableCollection<EquipmentCardViewModel>(
             Definition.MapEquipment.Select(CreateEquipmentCardViewModel));
         NotificationsPanel = notificationsPanel;

@@ -12,6 +12,8 @@ public sealed class TopBarViewModel : ViewModelBase
 {
     private readonly IEquipmentCommandDispatcher? _commandDispatcher;
     private readonly IHelpDialogService? _helpDialogService;
+    private readonly Action<string>? _commandErrorHandler;
+    private readonly Action? _commandSuccessHandler;
     private RouteTopBarSettings _settings;
     private string _disabledColor;
     private bool _isAutomaticMode;
@@ -28,6 +30,9 @@ public sealed class TopBarViewModel : ViewModelBase
     private bool _isManualCommandEnabled = true;
     private bool _isResetCommandEnabled = true;
     private bool _isEmergencyCommandEnabled = true;
+    private bool _lastAutomaticReadback;
+    private bool _lastManualReadback = true;
+    private bool _lastEmergencyReadback;
 
     public TopBarViewModel(
         IRouteMapSettingsDialogService? settingsDialogService = null,
@@ -35,10 +40,14 @@ public sealed class TopBarViewModel : ViewModelBase
         RouteTopBarSettings? settings = null,
         bool isSettingsVisible = true,
         RouteMapPaletteSettings? palette = null,
-        IHelpDialogService? helpDialogService = null)
+        IHelpDialogService? helpDialogService = null,
+        Action<string>? commandErrorHandler = null,
+        Action? commandSuccessHandler = null)
     {
         _commandDispatcher = commandDispatcher;
         _helpDialogService = helpDialogService;
+        _commandErrorHandler = commandErrorHandler;
+        _commandSuccessHandler = commandSuccessHandler;
         _settings = settings ?? CreateDefaultSettings();
         _disabledColor = (palette ?? new RouteMapPaletteSettings()).Disabled;
         IsSettingsVisible = isSettingsVisible;
@@ -145,6 +154,9 @@ public sealed class TopBarViewModel : ViewModelBase
         bool isResetCommandEnabled = true,
         bool isEmergencyCommandEnabled = true)
     {
+        _lastAutomaticReadback = isAutomaticMode;
+        _lastManualReadback = isManualMode;
+        _lastEmergencyReadback = hasEmergency;
         IsAutomaticMode = isAutomaticMode;
         IsManualMode = isManualMode;
         IsResetActive = isResetActive;
@@ -222,11 +234,17 @@ public sealed class TopBarViewModel : ViewModelBase
         if (!IsAutomaticCommandEnabled)
             return;
 
-        IsAutomaticMode = true;
-        IsManualMode = false;
-        RaiseButtonProperties();
-        await DispatchAsync(_settings.Manual.Binding, false);
-        await DispatchAsync(_settings.Automatic.Binding, true);
+        await ExecuteCommandAsync(
+            AutomaticText,
+            async () =>
+            {
+                IsAutomaticMode = true;
+                IsManualMode = false;
+                RaiseButtonProperties();
+                await DispatchAsync(_settings.Manual.Binding, false);
+                await DispatchAsync(_settings.Automatic.Binding, true);
+            },
+            RestoreModeReadback);
     }
 
     private async Task SwitchToManualAsync()
@@ -234,11 +252,17 @@ public sealed class TopBarViewModel : ViewModelBase
         if (!IsManualCommandEnabled)
             return;
 
-        IsAutomaticMode = false;
-        IsManualMode = true;
-        RaiseButtonProperties();
-        await DispatchAsync(_settings.Automatic.Binding, false);
-        await DispatchAsync(_settings.Manual.Binding, true);
+        await ExecuteCommandAsync(
+            ManualText,
+            async () =>
+            {
+                IsAutomaticMode = false;
+                IsManualMode = true;
+                RaiseButtonProperties();
+                await DispatchAsync(_settings.Automatic.Binding, false);
+                await DispatchAsync(_settings.Manual.Binding, true);
+            },
+            RestoreModeReadback);
     }
 
     private async Task ExecuteEmergencyAsync()
@@ -246,9 +270,15 @@ public sealed class TopBarViewModel : ViewModelBase
         if (!IsEmergencyCommandEnabled)
             return;
 
-        HasEmergency = !HasEmergency;
-        RaiseButtonProperties();
-        await DispatchAsync(_settings.Emergency.Binding, HasEmergency);
+        await ExecuteCommandAsync(
+            EmergencyText,
+            async () =>
+            {
+                HasEmergency = !HasEmergency;
+                RaiseButtonProperties();
+                await DispatchAsync(_settings.Emergency.Binding, HasEmergency);
+            },
+            RestoreEmergencyReadback);
     }
 
     private async Task ExecuteResetAsync()
@@ -256,17 +286,59 @@ public sealed class TopBarViewModel : ViewModelBase
         if (!IsResetCommandEnabled)
             return;
 
-        IsResetActive = true;
-        RaiseButtonProperties();
+        await ExecuteCommandAsync(
+            ResetText,
+            async () =>
+            {
+                IsResetActive = true;
+                RaiseButtonProperties();
+                try
+                {
+                    await DispatchAsync(_settings.Reset.Binding, true);
+                }
+                finally
+                {
+                    IsResetActive = false;
+                    RaiseButtonProperties();
+                }
+            });
+    }
+
+    private async Task ExecuteCommandAsync(
+        string commandText,
+        Func<Task> executeAsync,
+        Action? restoreReadback = null)
+    {
         try
         {
-            await DispatchAsync(_settings.Reset.Binding, true);
+            await executeAsync();
         }
-        finally
+        catch (OperationCanceledException)
         {
-            IsResetActive = false;
-            RaiseButtonProperties();
+            restoreReadback?.Invoke();
+            return;
         }
+        catch (Exception ex)
+        {
+            restoreReadback?.Invoke();
+            _commandErrorHandler?.Invoke($"Команда «{commandText}» не отправлена: {ex.Message}");
+            return;
+        }
+
+        _commandSuccessHandler?.Invoke();
+    }
+
+    private void RestoreModeReadback()
+    {
+        IsAutomaticMode = _lastAutomaticReadback;
+        IsManualMode = _lastManualReadback;
+        RaiseButtonProperties();
+    }
+
+    private void RestoreEmergencyReadback()
+    {
+        HasEmergency = _lastEmergencyReadback;
+        RaiseButtonProperties();
     }
 
     private Task DispatchAsync(SignalBinding binding, bool value)

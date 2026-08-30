@@ -1169,6 +1169,62 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
+    public async Task Top_bar_emergency_failure_restores_readback_reports_error_and_does_not_fault_command()
+    {
+        var errors = new List<string>();
+        var dispatcher = new RecordingFailingDispatcher(failOnRequest: 1);
+        var viewModel = new TopBarViewModel(
+            commandDispatcher: dispatcher,
+            settings: RouteMapSeed.Create().TopBar,
+            commandErrorHandler: errors.Add);
+        viewModel.ApplyRuntime(
+            isAutomaticMode: false,
+            isManualMode: true,
+            isResetActive: false,
+            hasEmergency: false,
+            isConnectionAvailable: true);
+        Exception? thrownException = null;
+        using var exceptionSubscription = viewModel.EmergencyCommand.ThrownExceptions.Subscribe(exception => thrownException = exception);
+
+        await viewModel.EmergencyCommand.Execute().FirstAsync();
+
+        Assert.Null(thrownException);
+        Assert.False(viewModel.HasEmergency);
+        Assert.Collection(dispatcher.Requests,
+            request => Assert.Equal(("system.emergency", true), (request.SignalId, request.Value)));
+        Assert.Single(errors);
+        Assert.Contains("АВАРИЯ", errors[0]);
+        Assert.Contains("Write failed", errors[0]);
+    }
+
+    [Fact]
+    public async Task Top_bar_automatic_failure_restores_readback_without_compensating_write()
+    {
+        var errors = new List<string>();
+        var dispatcher = new RecordingFailingDispatcher(failOnRequest: 2);
+        var viewModel = new TopBarViewModel(
+            commandDispatcher: dispatcher,
+            settings: RouteMapSeed.Create().TopBar,
+            commandErrorHandler: errors.Add);
+        viewModel.ApplyRuntime(
+            isAutomaticMode: false,
+            isManualMode: true,
+            isResetActive: false,
+            hasEmergency: false,
+            isConnectionAvailable: true);
+
+        await viewModel.SwitchToAutomaticCommand.Execute().FirstAsync();
+
+        Assert.False(viewModel.IsAutomaticMode);
+        Assert.True(viewModel.IsManualMode);
+        Assert.Collection(dispatcher.Requests,
+            request => Assert.Equal(("system.mode.manual", false), (request.SignalId, request.Value)),
+            request => Assert.Equal(("system.mode.automatic", true), (request.SignalId, request.Value)));
+        Assert.Single(errors);
+        Assert.Contains("АВТОМАТ", errors[0]);
+    }
+
+    [Fact]
     public async Task Dashboard_node_role_command_error_rolls_back_state_and_sets_message()
     {
         using var scope = new TempConfigurationScope();
@@ -1193,6 +1249,34 @@ public sealed class RouteMapConfigurationTests
 
         Assert.True(viewModel.NodeRoleStates["bsu_1"].IsLoader);
         Assert.True(viewModel.HasCommandError);
+        Assert.Contains("Write failed", viewModel.CommandErrorMessage);
+    }
+
+    [Fact]
+    public async Task Dashboard_displays_top_bar_command_error()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var dispatcher = new FailingDispatcher();
+        var journal = new RouteMapSessionJournal();
+        using var notificationsPanel = new NotificationsPanelViewModel(
+            journal,
+            new NoOpDialogService(),
+            new NoOpBitWriter());
+        using var viewModel = new RouteMapDashboardViewModel(
+            manager,
+            new EmptySignalProvider(),
+            new RouteMapRuntimeMapper(manager.CurrentDefinition),
+            dispatcher,
+            new RecordingSettingsDialogService(),
+            notificationsPanel,
+            journal,
+            new StaticOptionsMonitor(new ModbusOptions()));
+
+        await viewModel.TopBar.EmergencyCommand.Execute().FirstAsync();
+
+        Assert.True(viewModel.HasCommandError);
+        Assert.Contains("АВАРИЯ", viewModel.CommandErrorMessage);
         Assert.Contains("Write failed", viewModel.CommandErrorMessage);
     }
 
@@ -1241,6 +1325,19 @@ public sealed class RouteMapConfigurationTests
     {
         public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default) =>
             Task.FromException(new InvalidOperationException("Write failed"));
+    }
+
+    private sealed class RecordingFailingDispatcher(int failOnRequest) : IEquipmentCommandDispatcher
+    {
+        public List<SignalWriteRequest> Requests { get; } = [];
+
+        public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Requests.Count == failOnRequest
+                ? Task.FromException(new InvalidOperationException("Write failed"))
+                : Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingHelpDialogService : IHelpDialogService
