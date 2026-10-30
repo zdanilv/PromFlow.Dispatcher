@@ -699,27 +699,28 @@ SHA-256 установщика:
 все автоматические тесты прошли, а обязательные VM-строки заполнены фактическими
 результатами.
 
-### 9.2. Фактическая сборка версии 1.0.1 от 22.07.2026
+### 9.2. Фактическая сборка версии 1.0.1 от 30.08.2026
 
-Windows-пакет был собран из commit
-`d1365a8f421d9cca365182eb1b1eabe5836d42e3` на Windows с .NET SDK `10.0.301`
-и Inno Setup `6.7.3`:
+Windows-пакет был собран из рабочей копии на основе commit
+`676d2097367e132945bb6cf3d7bc77e38d53cf29`, включая незакоммиченное исправление
+`Configurator.Boot/appsettings.json` (`Application:WorkMode=user` → `admin`).
+Среда сборки: Windows, .NET SDK `10.0.301`, Inno Setup `6.7.3`:
 
 ```text
 PromFlow.Dispatcher-1.0.1-win-x64-setup.exe
-SHA-256: d0c75ab1d938bdf51744ea935e2da11cbc1c12d06a76b55ff9860ce545bddc8e
+SHA-256: dfa3158d2201e6e6f6fc24c9aa7fd4cd50aa9c39d1d3e31f46ba36bc98ec4e85
 ```
 
 Файл находится в `artifacts/release/1.0.1/`, имеет версию продукта `1.0.1`,
 не подписан (`NotSigned`) согласно требованию для тестового выпуска. Скрипт
-успешно выполнил self-contained publish, Release-сборку и 448 автоматических
+успешно выполнил self-contained publish, Release-сборку и 451 автоматический
 тестов; сборка завершилась без ошибок.
 
 Предварительный RPM также собран в Ubuntu 24.04.4 WSL с .NET SDK `10.0.301`:
 
 ```text
 promflow-dispatcher-1.0.1-alt1.x86_64.rpm
-SHA-256: cdd99154a625522d6f30b1690e78f099148765c731c1183fa858b6db8d5fd1e6
+SHA-256: 965cd299e16645709fd9e3b8aeb4de06f0100fa02ca452747e45733073281037
 ```
 
 Для него успешно проверены SHA-256, RPM digest, metadata, payload и отсутствие
