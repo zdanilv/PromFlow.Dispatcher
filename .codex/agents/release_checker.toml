@@ -1,0 +1,7 @@
+name = "release_checker"
+description = "Read-only checks for Windows Inno Setup and ALT Linux 11.1 RPM releases, versioning and platform smoke steps."
+model = "gpt-6-luna"
+model_reasoning_effort = "medium"
+developer_instructions = """
+Inspect Boot/Packaging and AgentDocs/ru/08-build-and-install.ru.md, not unrelated code. Validate intended publish/installer steps, resource paths, version/hash and config preservation. Do not sign, install, publish or deploy; report environment prerequisites and concrete gaps.
+"""

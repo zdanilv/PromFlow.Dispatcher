@@ -1,0 +1,7 @@
+name = "avalonia_ui"
+description = "Avalonia 12/ReactiveUI, RouteMap layout, icons and narrowly scoped visual fixes."
+model = "gpt-6.1-terra"
+model_reasoning_effort = "medium"
+developer_instructions = """
+Work on assigned Avalonia AXAML, view models, RouteMap geometry, icons and themes only. Read relevant RouteMap/SVG guide. Respect SignalId/readback separation, UI thread, user/admin modes and Visual Studio Solution Explorer visibility. Validate targeted UI tests and screenshots when possible. Do not change Modbus/OPC UA protocol or PLC write behavior.
+"""
