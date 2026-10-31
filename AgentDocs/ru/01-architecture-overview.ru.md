@@ -27,7 +27,7 @@ Windows-приложение не создаёт консоль, а в `admin` �
 
 `Configurator.Boot/appsettings.json` содержит `Application.WorkMode`:
 
-- `admin` — Workspace показывает вкладки `Route Map`, `SignalId ↔ Modbus`, `Менеджер тревог`, `Modbus Demo`;
+- `admin` — Workspace показывает вкладки `Route Map`, `SignalId ↔ Modbus`, `Менеджер тревог`, `Modbus TCP`;
 - `user` — Workspace показывает только `Route Map` на всю рабочую область, без вкладок.
 
 Неверное или отсутствующее значение трактуется как `admin`. Актуальный admin-режим
@@ -37,7 +37,7 @@ Windows-приложение не создаёт консоль, а в `admin` �
 Route Map
 SignalId ↔ Modbus
 Менеджер тревог
-Modbus Demo
+Modbus TCP
 ```
 
 `WorkspaceViewModel` получает через DI:
@@ -46,12 +46,12 @@ Modbus Demo
 - `NotificationsPanelViewModel` — правая панель `Уведомления`/`История` RouteMap.
 - `RouteMapSignalMappingViewModel` — редактор связей `SignalId ↔ Modbus`.
 - `AlarmManagerViewModel` — редактор `Modbus.AlarmMap`.
-- `ModbusDemoViewModel` — экран запуска, остановки и настройки общего TCP runtime.
+- `ModbusDemoViewModel` — внутреннее имя модели экрана `Modbus TCP` для запуска, остановки и настройки общего TCP runtime.
 
 `ModbusDemo.AutostartOnWorkspaceOpen` и `StartupMode` могут запускать общий runtime при
 открытии Workspace.
 
-В `user` режиме вкладки `SignalId ↔ Modbus`, `Менеджер тревог` и `Modbus Demo` скрыты
+В `user` режиме вкладки `SignalId ↔ Modbus`, `Менеджер тревог` и `Modbus TCP` скрыты
 визуально. Вкладка `Менеджер тревог` доступна только admin, но `ModbusAlarmMonitor`
 запускается в обоих режимах Workspace, читает сохраненный `Modbus.AlarmMap` и показывает
 диалоги по фронту alarm-бита.
@@ -144,9 +144,28 @@ Modbus.AlarmMap    -> alarm dialogs in admin/user and acknowledgement pulses
 Не переносите endpoint/lifecycle в RouteMap. RouteMap отвечает за доменные bindings и
 интерпретацию сигналов, а не за физическое подключение PLC.
 
+## OPC UA: реализация и доступность
+
+Контракты OPC UA находятся в `Configurator.Application/Services/OpcUa/`; клиент,
+сервер, browser и runtime — в `Configurator.Infrastructure.OpcUa/`. Boot регистрирует
+их через `AddOpcUaInfrastructure`. Desktop содержит типы `OpcUaViewModel` и `OpcUaView`,
+а также диалоги тегов, но текущий `WorkspaceView.axaml` не содержит вкладку OPC UA:
+пользовательский экран настройки OPC UA через Workspace сейчас недоступен.
+
+`Configurator.Infrastructure.OpcUa.Tests` содержит проверки настроек, runtime,
+валидации тегов и локальный интеграционный сценарий client/server с browse, read,
+subscribe и write. Это покрытие тестами не подтверждает готовность подключения к
+внешнему промышленному endpoint; такая проверка здесь не проводилась.
+
+Текущая DI-регистрация использует `DisabledOpcUaSecurityProvider` и
+`AnonymousOpcUaIdentityProvider`; defaults — `None`/`Anonymous`, сертификаты
+отключены. Этот режим нельзя считать готовой защитой промышленного соединения.
+
 ## Safety boundary
 
 UI не является контуром функциональной безопасности. Interlock, аварийная логика,
 разрешения исполнительных механизмов и окончательное принятие команд должны оставаться
 в PLC.
+`Application.WorkMode` управляет видимостью интерфейса, а не авторизацией команд PLC.
+Доступ к настройкам ПК и права ОС нужно контролировать отдельно.
 

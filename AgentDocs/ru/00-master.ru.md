@@ -21,7 +21,7 @@
 ## Актуальные документы
 
 - `01-architecture-overview.ru.md` — общий поток данных, Workspace, DI, RouteMap, SignalId, Modbus runtime.
-- `02-route-map-guide.ru.md` — RouteMap definition, schema v13, редактор, миграции, validation, runtime state.
+- `02-route-map-guide.ru.md` — RouteMap definition, редактор, миграции, validation, runtime state; текущую версию схемы задаёт `RouteMapConfigurationDocument.CurrentSchemaVersion`.
 - `03-modbus-tcp-guide.ru.md` — общий TCP runtime, `ModbusDemo`, `Modbus.DataMap`, `Modbus.AlarmMap`, таблица `Менеджер тревог`, snapshots, запись команд.
 - `04-signal-id-guide.ru.md` — правила SignalId, роли, направления, типы и mapping.
 - `05-coding-rules.ru.md` — правила разработки с учетом текущей архитектуры.

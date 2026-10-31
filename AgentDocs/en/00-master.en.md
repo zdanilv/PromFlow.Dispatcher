@@ -19,7 +19,7 @@ source guides with deeper Russian detail.
 ## Current Documents
 
 - `01-architecture-overview.en.md` — Workspace, DI, RouteMap, SignalId, and Modbus runtime.
-- `02-route-map-guide.en.md` — RouteMap definition, schema v11, editor, migrations, validation, runtime state.
+- `02-route-map-guide.en.md` — RouteMap definition, editor, migrations, validation, runtime state; the current schema version is defined by `RouteMapConfigurationDocument.CurrentSchemaVersion`.
 - `03-modbus-tcp-guide.en.md` — shared TCP runtime, `ModbusDemo`, `Modbus.DataMap`, `Modbus.AlarmMap`, `Менеджер тревог` table, snapshots, writes.
 - `04-signal-id-guide.en.md` — SignalId naming, roles, directions, types, and mapping.
 - `05-coding-rules.en.md` — coding rules for the current architecture.

@@ -15,7 +15,7 @@ RouteMap source, SignalId mapping, and Modbus TCP settings.
 
 `Configurator.Boot/appsettings.json` contains `Application.WorkMode`:
 
-- `admin` shows the `Route Map`, `SignalId ↔ Modbus`, `Менеджер тревог`, and `Modbus Demo` tabs;
+- `admin` shows the `Route Map`, `SignalId ↔ Modbus`, `Менеджер тревог`, and `Modbus TCP` tabs;
 - `user` shows only `Route Map` across the Workspace area, without tabs.
 
 Missing or invalid values are treated as `admin`. In admin mode, `WorkspaceView` has
@@ -25,16 +25,16 @@ four tabs:
 Route Map
 SignalId ↔ Modbus
 Менеджер тревог
-Modbus Demo
+Modbus TCP
 ```
 
 `WorkspaceViewModel` owns `RouteMapDashboardViewModel`,
 `NotificationsPanelViewModel`, `RouteMapSignalMappingViewModel`, `AlarmManagerViewModel`,
-and `ModbusDemoViewModel`.
+and `ModbusDemoViewModel` (the internal name for the `Modbus TCP` screen).
 It may autostart the shared Modbus runtime using `ModbusDemo.AutostartOnWorkspaceOpen`
 and `StartupMode`.
 
-In user mode the `SignalId ↔ Modbus`, `Менеджер тревог`, and `Modbus Demo` tabs are
+In user mode the `SignalId ↔ Modbus`, `Менеджер тревог`, and `Modbus TCP` tabs are
 hidden. The `Менеджер тревог` tab is admin-only, but `ModbusAlarmMonitor` runs in both
 Workspace modes, reads saved `Modbus.AlarmMap`, and shows dialogs on alarm-bit rising
 edges.
