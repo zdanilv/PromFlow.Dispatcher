@@ -1,47 +1,46 @@
 # PromFlow Dispatcher
 
-PromFlow Dispatcher — кроссплатформенное desktop-приложение для диспетчеризации технологических маршрутов. Оно объединяет операторскую мнемосхему **Route Map**, доменные сигналы оборудования и обмен с PLC по **Modbus TCP**.
+PromFlow Dispatcher — настольное приложение для наблюдения за технологическими маршрутами и работы с оборудованием через **Route Map** и PLC по **Modbus TCP**. Основа — **.NET 10** и **Avalonia**; целевые платформы пакетов — Windows 10/11 и ALT Linux 11.1 (x86-64).
 
-Приложение предназначено для операторов, наладчиков и разработчиков: оператор работает с картой маршрута, а администратор настраивает связи сигналов, Modbus TCP и тревоги. Поддерживаются Windows 10/11 и ALT Linux 11.1. Проект построен на .NET 10 и Avalonia и распространяется по лицензии MIT.
+## Промышленная безопасность
 
 > [!WARNING]
-> PromFlow Dispatcher не является контуром функциональной безопасности. Interlock, аварийная логика, разрешения механизмов и окончательное принятие команд должны оставаться в PLC.
+> Приложение и его интерфейс не заменяют логику безопасности PLC. Аварийные блокировки, разрешения на работу механизмов и окончательное исполнение команд должен обеспечивать контроллер. Отправляйте команды оборудованию только в разрешённой, подготовленной среде после проверки привязок сигналов и реакции PLC.
 
-## Содержание
+## Основные возможности
 
-- [Возможности](#возможности)
-- [Быстрый старт](#быстрый-старт)
-- [Режимы интерфейса и экраны](#режимы-интерфейса-и-экраны)
-- [Статус OPC UA](#статус-opc-ua)
-- [Рабочий сценарий](#рабочий-сценарий)
-- [Route Map](#route-map)
-- [SignalId и Modbus TCP](#signalid-и-modbus-tcp)
-- [Тревоги](#тревоги)
-- [Конфигурация и резервное копирование](#конфигурация-и-резервное-копирование)
-- [Разработка и проверка](#разработка-и-проверка)
-- [Сборка релизных пакетов](#сборка-релизных-пакетов)
-- [Документация](#документация)
-- [Лицензия](#лицензия)
+| Возможность | Что доступно сейчас |
+|---|---|
+| Route Map | Схема маршрута, состояния, карточки, команды и параметры оборудования с учётом readback и качества данных. |
+| SignalId ↔ Modbus | Привязка доменных `SignalId` к физическим адресам PLC в административном редакторе. |
+| Modbus TCP | Настройка соединения и клиентской/серверной ролей общего runtime. |
+| Тревоги | Административный менеджер, уведомления и история текущей сессии в Route Map. |
+| Пользовательские данные | Настройки и карты в профиле пользователя; импорт и экспорт конфигураций. |
+| OPC UA | Контракты, клиент, сервер, runtime и Desktop-компоненты есть; отдельной вкладки и запуска runtime из Workspace нет. |
 
-## Возможности
+Boot регистрирует инфраструктуру OPC UA, но пользовательский сценарий через Workspace недоступен. Локальные тесты не подтверждают работу с промышленным endpoint; текущие `None`/`Anonymous` не дают промышленной защиты соединения. Подробности — в [руководстве OPC UA](AgentDocs/ru/10-opc-ua-guide.ru.md).
 
-- **Route Map** — операторская мнемосхема маршрута с узлами, линиями, карточками оборудования, состояниями соединения и командами.
-- **Карточки оборудования** — управление командами и параметрами оборудования, отображение readback и состояния доступности.
-- **Уведомления и история** — правая панель Route Map показывает активные уведомления и in-memory историю текущей сессии.
-- **SignalId ↔ Modbus** — связь доменных SignalId с coils, registers и bits PLC без привязки Route Map к физическим адресам.
-- **Modbus TCP** — настройка и запуск встроенных client/server ролей, параметров endpoint, polling и адресных диапазонов.
-- **Менеджер тревог** — отдельная карта операторских тревог, подтверждение импульсом и управляемое повторение уведомлений.
-- **Импорт и экспорт** — перенос Route Map и versioned-профиля Modbus TCP в JSON-файлах.
+## Быстрый запуск из исходного кода
 
-<!-- Скриншот: docs/images/route-map-overview.png. Сделайте кадр Route Map в user-режиме: TopBar, схема маршрута, карточки оборудования, легенда состояний и правая панель уведомлений. Не добавляйте ссылку, пока файл не создан. -->
+Установите .NET SDK **10.0.3xx** согласно [global.json](global.json). Из корня репозитория восстановите зависимости [DesktopTemplate.slnx](DesktopTemplate.slnx) и запустите Boot. Используйте тестовый или изолированный endpoint.
 
-## Быстрый старт
+PowerShell:
 
-### Установка готового пакета
+```powershell
+dotnet restore .\DesktopTemplate.slnx
+dotnet run --project .\Configurator.Boot\Configurator.Boot.csproj
+```
 
-Для Windows используйте поставляемый установщик `PromFlow.Dispatcher-<version>-win-x64-setup.exe` и следуйте его мастеру установки.
+Bash:
 
-Для ALT Linux установите локальный RPM через APT, чтобы система разрешила зависимости. Используйте фактическое имя собранного файла и абсолютный путь, доступный `root`; шаблон `<version>` в команду не подставляйте:
+```bash
+dotnet restore ./DesktopTemplate.slnx
+dotnet run --project ./Configurator.Boot/Configurator.Boot.csproj
+```
+
+## Установка готовых сборок
+
+Windows: запустите установщик `PromFlow.Dispatcher-<version>-win-x64-setup.exe`. ALT Linux: в root-shell установите локальный RPM по абсолютному пути, доступному `root`:
 
 ```bash
 su -
@@ -49,178 +48,89 @@ apt-get install /абсолютный/доступный/root/путь/promflow-
 exit
 ```
 
-После установки в Linux приложение можно запустить из меню рабочего окружения или командой:
+Замените `1.0.0` и путь на фактические. Для запуска в Linux: `/usr/bin/promflow-dispatcher`. Требования и проверка установки — в [руководстве](AgentDocs/ru/08-build-and-install.ru.md).
 
-```bash
-/usr/bin/promflow-dispatcher
-```
+## Режимы работы
 
-Подробные требования к пакетам, подписям, firewall и smoke-проверкам приведены в [руководстве по сборке и установке](AgentDocs/ru/08-build-and-install.ru.md).
+Поставляемая настройка `Application.WorkMode` в [appsettings.json](Configurator.Boot/appsettings.json) выбирает видимый интерфейс:
 
-### Запуск из исходного кода
-
-Нужен .NET SDK 10.0.3xx, заданный в [global.json](global.json). Из корня репозитория выполните:
-
-```powershell
-dotnet restore .\DesktopTemplate.slnx
-dotnet run --project .\Configurator.Boot\Configurator.Boot.csproj
-```
-
-`Application.WorkMode` — install-level настройка из `Configurator.Boot/appsettings.json`: она определяет, будет ли приложение запущено в режиме `user` или `admin`. Изменяемая конфигурация маршрута и подключения хранится отдельно в профиле пользователя ОС, поэтому не редактируйте defaults-файл для повседневной настройки.
-
-## Режимы интерфейса и экраны
-
-| Режим | Доступный интерфейс | Назначение |
-|---|---|---|
-| `user` | Только **Route Map** на всю рабочую область | Операторский режим с ограниченным интерфейсом для работы с сохранённой конфигурацией и наблюдения за тревогами. |
-| `admin` | **Route Map**, **SignalId ↔ Modbus**, **Менеджер тревог**, **Modbus TCP** | Настройка карты, сигналов, Modbus TCP и тревог. |
-
-В `user`-режиме административные вкладки скрыты, но сохранённые mapping, runtime и мониторинг тревог продолжают работать.
-`Application.WorkMode` выбирает видимый интерфейс и не обеспечивает системную аутентификацию или контроль доступа к командам PLC. Доступ к настройкам ПК и права ОС нужно ограничивать отдельно; interlock, аварийная логика, разрешения механизмов и окончательное исполнение команд остаются ответственностью PLC.
-
-<!-- Скриншот: docs/images/admin-workspace-tabs.png. Сделайте кадр Workspace в admin-режиме, на котором одновременно видны четыре вкладки: Route Map, SignalId ↔ Modbus, Менеджер тревог и Modbus TCP. Не добавляйте ссылку, пока файл не создан. -->
-
-## Статус OPC UA
-
-В коде есть Application-контракты OPC UA, инфраструктурные клиент, сервер и runtime, а также Desktop-типы экрана и диалогов тегов; Boot регистрирует инфраструктуру. В текущем Workspace отдельной вкладки OPC UA нет, поэтому экран настройки OPC UA пользователю через него не доступен.
-
-Проект содержит тесты настроек, runtime и тегов, включая локальный интеграционный сценарий client/server с browse, read, subscribe и write. Подключение к внешнему промышленному endpoint и готовность такого сценария к эксплуатации здесь не проверены. По умолчанию зарегистрированы `DisabledOpcUaSecurityProvider` и `AnonymousOpcUaIdentityProvider` (`None`/`Anonymous`, сертификаты отключены); промышленную защиту соединения это не обеспечивает.
-
-## Рабочий сценарий
-
-1. **Настройте Route Map.** В режиме `admin` откройте Route Map, задайте топологию, карточки оборудования, кнопки TopBar и их доменные SignalId, затем примените и сохраните definition.
-2. **Сопоставьте SignalId с PLC.** На вкладке **SignalId ↔ Modbus** добавьте точки `Modbus.DataMap`, совместимые с типом и направлением каждого используемого SignalId.
-3. **Настройте и запустите Modbus TCP.** На вкладке **Modbus TCP** задайте endpoint, UnitId, диапазоны адресов и polling; запустите нужные client/server роли или настройте автозапуск.
-4. **Контролируйте процесс.** Перейдите на Route Map, следите за состояниями и уведомлениями; для операторских тревог используйте отдельный **Менеджер тревог**.
-
-Перед подключением к производственному PLC проверьте mapping на тестовом endpoint, подтвердите адресацию PLC и убедитесь, что PLC корректно обрабатывает команды и readback.
-
-## Route Map
-
-Route Map хранит геометрию, визуальные настройки, bindings и параметры оборудования в собственном JSON-definition. Она оперирует только доменными `SignalId`, а не Modbus-адресами.
-
-- Состояние узлов и линий формируется из SignalId, качества данных и stale-состояния.
-- Карточки оборудования поддерживают команды, индикацию и редактируемые параметры; физические адреса их параметров всё равно задаются в `Modbus.DataMap`.
-- TopBar содержит операторские команды, включая обязательную импульсную команду `system.reset` для кнопки `СБРОС`.
-- Изменения definition можно применить, сохранить, импортировать и экспортировать из диалога `НАСТРОЙКИ`.
-
-<!-- Скриншот: docs/images/route-map-settings.png. Сделайте кадр диалога НАСТРОЙКИ Route Map с видимыми действиями ПЕРЕЗАГРУЗИТЬ, ИМПОРТ, ЭКСПОРТ, ПРИМЕНИТЬ и СОХРАНИТЬ; покажите редактирование definition или bindings. Не добавляйте ссылку, пока файл не создан. -->
-
-Подробные правила структуры, команд, редактора, миграций и валидации: [RouteMap guide](AgentDocs/ru/02-route-map-guide.ru.md).
-
-## SignalId и Modbus TCP
-
-`SignalId` отделяет смысл оборудования от физической адресации. Route Map читает и записывает значения по SignalId; перевод SignalId в coils, holding registers и register bits выполняет `Modbus.DataMap`.
-
-Важное разделение карт:
-
-| Карта | Назначение |
+| Режим | Интерфейс |
 |---|---|
-| `Modbus.DataMap` | Production mapping SignalId Route Map к адресам PLC. |
-| `Modbus.AlarmMap` | Операторские тревоги, подтверждения и интервалы повторов. |
-| `ModbusDemo.DataMap` | Legacy-данные прежнего demo-экрана; не используйте её для Route Map. |
+| `user` | Route Map занимает рабочую область; административные вкладки скрыты. |
+| `admin` | Вкладки **Route Map**, **SignalId ↔ Modbus**, **Менеджер тревог**, **Modbus TCP**. |
 
-Исключение: `system.fault` — системный SignalId общей аварии Route Map. Несмотря на название, его следует настраивать в `Modbus.DataMap`, а не в `Modbus.AlarmMap`.
+Скрытие вкладок не отключает настроенный Modbus runtime и мониторинг тревог. `Application.WorkMode` не является системой авторизации или ограничением доступа к командам PLC.
 
-На вкладке **Modbus TCP** настраиваются client/server endpoint, port, UnitId, стартовые адреса и размеры областей, polling и autostart. Переключение Route Map на источник `Modbus` само по себе runtime не запускает: запустите его на этой вкладке или настройте автозапуск.
+## Основной сценарий
 
-<!-- Скриншот: docs/images/signalid-modbus-mapping.png. Сделайте кадр вкладки SignalId ↔ Modbus с таблицей, в которой видны доменные SignalId, типы, направления доступа и физические адреса PLC. Не добавляйте ссылку, пока файл не создан. -->
+1. В режиме `admin` настройте и сохраните Route Map: маршрут, карточки, `SignalId` ([Route Map](AgentDocs/ru/02-route-map-guide.ru.md)).
+2. На вкладке **SignalId ↔ Modbus** сопоставьте сигналы с PLC, проверив тип, направление и адрес ([SignalId](AgentDocs/ru/04-signal-id-guide.ru.md)).
+3. На вкладке **Modbus TCP** настройте соединение и запустите роли либо автозапуск. Выбор источника `Modbus` в Route Map runtime не запускает ([Modbus TCP](AgentDocs/ru/03-modbus-tcp-guide.ru.md)).
+4. Наблюдайте состояния и уведомления в Route Map; тревоги настраивайте в **Менеджере тревог**. Проверяйте команды по readback.
 
-<!-- Скриншот: docs/images/modbus-tcp-runtime.png. Сделайте кадр вкладки Modbus TCP со статусами client/server, последней ошибкой и кнопками Start Both, Stop Both или Restart Both. Не добавляйте ссылку, пока файл не создан. -->
+`Modbus.DataMap` связывает `SignalId` с адресами PLC; `Modbus.AlarmMap` описывает тревоги. `ModbusDemo.DataMap` — прежняя demo-конфигурация, не карта Route Map. `system.fault` относится к `Modbus.DataMap`. Адресация, запись и ACK — в [руководстве Modbus TCP](AgentDocs/ru/03-modbus-tcp-guide.ru.md).
 
-Полные требования к SignalId: [SignalId guide](AgentDocs/ru/04-signal-id-guide.ru.md). Правила Modbus-профиля, endpoint, адресации и записи: [Modbus TCP guide](AgentDocs/ru/03-modbus-tcp-guide.ru.md).
+## Конфигурация и пользовательские данные
 
-## Тревоги
+Поставляемый `Configurator.Boot/appsettings.json` задаёт defaults и install-level `Application.WorkMode`; приложение его не перезаписывает. Изменяемые настройки и карты хранятся в профиле пользователя:
 
-Операторские тревоги настраиваются отдельно в `Modbus.AlarmMap`: для каждой записи задаются состояние alarm-бита, необязательный acknowledgement-бит, тип, текст сообщения, интервал повторения и длительность импульса подтверждения.
-
-- `Fault`, `Confirmation` и `Message` различаются визуальным стилем, но используют общую механику alarm/ack/repeat.
-- При фронте alarm-бита открывается диалог и создаётся элемент в правой панели Route Map.
-- Кнопка `Хорошо` снимает признак непрочитанного и при необходимости отправляет acknowledgement-импульс.
-- Удалить уведомление или очистить список можно только после того, как соответствующий alarm-бит вернулся в `false`.
-
-<!-- Скриншот: docs/images/alarm-manager-and-notification.png. Сделайте кадр Менеджера тревог с таблицей AlarmMap либо активного операторского диалога с подтверждением и элементом в панели уведомлений. Не добавляйте ссылку, пока файл не создан. -->
-
-Диагностика alarm/ack/repeat и ограничения адресов описаны в [Modbus TCP guide](AgentDocs/ru/03-modbus-tcp-guide.ru.md#alarmmap-point).
-
-## Конфигурация и резервное копирование
-
-Все изменяемые данные находятся в профиле пользователя. Установщик и RPM не записывают их в каталог программы, поэтому обновление или удаление приложения их не удаляет.
-
-| Назначение | Windows 10/11 | ALT Linux 11.1 и другие Linux |
-|---|---|---|
-| Корень пользовательских данных | `%LOCALAPPDATA%\Configurator` | `${XDG_DATA_HOME:-$HOME/.local/share}/Configurator` |
-| Runtime-настройки и Modbus-карты | `appsettings.json` | `appsettings.json` |
-| Настройки окна | `user_settings.json` | `user_settings.json` |
-| Definition Route Map | `RouteMap\route-map.json` | `RouteMap/route-map.json` |
-| Логи | `logs\app-YYYYMMDD.log` | `logs/app-YYYYMMDD.log` |
-
-Для резервного копирования закройте приложение и скопируйте весь каталог `Configurator` текущего пользователя. В нём могут находиться параметры сетевого подключения и карты сигналов, поэтому храните резервные копии в ограниченном доступе.
-
-Базовый `appsettings.json` в каталоге установки служит defaults-файлом: приложение его не перезаписывает, но обновление может заменить ручные изменения. Полный справочник путей, миграции legacy-настроек и порядок восстановления приведены в [руководстве по расположению конфигурации](AgentDocs/ru/09-configuration-file-locations.ru.md).
-
-## Безопасность
-
-Перед вводом в эксплуатацию:
-
-- проверьте соответствие SignalId, типов, направлений доступа и физической адресации;
-- контролируйте ответ PLC через readback, а не только по оптимистичному состоянию интерфейса;
-- протестируйте поведение при потере соединения, stale-данных и повторном подключении;
-- не используйте UI как замену аппаратных или программируемых interlock PLC;
-- ограничьте доступ к административному режиму и резервным копиям конфигурации.
-
-## Разработка и проверка
-
-Основные проекты решения:
-
-| Слой | Назначение |
+| Платформа | Корневой каталог пользовательских данных |
 |---|---|
-| `Configurator.Boot` | Точка входа, конфигурация и DI. |
-| `Configurator.Desktop` | Avalonia UI, Route Map и административные экраны. |
-| `Configurator.Application` | Контракты и прикладные сервисы. |
-| `Configurator.Domain` | Доменные модели. |
-| `Configurator.Infrastructure.Modbus` | Общий Modbus TCP runtime и интеграция. |
+| Windows | `%LOCALAPPDATA%\Configurator` |
+| Linux | `${XDG_DATA_HOME:-$HOME/.local/share}/Configurator` |
 
-Перед передачей изменений выполните из корня репозитория:
+В каталоге находятся `appsettings.json`, `user_settings.json` и `RouteMap/route-map.json`. Для backup закройте приложение и скопируйте каталог целиком; ограничьте доступ к копии. Обновление не должно заменять пользовательские файлы, но может заменить ручные правки defaults. Пути и восстановление — в [руководстве](AgentDocs/ru/09-configuration-file-locations.ru.md).
+
+## Архитектура решения
+
+| Проект | Назначение |
+|---|---|
+| `Configurator.Boot` | Запуск, составление зависимостей и поставляемые настройки. |
+| `Configurator.Desktop` | Интерфейс Avalonia/ReactiveUI, Workspace и Route Map. |
+| `Configurator.Application` | Прикладные контракты и сервисы. |
+| `Configurator.Domain` | Проект ядра для зависимостей; сейчас без C#-типов. |
+| `Configurator.Infrastructure` | Файловая конфигурация и сервисы ОС. |
+| `Configurator.Infrastructure.Modbus` | Обмен Modbus TCP и общий runtime. |
+| `Configurator.Infrastructure.OpcUa` | OPC UA client/server, browsing и runtime. |
+| `Configurator.Tests.*`, `Configurator.Infrastructure.*.Tests` | Unit-, headless UI- и локальные протокольные тесты. |
+
+Границы слоёв и фактические точки входа описаны в [обзоре архитектуры](AgentDocs/ru/01-architecture-overview.ru.md) и [карте кода](AgentDocs/ru/11-code-map.ru.md).
+
+## Разработка и тестирование
+
+После восстановления зависимостей из корня репозитория выполните:
+
+PowerShell:
 
 ```powershell
 dotnet build .\DesktopTemplate.slnx --no-restore
 dotnet test .\DesktopTemplate.slnx --no-restore
 ```
 
-Если .NET build заблокирован запущенным приложением, остановите debug-сеанс или процесс `.NET Host` и повторите проверку. Для профильных тестов и диагностики Route Map/Modbus используйте [руководство по проверке и диагностике](AgentDocs/ru/06-testing-and-diagnostics.ru.md).
-
-## Сборка релизных пакетов
-
-Скрипты собирают self-contained пакеты, предварительно выполняя restore, Release build и тесты.
-
-Windows (нужен Inno Setup):
-
-```powershell
-.\Configurator.Boot\Packaging\Build-WindowsInstaller.ps1 -Version 1.0.0
-```
-
-ALT Linux 11.1 (нужны rpm-build и runtime-зависимости):
+Bash:
 
 ```bash
-./Configurator.Boot/Packaging/build-rpm.sh 1.0.0
+dotnet build ./DesktopTemplate.slnx --no-restore
+dotnet test ./DesktopTemplate.slnx --no-restore
 ```
 
-Артефакты и SHA-256 создаются в `artifacts/release/<version>/`. Требования к среде, signing и обязательный протокол выпуска описаны в [руководстве по сборке и установке](AgentDocs/ru/08-build-and-install.ru.md).
+Для выбора профильных тестов и безопасной локальной проверки используйте [руководство по тестированию](AgentDocs/ru/06-testing-and-diagnostics.ru.md) и [карту кода](AgentDocs/ru/11-code-map.ru.md). Правила работы Codex и ограничения на взаимодействие с оборудованием находятся в [AGENTS.md](AGENTS.md).
 
 ## Документация
 
-Документы в `AgentDocs/ru` — актуальная карта архитектуры и правил проекта:
+Начните с [master-индекса](AgentDocs/ru/00-master.ru.md); подробности открывайте по задаче:
 
-- [Обзор архитектуры](AgentDocs/ru/01-architecture-overview.ru.md)
-- [RouteMap guide](AgentDocs/ru/02-route-map-guide.ru.md)
-- [Modbus TCP guide](AgentDocs/ru/03-modbus-tcp-guide.ru.md)
-- [SignalId guide](AgentDocs/ru/04-signal-id-guide.ru.md)
-- [Правила разработки](AgentDocs/ru/05-coding-rules.ru.md)
-- [Проверка и диагностика](AgentDocs/ru/06-testing-and-diagnostics.ru.md)
-- [SVG-иконки Avalonia](AgentDocs/ru/07-svg-icons-guide.ru.md)
-- [Сборка и установка](AgentDocs/ru/08-build-and-install.ru.md)
-- [Расположение конфигурационных файлов](AgentDocs/ru/09-configuration-file-locations.ru.md)
+| Что нужно узнать | Какой документ открыть |
+|---|---|
+| Архитектура и режимы | [01 — Архитектура](AgentDocs/ru/01-architecture-overview.ru.md) |
+| Route Map | [02 — Route Map](AgentDocs/ru/02-route-map-guide.ru.md) |
+| Modbus TCP и тревоги | [03 — Modbus TCP](AgentDocs/ru/03-modbus-tcp-guide.ru.md) |
+| SignalId | [04 — SignalId](AgentDocs/ru/04-signal-id-guide.ru.md) |
+| Тестирование и диагностика | [06 — Тестирование](AgentDocs/ru/06-testing-and-diagnostics.ru.md) |
+| Сборка и установка | [08 — Установка](AgentDocs/ru/08-build-and-install.ru.md) |
+| Пути конфигурации | [09 — Конфигурация](AgentDocs/ru/09-configuration-file-locations.ru.md) |
+| OPC UA и ограничения | [10 — OPC UA](AgentDocs/ru/10-opc-ua-guide.ru.md) |
+| Где найти код и тесты | [11 — Code Map](AgentDocs/ru/11-code-map.ru.md) |
 
 ## Лицензия
 
