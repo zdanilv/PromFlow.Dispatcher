@@ -1,15 +1,24 @@
 # Architecture Overview
 
-`PromFlow.Dispatcher` is an Avalonia desktop application split into Boot, Desktop,
-Application, and Infrastructure layers. RouteMap is implemented in the desktop layer,
-while signal contracts and Modbus runtime integration are exposed through application and
-infrastructure services.
+`PromFlow.Dispatcher` is an Avalonia desktop application with Domain, Application,
+Infrastructure, Desktop, and Boot projects. Application references Domain; Desktop and
+the infrastructure projects reference Application; Boot composes them.
+
+| Layer | Current responsibility |
+|---|---|
+| Domain | `Configurator.Domain` currently has a project file but no C# models. `SignalId` is a domain name for a signal, not a type implemented in that project. |
+| Application | Signal, Modbus, and OPC UA contracts, options, and validators independent of Desktop and a specific transport. |
+| Infrastructure | Shared configuration and OS services in `Configurator.Infrastructure`; TCP client/server, shared runtime, and facades in `Configurator.Infrastructure.Modbus`; OPC UA SDK, client/server/browser/runtime in `Configurator.Infrastructure.OpcUa`. |
+| Desktop | Avalonia/ReactiveUI Workspace, RouteMap definition, editors, ViewModels, UI state projection, and session journal. |
+| Boot | `Program.cs` reads launch configuration and the user overlay, registers dependencies, and starts the application. |
+
+Use the [code map (RU)](../ru/11-code-map.ru.md) to find a specific owner and test.
 
 ## Workspace
 
 `Application.WorkMode` is a launch-shell mode, not an equipment runtime setting. It is
 read from the exe-local `Configurator.Boot/appsettings.json`. Mutable runtime sections
-`RouteMapRuntime`, `Modbus`, and `ModbusDemo` are overlaid from the shared writable
+`RouteMapRuntime`, `Modbus`, `ModbusDemo`, `OpcUa`, `Help`, and `Startup` are overlaid from the shared writable
 `%LOCALAPPDATA%\Configurator\appsettings.json`, so admin and user launches use the same
 RouteMap source, SignalId mapping, and Modbus TCP settings.
 
@@ -54,6 +63,9 @@ numeric offset without the Modbus area name.
 
 ## Read Flow
 
+The diagram shows the `Modbus` source. `RouteMapSignalRuntime` can instead select
+`MockSignalProvider`.
+
 ```text
 ModbusDemo endpoint/lifecycle
   -> shared ModbusRuntimeService
@@ -63,14 +75,18 @@ ModbusDemo endpoint/lifecycle
   -> ISignalValueProvider
   -> RouteMapRuntimeMapper
   -> RouteMapDashboardViewModel
-  -> RouteMapSessionJournal
   -> Avalonia UI
 ```
 
 RouteMap receives `SignalValue` objects keyed by `SignalId`, not raw coils or registers.
 The mapper converts values, quality, and stale state into `RouteMapRuntimeState`.
+`RouteMapDashboardViewModel` separately records snapshots in `RouteMapSessionJournal`
+after dispatching to the UI thread; the journal supplies session history.
 
 ## Write Flow
+
+This is the `Modbus` write path. With the `Mock` source, the switchable runtime uses
+`MockEquipmentCommandDispatcher` without a TCP write.
 
 ```text
 TopBar / node menu / equipment card / card parameter dialog
@@ -80,11 +96,13 @@ TopBar / node menu / equipment card / card parameter dialog
   -> IModbusTcpService.SetAsync
   -> shared Modbus client or local server
   -> poll/readback
-  -> RouteMapSessionJournal
+  -> RouteMapDashboardViewModel / Avalonia UI
 ```
 
 The UI may apply optimistic checked state, but readback is the source of truth. Incoming
 `ReadWrite` values must not trigger another write.
+After a successful `DispatchAsync`, the switchable `RouteMapSignalRuntime` separately
+records the sent signal in `RouteMapSessionJournal`.
 Card `Start` and `Stop` are mutually exclusive: selecting one writes `false` to the
 opposite command before writing `true` to the selected command. Runtime readback and
 `StartOffFeedback`/`StopOffFeedback` update UI without writing back to PLC.
@@ -123,8 +141,26 @@ SignalId. Operator dialogs still belong only to `Modbus.AlarmMap`.
 
 Do not move endpoint or lifecycle ownership into RouteMap.
 
+## OPC UA: implementation and availability
+
+Application holds OPC UA contracts; `Configurator.Infrastructure.OpcUa` implements the
+client, server, browser, and runtime. Boot calls `AddOpcUaInfrastructure`, which registers
+services but does not start OPC UA roles. Desktop contains `OpcUaViewModel`, `OpcUaView`,
+and tag dialogs. The current `WorkspaceView.axaml` has no OPC UA tab, and
+`WorkspaceViewModel` neither receives the OPC UA runtime nor applies
+`OpcUa.AutostartOnWorkspaceOpen`. The OPC UA setup screen is therefore not accessible
+through the current Workspace.
+
+The OPC UA test project covers options, runtime, tag validation, and a local client/server
+browse, read, subscribe, and write scenario. It does not establish readiness for an
+external industrial endpoint. DI currently uses `DisabledOpcUaSecurityProvider` and
+`AnonymousOpcUaIdentityProvider` with None/Anonymous defaults; this is not a secure
+production connection. See the [OPC UA guide (RU)](../ru/10-opc-ua-guide.ru.md) for
+contracts, lifecycle limits, and security details.
+
 ## Safety Boundary
 
 The UI is not a functional safety layer. Interlocks, emergency behavior, actuator
 permissions, and final command acceptance must remain in the PLC.
+`Application.WorkMode` controls interface visibility, not PLC command authorization.
 

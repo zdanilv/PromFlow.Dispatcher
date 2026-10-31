@@ -1,8 +1,18 @@
 # Обзор архитектуры
 
-`PromFlow.Dispatcher` — Avalonia desktop-приложение с разделением на Boot, Desktop,
-Application и Infrastructure. RouteMap находится в desktop-слое, но transport/runtime
-интеграция вынесена в application contracts и Modbus infrastructure.
+`PromFlow.Dispatcher` — Avalonia desktop-приложение с проектами Domain, Application,
+Infrastructure, Desktop и Boot. Application ссылается на Domain; Desktop и
+инфраструктурные проекты — на Application; Boot собирает их вместе.
+
+| Слой | Фактическая ответственность |
+|---|---|
+| Domain | `Configurator.Domain` сейчас содержит файл проекта, но не содержит C# моделей. `SignalId` здесь — доменное имя сигнала, а не отдельный тип этого проекта. |
+| Application | Контракты сигналов, Modbus и OPC UA, параметры и валидаторы без зависимости от Desktop и конкретного транспорта. |
+| Infrastructure | Общие настройки и сервисы ОС — `Configurator.Infrastructure`; TCP client/server, общий runtime и фасады — `Configurator.Infrastructure.Modbus`; OPC UA SDK, client/server/browser/runtime — `Configurator.Infrastructure.OpcUa`. |
+| Desktop | Avalonia/ReactiveUI Workspace, RouteMap definition, редакторы, ViewModels, UI-проекция состояния и журнал сессии. |
+| Boot | `Program.cs` читает конфигурацию запуска и пользовательский overlay, регистрирует зависимости и запускает приложение. |
+
+Для поиска конкретного владельца и теста используйте [карту кода](11-code-map.ru.md).
 
 ## Workspace
 
@@ -71,6 +81,9 @@ Modbus TCP
 
 ## Поток чтения
 
+Схема ниже относится к выбранному источнику `Modbus`;
+`RouteMapSignalRuntime` может вместо него использовать `MockSignalProvider`.
+
 ```text
 ModbusDemo endpoint/lifecycle
   -> shared ModbusRuntimeService
@@ -80,14 +93,18 @@ ModbusDemo endpoint/lifecycle
   -> ISignalValueProvider
   -> RouteMapRuntimeMapper
   -> RouteMapDashboardViewModel
-  -> RouteMapSessionJournal
   -> Avalonia UI
 ```
 
 RouteMap получает не coils/registers, а `SignalValue` по `SignalId`. Mapper переводит
 значения, quality и stale-состояния в `RouteMapRuntimeState`.
+`RouteMapDashboardViewModel` отдельно записывает snapshots в `RouteMapSessionJournal`
+после перехода на UI thread; журнал питает панель истории.
 
 ## Поток записи
+
+Это путь записи при источнике `Modbus`; при `Mock` переключаемый runtime использует
+`MockEquipmentCommandDispatcher` без TCP-записи.
 
 ```text
 TopBar / node menu / equipment card / card parameter dialog
@@ -97,11 +114,13 @@ TopBar / node menu / equipment card / card parameter dialog
   -> IModbusTcpService.SetAsync
   -> shared Modbus client or local server
   -> poll/readback
-  -> RouteMapSessionJournal
+  -> RouteMapDashboardViewModel / Avalonia UI
 ```
 
 UI может оптимистично обновить checked-состояние, но окончательная синхронизация приходит
 через readback. Входной `ReadWrite` сигнал не должен порождать повторную запись.
+После успешного `DispatchAsync` переключаемый `RouteMapSignalRuntime` отдельно записывает
+отправленный сигнал в `RouteMapSessionJournal`.
 Карточные `ПУСК` и `СТОП` взаимоисключающие: включение одной кнопки сначала пишет
 `false` в команду другой, затем `true` в выбранную команду. Runtime readback и
 `StartOffFeedback`/`StopOffFeedback` обновляют UI без обратной записи в PLC.
@@ -151,6 +170,8 @@ Modbus.AlarmMap    -> alarm dialogs in admin/user and acknowledgement pulses
 их через `AddOpcUaInfrastructure`. Desktop содержит типы `OpcUaViewModel` и `OpcUaView`,
 а также диалоги тегов, но текущий `WorkspaceView.axaml` не содержит вкладку OPC UA:
 пользовательский экран настройки OPC UA через Workspace сейчас недоступен.
+`WorkspaceViewModel` не получает OPC UA runtime и не запускает его по настройке
+`OpcUa.AutostartOnWorkspaceOpen`; регистрация сервисов в DI сама по себе не запускает роли.
 
 `Configurator.Infrastructure.OpcUa.Tests` содержит проверки настроек, runtime,
 валидации тегов и локальный интеграционный сценарий client/server с browse, read,
@@ -160,6 +181,8 @@ subscribe и write. Это покрытие тестами не подтверж
 Текущая DI-регистрация использует `DisabledOpcUaSecurityProvider` и
 `AnonymousOpcUaIdentityProvider`; defaults — `None`/`Anonymous`, сертификаты
 отключены. Этот режим нельзя считать готовой защитой промышленного соединения.
+Подробные контракты, ограничения lifecycle и безопасности — в
+[руководстве OPC UA](10-opc-ua-guide.ru.md).
 
 ## Safety boundary
 

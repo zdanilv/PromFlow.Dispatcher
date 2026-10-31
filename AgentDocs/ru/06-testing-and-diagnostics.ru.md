@@ -1,21 +1,29 @@
 # Проверка и диагностика
 
 Используйте этот документ перед PR, commit или передачей работы другому агенту.
+Выбирайте узкий тест по [карте кода](11-code-map.ru.md), затем расширяйте проверку по риску.
+Ни одна команда ниже не должна обращаться к внешнему PLC или промышленной сети.
 
 ## Базовые проверки
+
+Команды выполняйте из корня репозитория. Для Windows используйте PowerShell:
 
 ```powershell
 dotnet build .\DesktopTemplate.slnx --no-restore
 dotnet test .\DesktopTemplate.slnx --no-restore
 ```
 
-Для документационных и solution metadata изменений минимум:
+На Linux используйте Bash и пути с `/`, например
+`dotnet test ./DesktopTemplate.slnx --no-restore`. Restore нужен один раз лишь при
+отсутствии assets или изменении зависимостей. Сборка подтверждает компиляцию, но не
+заменяет unit, integration и UI/headless проверки. Полный solution test нужен для
+изменений между слоями, схемы конфигурации, протокола, packaging и перед merge.
 
-```powershell
-rg --files -g '*.md'
-dotnet build .\DesktopTemplate.slnx --no-restore
-git status --short
-```
+Для правок только Markdown: проверьте факты по коду/тестам, RU/EN согласованность,
+относительные ссылки и существование названных файлов/классов; затем выполните
+`git diff --check` и `git status --short`. Проверяйте якоря отдельно, если checker
+поддерживает Unicode и повторяющиеся заголовки. Сборка и тесты не требуются, когда код,
+проектные файлы и конфигурация не менялись. Для solution/project metadata сборка обязательна.
 
 Если build заблокирован running `.NET Host`, остановите запущенное приложение или debug
 session и повторите build.
@@ -23,7 +31,7 @@ session и повторите build.
 ## RouteMap тесты
 
 ```powershell
-dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~RouteMap" -p:RouteMapOnly=true
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~RouteMap"
 dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.csproj --no-restore
 ```
 
@@ -32,6 +40,49 @@ dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.cspr
 ```powershell
 dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore
 ```
+
+## Матрица минимальных проверок для изменений продукта
+
+В примерах `--filter "FullyQualifiedName~ИмяКласса"` запускает тесты указанного класса.
+Выбирайте конкретное имя из таблицы; если изменение затрагивает несколько строк,
+объединяйте их проверки. `Configurator.Tests.Unit` — unit, `Configurator.Tests.RouteMap.Ui`
+— headless UI, `Infrastructure.*.Tests` — unit и локальные integration/loopback сценарии.
+
+| Изменённая область | Минимальная проверка | Когда расширять проверку |
+|---|---|---|
+| Только Markdown | Проверка ссылок и фактов по исходникам, `git diff --check`, `git status --short` | Если изменены команды/пути документации — проверить их на подходящей платформе; если затронута project metadata — сборка |
+| Route Map Configuration | Unit `RouteMapConfigurationTests`: round-trip, migration, validation | При schema/migration/import/export — все RouteMap unit и UI/headless, затем полный suite перед merge. Отдельного подтверждённого теста import/export в текущей карте кода нет: зафиксировать пробел |
+| Route Map UI и геометрия | Unit `RouteSegmentGeometryTests`, `RouteMapViewportLayoutTests` или тест затронутой ViewModel; headless `RouteMapSettingsDialogVisualTests` | При AXAML/layout или общих стилях — весь UI-проект и ручная проверка рендера на целевой платформе; headless не доказывает внешний вид на всех ОС |
+| SignalId и Modbus mapping | Unit `RouteMapSignalRuntimeAndMappingTests`; Modbus `ModbusDataMapValidatorTests` и `RouteMapModbusAdapterTests` | При изменении адресации, типов или записи — весь Modbus-проект и RouteMap unit/UI |
+| Modbus TCP runtime | `ModbusTcpServiceTests` и `ModbusRuntimeSmokeTests` на mock/loopback | При изменении lifecycle, reconnect или client/server ролей — весь Modbus-проект и полный suite |
+| Register-bit RMW | `ModbusTcpServiceTests` (соседние биты и конкурентные записи), `ModbusBitWriterTests` (pulse/RMW) | При изменении write path — loopback integration, полный suite и независимый review |
+| PLC-команды, readback и pulse | Unit `RouteMapRuntimeMapperTests`, `RouteNodeRoleStateTransitionsTests`, `EquipmentCardViewModelTests`; Modbus `RouteMapModbusAdapterTests`, `ModbusTcpServiceTests` | При изменении порядка записей, reset/selector, таймаута, отмены или readback — все RouteMap/Modbus tests, loopback и независимый review; не повторять автоматически неидемпотентную команду |
+| Alarm/ACK | Unit `ModbusAlarmMonitorTests`, `RouteMapSessionJournalTests`; Modbus `ModbusAlarmMapValidatorTests`, `ModbusBitWriterTests` | При изменении ACK pulse, repeat/clear или адресации — весь Modbus-проект, затронутые UI/headless тесты, loopback и независимый review |
+| OPC UA client/server/security | `OpcUaOptionsTests`, `OpcUaRuntimeTests`, `OpcUaTagWriteRequestValidatorTests`; локальный `OpcUaIntegrationTests` для протокольного изменения | При lifecycle, subscription, auth/security или DI изменениях — весь OPC UA-проект, полный suite и независимый review; integration требует свободный loopback порт и не проверяет внешний endpoint |
+| Конфигурация и DI | `AppConfigServiceTests`, `ApplicationOptionsTests`, `WorkspaceViewModelTests` | При путях, overlay, формате, миграции или регистрации сервисов — сборка и полный suite; для RouteMap добавить `RouteMapConfigurationTests` |
+| Windows / ALT Linux packaging | Сборка solution и read-only проверка скриптов, manifest, ресурсов и путей по [08](08-build-and-install.ru.md) | При изменении пакета — полный suite и platform smoke на соответствующей ОС/стенде; установку и запуск installer/RPM согласовать отдельно |
+
+Пример точечного запуска в PowerShell:
+
+```powershell
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~RouteMapConfigurationTests"
+dotnet test .\Configurator.Infrastructure.Modbus.Tests\Configurator.Infrastructure.Modbus.Tests.csproj --no-restore --filter "FullyQualifiedName~ModbusTcpServiceTests"
+dotnet test .\Configurator.Infrastructure.OpcUa.Tests\Configurator.Infrastructure.OpcUa.Tests.csproj --no-restore --filter "FullyQualifiedName~OpcUaRuntimeTests"
+```
+
+Для RouteMap unit набора используйте существующую фильтрацию по имени:
+`dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~RouteMap"`;
+отдельно запускайте `EquipmentCardViewModelTests`, если изменена карточка.
+
+**Независимый review обязателен** для Modbus/OPC UA write/lifecycle/security, PLC-команд,
+RMW, ACK, schema migration и изменений между слоями. Reviewer сверяет порядок операций,
+отмену, loss of connection, readback, совместимость старых конфигураций и границы safety;
+локальные тесты не заменяют такой разбор. Промышленная безопасность и interlock остаются в PLC.
+
+**Статусы отчёта:** `PASS` — команда реально завершилась успешно; `FAIL` — запуск
+завершился ошибкой (приложить воспроизводящий вывод); `NOT RUN` — проверка не запускалась
+или неприменима, с причиной; `BLOCKED` — запуск требовался, но невозможен из-за конкретной
+среды/зависимости, с указанием блокера. Не выдавайте `BLOCKED` за `PASS`.
 
 ## Диагностика SignalId ↔ Modbus
 
