@@ -20,10 +20,10 @@ Infrastructure, Desktop и Boot. Application ссылается на Domain; Des
 Он читается только из локального `Configurator.Boot/appsettings.json`: в `user` режиме
 Windows-приложение не создаёт консоль, а в `admin` подключает родительскую либо создаёт
 новую. На ALT Linux GUI-запуск admin перезапускается в `xterm`.
-Изменяемые секции `RouteMapRuntime`, `Modbus`, `ModbusDemo`, `Help` и `Startup`
+Изменяемые секции `RouteMapRuntime`, `Modbus`, `ModbusDemo`, `OpcUa`, `Help` и `Startup`
 читаются поверх defaults из общего файла
 `%LOCALAPPDATA%\Configurator\appsettings.json`, поэтому admin и user используют одну
-и ту же конфигурацию маршрута, SignalId mapping, Modbus TCP, помощи и автозапуска.
+и ту же конфигурацию маршрута, SignalId mapping, Modbus TCP, OPC UA, помощи и автозапуска.
 
 `Help.Contacts` — список до десяти строк `{ Label, Value, Uri? }`. Если в общем
 файле существует раздел `Help`, он целиком заменяет поставляемый список, поэтому
