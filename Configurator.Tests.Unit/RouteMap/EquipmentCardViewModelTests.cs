@@ -66,7 +66,7 @@ public sealed class EquipmentCardViewModelTests
     }
 
     [Fact]
-    public void Selector_toggle_dispatches_mutually_exclusive_values()
+    public void Selector_without_seed_bindings_does_not_dispatch_commands()
     {
         var dispatcher = new CapturingEquipmentCommandDispatcher();
         var card = RouteMapSeed.Create().MapEquipment.Single();
@@ -75,11 +75,7 @@ public sealed class EquipmentCardViewModelTests
         viewModel.IsSelectorChecked = true;
         viewModel.IsSelectorChecked = false;
 
-        Assert.Collection(dispatcher.Requests,
-            request => Assert.Equal(("equip.bucket.selector.off", false), (request.SignalId, request.Value)),
-            request => Assert.Equal(("equip.bucket.selector.on", true), (request.SignalId, request.Value)),
-            request => Assert.Equal(("equip.bucket.selector.on", false), (request.SignalId, request.Value)),
-            request => Assert.Equal(("equip.bucket.selector.off", true), (request.SignalId, request.Value)));
+        Assert.Empty(dispatcher.Requests);
     }
 
     [Fact]
@@ -162,7 +158,7 @@ public sealed class EquipmentCardViewModelTests
     }
 
     [Fact]
-    public void ApplyRuntime_resets_selector_commands_once_when_enabled_false_signal_arrives()
+    public void ApplyRuntime_cannot_reset_selector_commands_without_seed_bindings()
     {
         var dispatcher = new CapturingEquipmentCommandDispatcher();
         var card = RouteMapSeed.Create().MapEquipment.Single();
@@ -186,9 +182,7 @@ public sealed class EquipmentCardViewModelTests
 
         Assert.False(viewModel.IsSelectorChecked);
         Assert.True(viewModel.IsSelectorEnabled);
-        Assert.Collection(dispatcher.Requests,
-            request => Assert.Equal(("equip.bucket.selector.on", false), (request.SignalId, request.Value)),
-            request => Assert.Equal(("equip.bucket.selector.off", false), (request.SignalId, request.Value)));
+        Assert.Empty(dispatcher.Requests);
     }
 
     [Fact]

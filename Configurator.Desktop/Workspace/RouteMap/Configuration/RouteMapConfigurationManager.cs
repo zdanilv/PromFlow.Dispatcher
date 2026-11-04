@@ -44,7 +44,10 @@ public sealed class RouteMapConfigurationManager : IDisposable
                     throw new InvalidDataException(FormatErrors(validation.Errors));
 
                 if (migration.WasMigrated)
+                {
+                    storage.BackupActive();
                     storage.SaveActive(migration.Document);
+                }
 
                 initialDocument = storage.Clone(migration.Document);
                 initialDefinition = mapper.ToDefinition(migration.Document);
@@ -108,12 +111,15 @@ public sealed class RouteMapConfigurationManager : IDisposable
     {
         try
         {
-            var prepared = Prepare(document).Document;
+            var migration = Prepare(document);
+            var prepared = migration.Document;
             var validation = _validator.Validate(prepared);
             if (!validation.IsValid)
                 return new RouteMapConfigurationOperationResult(false, validation.Errors);
 
             var definition = _mapper.ToDefinition(prepared);
+            if (migration.WasMigrated && File.Exists(_storage.ActiveFilePath))
+                _storage.BackupActive();
             await _storage.SaveActiveAsync(prepared, cancellationToken);
             LastLoadError = null;
             Publish(prepared, definition);

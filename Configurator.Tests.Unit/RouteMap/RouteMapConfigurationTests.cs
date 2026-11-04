@@ -37,7 +37,7 @@ public sealed class RouteMapConfigurationTests
         Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, loaded.SchemaVersion);
         Assert.Equal(RouteSegmentKind.RoundedElbow90, loaded.Segments.Single(x => x.Id == "bsu2_to_bucket").Kind);
         Assert.Equal("#112233", loaded.Segments.Single(x => x.Id == "bsu2_to_bucket").Style.ActiveColor);
-        Assert.Equal(RouteCommandButtonKind.Toggle, loaded.Cards.Single().StartButtonKind);
+        Assert.Equal(RouteCommandButtonKind.Momentary, loaded.Cards.Single().StartButtonKind);
         Assert.Equal(RouteCommandButtonKind.Toggle, loaded.Cards.Single().StopButtonKind);
         Assert.Equal(RouteCommandButtonKind.Toggle, loaded.TopBar.Emergency.ButtonKind);
         Assert.Single(loaded.TopBar.Reset.Bindings, binding => binding.Role == SignalBindingRole.ResetCommand);
@@ -47,7 +47,7 @@ public sealed class RouteMapConfigurationTests
         Assert.DoesNotContain(loaded.TopBar.Emergency.Bindings, binding => binding.Role == SignalBindingRole.EmergencyOffFeedback);
         var json = await File.ReadAllTextAsync(scope.Path);
         Assert.Contains("\"roundedElbow90\"", json);
-        Assert.Contains("\"startButtonKind\": \"toggle\"", json);
+        Assert.Contains("\"startButtonKind\": \"momentary\"", json);
         Assert.Contains("\"buttonKind\": \"toggle\"", json);
     }
 
@@ -96,7 +96,7 @@ public sealed class RouteMapConfigurationTests
         Assert.Equal(RouteCommandButtonKind.Toggle, persisted.TopBar.Emergency.ButtonKind);
         Assert.All(persisted.Cards, card =>
         {
-            Assert.Equal(RouteCommandButtonKind.Toggle, card.StartButtonKind);
+            Assert.Equal(RouteCommandButtonKind.Momentary, card.StartButtonKind);
             Assert.Equal(RouteCommandButtonKind.Toggle, card.StopButtonKind);
             Assert.False(card.StartOffFeedbackEnabled);
             Assert.False(card.StopOffFeedbackEnabled);
@@ -144,7 +144,7 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Migrator_v11_to_current_adds_selector_bindings_reset_and_updates_only_legacy_disabled_color()
+    public void Migrator_v11_to_current_adds_power_feedback_and_reset_and_updates_only_legacy_disabled_color()
     {
         using var scope = new TempConfigurationScope();
         var document = scope.Mapper.CreateSeedDocument();
@@ -167,12 +167,12 @@ public sealed class RouteMapConfigurationTests
         Assert.Equal("#3F474D", result.Document.Map.Palette.Disabled);
         Assert.All(result.Document.Cards, card =>
         {
-            var uncheckedBinding = Assert.Single(card.Bindings, x => x.Role == SignalBindingRole.UncheckedCommand);
-            var checkedBinding = Assert.Single(card.Bindings, x => x.Role == SignalBindingRole.CheckedCommand);
-            Assert.Equal($"{card.Id}.selector.off", uncheckedBinding.SignalId);
-            Assert.Equal($"{card.Id}.selector.on", checkedBinding.SignalId);
-            Assert.Equal(SignalBindingDirection.ReadWrite, uncheckedBinding.Direction);
-            Assert.Equal(SignalValueType.Bool, checkedBinding.ValueType);
+            var power = Assert.Single(card.Bindings, x => x.Role == SignalBindingRole.PowerFeedback);
+            Assert.Equal("equip.bucket.power", power.SignalId);
+            Assert.Equal(SignalBindingDirection.Read, power.Direction);
+            Assert.Equal(SignalValueType.Bool, power.ValueType);
+            Assert.DoesNotContain(card.Bindings, x => x.Role is SignalBindingRole.UncheckedCommand or SignalBindingRole.CheckedCommand);
+            Assert.Equal(RouteCommandButtonKind.Momentary, card.StartButtonKind);
         });
 
         var custom = scope.Mapper.CreateSeedDocument();
@@ -180,6 +180,76 @@ public sealed class RouteMapConfigurationTests
         custom.Map.Palette.Disabled = "#123456";
         new RouteMapConfigurationMigrator().Migrate(custom);
         Assert.Equal("#123456", custom.Map.Palette.Disabled);
+    }
+
+    [Fact]
+    public void Migrator_v16_to_v17_replaces_only_bucket_selector_bindings_idempotently()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.SchemaVersion = 16;
+        var bucket = document.Cards.Single();
+        bucket.Title = "Пользовательский кюбель";
+        bucket.Style.Width = 391;
+        bucket.Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = "Уставка",
+            Role = SignalBindingRole.EquipmentParameter,
+            SignalId = "equip.bucket.setpoint",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Float32,
+            SavedValue = "4.2",
+            PendingAutoDispatch = true,
+            LastDispatchError = "offline",
+        });
+        foreach (var binding in bucket.Bindings.Where(binding => binding.Role is SignalBindingRole.PowerFeedback or SignalBindingRole.UncheckedCommand or SignalBindingRole.CheckedCommand).ToArray())
+            bucket.Bindings.Remove(binding);
+        bucket.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.UncheckedCommand,
+            SignalId = "equip.bucket.selector.off",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Bool,
+        });
+        bucket.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.CheckedCommand,
+            SignalId = "custom.selector.on",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Bool,
+        });
+        var customCard = scope.Storage.Clone(document).Cards.Single();
+        customCard.Id = "equip.other";
+        customCard.StartButtonKind = RouteCommandButtonKind.Toggle;
+        customCard.AttachedChainId = null;
+        customCard.Bindings.Single(binding => binding.Role == SignalBindingRole.UncheckedCommand).SignalId = "equip.other.selector.off";
+        customCard.Bindings.Single(binding => binding.Role == SignalBindingRole.CheckedCommand).SignalId = "equip.other.selector.on";
+        document.Cards.Add(customCard);
+
+        var migrator = new RouteMapConfigurationMigrator();
+        var migrated = migrator.Migrate(document).Document;
+        var reopened = scope.Storage.Clone(migrated);
+        var secondMigration = migrator.Migrate(reopened);
+
+        Assert.False(secondMigration.WasMigrated);
+        Assert.Equal(17, migrated.SchemaVersion);
+        var migratedBucket = migrated.Cards.Single(card => card.Id == "equip.bucket");
+        Assert.Equal("Пользовательский кюбель", migratedBucket.Title);
+        Assert.Equal(391, migratedBucket.Style.Width);
+        Assert.Equal("4.2", migratedBucket.Parameters.Single().SavedValue);
+        Assert.True(migratedBucket.Parameters.Single().PendingAutoDispatch);
+        Assert.Equal("offline", migratedBucket.Parameters.Single().LastDispatchError);
+        Assert.Equal(RouteCommandButtonKind.Momentary, migratedBucket.StartButtonKind);
+        Assert.Equal(RouteCommandButtonKind.Toggle, migratedBucket.StopButtonKind);
+        var power = Assert.Single(migratedBucket.Bindings, binding => binding.Role == SignalBindingRole.PowerFeedback);
+        Assert.Equal("equip.bucket.power", power.SignalId);
+        Assert.Equal(SignalBindingDirection.Read, power.Direction);
+        Assert.DoesNotContain(migratedBucket.Bindings, binding => binding.Role is SignalBindingRole.UncheckedCommand or SignalBindingRole.CheckedCommand);
+        var migratedCustom = migrated.Cards.Single(card => card.Id == "equip.other");
+        Assert.Equal(RouteCommandButtonKind.Toggle, migratedCustom.StartButtonKind);
+        Assert.DoesNotContain(migratedCustom.Bindings, binding => binding.Role == SignalBindingRole.PowerFeedback);
+        Assert.Equal("equip.other.selector.on", migratedCustom.Bindings.Single(binding => binding.Role == SignalBindingRole.CheckedCommand).SignalId);
+        Assert.Equal("system.mode.automatic", migrated.TopBar.Automatic.Bindings.Single(binding => binding.Role == SignalBindingRole.AutomaticModeCommand).SignalId);
     }
 
     [Fact]
@@ -216,6 +286,7 @@ public sealed class RouteMapConfigurationTests
         json["cards"]![0]!["style"]!["startColor"] = "#ABCDEF";
         json["cards"]![0]!["style"]!["stopPressedForegroundColor"] = "#FEDCBA";
         await File.WriteAllTextAsync(scope.Path, json.ToJsonString());
+        var originalJson = await File.ReadAllTextAsync(scope.Path);
 
         using var manager = scope.CreateManager();
 
@@ -228,6 +299,10 @@ public sealed class RouteMapConfigurationTests
         Assert.False(persisted.Contains("checkedForeground", StringComparison.Ordinal));
         Assert.False(persisted.Contains("startColor", StringComparison.Ordinal));
         Assert.False(persisted.Contains("stopPressedForegroundColor", StringComparison.Ordinal));
+        var backupPath = scope.Path + ".bak";
+        Assert.True(File.Exists(backupPath));
+        Assert.Equal(originalJson, await File.ReadAllTextAsync(backupPath));
+        Assert.Equal(14, JsonNode.Parse(await File.ReadAllTextAsync(backupPath))!["schemaVersion"]!.GetValue<int>());
     }
 
     [Fact]
@@ -461,8 +536,10 @@ public sealed class RouteMapConfigurationTests
         Assert.DoesNotContain(viewModel.SelectedCard.Bindings, x => x.Role == SignalBindingRole.StartOffFeedback);
         Assert.Single(viewModel.SelectedCard.Bindings, x => x.Role == SignalBindingRole.StopCommand);
         Assert.DoesNotContain(viewModel.SelectedCard.Bindings, x => x.Role == SignalBindingRole.StopOffFeedback);
-        Assert.Single(viewModel.SelectedCard.Bindings, x => x.Role == SignalBindingRole.UncheckedCommand);
-        Assert.Single(viewModel.SelectedCard.Bindings, x => x.Role == SignalBindingRole.CheckedCommand);
+        Assert.Single(viewModel.SelectedCard.Bindings, x => x.Role == SignalBindingRole.PowerFeedback);
+        Assert.DoesNotContain(viewModel.SelectedCard.Bindings, x => x.Role is SignalBindingRole.UncheckedCommand or SignalBindingRole.CheckedCommand);
+        Assert.Equal(RouteCommandButtonKind.Momentary, viewModel.SelectedCard.StartButtonKind);
+        Assert.Contains(SignalBindingRole.PowerFeedback, viewModel.CardBindingRoles);
         Assert.Contains(SignalBindingRole.Enabled, viewModel.NodeBindingRoles);
         Assert.Contains(SignalBindingRole.Enabled, viewModel.SegmentBindingRoles);
         Assert.Contains(SignalBindingRole.Enabled, viewModel.CardBindingRoles);
@@ -492,7 +569,7 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Settings_duplicate_card_rewrites_selector_signal_ids()
+    public void Settings_duplicate_card_rewrites_power_signal_id()
     {
         using var scope = new TempConfigurationScope();
         using var manager = scope.CreateManager();
@@ -501,8 +578,7 @@ public sealed class RouteMapConfigurationTests
         viewModel.DuplicateCardCommand.Execute().Subscribe();
 
         var card = viewModel.SelectedCard!;
-        Assert.Equal($"{card.Id}.selector.off", card.Bindings.Single(x => x.Role == SignalBindingRole.UncheckedCommand).SignalId);
-        Assert.Equal($"{card.Id}.selector.on", card.Bindings.Single(x => x.Role == SignalBindingRole.CheckedCommand).SignalId);
+        Assert.Equal($"{card.Id}.power", card.Bindings.Single(x => x.Role == SignalBindingRole.PowerFeedback).SignalId);
     }
 
     [Fact]
@@ -676,7 +752,7 @@ public sealed class RouteMapConfigurationTests
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, x => x.Scope == "node" && x.Message.Contains("ActiveRoute"));
         Assert.Contains(result.Errors, x => x.Scope == "card" && x.Message.Contains("StartCommand"));
-        Assert.Contains(result.Errors, x => x.Scope == "topBar" && x.Message.Contains("AutomaticModeCommand"));
+        Assert.DoesNotContain(result.Errors, x => x.Scope == "topBar" && x.Message.Contains("AutomaticModeCommand"));
     }
 
     [Fact]
@@ -747,7 +823,7 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Validator_rejects_momentary_command_buttons()
+    public void Validator_accepts_bucket_momentary_start_and_rejects_momentary_emergency()
     {
         using var scope = new TempConfigurationScope();
         var document = scope.Mapper.CreateSeedDocument();
@@ -758,7 +834,7 @@ public sealed class RouteMapConfigurationTests
         var result = new RouteMapConfigurationValidator().Validate(document);
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, x => x.Property == nameof(EquipmentCardConfiguration.StartButtonKind));
+        Assert.DoesNotContain(result.Errors, x => x.Property == nameof(EquipmentCardConfiguration.StartButtonKind));
         Assert.Contains(result.Errors, x => x.Property == nameof(RouteTopBarEmergencyButtonConfiguration.ButtonKind));
     }
 
@@ -916,7 +992,7 @@ public sealed class RouteMapConfigurationTests
         Assert.DoesNotContain(result.Document.TopBar.Manual.Bindings, x => x.Role == SignalBindingRole.ManualModeOffFeedback);
         Assert.DoesNotContain(result.Document.Nodes.Single(x => x.Id == "bsu_1").Bindings, x => x.Role == SignalBindingRole.LoaderOffFeedback);
         Assert.Equal(RouteCommandButtonKind.Toggle, result.Document.TopBar.Emergency.ButtonKind);
-        Assert.Equal(RouteCommandButtonKind.Toggle, result.Document.Cards.Single().StartButtonKind);
+        Assert.Equal(RouteCommandButtonKind.Momentary, result.Document.Cards.Single().StartButtonKind);
         Assert.Equal(RouteCommandButtonKind.Toggle, result.Document.Cards.Single().StopButtonKind);
         Assert.False(result.Document.TopBar.Emergency.OffFeedbackEnabled);
         Assert.False(result.Document.Cards.Single().StartOffFeedbackEnabled);
@@ -1041,7 +1117,7 @@ public sealed class RouteMapConfigurationTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, x => x.Message.Contains(nameof(SignalBindingRole.TargetOffFeedback)));
-        Assert.Contains(result.Errors, x => x.Message.Contains(nameof(SignalBindingRole.AutomaticModeOffFeedback)));
+        Assert.DoesNotContain(result.Errors, x => x.Message.Contains(nameof(SignalBindingRole.AutomaticModeOffFeedback)));
     }
 
     [Fact]
@@ -1064,13 +1140,14 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Validator_rejects_invalid_enabled_and_selector_contracts()
+    public void Validator_rejects_invalid_enabled_and_power_feedback_contracts()
     {
         using var scope = new TempConfigurationScope();
         var document = scope.Mapper.CreateSeedDocument();
         var card = document.Cards.Single();
-        card.Bindings.Single(x => x.Role == SignalBindingRole.CheckedCommand).SignalId =
-            card.Bindings.Single(x => x.Role == SignalBindingRole.UncheckedCommand).SignalId;
+        var powerBinding = card.Bindings.Single(x => x.Role == SignalBindingRole.PowerFeedback);
+        powerBinding.Direction = SignalBindingDirection.ReadWrite;
+        powerBinding.SignalId = card.Bindings.Single(x => x.Role == SignalBindingRole.StartCommand).SignalId;
         document.Nodes.First().Bindings.Add(new SignalBindingConfiguration
         {
             Role = SignalBindingRole.Enabled,
@@ -1082,9 +1159,31 @@ public sealed class RouteMapConfigurationTests
         var result = new RouteMapConfigurationValidator().Validate(document);
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, x => x.Message.Contains("разные SignalId"));
+        Assert.Contains(result.Errors, x => x.Message.Contains("PowerFeedback должен иметь направление Read"));
+        Assert.Contains(result.Errors, x => x.Message.Contains("PowerFeedback должен иметь отдельный SignalId"));
         Assert.Contains(result.Errors, x => x.Message.Contains("Enabled должен иметь направление Read"));
         Assert.Contains(result.Errors, x => x.Message.Contains("Enabled должен иметь тип Bool"));
+    }
+
+    [Fact]
+    public void Validator_checks_present_legacy_top_bar_bindings_without_requiring_them()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.TopBar.Automatic.Bindings.Clear();
+        document.TopBar.Manual.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.Enabled,
+            SignalId = "system.mode.manual.enabled",
+            Direction = SignalBindingDirection.Write,
+            ValueType = SignalValueType.UInt16,
+        });
+
+        var result = new RouteMapConfigurationValidator().Validate(document);
+
+        Assert.DoesNotContain(result.Errors, error => error.ObjectId == "automatic");
+        Assert.Contains(result.Errors, error => error.ObjectId == "manual" && error.Message.Contains("направление Read"));
+        Assert.Contains(result.Errors, error => error.ObjectId == "manual" && error.Message.Contains("тип Bool"));
     }
 
     [Fact]

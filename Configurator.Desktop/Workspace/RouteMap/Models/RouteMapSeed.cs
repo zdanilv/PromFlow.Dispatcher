@@ -162,9 +162,10 @@ public static class RouteMapSeed
                 new SignalBinding(SignalBindingRole.Text, $"{id}.text", SignalBindingDirection.Read, SignalValueType.UInt16),
                 new SignalBinding(SignalBindingRole.StartCommand, $"{id}.start", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
                 new SignalBinding(SignalBindingRole.StopCommand, $"{id}.stop", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
-                new SignalBinding(SignalBindingRole.UncheckedCommand, $"{id}.selector.off", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
-                new SignalBinding(SignalBindingRole.CheckedCommand, $"{id}.selector.on", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
-            });
+                new SignalBinding(SignalBindingRole.PowerFeedback, $"{id}.power", SignalBindingDirection.Read, SignalValueType.Bool),
+            },
+            StartButtonKind: RouteCommandButtonKind.Momentary,
+            StopButtonKind: RouteCommandButtonKind.Toggle);
     }
 
     private static SignalBinding[] NodeBindings(string id, RouteNodeMenuKind menuKind)

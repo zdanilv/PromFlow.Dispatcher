@@ -29,7 +29,8 @@ public enum SignalBindingRole
     ManualModeOffFeedback,
     EmergencyOffFeedback,
     EquipmentParameter,
-    Enabled
+    Enabled,
+    PowerFeedback
 }
 
 public enum SignalBindingDirection

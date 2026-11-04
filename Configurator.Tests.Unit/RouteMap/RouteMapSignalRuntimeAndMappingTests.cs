@@ -160,7 +160,7 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
     }
 
     [Fact]
-    public void SignalInventory_exposes_selector_commands_and_enabled_bindings()
+    public void SignalInventory_exposes_power_start_pulse_stop_latched_and_enabled_bindings()
     {
         var seed = RouteMapSeed.Create();
         var card = seed.MapEquipment.Single();
@@ -191,17 +191,21 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         };
 
         var inventory = RouteMapSignalInventory.Build(definition);
-        var uncheckedItem = inventory.Single(x => x.SignalId == "equip.bucket.selector.off");
-        var checkedItem = inventory.Single(x => x.SignalId == "equip.bucket.selector.on");
+        var powerItem = inventory.Single(x => x.SignalId == "equip.bucket.power");
+        var startItem = inventory.Single(x => x.SignalId == "equip.bucket.start");
+        var stopItem = inventory.Single(x => x.SignalId == "equip.bucket.stop");
         var resetItem = inventory.Single(x => x.SignalId == "system.reset");
         var cardEnabled = inventory.Single(x => x.SignalId == "equip.bucket.enabled");
         var topBarEnabled = inventory.Single(x => x.SignalId == "system.mode.automatic.enabled");
 
-        Assert.Equal(ModbusDataAccess.ReadWrite, uncheckedItem.RequiredAccess);
-        Assert.True(uncheckedItem.PreferHoldingRegisterBit);
-        Assert.Equal(0, uncheckedItem.PreferredBitIndex);
-        Assert.True(uncheckedItem.RequiresLatchedWriteMode);
-        Assert.Equal(1, checkedItem.PreferredBitIndex);
+        Assert.Equal(ModbusDataAccess.Read, powerItem.RequiredAccess);
+        Assert.Equal(SignalValueType.Bool, powerItem.ExpectedType);
+        Assert.Equal(ModbusDataAccess.ReadWrite, startItem.RequiredAccess);
+        Assert.True(startItem.PreferPulseWriteMode);
+        Assert.True(startItem.RequiresPulseWriteMode);
+        Assert.Equal(ModbusDataAccess.ReadWrite, stopItem.RequiredAccess);
+        Assert.True(stopItem.RequiresLatchedWriteMode);
+        Assert.DoesNotContain(inventory, x => x.SignalId is "equip.bucket.selector.off" or "equip.bucket.selector.on");
         Assert.Equal(RouteMapSignalElementCategory.TopBar, resetItem.Category);
         Assert.Equal(SignalValueType.Bool, resetItem.ExpectedType);
         Assert.Equal(ModbusDataAccess.ReadWrite, resetItem.RequiredAccess);
@@ -215,7 +219,7 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
     }
 
     [Fact]
-    public void Mapping_selector_defaults_to_register_bits_and_rejects_pulse_but_allows_coil_and_reset_requires_pulse()
+    public void Mapping_start_defaults_to_pulse_stop_to_latched_and_power_to_read()
     {
         using var scope = new ConfigurationScope();
         using var viewModel = new RouteMapSignalMappingViewModel(
@@ -224,26 +228,22 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
             new RecordingAppConfigService(),
             new ModbusDataMapValidator(),
             new RecordingDataMapRuntime());
-        var uncheckedRow = viewModel.Rows.Single(x => x.SignalId == "equip.bucket.selector.off");
-        var checkedRow = viewModel.Rows.Single(x => x.SignalId == "equip.bucket.selector.on");
+        var powerRow = viewModel.Rows.Single(x => x.SignalId == "equip.bucket.power");
+        var startRow = viewModel.Rows.Single(x => x.SignalId == "equip.bucket.start");
+        var stopRow = viewModel.Rows.Single(x => x.SignalId == "equip.bucket.stop");
 
-        viewModel.CreateMappingCommand.Execute(uncheckedRow).Subscribe();
-        viewModel.CreateMappingCommand.Execute(checkedRow).Subscribe();
+        viewModel.CreateMappingCommand.Execute(powerRow).Subscribe();
+        viewModel.CreateMappingCommand.Execute(startRow).Subscribe();
+        viewModel.CreateMappingCommand.Execute(stopRow).Subscribe();
 
-        Assert.Equal(ModbusDataArea.HoldingRegister, uncheckedRow.Area);
-        Assert.Equal(0, uncheckedRow.BitIndex);
-        Assert.Equal(ModbusDataArea.HoldingRegister, checkedRow.Area);
-        Assert.Equal(1, checkedRow.BitIndex);
-        Assert.Equal(ModbusWriteMode.Latched, checkedRow.WriteMode);
-
-        checkedRow.WriteMode = ModbusWriteMode.Pulse;
-        Assert.Contains("Latched", checkedRow.ValidationMessage);
-
-        checkedRow.WriteMode = ModbusWriteMode.Latched;
-        checkedRow.Area = ModbusDataArea.Coil;
-        checkedRow.Address = 2;
-        Assert.False(checkedRow.HasError);
-        Assert.Null(checkedRow.BitIndex);
+        Assert.Equal(ModbusDataAccess.Read, powerRow.Access);
+        Assert.Equal(ModbusWriteMode.Pulse, startRow.WriteMode);
+        Assert.Equal(300, startRow.PulseDurationMs);
+        Assert.Equal(ModbusWriteMode.Latched, stopRow.WriteMode);
+        startRow.WriteMode = ModbusWriteMode.Latched;
+        Assert.Contains("Pulse", startRow.ValidationMessage);
+        stopRow.WriteMode = ModbusWriteMode.Pulse;
+        Assert.Contains("Latched", stopRow.ValidationMessage);
 
         var resetRow = viewModel.Rows.Single(x => x.SignalId == "system.reset");
         viewModel.CreateMappingCommand.Execute(resetRow).Subscribe();
@@ -599,7 +599,8 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
 
         viewModel.CreateMappingCommand.Execute(row).Subscribe();
 
-        Assert.Equal(ModbusWriteMode.Latched, row.WriteMode);
+        Assert.Equal(ModbusWriteMode.Pulse, row.WriteMode);
+        Assert.Equal(300, row.PulseDurationMs);
         Assert.Equal("100", row.ClientPhysicalAddress);
         Assert.Equal("100", row.ClientPhysicalAddressText);
         Assert.Equal("300", row.ServerPhysicalAddress);

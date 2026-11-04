@@ -67,6 +67,18 @@ public sealed class RouteMapConfigurationStorage
     public void SaveActive(RouteMapConfigurationDocument document) =>
         Save(ActiveFilePath, document);
 
+    public string BackupActive()
+    {
+        if (!File.Exists(ActiveFilePath))
+            throw new FileNotFoundException("Активный файл RouteMap для резервного копирования не найден.", ActiveFilePath);
+
+        var backupPath = ActiveFilePath + ".bak";
+        if (File.Exists(backupPath))
+            backupPath += "." + Guid.NewGuid().ToString("N");
+        File.Copy(ActiveFilePath, backupPath);
+        return backupPath;
+    }
+
     public void Save(string path, RouteMapConfigurationDocument document)
     {
         var directory = Path.GetDirectoryName(path);

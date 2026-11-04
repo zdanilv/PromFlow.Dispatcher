@@ -113,6 +113,11 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 16;
                     wasMigrated = true;
                     break;
+                case 16:
+                    ApplyVersion17(document);
+                    document.SchemaVersion = 17;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }
@@ -417,6 +422,18 @@ public sealed class RouteMapConfigurationMigrator
     {
         foreach (var parameter in document.Cards.SelectMany(card => card.Parameters ?? []))
             parameter.ClearSavedSetpoint();
+    }
+
+    private static void ApplyVersion17(RouteMapConfigurationDocument document)
+    {
+        foreach (var card in document.Cards.Where(card => string.Equals(card.Id, "equip.bucket", StringComparison.Ordinal)))
+        {
+            card.StartButtonKind = RouteCommandButtonKind.Momentary;
+            card.StopButtonKind = RouteCommandButtonKind.Toggle;
+            RemoveBindings(card.Bindings, SignalBindingRole.UncheckedCommand, SignalBindingRole.CheckedCommand);
+            EnsureBinding(card.Bindings, SignalBindingRole.PowerFeedback, "equip.bucket.power", SignalBindingDirection.Read);
+            card.Bindings.First(binding => binding.Role == SignalBindingRole.PowerFeedback).SignalId = "equip.bucket.power";
+        }
     }
 
     private static void EnsureTopBarButton(

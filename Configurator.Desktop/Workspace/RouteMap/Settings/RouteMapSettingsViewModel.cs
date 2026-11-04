@@ -114,18 +114,27 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         SignalBindingRole.Visible, SignalBindingRole.Fault, SignalBindingRole.ActiveRoute,
         SignalBindingRole.Enabled,
     ];
-    public IReadOnlyList<SignalBindingRole> CardBindingRoles { get; } =
+    private static readonly IReadOnlyList<SignalBindingRole> PowerCardBindingRoles =
     [
         SignalBindingRole.Text, SignalBindingRole.Value, SignalBindingRole.Visible,
         SignalBindingRole.StartCommand,
         SignalBindingRole.StopCommand,
-        SignalBindingRole.UncheckedCommand,
-        SignalBindingRole.CheckedCommand,
+        SignalBindingRole.PowerFeedback,
         SignalBindingRole.StartOffFeedback,
         SignalBindingRole.StopOffFeedback,
         SignalBindingRole.Fault,
         SignalBindingRole.Enabled,
     ];
+    private static readonly IReadOnlyList<SignalBindingRole> LegacyCardBindingRoles =
+    [
+        SignalBindingRole.Text, SignalBindingRole.Value, SignalBindingRole.Visible,
+        SignalBindingRole.StartCommand, SignalBindingRole.StopCommand,
+        SignalBindingRole.UncheckedCommand, SignalBindingRole.CheckedCommand,
+        SignalBindingRole.StartOffFeedback, SignalBindingRole.StopOffFeedback,
+        SignalBindingRole.Fault, SignalBindingRole.Enabled,
+    ];
+    public IReadOnlyList<SignalBindingRole> CardBindingRoles =>
+        SelectedCard is { } card && !UsesPowerFeedback(card) ? LegacyCardBindingRoles : PowerCardBindingRoles;
     public IReadOnlyList<SignalBindingRole> AutomaticModeBindingRoles { get; } =
         [SignalBindingRole.AutomaticModeCommand, SignalBindingRole.Enabled];
     public IReadOnlyList<SignalBindingRole> ManualModeBindingRoles { get; } =
@@ -164,7 +173,15 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     public RouteNodeConfiguration? SelectedNode { get => _selectedNode; set => this.RaiseAndSetIfChanged(ref _selectedNode, value); }
     public RouteSegmentConfiguration? SelectedSegment { get => _selectedSegment; set => this.RaiseAndSetIfChanged(ref _selectedSegment, value); }
-    public EquipmentCardConfiguration? SelectedCard { get => _selectedCard; set => this.RaiseAndSetIfChanged(ref _selectedCard, value); }
+    public EquipmentCardConfiguration? SelectedCard
+    {
+        get => _selectedCard;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _selectedCard, value);
+            this.RaisePropertyChanged(nameof(CardBindingRoles));
+        }
+    }
     public RoutePlaceholderRuleConfiguration? SelectedPlaceholderRule { get => _selectedPlaceholderRule; set => this.RaiseAndSetIfChanged(ref _selectedPlaceholderRule, value); }
 
     public string SelectedChainNodeIds
@@ -332,7 +349,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     private void AddChain() { var item = new RouteChainConfiguration { Id = UniqueId("chain", Draft.Chains.Select(x => x.Id)) }; Draft.Chains.Add(item); SelectedChain = item; }
     private void AddNode() { var item = new RouteNodeConfiguration { Id = UniqueId("node", Draft.Nodes.Select(x => x.Id)), Title = "Новый узел", X = 100, Y = 100 }; EnsureNodeBindings(item); Draft.Nodes.Add(item); SelectedNode = item; }
     private void AddSegment() { var item = new RouteSegmentConfiguration { Id = UniqueId("segment", Draft.Segments.Select(x => x.Id)), FromNodeId = Draft.Nodes.FirstOrDefault()?.Id ?? string.Empty, ToNodeId = Draft.Nodes.Skip(1).FirstOrDefault()?.Id ?? string.Empty }; EnsureSegmentActiveBinding(item); RouteSegmentActiveFragmentSynchronizer.Ensure(Draft, item); Draft.Segments.Add(item); SelectedSegment = item; }
-    private void AddCard() { var item = new EquipmentCardConfiguration { Id = UniqueId("card", Draft.Cards.Select(x => x.Id)), Title = "Новая карточка" }; EnsureCardBindings(item); Draft.Cards.Add(item); SelectedCard = item; }
+    private void AddCard() { var item = new EquipmentCardConfiguration { Id = UniqueId("card", Draft.Cards.Select(x => x.Id)), Title = "Новая карточка", StartButtonKind = RouteCommandButtonKind.Momentary }; EnsureCardBindings(item); Draft.Cards.Add(item); SelectedCard = item; }
     private void AddPlaceholder() { var item = new RoutePlaceholderRuleConfiguration { Id = UniqueId("placeholder", Draft.PlaceholderRules.Select(x => x.Id)), CardId = Draft.Cards.FirstOrDefault()?.Id ?? string.Empty }; Draft.PlaceholderRules.Add(item); SelectedPlaceholderRule = item; }
 
     private void DuplicateChain() { if (SelectedChain is null) return; var item = Clone(x => x.Chains, SelectedChain); item.Id = UniqueId(SelectedChain.Id, Draft.Chains.Select(x => x.Id)); Draft.Chains.Add(item); SelectedChain = item; }
@@ -445,7 +462,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         if (SelectedCard?.Bindings.Contains(binding) == true)
             return binding.Role == SignalBindingRole.StartCommand && SelectedCard.CanStart
                 || binding.Role == SignalBindingRole.StopCommand && SelectedCard.CanStop
-                || binding.Role is SignalBindingRole.UncheckedCommand or SignalBindingRole.CheckedCommand;
+                || binding.Role == SignalBindingRole.PowerFeedback && UsesPowerFeedback(SelectedCard)
+                || (binding.Role is SignalBindingRole.UncheckedCommand or SignalBindingRole.CheckedCommand) && !UsesPowerFeedback(SelectedCard);
         return false;
     }
 
@@ -465,7 +483,6 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private static void EnsureCardBindings(EquipmentCardConfiguration card)
     {
-        card.StartButtonKind = RouteCommandButtonKind.Toggle;
         card.StopButtonKind = RouteCommandButtonKind.Toggle;
 
         if (card.CanStart)
@@ -474,8 +491,16 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         if (card.CanStop)
             EnsureBinding(card.Bindings, SignalBindingRole.StopCommand, $"{card.Id}.stop", SignalBindingDirection.ReadWrite);
 
-        EnsureBinding(card.Bindings, SignalBindingRole.UncheckedCommand, $"{card.Id}.selector.off", SignalBindingDirection.ReadWrite);
-        EnsureBinding(card.Bindings, SignalBindingRole.CheckedCommand, $"{card.Id}.selector.on", SignalBindingDirection.ReadWrite);
+        if (UsesPowerFeedback(card))
+        {
+            RemoveBindings(card.Bindings, SignalBindingRole.UncheckedCommand, SignalBindingRole.CheckedCommand);
+            EnsureBinding(card.Bindings, SignalBindingRole.PowerFeedback, $"{card.Id}.power", SignalBindingDirection.Read);
+        }
+        else
+        {
+            EnsureBinding(card.Bindings, SignalBindingRole.UncheckedCommand, $"{card.Id}.selector.off", SignalBindingDirection.ReadWrite);
+            EnsureBinding(card.Bindings, SignalBindingRole.CheckedCommand, $"{card.Id}.selector.on", SignalBindingDirection.ReadWrite);
+        }
 
         NormalizeOptionalOffFeedback(card.Bindings, SignalBindingRole.StartOffFeedback);
         NormalizeOptionalOffFeedback(card.Bindings, SignalBindingRole.StopOffFeedback);
@@ -485,6 +510,10 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
             parameter.Role = SignalBindingRole.EquipmentParameter;
         RemoveBindings(card.Bindings, SignalBindingRole.State);
     }
+
+    private static bool UsesPowerFeedback(EquipmentCardConfiguration card) =>
+        card.StartButtonKind == RouteCommandButtonKind.Momentary ||
+        card.Bindings.Any(binding => binding.Role == SignalBindingRole.PowerFeedback);
 
     private void EnsureDraftRequiredBindings()
     {
@@ -572,6 +601,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
             {
                 SignalBindingRole.StartCommand => $"{card.Id}.start",
                 SignalBindingRole.StopCommand => $"{card.Id}.stop",
+                SignalBindingRole.PowerFeedback => $"{card.Id}.power",
                 SignalBindingRole.UncheckedCommand => $"{card.Id}.selector.off",
                 SignalBindingRole.CheckedCommand => $"{card.Id}.selector.on",
                 SignalBindingRole.StartOffFeedback => $"{card.Id}.start.off",
@@ -686,7 +716,11 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
                 or nameof(EquipmentCardConfiguration.StopButtonKind)
                 or nameof(EquipmentCardConfiguration.StartOffFeedbackEnabled)
                 or nameof(EquipmentCardConfiguration.StopOffFeedbackEnabled))
+        {
             EnsureCardBindings(changedCard);
+            if (ReferenceEquals(changedCard, SelectedCard))
+                this.RaisePropertyChanged(nameof(CardBindingRoles));
+        }
         if (e.PropertyName != nameof(RouteMapConfigurationItem.Id) || sender is not RouteMapConfigurationItem item) return;
         var oldId = _knownIds[item];
         var newId = item.Id;

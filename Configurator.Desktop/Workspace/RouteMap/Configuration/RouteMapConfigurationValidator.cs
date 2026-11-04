@@ -187,8 +187,10 @@ public sealed class RouteMapConfigurationValidator
                 Add(errors, "card", card.Id, nameof(card.Style.MinimumWidth), "Минимальная ширина не должна превышать ширину.");
             ValidateEnum(errors, "card", card.Id, nameof(card.StartButtonKind), card.StartButtonKind);
             ValidateEnum(errors, "card", card.Id, nameof(card.StopButtonKind), card.StopButtonKind);
-            if (card.StartButtonKind != RouteCommandButtonKind.Toggle)
-                Add(errors, "card", card.Id, nameof(card.StartButtonKind), "ПУСК должен быть обычным ToggleButton.");
+            var usesPowerFeedback = card.Id == "equip.bucket" || card.StartButtonKind == RouteCommandButtonKind.Momentary ||
+                card.Bindings.Any(binding => binding.Role == SignalBindingRole.PowerFeedback);
+            if (card.Id == "equip.bucket" && card.StartButtonKind != RouteCommandButtonKind.Momentary)
+                Add(errors, "card", card.Id, nameof(card.StartButtonKind), "ПУСК Кюбеля должен быть моментальной кнопкой.");
             if (card.StopButtonKind != RouteCommandButtonKind.Toggle)
                 Add(errors, "card", card.Id, nameof(card.StopButtonKind), "СТОП должен быть обычным ToggleButton.");
             ValidateThickness(errors, "card", card.Id, nameof(card.Style.Margin), card.Style.Margin);
@@ -207,13 +209,17 @@ public sealed class RouteMapConfigurationValidator
                 SignalBindingRole.Visible,
                 SignalBindingRole.StartCommand,
                 SignalBindingRole.StopCommand,
-                SignalBindingRole.UncheckedCommand,
-                SignalBindingRole.CheckedCommand,
+                SignalBindingRole.PowerFeedback,
                 SignalBindingRole.StartOffFeedback,
                 SignalBindingRole.StopOffFeedback,
                 SignalBindingRole.Fault,
                 SignalBindingRole.Enabled,
             };
+            if (!usesPowerFeedback)
+            {
+                cardAllowedRoles.Add(SignalBindingRole.UncheckedCommand);
+                cardAllowedRoles.Add(SignalBindingRole.CheckedCommand);
+            }
             ValidateBindings(errors, "card", card.Id, card.Bindings, cardAllowedRoles);
             ValidateCardParameters(errors, card);
             if (card.CanStart)
@@ -224,14 +230,26 @@ public sealed class RouteMapConfigurationValidator
             {
                 ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.StopCommand, SignalBindingDirection.ReadWrite);
             }
-            ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.UncheckedCommand, SignalBindingDirection.ReadWrite);
-            ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.CheckedCommand, SignalBindingDirection.ReadWrite);
-            var uncheckedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.UncheckedCommand);
-            var checkedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.CheckedCommand);
-            if (uncheckedBinding is not null && checkedBinding is not null &&
-                string.Equals(uncheckedBinding.SignalId, checkedBinding.SignalId, StringComparison.OrdinalIgnoreCase))
+            if (usesPowerFeedback)
             {
-                Add(errors, "card", card.Id, nameof(card.Bindings), "UncheckedCommand и CheckedCommand должны использовать разные SignalId.");
+                ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.PowerFeedback, SignalBindingDirection.Read);
+                var powerBinding = card.Bindings.FirstOrDefault(binding => binding.Role == SignalBindingRole.PowerFeedback);
+                if (powerBinding is not null && card.Bindings.Any(binding =>
+                        IsCommandRole(binding.Role) &&
+                        string.Equals(binding.SignalId, powerBinding.SignalId, StringComparison.OrdinalIgnoreCase)))
+                    Add(errors, "card", card.Id, nameof(card.Bindings), "PowerFeedback должен иметь отдельный SignalId от команд карточки.");
+            }
+            else
+            {
+                ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.UncheckedCommand, SignalBindingDirection.ReadWrite);
+                ValidateRequiredBinding(errors, "card", card.Id, card.Bindings, SignalBindingRole.CheckedCommand, SignalBindingDirection.ReadWrite);
+                var uncheckedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.UncheckedCommand);
+                var checkedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.CheckedCommand);
+                if (uncheckedBinding is not null && checkedBinding is not null &&
+                    string.Equals(uncheckedBinding.SignalId, checkedBinding.SignalId, StringComparison.OrdinalIgnoreCase))
+                {
+                    Add(errors, "card", card.Id, nameof(card.Bindings), "UncheckedCommand и CheckedCommand должны использовать разные SignalId.");
+                }
             }
         }
 
@@ -325,12 +343,12 @@ public sealed class RouteMapConfigurationValidator
                 if (binding.ValueType != Configurator.Application.Services.Signals.SignalValueType.Bool)
                     Add(errors, scope, objectId, nameof(SignalBindingConfiguration.ValueType), $"Binding {binding.Role} must use Bool value type.");
             }
-            if (binding.Role == SignalBindingRole.Enabled)
+            if (binding.Role is SignalBindingRole.Enabled or SignalBindingRole.PowerFeedback)
             {
                 if (binding.Direction != SignalBindingDirection.Read)
-                    Add(errors, scope, objectId, nameof(SignalBindingConfiguration.Direction), "Binding Enabled должен иметь направление Read.");
+                    Add(errors, scope, objectId, nameof(SignalBindingConfiguration.Direction), $"Binding {binding.Role} должен иметь направление Read.");
                 if (binding.ValueType != Configurator.Application.Services.Signals.SignalValueType.Bool)
-                    Add(errors, scope, objectId, nameof(SignalBindingConfiguration.ValueType), "Binding Enabled должен иметь тип Bool.");
+                    Add(errors, scope, objectId, nameof(SignalBindingConfiguration.ValueType), $"Binding {binding.Role} должен иметь тип Bool.");
             }
             if (isCommand && binding.Direction == SignalBindingDirection.Read)
                 Add(errors, scope, objectId, nameof(SignalBindingConfiguration.Direction), "Команда должна иметь направление Write или ReadWrite.");
@@ -343,20 +361,8 @@ public sealed class RouteMapConfigurationValidator
         ICollection<RouteMapConfigurationError> errors,
         RouteTopBarConfiguration topBar)
     {
-        ValidateTopBarButton(
-            errors,
-            "automatic",
-            topBar.Automatic,
-            SignalBindingRole.AutomaticModeCommand,
-            offFeedbackRole: null,
-            requireOffFeedback: false);
-        ValidateTopBarButton(
-            errors,
-            "manual",
-            topBar.Manual,
-            SignalBindingRole.ManualModeCommand,
-            offFeedbackRole: null,
-            requireOffFeedback: false);
+        ValidatePresentLegacyTopBarBindings(errors, "automatic", topBar.Automatic, SignalBindingRole.AutomaticModeCommand);
+        ValidatePresentLegacyTopBarBindings(errors, "manual", topBar.Manual, SignalBindingRole.ManualModeCommand);
         ValidateTopBarButton(
             errors,
             "reset",
@@ -371,6 +377,30 @@ public sealed class RouteMapConfigurationValidator
             SignalBindingRole.EmergencyCommand,
             offFeedbackRole: null,
             requireOffFeedback: false);
+    }
+
+    private static void ValidatePresentLegacyTopBarBindings(
+        ICollection<RouteMapConfigurationError> errors,
+        string id,
+        RouteTopBarButtonConfiguration button,
+        SignalBindingRole commandRole)
+    {
+        foreach (var role in new[] { commandRole, SignalBindingRole.Enabled })
+        {
+            var matches = button.Bindings.Where(binding => binding.Role == role).ToArray();
+            if (matches.Length > 1)
+                Add(errors, "topBar", id, nameof(button.Bindings), $"Роль {role} указана несколько раз.");
+            foreach (var binding in matches)
+            {
+                var expectedDirection = role == SignalBindingRole.Enabled
+                    ? SignalBindingDirection.Read
+                    : SignalBindingDirection.ReadWrite;
+                if (binding.Direction != expectedDirection)
+                    Add(errors, "topBar", id, nameof(binding.Direction), $"Binding {role} должен иметь направление {expectedDirection}.");
+                if (binding.ValueType != Configurator.Application.Services.Signals.SignalValueType.Bool)
+                    Add(errors, "topBar", id, nameof(binding.ValueType), $"Binding {role} должен иметь тип Bool.");
+            }
+        }
     }
 
     private static void ValidateTopBarButton(

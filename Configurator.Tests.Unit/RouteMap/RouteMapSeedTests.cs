@@ -61,6 +61,12 @@ public sealed class RouteMapSeedTests
         Assert.Equal(Configurator.Application.Services.Signals.SignalValueType.UInt16, bindingsByRole[SignalBindingRole.Text].ValueType);
         Assert.Equal(SignalBindingDirection.ReadWrite, bindingsByRole[SignalBindingRole.StartCommand].Direction);
         Assert.Equal(SignalBindingDirection.ReadWrite, bindingsByRole[SignalBindingRole.StopCommand].Direction);
+        Assert.Equal(SignalBindingDirection.Read, bindingsByRole[SignalBindingRole.PowerFeedback].Direction);
+        Assert.Equal(Configurator.Application.Services.Signals.SignalValueType.Bool, bindingsByRole[SignalBindingRole.PowerFeedback].ValueType);
+        Assert.Equal("equip.bucket.power", bindingsByRole[SignalBindingRole.PowerFeedback].SignalId);
+        Assert.Equal(RouteCommandButtonKind.Momentary, mapEquipment.StartButtonKind);
+        Assert.Equal(RouteCommandButtonKind.Toggle, mapEquipment.StopButtonKind);
+        Assert.DoesNotContain(mapEquipment.Bindings, x => x.Role is SignalBindingRole.UncheckedCommand or SignalBindingRole.CheckedCommand);
         Assert.DoesNotContain(mapEquipment.Bindings, x => x.Role == SignalBindingRole.State);
         Assert.DoesNotContain(mapEquipment.Bindings, x => x.Role == SignalBindingRole.StartOffFeedback);
         Assert.DoesNotContain(mapEquipment.Bindings, x => x.Role == SignalBindingRole.StopOffFeedback);

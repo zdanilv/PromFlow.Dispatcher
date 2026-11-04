@@ -62,8 +62,10 @@ internal static class RouteMapSignalInventory
                 var hasUncheckedCommand = group.Any(item => item.Binding.Role == SignalBindingRole.UncheckedCommand);
                 var hasCheckedCommand = group.Any(item => item.Binding.Role == SignalBindingRole.CheckedCommand);
                 var hasResetCommand = group.Any(item => item.Binding.Role == SignalBindingRole.ResetCommand);
+                var hasStopCommand = group.Any(item => item.Binding.Role == SignalBindingRole.StopCommand);
                 var hasSelectorCommand = hasUncheckedCommand || hasCheckedCommand;
-                var requiresLatchedWriteMode = hasSelectorCommand;
+                var requiresLatchedWriteMode = hasSelectorCommand || hasStopCommand;
+                var requiresPulseWriteMode = hasResetCommand || group.Any(item => item.PreferPulseWriteMode);
                 var canRead = group.Any(item => item.Binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite);
                 var canWrite = group.Any(item => item.Binding.Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite);
                 var access = (canRead, canWrite) switch
@@ -83,11 +85,11 @@ internal static class RouteMapSignalInventory
                     string.Join(", ", group.Select(item => item.ObjectName).Distinct(StringComparer.Ordinal)),
                     types.Length > 1,
                     categories.Length == 1 ? categories[0] : RouteMapSignalElementCategory.Common,
-                    PreferPulseWriteMode: hasResetCommand || group.Any(item => item.PreferPulseWriteMode),
+                    PreferPulseWriteMode: requiresPulseWriteMode,
                     PreferHoldingRegisterBit: hasSelectorCommand,
                     PreferredBitIndex: hasCheckedCommand && !hasUncheckedCommand ? 1 : hasSelectorCommand ? 0 : null,
                     RequiresLatchedWriteMode: requiresLatchedWriteMode,
-                    RequiresPulseWriteMode: hasResetCommand);
+                    RequiresPulseWriteMode: requiresPulseWriteMode);
             })
             .OrderBy(item => item.SignalId, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -207,7 +209,7 @@ internal static class RouteMapSignalInventory
                     $"Карточка {card.Id}",
                     RouteMapSignalElementCategory.Card,
                     binding,
-                    false);
+                    binding.Role == SignalBindingRole.StartCommand && card.StartButtonKind == RouteCommandButtonKind.Momentary);
             }
 
             foreach (var parameter in card.Parameters)

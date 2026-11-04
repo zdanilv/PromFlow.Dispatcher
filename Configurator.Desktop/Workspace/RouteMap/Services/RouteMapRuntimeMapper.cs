@@ -116,8 +116,10 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         var isStopChecked = false;
         var isStartOff = false;
         var isStopOff = false;
+        var hasPowerFeedbackBinding = bindings.Any(binding => binding.Role == SignalBindingRole.PowerFeedback);
         var isUncheckedSelector = false;
         var isCheckedSelector = false;
+        bool? isPowerOn = null;
         var isEnabled = true;
         var hasGoodDisabledSignal = false;
         var isOffline = false;
@@ -195,12 +197,18 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 case SignalBindingRole.StopOffFeedback:
                     isStopOff = ReadBool(signal, isStopOff);
                     break;
+                case SignalBindingRole.PowerFeedback:
+                    if (binding.Direction == SignalBindingDirection.Read &&
+                        binding.ValueType == SignalValueType.Bool &&
+                        signal.ValueType == SignalValueType.Bool && signal.Value is bool powerOn)
+                        isPowerOn = powerOn;
+                    break;
                 case SignalBindingRole.UncheckedCommand:
-                    if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
+                    if (!hasPowerFeedbackBinding && (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite))
                         isUncheckedSelector = ReadBool(signal, isUncheckedSelector);
                     break;
                 case SignalBindingRole.CheckedCommand:
-                    if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
+                    if (!hasPowerFeedbackBinding && (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite))
                         isCheckedSelector = ReadBool(signal, isCheckedSelector);
                     break;
                 case SignalBindingRole.LoaderCommand:
@@ -269,9 +277,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             && state is not RouteObjectState.Disabled;
         if (forceOffline && !string.IsNullOrWhiteSpace(offlineText))
             text = offlineText;
-
-        var shouldResetSelectorCommands = hasGoodDisabledSignal && !forceOffline && !isOffline;
-        var isSelectorCommandEnabled = !forceCommandsDisabled
+        var shouldResetSelectorCommands = !hasPowerFeedbackBinding && hasGoodDisabledSignal && !forceOffline && !isOffline;
+        var isSelectorCommandEnabled = !hasPowerFeedbackBinding && !forceCommandsDisabled
             && state is not RouteObjectState.Offline;
 
         return new RouteObjectRuntimeState(
@@ -288,10 +295,11 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             isLoader,
             isTarget,
             activeFragmentIndexes,
-            IsSelectorChecked: isEnabled && isCheckedSelector && !isUncheckedSelector,
+            IsSelectorChecked: !hasPowerFeedbackBinding && isEnabled && isCheckedSelector && !isUncheckedSelector,
             IsEnabled: state is not RouteObjectState.Offline and not RouteObjectState.Disabled,
             IsSelectorCommandEnabled: isSelectorCommandEnabled,
-            ShouldResetSelectorCommands: shouldResetSelectorCommands);
+            ShouldResetSelectorCommands: shouldResetSelectorCommands,
+            IsPowerOn: state == RouteObjectState.Offline ? null : isPowerOn);
     }
 
     private static bool ReadTopBarBool(

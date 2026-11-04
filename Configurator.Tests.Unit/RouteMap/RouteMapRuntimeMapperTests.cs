@@ -502,29 +502,43 @@ public sealed class RouteMapRuntimeMapperTests
     }
 
     [Fact]
-    public void Map_selector_readback_requires_checked_true_and_unchecked_false()
+    public void Map_power_feedback_uses_good_fresh_bool_and_unknown_otherwise()
     {
         var definition = RouteMapSeed.Create();
         var now = DateTimeOffset.UtcNow;
         var mapper = new RouteMapRuntimeMapper(definition);
 
-        var checkedOnly = mapper.Map(new Dictionary<string, SignalValue>
+        var on = mapper.Map(new Dictionary<string, SignalValue>
         {
-            ["equip.bucket.selector.off"] = new("equip.bucket.selector.off", false, SignalValueType.Bool, now, true, false),
-            ["equip.bucket.selector.on"] = new("equip.bucket.selector.on", true, SignalValueType.Bool, now, true, false),
+            ["equip.bucket.power"] = new("equip.bucket.power", true, SignalValueType.Bool, now, true, false),
         }).Find("equip.bucket");
-        var conflict = mapper.Map(new Dictionary<string, SignalValue>
+        var off = mapper.Map(new Dictionary<string, SignalValue>
         {
-            ["equip.bucket.selector.off"] = new("equip.bucket.selector.off", true, SignalValueType.Bool, now, true, false),
-            ["equip.bucket.selector.on"] = new("equip.bucket.selector.on", true, SignalValueType.Bool, now, true, false),
+            ["equip.bucket.power"] = new("equip.bucket.power", false, SignalValueType.Bool, now, true, false),
+        }).Find("equip.bucket");
+        var bad = mapper.Map(new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.power"] = new("equip.bucket.power", true, SignalValueType.Bool, now, false, false),
+        }).Find("equip.bucket");
+        var stale = mapper.Map(new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.power"] = new("equip.bucket.power", true, SignalValueType.Bool, now, true, true),
+        }).Find("equip.bucket");
+        var wrongType = mapper.Map(new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.power"] = new("equip.bucket.power", true, SignalValueType.UInt16, now, true, false),
         }).Find("equip.bucket");
 
-        Assert.True(checkedOnly?.IsSelectorChecked);
-        Assert.False(conflict?.IsSelectorChecked);
+        Assert.True(on?.IsPowerOn);
+        Assert.False(off?.IsPowerOn);
+        Assert.Null(bad?.IsPowerOn);
+        Assert.Null(stale?.IsPowerOn);
+        Assert.Null(wrongType?.IsPowerOn);
+        Assert.Null(mapper.Map(new Dictionary<string, SignalValue>()).Find("equip.bucket")?.IsPowerOn);
     }
 
     [Fact]
-    public void Map_card_enabled_false_requests_selector_reset_but_keeps_selector_available()
+    public void Map_card_enabled_false_does_not_request_legacy_selector_reset_for_bucket()
     {
         var seed = RouteMapSeed.Create();
         var card = seed.MapEquipment.Single();
@@ -556,8 +570,8 @@ public sealed class RouteMapRuntimeMapperTests
 
         Assert.Equal(RouteObjectState.Disabled, disabled?.State);
         Assert.False(disabled?.IsEnabled);
-        Assert.True(disabled?.IsSelectorCommandEnabled);
-        Assert.True(disabled?.ShouldResetSelectorCommands);
+        Assert.False(disabled?.IsSelectorCommandEnabled);
+        Assert.False(disabled?.ShouldResetSelectorCommands);
         Assert.False(disabled?.IsSelectorChecked);
         Assert.Equal(RouteObjectState.Offline, offline?.State);
         Assert.False(offline?.IsSelectorCommandEnabled);

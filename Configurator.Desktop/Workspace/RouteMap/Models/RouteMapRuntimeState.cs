@@ -48,4 +48,5 @@ public sealed record RouteObjectRuntimeState(
     bool IsSelectorChecked = false,
     bool IsEnabled = true,
     bool IsSelectorCommandEnabled = true,
-    bool ShouldResetSelectorCommands = false);
+    bool ShouldResetSelectorCommands = false,
+    bool? IsPowerOn = null);

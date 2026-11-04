@@ -369,8 +369,8 @@ public sealed class RouteMapConfigurationMapper
             State = card.State,
             CanStart = card.CanStart,
             CanStop = card.CanStop,
-            StartButtonKind = RouteCommandButtonKind.Toggle,
-            StopButtonKind = RouteCommandButtonKind.Toggle,
+            StartButtonKind = card.StartButtonKind,
+            StopButtonKind = card.StopButtonKind,
             StartOffFeedbackEnabled = card.StartOffFeedbackEnabled,
             StopOffFeedbackEnabled = card.StopOffFeedbackEnabled,
             IsVisible = card.IsVisible,
@@ -403,8 +403,8 @@ public sealed class RouteMapConfigurationMapper
                 .Where(binding => !IsDeprecatedSignalRole(binding.Role))
                 .Select(ToModel)
                 .ToArray(),
-            RouteCommandButtonKind.Toggle,
-            RouteCommandButtonKind.Toggle,
+            card.StartButtonKind,
+            card.StopButtonKind,
             StartOffFeedbackEnabled: card.StartOffFeedbackEnabled,
             StopOffFeedbackEnabled: card.StopOffFeedbackEnabled,
             card.IsVisible,

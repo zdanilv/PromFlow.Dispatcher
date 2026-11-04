@@ -138,7 +138,7 @@ public sealed class ModbusAddressCatalogViewModelTests
                 },
                 new ModbusDataPointOptions
                 {
-                    Name = "equip.bucket.selector.on",
+                    Name = "equip.bucket.power",
                     Area = ModbusDataArea.HoldingRegister,
                     Address = 0,
                     Length = 1,
@@ -159,7 +159,7 @@ public sealed class ModbusAddressCatalogViewModelTests
 
         Assert.Equal("Да", register.UsageText);
         Assert.Equal("equip.bucket.text", register.DescriptionText);
-        Assert.Contains("equip.bucket.selector.on", register.Bits[1].SignalIdText);
+        Assert.Contains("equip.bucket.power", register.Bits[1].SignalIdText);
         Assert.Equal("—", register.Bits[1].DescriptionText);
     }
 

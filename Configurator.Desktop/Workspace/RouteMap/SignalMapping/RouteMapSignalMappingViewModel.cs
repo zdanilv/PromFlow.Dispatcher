@@ -468,13 +468,13 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
 
         if (row.RequiresLatchedWriteMode && row.WriteMode != ModbusWriteMode.Latched)
         {
-            row.SetValidation("Selector-команды требуют режим записи Latched.");
+            row.SetValidation($"SignalId {row.SignalId} требует режим записи Latched.");
             return;
         }
 
         if (row.RequiresPulseWriteMode && row.WriteMode != ModbusWriteMode.Pulse)
         {
-            row.SetValidation("ResetCommand требует режим записи Pulse.");
+            row.SetValidation($"SignalId {row.SignalId} требует режим записи Pulse.");
             return;
         }
 
