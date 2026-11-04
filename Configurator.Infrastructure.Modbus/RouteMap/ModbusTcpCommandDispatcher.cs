@@ -3,6 +3,8 @@ using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Signals;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
+using System.Runtime.ExceptionServices;
 
 namespace Configurator.Infrastructure.Modbus.RouteMap;
 
@@ -10,6 +12,8 @@ public sealed class ModbusTcpCommandDispatcher(
     IModbusTcpService modbusService,
     IOptionsMonitor<ModbusOptions> optionsMonitor) : IEquipmentCommandDispatcher
 {
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _pulseGates = new(StringComparer.OrdinalIgnoreCase);
+
     public async Task DispatchAsync(
         SignalWriteRequest request,
         CancellationToken cancellationToken = default)
@@ -39,15 +43,63 @@ public sealed class ModbusTcpCommandDispatcher(
                 return;
             }
 
-            await WriteOrThrowAsync(point.Name, true, cancellationToken);
+            var gate = _pulseGates.GetOrAdd(point.Name, _ => new SemaphoreSlim(1, 1));
+            if (!await gate.WaitAsync(0, cancellationToken))
+                throw new InvalidOperationException($"A pulse for Modbus signal '{point.Name}' is already in progress.");
+
+            var releaseGate = true;
             try
             {
-                await Task.Delay(point.PulseDurationMs, cancellationToken);
+                Exception? pulseError = null;
+                try
+                {
+                    // Even a failed transport response may follow a successful physical write.
+                    await WriteOrThrowAsync(point.Name, true, cancellationToken);
+                    await Task.Delay(point.PulseDurationMs, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    pulseError = ex;
+                }
+
+                Exception? resetError = null;
+                using var resetTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                var resetTask = WriteOrThrowAsync(point.Name, false, resetTimeout.Token);
+                try
+                {
+                    await resetTask.WaitAsync(resetTimeout.Token);
+                }
+                catch (Exception ex)
+                {
+                    resetError = ex;
+                    if (!resetTask.IsCompleted)
+                    {
+                        // Keep this signal inhibited until a non-cooperative reset finishes:
+                        // a late false must never cut short a subsequent pulse.
+                        releaseGate = false;
+                        _ = resetTask.ContinueWith(task =>
+                        {
+                            _ = task.Exception;
+                            gate.Release();
+                        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                    }
+                    else
+                    {
+                        _ = resetTask.Exception;
+                    }
+                }
+
+                if (pulseError is not null && resetError is not null)
+                    throw new AggregateException($"Pulse for Modbus signal '{point.Name}' failed and its reset also failed.", pulseError, resetError);
+                if (pulseError is not null)
+                    ExceptionDispatchInfo.Capture(pulseError).Throw();
+                if (resetError is not null)
+                    throw new InvalidOperationException($"Reset of pulse for Modbus signal '{point.Name}' failed; the PLC command state is unknown.", resetError);
             }
             finally
             {
-                using var resetTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                await WriteOrThrowAsync(point.Name, false, resetTimeout.Token);
+                if (releaseGate)
+                    gate.Release();
             }
 
             return;

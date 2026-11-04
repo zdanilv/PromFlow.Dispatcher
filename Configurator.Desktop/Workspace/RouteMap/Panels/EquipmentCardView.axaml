@@ -50,6 +50,18 @@
 			<Setter Property="Background" Value="#00D107"/>
 			<Setter Property="Foreground" Value="#101820"/>
 		</Style>
+		<Style Selector="Button.start">
+			<Setter Property="BorderBrush" Value="#CCD3D8"/>
+			<Setter Property="BorderThickness" Value="1"/>
+		</Style>
+		<Style Selector="Button.start:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#8AFF8E"/>
+			<Setter Property="Foreground" Value="#101820"/>
+		</Style>
+		<Style Selector="Button.start:pressed /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="#00D107"/>
+			<Setter Property="Foreground" Value="#101820"/>
+		</Style>
 		<Style Selector="ToggleButton.selector">
 			<Setter Property="BorderBrush" Value="#CCD3D8"/>
 			<Setter Property="BorderThickness" Value="1"/>
@@ -127,7 +139,7 @@
 			CornerRadius="{Binding CardCornerRadius}"
 			Margin="{Binding CardMargin}"
 			IsVisible="{Binding IsVisible}">
-		<Grid RowDefinitions="Auto,Auto,Auto,Auto"
+		<Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
 			  ColumnDefinitions="14,*,40"
 			  RowSpacing="5"
 			  Margin="5">
@@ -144,6 +156,21 @@
 							   FontSize="{Binding TitleFontSize}"
 							   TextWrapping="NoWrap"/>
 				</Viewbox>
+				<Border x:Name="PowerIndicator"
+						Grid.Column="1"
+						Width="40"
+						Height="40"
+						Background="{Binding PowerIndicatorBackground}"
+						ToolTip.Tip="{Binding PowerIndicatorToolTip}"
+						IsVisible="{Binding HasPowerFeedback}">
+					<materialIcons:MaterialIcon x:Name="PowerIndicatorIcon"
+												Kind="PowerStandby"
+												Width="22"
+												Height="22"
+												HorizontalAlignment="Center"
+												VerticalAlignment="Center"
+												Foreground="{Binding PowerIndicatorForeground}"/>
+				</Border>
 				<ToggleButton x:Name="SelectorButton"
 							  Grid.Column="1"
 							  Classes="equipment-action selector"
@@ -156,7 +183,8 @@
 							  Background="{Binding SelectorBackground}"
 							  Foreground="{Binding SelectorForeground}"
 							  IsEnabled="{Binding IsSelectorEnabled}"
-							  IsChecked="{Binding IsSelectorChecked, Mode=TwoWay}"/>
+							  IsChecked="{Binding IsSelectorChecked, Mode=TwoWay}"
+							  IsVisible="{Binding !HasPowerFeedback}"/>
 				<Button x:Name="ParametersButton"
 						Grid.Column="2"
 						Classes="equipment-action parameter"
@@ -221,14 +249,24 @@
 				  Grid.ColumnSpan="3"
 				  ColumnDefinitions="*,*"
 				  ColumnSpacing="11">
-				<ToggleButton x:Name="StartButton"
+				<Button x:Name="StartButton"
+						Classes="equipment-action start"
+						Content="{Binding StartText}"
+						Background="{Binding StartBackground}"
+						Foreground="{Binding StartForeground}"
+						FontSize="{Binding ActionFontSize}"
+						Command="{Binding StartCommand}"
+						IsEnabled="{Binding CanStart}"
+						IsVisible="{Binding IsStartMomentary}"/>
+				<ToggleButton x:Name="LegacyStartToggleButton"
 							  Classes="equipment-action start"
 							  Content="{Binding StartText}"
 							  Background="{Binding StartBackground}"
 							  Foreground="{Binding StartForeground}"
 							  FontSize="{Binding ActionFontSize}"
 							  IsChecked="{Binding IsStartChecked, Mode=TwoWay}"
-							  IsEnabled="{Binding CanStart}"/>
+							  IsEnabled="{Binding CanStart}"
+							  IsVisible="{Binding IsStartToggle}"/>
 				<ToggleButton x:Name="StopButton"
 							  Grid.Column="1"
 							  Classes="equipment-action stop"
@@ -236,9 +274,16 @@
 							  Background="{Binding StopBackground}"
 							  Foreground="{Binding StopForeground}"
 							  FontSize="{Binding ActionFontSize}"
-							  IsChecked="{Binding IsStopChecked, Mode=TwoWay}"
+							  IsChecked="{Binding IsStopChecked, Mode=OneWay}"
+							  Click="StopButton_Click"
 							  IsEnabled="{Binding CanStop}"/>
 			</Grid>
+			<StackPanel Grid.Row="4" Grid.ColumnSpan="3">
+				<TextBlock Text="ПУСК: выполняется" FontSize="12" IsVisible="{Binding IsStartBusy}"/>
+				<TextBlock Text="СТОП: ожидание подтверждения" FontSize="12" IsVisible="{Binding IsStopPending}"/>
+				<TextBlock x:Name="CommandErrorText" Text="{Binding CommandErrorMessage}" Foreground="#D10000"
+						   FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HasCommandError}"/>
+			</StackPanel>
 		</Grid>
 	</Border>
 </UserControl>

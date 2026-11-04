@@ -3,7 +3,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -815,18 +817,35 @@ public sealed class RouteMapSettingsDialogVisualTests
         Dispatcher.UIThread.RunJobs();
 
         var parameterButton = cardView.FindControl<Button>("ParametersButton")!;
+        var indicator = cardView.FindControl<Border>("PowerIndicator")!;
+        var icon = cardView.FindControl<MaterialIcon>("PowerIndicatorIcon")!;
         var selectorButton = cardView.FindControl<ToggleButton>("SelectorButton")!;
-        var startButton = cardView.FindControl<ToggleButton>("StartButton")!;
+        var startButton = cardView.FindControl<Button>("StartButton")!;
         var stopButton = cardView.FindControl<ToggleButton>("StopButton")!;
+        Assert.True(indicator.IsVisible);
+        Assert.False(indicator.Focusable);
+        Assert.False(selectorButton.IsVisible);
+        Assert.True(startButton.IsVisible);
+        Assert.False(cardView.FindControl<ToggleButton>("LegacyStartToggleButton")!.IsVisible);
+        Assert.Equal("PowerStandby", icon.Kind.ToString());
+        Assert.Equal(Color.Parse("#FFFFFF"), Assert.IsAssignableFrom<ISolidColorBrush>(icon.Foreground).Color);
         Assert.InRange(parameterButton.Bounds.Width, 39, 41);
         Assert.InRange(parameterButton.Bounds.Height, 39, 41);
-        Assert.InRange(selectorButton.Bounds.Width, 39, 41);
-        Assert.InRange(selectorButton.Bounds.Height, 39, 41);
-        Assert.True(selectorButton.Bounds.Right <= parameterButton.Bounds.Left);
-        Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(selectorButton.BorderBrush).Color);
-        Assert.Equal(new Thickness(1), selectorButton.BorderThickness);
-        Assert.Equal(HorizontalAlignment.Center, selectorButton.HorizontalContentAlignment);
-        Assert.Equal(VerticalAlignment.Center, selectorButton.VerticalContentAlignment);
+        Assert.InRange(indicator.Bounds.Width, 39, 41);
+        Assert.InRange(indicator.Bounds.Height, 39, 41);
+        Assert.True(indicator.Bounds.Right <= parameterButton.Bounds.Left);
+        Assert.Equal(Color.Parse("#3F474D"), Assert.IsAssignableFrom<ISolidColorBrush>(indicator.Background).Color);
+        Assert.False(indicator.Focus());
+        var indicatorPoint = indicator.TranslatePoint(new Point(20, 20), cardWindow)!.Value;
+        cardWindow.MouseMove(indicatorPoint, RawInputModifiers.None);
+        cardWindow.MouseDown(indicatorPoint, MouseButton.Left, RawInputModifiers.None);
+        cardWindow.MouseUp(indicatorPoint, MouseButton.Left, RawInputModifiers.None);
+        cardWindow.KeyPress(Key.Space, RawInputModifiers.None, PhysicalKey.None, null);
+        cardWindow.KeyRelease(Key.Space, RawInputModifiers.None, PhysicalKey.None, null);
+        cardWindow.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.None, null);
+        cardWindow.KeyRelease(Key.Enter, RawInputModifiers.None, PhysicalKey.None, null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Empty(dispatcher.Requests);
         Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(startButton.BorderBrush).Color);
         Assert.Equal(new Thickness(1), startButton.BorderThickness);
         Assert.Equal(HorizontalAlignment.Center, startButton.HorizontalContentAlignment);
@@ -843,14 +862,21 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.Equal(Color.Parse("#8AFF8E"), Assert.IsType<SolidColorBrush>(startButton.Background).Color);
         cardViewModel.IsStartHovered = false;
 
-        cardViewModel.IsSelectorChecked = true;
+        cardViewModel.ApplyRuntime(new RouteObjectRuntimeState(
+            card.Id, RouteObjectState.Ready, card.StatusText, null, true, true, true, IsPowerOn: false));
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal(Color.Parse("#003CA3"), Assert.IsType<SolidColorBrush>(selectorButton.Background).Color);
+        Assert.Equal(Color.Parse("#D10000"), Assert.IsAssignableFrom<ISolidColorBrush>(indicator.Background).Color);
 
-        cardViewModel.IsSelectorPressed = true;
+        cardViewModel.ApplyRuntime(new RouteObjectRuntimeState(
+            card.Id, RouteObjectState.Ready, card.StatusText, null, true, true, true, IsPowerOn: true));
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal(Color.Parse("#8AB5FF"), Assert.IsType<SolidColorBrush>(selectorButton.Background).Color);
-        cardViewModel.IsSelectorPressed = false;
+        Assert.Equal(Color.Parse("#00D107"), Assert.IsAssignableFrom<ISolidColorBrush>(indicator.Background).Color);
+
+        cardViewModel.ApplyRuntime(new RouteObjectRuntimeState(
+            card.Id, RouteObjectState.Offline, card.StatusText, null, true, false, false));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Color.Parse("#3F474D"), Assert.IsAssignableFrom<ISolidColorBrush>(indicator.Background).Color);
+        Assert.Empty(dispatcher.Requests);
 
         cardViewModel.ApplyRuntime(new RouteObjectRuntimeState(
             card.Id,
@@ -862,10 +888,10 @@ public sealed class RouteMapSettingsDialogVisualTests
             CanStop: false,
             IsEnabled: false));
         Dispatcher.UIThread.RunJobs();
-        Assert.True(selectorButton.IsEnabled);
         Assert.True(parameterButton.IsEffectivelyEnabled);
         Assert.Equal(Color.Parse("#D0D0D0"), Assert.IsType<SolidColorBrush>(parameterButton.Background).Color);
-        Assert.Equal(Color.Parse("#D0D0D0"), Assert.IsType<SolidColorBrush>(selectorButton.Background).Color);
+        Assert.Equal(Color.Parse("#3F474D"), Assert.IsAssignableFrom<ISolidColorBrush>(indicator.Background).Color);
+        Assert.Empty(dispatcher.Requests);
 
         var userCardViewModel = new EquipmentCardViewModel(card, dispatcher);
         var userCardView = new EquipmentCardView { DataContext = userCardViewModel };
@@ -1093,6 +1119,100 @@ public sealed class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
+    public void Momentary_start_pointer_release_dispatches_one_activation()
+    {
+        var card = RouteMapSeed.Create().MapEquipment.Single();
+        var dispatcher = new NoOpCommandDispatcher();
+        var view = new EquipmentCardView { DataContext = new EquipmentCardViewModel(card, dispatcher) };
+        var window = new Window { Width = 340, Height = 200, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        var start = view.FindControl<Button>("StartButton")!;
+        var point = start.TranslatePoint(new Point(start.Bounds.Width / 2, start.Bounds.Height / 2), window)!.Value;
+
+        window.MouseMove(point, RawInputModifiers.None);
+        window.MouseDown(point, MouseButton.Left, RawInputModifiers.None);
+        Assert.Empty(dispatcher.Requests);
+        window.MouseUp(point, MouseButton.Left, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        var request = Assert.Single(dispatcher.Requests);
+        Assert.Equal("equip.bucket.start", request.SignalId);
+        Assert.Equal(true, request.Value);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Stop_toggle_waits_for_readback_and_never_writes_start()
+    {
+        var card = RouteMapSeed.Create().MapEquipment.Single();
+        var dispatcher = new NoOpCommandDispatcher();
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+        var view = new EquipmentCardView { DataContext = viewModel };
+        var window = new Window { Width = 340, Height = 200, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        var stop = view.FindControl<ToggleButton>("StopButton")!;
+        var point = stop.TranslatePoint(new Point(stop.Bounds.Width / 2, stop.Bounds.Height / 2), window)!.Value;
+
+        window.MouseMove(point, RawInputModifiers.None);
+        window.MouseDown(point, MouseButton.Left, RawInputModifiers.None);
+        window.MouseUp(point, MouseButton.Left, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        var request = Assert.Single(dispatcher.Requests);
+        Assert.Equal("equip.bucket.stop", request.SignalId);
+        Assert.Equal(true, request.Value);
+        Assert.False(viewModel.IsStopChecked);
+        Assert.False(stop.IsChecked);
+        Assert.True(viewModel.IsStopPending);
+
+        viewModel.ApplyRuntime(new RouteObjectRuntimeState(card.Id, RouteObjectState.Idle, card.StatusText,
+            null, true, true, true, IsStopChecked: true));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(stop.IsChecked);
+        Assert.Single(dispatcher.Requests);
+
+        window.MouseDown(point, MouseButton.Left, RawInputModifiers.None);
+        window.MouseUp(point, MouseButton.Left, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(2, dispatcher.Requests.Count);
+        Assert.Equal(false, dispatcher.Requests[1].Value);
+        Assert.Equal("equip.bucket.stop", dispatcher.Requests[1].SignalId);
+        Assert.True(stop.IsChecked);
+        viewModel.ApplyRuntime(new RouteObjectRuntimeState(card.Id, RouteObjectState.Idle, card.StatusText,
+            null, true, true, true, IsStopChecked: false));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(stop.IsChecked);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Legacy_equipment_card_keeps_selector_and_toggle_start()
+    {
+        var seed = RouteMapSeed.Create().MapEquipment.Single();
+        var card = seed with
+        {
+            Id = "equip.legacy",
+            StartButtonKind = RouteCommandButtonKind.Toggle,
+            Bindings = seed.Bindings.Where(binding => binding.Role != SignalBindingRole.PowerFeedback)
+                .Concat(new[]
+                {
+                    new SignalBinding(SignalBindingRole.UncheckedCommand, "equip.legacy.selector.off", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+                    new SignalBinding(SignalBindingRole.CheckedCommand, "equip.legacy.selector.on", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+                }).ToArray(),
+        };
+        var view = new EquipmentCardView { DataContext = new EquipmentCardViewModel(card, new NoOpCommandDispatcher()) };
+        var window = new Window { Width = 340, Height = 200, Content = view };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(view.FindControl<ToggleButton>("SelectorButton")!.IsVisible);
+        Assert.True(view.FindControl<ToggleButton>("LegacyStartToggleButton")!.IsVisible);
+        Assert.False(view.FindControl<Border>("PowerIndicator")!.IsVisible);
+        Assert.False(view.FindControl<Button>("StartButton")!.IsVisible);
+        window.Close();
+    }
+
+    [AvaloniaFact]
     public void RouteMap_toggle_buttons_render_fixed_checked_backgrounds()
     {
         var topBarViewModel = new TopBarViewModel();
@@ -1130,18 +1250,16 @@ public sealed class RouteMapSettingsDialogVisualTests
         cardWindow.Show();
         Dispatcher.UIThread.RunJobs();
 
-        var start = card.FindControl<ToggleButton>("StartButton")!;
+        var start = card.FindControl<Button>("StartButton")!;
         var stop = card.FindControl<ToggleButton>("StopButton")!;
-        var selector = card.FindControl<ToggleButton>("SelectorButton")!;
-        cardViewModel.IsSelectorChecked = true;
-        Dispatcher.UIThread.RunJobs();
-        Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(selector.Background).Color);
-
-        cardViewModel.IsStartChecked = true;
+        Assert.True(start.IsVisible);
+        Assert.True(stop.IsVisible);
+        cardViewModel.IsStartPressed = true;
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(Color.Parse("#00D107"), Assert.IsAssignableFrom<ISolidColorBrush>(start.Background).Color);
 
-        cardViewModel.IsStopChecked = true;
+        cardViewModel.ApplyRuntime(new RouteObjectRuntimeState(
+            "equip.bucket", RouteObjectState.Ready, null, null, true, true, true, IsStopChecked: true));
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(Color.Parse("#D10000"), Assert.IsAssignableFrom<ISolidColorBrush>(stop.Background).Color);
 
@@ -1554,8 +1672,13 @@ public sealed class RouteMapSettingsDialogVisualTests
 
     private sealed class NoOpCommandDispatcher : IEquipmentCommandDispatcher
     {
-        public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+        public List<SignalWriteRequest> Requests { get; } = [];
+
+        public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class NoOpExternalLinkLauncher : IExternalLinkLauncher

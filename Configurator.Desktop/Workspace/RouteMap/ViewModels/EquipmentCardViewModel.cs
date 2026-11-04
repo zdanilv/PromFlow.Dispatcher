@@ -4,6 +4,7 @@ using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Avalonia;
 using Avalonia.Media;
+using Avalonia.Threading;
 using ReactiveUI;
 using System.Reactive;
 
@@ -21,6 +22,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private readonly SignalBinding? _stopBinding;
     private readonly SignalBinding? _uncheckedBinding;
     private readonly SignalBinding? _checkedBinding;
+    private readonly bool _hasPowerFeedback;
     private readonly RouteMapPaletteSettings _palette;
     private readonly bool _usesDefaultPalette;
     private string _statusText;
@@ -43,6 +45,13 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private bool _isSelectorResetActive;
     private bool _runtimeVisible = true;
     private bool _isApplyingRuntime;
+    private bool? _isPowerOn;
+    private bool _isStartBusy;
+    private bool _isStopPending;
+    private bool? _pendingStopValue;
+    private bool _stopWriteInFlight;
+    private bool _stopReadbackMatched;
+    private string? _commandErrorMessage;
 
     public EquipmentCardViewModel(
         EquipmentCommandCard card,
@@ -73,6 +82,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         _stopBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.StopCommand);
         _uncheckedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.UncheckedCommand);
         _checkedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.CheckedCommand);
+        _hasPowerFeedback = card.Bindings.Any(x => x.Role == SignalBindingRole.PowerFeedback);
+        StartCommand = ReactiveCommand.CreateFromTask(ExecuteStartAsync);
         OpenParametersCommand = ReactiveCommand.CreateFromTask(OpenParametersAsync);
     }
 
@@ -85,7 +96,50 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public bool StartOffFeedbackEnabled { get; }
     public bool StopOffFeedbackEnabled { get; }
     public bool IsStartToggle => StartButtonKind == RouteCommandButtonKind.Toggle;
+    public bool IsStartMomentary => StartButtonKind == RouteCommandButtonKind.Momentary;
     public bool IsStopToggle => StopButtonKind == RouteCommandButtonKind.Toggle;
+    public bool HasPowerFeedback => _hasPowerFeedback;
+    public bool IsStartBusy
+    {
+        get => _isStartBusy;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isStartBusy, value);
+            this.RaisePropertyChanged(nameof(CanStart));
+        }
+    }
+    public bool IsStopPending
+    {
+        get => _isStopPending;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isStopPending, value);
+            this.RaisePropertyChanged(nameof(CanStop));
+        }
+    }
+    public string? CommandErrorMessage
+    {
+        get => _commandErrorMessage;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _commandErrorMessage, value);
+            this.RaisePropertyChanged(nameof(HasCommandError));
+        }
+    }
+    public bool HasCommandError => !string.IsNullOrWhiteSpace(CommandErrorMessage);
+    public IBrush PowerIndicatorBackground => RouteMapPalette.Brush(_isPowerOn switch
+    {
+        true => "#00D107",
+        false => "#D10000",
+        _ => "#3F474D"
+    });
+    public IBrush PowerIndicatorForeground => RouteMapPalette.Brush("#FFFFFF");
+    public string PowerIndicatorToolTip => _isPowerOn switch
+    {
+        true => "Питание включено",
+        false => "Питание выключено",
+        _ => "Состояние питания неизвестно"
+    };
     public bool IsVisible => IsStaticallyVisible && _runtimeVisible;
     public double CardWidth => Style.Width;
     public double MinimumCardWidth => Style.MinimumWidth;
@@ -126,6 +180,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public IBrush ParameterBackground => RouteMapPalette.Brush("#D0D0D0");
     public IBrush ParameterForeground => RouteMapPalette.Brush("#101820");
     public ReactiveCommand<Unit, Unit> OpenParametersCommand { get; }
+    public ReactiveCommand<Unit, Unit> StartCommand { get; }
 
     public bool IsEnabled
     {
@@ -206,13 +261,13 @@ public sealed class EquipmentCardViewModel : ViewModelBase
 
     public bool CanStart
     {
-        get => _canStart;
+        get => _canStart && !IsStartBusy;
         set => this.RaiseAndSetIfChanged(ref _canStart, value);
     }
 
     public bool CanStop
     {
-        get => _canStop;
+        get => _canStop && !IsStopPending;
         set => this.RaiseAndSetIfChanged(ref _canStop, value);
     }
 
@@ -224,20 +279,11 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             if (_isStartChecked == value)
                 return;
 
+            if (IsStartMomentary)
+                return;
             SetStartChecked(value);
-
             if (!_isApplyingRuntime)
-            {
-                if (value)
-                {
-                    SetStopChecked(false);
-                    _ = DispatchStartAsync();
-                }
-                else
-                {
-                    _ = DispatchAsync(_startBinding, false);
-                }
-            }
+                RequestLegacyStart(value);
         }
     }
 
@@ -249,21 +295,32 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             if (_isStopChecked == value)
                 return;
 
-            SetStopChecked(value);
-
-            if (!_isApplyingRuntime)
+            if (_isApplyingRuntime)
             {
-                if (value)
+                SetStopChecked(value);
+                if (_pendingStopValue == value)
                 {
-                    SetStartChecked(false);
-                    _ = DispatchStopAsync();
+                    _stopReadbackMatched = true;
+                    if (!_stopWriteInFlight)
+                    {
+                        _pendingStopValue = null;
+                        IsStopPending = false;
+                    }
                 }
-                else
-                {
-                    _ = DispatchAsync(_stopBinding, false);
-                }
+                return;
             }
+
+            // Checked is readback state. An operator request stays pending until a fresh snapshot agrees.
+            this.RaisePropertyChanged(nameof(IsStopChecked));
+            if (CanStop)
+                RequestStop(value);
         }
+    }
+
+    public void RequestStopChange(bool value)
+    {
+        if (value != IsStopChecked && CanStop)
+            RequestStop(value);
     }
 
     public bool IsSelectorChecked
@@ -275,8 +332,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
                 return;
 
             SetSelectorChecked(value);
-            if (!_isApplyingRuntime && IsSelectorEnabled)
-                _ = DispatchSelectorAsync(value);
+            if (!_isApplyingRuntime && IsSelectorEnabled && !HasPowerFeedback)
+                RequestSelector(value);
         }
     }
 
@@ -379,7 +436,15 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     {
         IsConnectionAvailable = isConnectionAvailable;
         if (runtimeState is null)
+        {
+            if (HasPowerFeedback && _isPowerOn is not null)
+            {
+                _isPowerOn = null;
+                this.RaisePropertyChanged(nameof(PowerIndicatorBackground));
+                this.RaisePropertyChanged(nameof(PowerIndicatorToolTip));
+            }
             return;
+        }
 
         _isApplyingRuntime = true;
         try
@@ -390,12 +455,27 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             CanStop = runtimeState.CanStop;
             IsEnabled = runtimeState.IsEnabled;
             IsSelectorEnabled = runtimeState.IsSelectorCommandEnabled;
-            var isStartChecked = runtimeState.IsStartChecked && !runtimeState.IsStopChecked;
-            IsStartChecked = isStartChecked;
+            if (IsStartToggle)
+                IsStartChecked = runtimeState.IsStartChecked && !runtimeState.IsStopChecked;
             IsStopChecked = runtimeState.IsStopChecked;
-            IsSelectorChecked = runtimeState.ShouldResetSelectorCommands
-                ? false
-                : runtimeState.IsSelectorChecked;
+            if (HasPowerFeedback)
+            {
+                var powerOn = isConnectionAvailable && runtimeState.State != RouteObjectState.Offline
+                    ? runtimeState.IsPowerOn
+                    : null;
+                if (_isPowerOn != powerOn)
+                {
+                    _isPowerOn = powerOn;
+                    this.RaisePropertyChanged(nameof(PowerIndicatorBackground));
+                    this.RaisePropertyChanged(nameof(PowerIndicatorToolTip));
+                }
+            }
+            else
+            {
+                IsSelectorChecked = runtimeState.ShouldResetSelectorCommands
+                    ? false
+                    : runtimeState.IsSelectorChecked;
+            }
             _runtimeVisible = runtimeState.IsVisible;
             this.RaisePropertyChanged(nameof(IsVisible));
         }
@@ -404,10 +484,13 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             _isApplyingRuntime = false;
         }
 
-        var shouldDispatchSelectorReset = runtimeState.ShouldResetSelectorCommands && !_isSelectorResetActive;
-        _isSelectorResetActive = runtimeState.ShouldResetSelectorCommands;
-        if (shouldDispatchSelectorReset)
-            _ = DispatchSelectorResetAsync();
+        if (!HasPowerFeedback)
+        {
+            var shouldDispatchSelectorReset = runtimeState.ShouldResetSelectorCommands && !_isSelectorResetActive;
+            _isSelectorResetActive = runtimeState.ShouldResetSelectorCommands;
+            if (shouldDispatchSelectorReset)
+                RequestSelectorReset();
+        }
     }
 
     public void ApplyRouteSelection(
@@ -433,16 +516,92 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             ?? Task.CompletedTask;
     }
 
-    private async Task DispatchStartAsync()
+    private async Task ExecuteStartAsync()
     {
-        await DispatchAsync(_stopBinding, false);
-        await DispatchAsync(_startBinding, true);
+        if (!IsStartMomentary || !CanStart || IsStartBusy)
+            return;
+        if (_startBinding is null)
+        {
+            CommandErrorMessage = "ПУСК не настроен в SignalId карточки.";
+            return;
+        }
+
+        IsStartBusy = true;
+        CommandErrorMessage = null;
+        try
+        {
+            await DispatchAsync(_startBinding, true);
+        }
+        catch (Exception ex)
+        {
+            await UpdateUiAsync(() => CommandErrorMessage = $"ПУСК не подтверждён: {ex.Message}");
+        }
+        finally
+        {
+            await UpdateUiAsync(() => IsStartBusy = false);
+        }
     }
 
-    private async Task DispatchStopAsync()
+    private void RequestLegacyStart(bool value) => _ = DispatchObservedAsync(_startBinding, value, "ПУСК");
+
+    private void RequestStop(bool value) => _ = SetStopAsync(value);
+
+    private async Task SetStopAsync(bool value)
     {
-        await DispatchAsync(_startBinding, false);
-        await DispatchAsync(_stopBinding, true);
+        if (_stopBinding is null)
+        {
+            CommandErrorMessage = "СТОП не настроен в SignalId карточки.";
+            return;
+        }
+        _pendingStopValue = value;
+        _stopReadbackMatched = false;
+        _stopWriteInFlight = true;
+        IsStopPending = true;
+        CommandErrorMessage = null;
+        try
+        {
+            await DispatchAsync(_stopBinding, value);
+            await UpdateUiAsync(() =>
+            {
+                _stopWriteInFlight = false;
+                if (_stopReadbackMatched)
+                {
+                    _pendingStopValue = null;
+                    IsStopPending = false;
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            await UpdateUiAsync(() =>
+            {
+                _pendingStopValue = null;
+                _stopWriteInFlight = false;
+                IsStopPending = false;
+                CommandErrorMessage = $"СТОП не подтверждён: {ex.Message}";
+                this.RaisePropertyChanged(nameof(IsStopChecked));
+            });
+        }
+    }
+
+    private async Task DispatchObservedAsync(SignalBinding? binding, bool value, string commandName)
+    {
+        try
+        {
+            await DispatchAsync(binding, value);
+        }
+        catch (Exception ex)
+        {
+            await UpdateUiAsync(() => CommandErrorMessage = $"{commandName} не подтверждён: {ex.Message}");
+        }
+    }
+
+    private static async Task UpdateUiAsync(Action update)
+    {
+        if (Avalonia.Application.Current is null || Dispatcher.UIThread.CheckAccess())
+            update();
+        else
+            await Dispatcher.UIThread.InvokeAsync(update);
     }
 
     private async Task DispatchSelectorAsync(bool isChecked)
@@ -462,6 +621,22 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     {
         await DispatchAsync(_checkedBinding, false);
         await DispatchAsync(_uncheckedBinding, false);
+    }
+
+    private void RequestSelector(bool value) => _ = DispatchSelectorObservedAsync(value);
+
+    private void RequestSelectorReset() => _ = DispatchSelectorResetObservedAsync();
+
+    private async Task DispatchSelectorObservedAsync(bool value)
+    {
+        try { await DispatchSelectorAsync(value); }
+        catch (Exception ex) { await UpdateUiAsync(() => CommandErrorMessage = $"С не подтверждена: {ex.Message}"); }
+    }
+
+    private async Task DispatchSelectorResetObservedAsync()
+    {
+        try { await DispatchSelectorResetAsync(); }
+        catch (Exception ex) { await UpdateUiAsync(() => CommandErrorMessage = $"Сброс С не подтверждён: {ex.Message}"); }
     }
 
     private void SetStartChecked(bool value)

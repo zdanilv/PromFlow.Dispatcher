@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Controls.Primitives;
 using Avalonia.Markup.Xaml;
 using ReactiveUI.Avalonia;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
@@ -43,6 +44,16 @@ public partial class EquipmentCardView : ReactiveUserControl<EquipmentCardViewMo
     private void Button_PointerPressed(object? sender, PointerPressedEventArgs e) =>
         SetPressed(e.Source, pressed: true);
 
+    private void StopButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is null || sender is not ToggleButton stopButton)
+            return;
+
+        var requested = stopButton.IsChecked == true;
+        stopButton.SetCurrentValue(ToggleButton.IsCheckedProperty, ViewModel.IsStopChecked);
+        ViewModel.RequestStopChange(requested);
+    }
+
     private void Button_PointerReleased(object? sender, PointerReleasedEventArgs e) =>
         SetPressed(e.Source, pressed: false);
 
@@ -63,7 +74,7 @@ public partial class EquipmentCardView : ReactiveUserControl<EquipmentCardViewMo
         if (ViewModel is null || FindNamedButton(source) is not { } buttonName)
             return;
 
-        if (buttonName == "StartButton")
+        if (buttonName is "StartButton" or "LegacyStartToggleButton")
             ViewModel.IsStartPressed = pressed;
         else if (buttonName == "StopButton")
             ViewModel.IsStopPressed = pressed;
@@ -79,6 +90,7 @@ public partial class EquipmentCardView : ReactiveUserControl<EquipmentCardViewMo
         switch (FindNamedButton(source))
         {
             case "StartButton":
+            case "LegacyStartToggleButton":
                 ViewModel.IsStartHovered = hovered;
                 break;
             case "StopButton":
@@ -93,7 +105,7 @@ public partial class EquipmentCardView : ReactiveUserControl<EquipmentCardViewMo
 
         while (control is not null)
         {
-            if (control.Name is "StartButton" or "StopButton" or "SelectorButton")
+            if (control.Name is "StartButton" or "LegacyStartToggleButton" or "StopButton" or "SelectorButton")
                 return control.Name;
 
             control = control.Parent as Control;

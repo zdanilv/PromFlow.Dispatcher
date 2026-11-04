@@ -297,7 +297,10 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             _gate.Release();
         }
 
-        if (point.IsReadable)
+        // A PLC may clear a pulse before the next poll. Transport acceptance is enough
+        // to schedule its reset; it does not confirm physical execution by the PLC.
+        var isPulseSet = point.WriteMode == ModbusWriteMode.Pulse && point.Type == ModbusValueType.Bool && expectedValue is true;
+        if (point.IsReadable && !isPulseSet)
         {
             return await WaitForConfirmationAsync(point, expectedValue, ct);
         }

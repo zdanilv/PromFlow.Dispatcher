@@ -2,6 +2,7 @@ using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
+using System.Reactive.Threading.Tasks;
 using Xunit;
 
 namespace Configurator.Tests.Unit.RouteMap;
@@ -32,37 +33,125 @@ public sealed class EquipmentCardViewModelTests
     }
 
     [Fact]
-    public void Start_toggle_dispatches_true_and_false()
+    public async Task Start_button_dispatches_one_true_without_changing_stop()
     {
         var dispatcher = new CapturingEquipmentCommandDispatcher();
         var card = RouteMapSeed.Create().MapEquipment.Single();
         var viewModel = new EquipmentCardViewModel(card, dispatcher);
 
+        await viewModel.StartCommand.Execute().ToTask();
         viewModel.IsStartChecked = true;
-        viewModel.IsStartChecked = false;
 
-        Assert.Collection(dispatcher.Requests,
-            request => Assert.Equal(("equip.bucket.stop", false, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)),
-            request => Assert.Equal(("equip.bucket.start", true, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)),
-            request => Assert.Equal(("equip.bucket.start", false, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)));
+        var request = Assert.Single(dispatcher.Requests);
+        Assert.Equal(("equip.bucket.start", true, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType));
         Assert.False(viewModel.IsStartChecked);
     }
 
     [Fact]
-    public void Stop_toggle_dispatches_true_and_false()
+    public void Stop_toggle_sends_requested_values_only_after_readback()
     {
         var dispatcher = new CapturingEquipmentCommandDispatcher();
         var card = RouteMapSeed.Create().MapEquipment.Single();
         var viewModel = new EquipmentCardViewModel(card, dispatcher);
 
         viewModel.IsStopChecked = true;
+        Assert.False(viewModel.IsStopChecked);
+        Assert.True(viewModel.IsStopPending);
+        viewModel.ApplyRuntime(new RouteObjectRuntimeState(card.Id, RouteObjectState.Idle, card.StatusText,
+            null, true, true, true, IsStopChecked: true));
+        Assert.True(viewModel.IsStopChecked);
+        Assert.False(viewModel.IsStopPending);
         viewModel.IsStopChecked = false;
 
         Assert.Collection(dispatcher.Requests,
-            request => Assert.Equal(("equip.bucket.start", false, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)),
             request => Assert.Equal(("equip.bucket.stop", true, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)),
             request => Assert.Equal(("equip.bucket.stop", false, SignalValueType.Bool), (request.SignalId, request.Value, request.ValueType)));
+        Assert.True(viewModel.IsStopChecked);
+    }
+
+    [Fact]
+    public async Task Start_is_busy_until_dispatch_finishes_and_does_not_overlap()
+    {
+        var dispatcher = new BlockingEquipmentCommandDispatcher();
+        var viewModel = new EquipmentCardViewModel(RouteMapSeed.Create().MapEquipment.Single(), dispatcher);
+
+        var first = viewModel.StartCommand.Execute().ToTask();
+        Assert.True(viewModel.IsStartBusy);
+        Assert.False(viewModel.CanStart);
+        Assert.Single(dispatcher.Requests);
+
+        dispatcher.Complete();
+        await first;
+
+        Assert.False(viewModel.IsStartBusy);
+        Assert.True(viewModel.CanStart);
+        Assert.Single(dispatcher.Requests);
+    }
+
+    [Fact]
+    public async Task Stop_stays_pending_until_write_and_readback_both_complete()
+    {
+        var dispatcher = new BlockingEquipmentCommandDispatcher();
+        var card = RouteMapSeed.Create().MapEquipment.Single();
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+
+        viewModel.IsStopChecked = true;
+        Assert.True(viewModel.IsStopPending);
+        viewModel.ApplyRuntime(new RouteObjectRuntimeState(card.Id, RouteObjectState.Idle, card.StatusText,
+            null, true, true, true, IsStopChecked: true));
+        Assert.True(viewModel.IsStopChecked);
+        Assert.True(viewModel.IsStopPending);
+        Assert.False(viewModel.CanStop);
+
+        dispatcher.Complete();
+        await dispatcher.Completed;
+        Assert.True(SpinWait.SpinUntil(() => !viewModel.IsStopPending, TimeSpan.FromSeconds(1)));
+        Assert.False(viewModel.IsStopPending);
+        Assert.True(viewModel.CanStop);
+        Assert.Single(dispatcher.Requests);
+    }
+
+    [Fact]
+    public async Task Command_errors_are_visible_and_stop_state_waits_for_readback()
+    {
+        var dispatcher = new FailingEquipmentCommandDispatcher();
+        var viewModel = new EquipmentCardViewModel(RouteMapSeed.Create().MapEquipment.Single(), dispatcher);
+
+        await viewModel.StartCommand.Execute().ToTask();
+        Assert.True(viewModel.HasCommandError);
+        Assert.Contains("ПУСК", viewModel.CommandErrorMessage);
+        Assert.False(viewModel.IsStartBusy);
+
+        viewModel.IsStopChecked = true;
+        Assert.True(viewModel.HasCommandError);
+        Assert.Contains("СТОП", viewModel.CommandErrorMessage);
         Assert.False(viewModel.IsStopChecked);
+        Assert.False(viewModel.IsStopPending);
+        Assert.Equal(2, dispatcher.Requests.Count);
+    }
+
+    [Fact]
+    public void Power_indicator_uses_only_fresh_runtime_readback()
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var card = RouteMapSeed.Create().MapEquipment.Single();
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+        RouteObjectRuntimeState Runtime(bool? value, RouteObjectState state = RouteObjectState.Idle) =>
+            new(card.Id, state, card.StatusText, null, true, true, true, IsPowerOn: value);
+
+        Assert.Equal(Avalonia.Media.Color.Parse("#3F474D"), BrushColor(viewModel.PowerIndicatorBackground));
+        viewModel.ApplyRuntime(Runtime(false));
+        Assert.Equal(Avalonia.Media.Color.Parse("#D10000"), BrushColor(viewModel.PowerIndicatorBackground));
+        viewModel.ApplyRuntime(Runtime(true));
+        Assert.Equal(Avalonia.Media.Color.Parse("#00D107"), BrushColor(viewModel.PowerIndicatorBackground));
+        viewModel.ApplyRuntime(Runtime(null));
+        Assert.Equal(Avalonia.Media.Color.Parse("#3F474D"), BrushColor(viewModel.PowerIndicatorBackground));
+        viewModel.ApplyRuntime(Runtime(true, RouteObjectState.Offline));
+        Assert.Equal(Avalonia.Media.Color.Parse("#3F474D"), BrushColor(viewModel.PowerIndicatorBackground));
+        viewModel.ApplyRuntime(Runtime(true));
+        viewModel.ApplyRuntime(null, isConnectionAvailable: false);
+        Assert.Equal(Avalonia.Media.Color.Parse("#3F474D"), BrushColor(viewModel.PowerIndicatorBackground));
+        Assert.Empty(dispatcher.Requests);
     }
 
     [Fact]
@@ -150,10 +239,10 @@ public sealed class EquipmentCardViewModelTests
             IsEnabled: false,
             IsSelectorCommandEnabled: true));
 
-        Assert.True(viewModel.IsSelectorChecked);
+        Assert.False(viewModel.IsSelectorChecked);
         Assert.False(viewModel.IsEnabled);
         Assert.True(viewModel.IsSelectorEnabled);
-        Assert.Equal(Avalonia.Media.Color.Parse("#003CA3"), BrushColor(viewModel.SelectorBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#D0D0D0"), BrushColor(viewModel.SelectorBackground));
         Assert.Empty(dispatcher.Requests);
     }
 
@@ -215,15 +304,17 @@ public sealed class EquipmentCardViewModelTests
 
         viewModel.IsStartChecked = true;
 
-        Assert.Equal(Avalonia.Media.Color.Parse("#00D107"), BrushColor(viewModel.StartBackground));
-        Assert.Equal(Avalonia.Media.Color.Parse("#FFFFFF"), BrushColor(viewModel.StartForeground));
+        Assert.False(viewModel.IsStartChecked);
+        Assert.Equal(Avalonia.Media.Color.Parse("#D0D0D0"), BrushColor(viewModel.StartBackground));
+        Assert.Equal(Avalonia.Media.Color.Parse("#101820"), BrushColor(viewModel.StartForeground));
         Assert.Equal(Avalonia.Media.Color.Parse("#FF2626"), BrushColor(viewModel.StopBackground));
 
         viewModel.IsStartPressed = true;
         Assert.Equal(Avalonia.Media.Color.Parse("#00D107"), BrushColor(viewModel.StartBackground));
         viewModel.IsStartPressed = false;
 
-        viewModel.IsStopChecked = true;
+        viewModel.ApplyRuntime(new RouteObjectRuntimeState(viewModel.Id, RouteObjectState.Idle, "Выключено",
+            null, true, true, true, IsStopChecked: true));
 
         Assert.False(viewModel.IsStartChecked);
         Assert.True(viewModel.IsStopChecked);
@@ -243,7 +334,8 @@ public sealed class EquipmentCardViewModelTests
         Assert.Equal(Avalonia.Media.Color.Parse("#FFFFFF"), BrushColor(viewModel.StopForeground));
 
         viewModel.IsStopPressed = false;
-        viewModel.IsStopChecked = false;
+        viewModel.ApplyRuntime(new RouteObjectRuntimeState(viewModel.Id, RouteObjectState.Idle, "Выключено",
+            null, true, true, true, IsStopChecked: false));
         Assert.Equal(Avalonia.Media.Color.Parse("#FF8A8A"), BrushColor(viewModel.StopBackground));
     }
 
@@ -369,6 +461,29 @@ public sealed class EquipmentCardViewModelTests
         {
             Requests.Add(request);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class BlockingEquipmentCommandDispatcher : IEquipmentCommandDispatcher
+    {
+        private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public List<SignalWriteRequest> Requests { get; } = new();
+        public Task Completed => _completion.Task;
+        public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return _completion.Task;
+        }
+        public void Complete() => _completion.SetResult();
+    }
+
+    private sealed class FailingEquipmentCommandDispatcher : IEquipmentCommandDispatcher
+    {
+        public List<SignalWriteRequest> Requests { get; } = new();
+        public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            throw new InvalidOperationException("transport failed");
         }
     }
 }

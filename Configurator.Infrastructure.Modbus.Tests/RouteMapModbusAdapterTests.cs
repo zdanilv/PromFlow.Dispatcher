@@ -39,6 +39,159 @@ public sealed class RouteMapModbusAdapterTests
         Assert.Equal([("pulse", true), ("pulse", false)], service.Writes);
     }
 
+    [Theory]
+    [InlineData("equip.bucket.start")]
+    [InlineData("system.reset")]
+    public async Task Dispatcher_PulseCommand_FailedSetStillAttemptsResetOnce(string signalId)
+    {
+        var service = new FakeModbusService
+        {
+            WriteHandler = (_, value, _) => Task.FromResult(value is true
+                ? ModbusOperationResult.Failure("Timeout", "The true write may have reached the PLC.")
+                : ModbusOperationResult.Success())
+        };
+        var dispatcher = CreatePulseDispatcher(service, signalId);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.DispatchAsync(new SignalWriteRequest(signalId, true, SignalValueType.Bool)));
+
+        Assert.Contains("may have reached", error.Message);
+        Assert.Equal([(signalId, true), (signalId, false)], service.Writes);
+    }
+
+    [Fact]
+    public async Task Dispatcher_PulseCommand_ThrownTimeoutStillAttemptsReset()
+    {
+        var timeout = new TimeoutException("Transport reply was lost.");
+        var service = new FakeModbusService
+        {
+            WriteHandler = (_, value, _) => value is true
+                ? Task.FromException<ModbusOperationResult>(timeout)
+                : Task.FromResult(ModbusOperationResult.Success())
+        };
+        var dispatcher = CreatePulseDispatcher(service);
+
+        var error = await Assert.ThrowsAsync<TimeoutException>(() =>
+            dispatcher.DispatchAsync(new SignalWriteRequest("pulse", true, SignalValueType.Bool)));
+
+        Assert.Same(timeout, error);
+        Assert.Equal([("pulse", true), ("pulse", false)], service.Writes);
+    }
+
+    [Fact]
+    public async Task Dispatcher_PulseCommand_CancellationUsesIndependentResetToken()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var service = new FakeModbusService
+        {
+            WriteHandler = (_, value, token) =>
+            {
+                if (value is true)
+                    cancellation.Cancel();
+                else
+                    Assert.False(token.IsCancellationRequested);
+                return Task.FromResult(ModbusOperationResult.Success());
+            }
+        };
+        var dispatcher = CreatePulseDispatcher(service);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            dispatcher.DispatchAsync(new SignalWriteRequest("pulse", true, SignalValueType.Bool), cancellation.Token));
+
+        Assert.Equal([("pulse", true), ("pulse", false)], service.Writes);
+    }
+
+    [Fact]
+    public async Task Dispatcher_PulseCommand_PreservesSetAndResetErrors()
+    {
+        var service = new FakeModbusService
+        {
+            WriteHandler = (_, value, _) => Task.FromResult(ModbusOperationResult.Failure(
+                "Transport", value is true ? "Set failed." : "Reset failed."))
+        };
+        var dispatcher = CreatePulseDispatcher(service);
+
+        var error = await Assert.ThrowsAsync<AggregateException>(() =>
+            dispatcher.DispatchAsync(new SignalWriteRequest("pulse", true, SignalValueType.Bool)));
+
+        Assert.Collection(error.InnerExceptions,
+            set => Assert.Contains("Set failed", set.Message),
+            reset => Assert.Contains("Reset failed", reset.Message));
+        Assert.Equal([("pulse", true), ("pulse", false)], service.Writes);
+    }
+
+    [Fact]
+    public async Task Dispatcher_PulseCommand_ResetIsBoundedWhenServiceIgnoresCancellation()
+    {
+        var resetCompletion = new TaskCompletionSource<ModbusOperationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var service = new FakeModbusService
+        {
+            WriteHandler = (_, value, _) => value is true
+                ? Task.FromResult(ModbusOperationResult.Success()) : resetCompletion.Task
+        };
+        var dispatcher = CreatePulseDispatcher(service);
+
+        try
+        {
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await dispatcher.DispatchAsync(new SignalWriteRequest("pulse", true, SignalValueType.Bool))
+                    .WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Contains("state is unknown", error.Message);
+            Assert.Equal([("pulse", true), ("pulse", false)], service.Writes);
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                dispatcher.DispatchAsync(new SignalWriteRequest("pulse", true, SignalValueType.Bool)));
+            Assert.Equal([("pulse", true), ("pulse", false)], service.Writes);
+        }
+        finally
+        {
+            resetCompletion.TrySetResult(ModbusOperationResult.Success());
+        }
+    }
+
+    [Fact]
+    public async Task Dispatcher_PulseCommand_RejectsOverlappingActivationOfSameSignal()
+    {
+        var setStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var setCompletion = new TaskCompletionSource<ModbusOperationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var service = new FakeModbusService
+        {
+            WriteHandler = (_, value, _) =>
+            {
+                if (value is true)
+                {
+                    setStarted.TrySetResult();
+                    return setCompletion.Task;
+                }
+                return Task.FromResult(ModbusOperationResult.Success());
+            }
+        };
+        var dispatcher = CreatePulseDispatcher(service);
+        var first = dispatcher.DispatchAsync(new SignalWriteRequest("pulse", true, SignalValueType.Bool));
+        await setStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.DispatchAsync(new SignalWriteRequest("PULSE", true, SignalValueType.Bool)));
+        Assert.Equal([("pulse", true)], service.Writes);
+        setCompletion.SetResult(ModbusOperationResult.Success());
+        await first;
+        Assert.Equal([("pulse", true), ("pulse", false)], service.Writes);
+    }
+
+    [Fact]
+    public async Task Dispatcher_PulseCommand_FalseRequestDoesNotWrite()
+    {
+        var service = new FakeModbusService();
+        await CreatePulseDispatcher(service).DispatchAsync(new SignalWriteRequest("pulse", false, SignalValueType.Bool));
+        Assert.Empty(service.Writes);
+    }
+
+    private static ModbusTcpCommandDispatcher CreatePulseDispatcher(FakeModbusService service, string signalId = "pulse")
+    {
+        var point = CreatePoint(signalId, ModbusWriteMode.Pulse);
+        point.PulseDurationMs = 1;
+        return new ModbusTcpCommandDispatcher(service, new TestOptionsMonitor(CreateOptions(point)));
+    }
+
     [Fact]
     public async Task Dispatcher_RejectsUnknownReadOnlyAndWrongTypeSignals()
     {
@@ -256,6 +409,7 @@ public sealed class RouteMapModbusAdapterTests
 
         public List<(string SignalId, bool Value)> Writes { get; } = [];
         public List<(string SignalId, object? Value)> RawWrites { get; } = [];
+        public Func<string, object?, CancellationToken, Task<ModbusOperationResult>>? WriteHandler { get; init; }
         public ModbusServiceState State { get; private set; }
         public event EventHandler<ModbusServiceState>? StateChanged;
 
@@ -285,7 +439,7 @@ public sealed class RouteMapModbusAdapterTests
                 Writes.Add((name, boolean));
             }
 
-            return Task.FromResult(ModbusOperationResult.Success());
+            return WriteHandler?.Invoke(name, value, ct) ?? Task.FromResult(ModbusOperationResult.Success());
         }
 
         public IDisposable Subscribe(string name, Action<ModbusDataValue> onChanged)

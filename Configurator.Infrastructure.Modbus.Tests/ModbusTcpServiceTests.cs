@@ -65,6 +65,25 @@ public sealed class ModbusTcpServiceTests
     }
 
     [Fact]
+    public async Task SetAsync_PulseTrueAcceptsTransportWithoutReadbackButFalseStillRequiresConfirmation()
+    {
+        var options = CreateOptions();
+        options.WriteConfirmationTimeoutMs = 50;
+        options.DataMap.Single(point => point.Name == "DemoButton").WriteMode = ModbusWriteMode.Pulse;
+        var client = new NoopClientService();
+        await using var service = CreateService(new FakeRuntimeService(), client, new NoopServerService(), options);
+        await service.StartClientAsync();
+
+        var set = await service.SetAsync("DemoButton", true);
+        var reset = await service.SetAsync("DemoButton", false);
+
+        Assert.True(set.Succeeded, set.ErrorMessage);
+        Assert.False(reset.Succeeded);
+        Assert.Equal("ModbusWriteConfirmationTimeout", reset.ErrorCode);
+        Assert.Equal([(0, true), (0, false)], client.CoilWrites);
+    }
+
+    [Fact]
     public async Task SetAsync_WhenClientAndServerAreRunning_WritesThroughClient()
     {
         var options = CreateOptions();
