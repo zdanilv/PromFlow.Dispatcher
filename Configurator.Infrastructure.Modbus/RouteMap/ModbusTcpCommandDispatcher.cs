@@ -36,6 +36,12 @@ public sealed class ModbusTcpCommandDispatcher(
                 $"Signal '{request.SignalId}' expects {point.Type}, but RouteMap requested {request.ValueType}.");
         }
 
+        if (request.RequiredWriteMode is { } requiredWriteMode && point.WriteMode != requiredWriteMode)
+        {
+            throw new InvalidOperationException(
+                $"Signal '{request.SignalId}' requires {requiredWriteMode} write mode, but Modbus.DataMap uses {point.WriteMode}.");
+        }
+
         if (point.WriteMode == ModbusWriteMode.Pulse)
         {
             if (request.Value is not bool pulseRequested || !pulseRequested)

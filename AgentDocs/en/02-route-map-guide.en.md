@@ -93,6 +93,9 @@ determines the final checked state, and snapshot updates do not write back.
 Dispatch/confirmation errors remain visible. These software controls do not replace
 PLC interlocks or a safety stop. `Emergency`, `TargetCommand`, and `LoaderCommand`
 retain their existing semantics.
+The dispatcher rejects a saved Start mapping that is not Pulse or a Stop mapping
+that is not Latched before writing. If fresh Stop readback does not confirm the
+request within 10 seconds, Pending clears with a visible error and no automatic retry.
 
 `Automatic` and `Manual` are hidden in user and admin TopBar and settings. Their
 commands are inert and their SignalIds are absent from the active mapping inventory.

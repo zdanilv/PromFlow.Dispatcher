@@ -131,6 +131,38 @@ public sealed class EquipmentCardViewModelTests
     }
 
     [Fact]
+    public async Task Momentary_start_and_toggle_stop_require_their_write_modes()
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var viewModel = new EquipmentCardViewModel(RouteMapSeed.Create().MapEquipment.Single(), dispatcher);
+
+        await viewModel.StartCommand.Execute().ToTask();
+        viewModel.IsStopChecked = true;
+
+        Assert.Collection(dispatcher.Requests,
+            request => Assert.Equal(Configurator.Application.Services.Modbus.Configuration.ModbusWriteMode.Pulse, request.RequiredWriteMode),
+            request => Assert.Equal(Configurator.Application.Services.Modbus.Configuration.ModbusWriteMode.Latched, request.RequiredWriteMode));
+    }
+
+    [Fact]
+    public async Task Stop_without_matching_readback_times_out_and_reports_error()
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var card = RouteMapSeed.Create().MapEquipment.Single();
+        var viewModel = new EquipmentCardViewModel(card, dispatcher,
+            stopConfirmationTimeout: TimeSpan.FromMilliseconds(20));
+
+        viewModel.IsStopChecked = true;
+        viewModel.ApplyRuntime(new RouteObjectRuntimeState(card.Id, RouteObjectState.Idle, card.StatusText,
+            null, true, true, true, IsStopChecked: false));
+
+        Assert.True(SpinWait.SpinUntil(() => !viewModel.IsStopPending, TimeSpan.FromSeconds(2)));
+        Assert.False(viewModel.IsStopChecked);
+        Assert.Contains("СТОП не подтверждён", viewModel.CommandErrorMessage);
+        Assert.Single(dispatcher.Requests);
+    }
+
+    [Fact]
     public void Power_indicator_uses_only_fresh_runtime_readback()
     {
         var dispatcher = new CapturingEquipmentCommandDispatcher();

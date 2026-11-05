@@ -1,4 +1,5 @@
 using Configurator.Application.Services.Signals;
+using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
@@ -51,6 +52,9 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private bool? _pendingStopValue;
     private bool _stopWriteInFlight;
     private bool _stopReadbackMatched;
+    private Task? _stopConfirmationTask;
+    private int _stopConfirmationVersion;
+    private readonly TimeSpan _stopConfirmationTimeout;
     private string? _commandErrorMessage;
 
     public EquipmentCardViewModel(
@@ -58,7 +62,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         IEquipmentCommandDispatcher commandDispatcher,
         RouteMapPaletteSettings? palette = null,
         IEquipmentCardParametersDialogService? parametersDialogService = null,
-        Func<IReadOnlyDictionary<string, SignalValue>?>? signalSnapshotAccessor = null)
+        Func<IReadOnlyDictionary<string, SignalValue>?>? signalSnapshotAccessor = null,
+        TimeSpan? stopConfirmationTimeout = null)
     {
         _card = card;
         Id = card.Id;
@@ -78,6 +83,9 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         _commandDispatcher = commandDispatcher;
         _parametersDialogService = parametersDialogService;
         _signalSnapshotAccessor = signalSnapshotAccessor;
+        _stopConfirmationTimeout = stopConfirmationTimeout ?? TimeSpan.FromSeconds(10);
+        if (_stopConfirmationTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(stopConfirmationTimeout));
         _startBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.StartCommand);
         _stopBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.StopCommand);
         _uncheckedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.UncheckedCommand);
@@ -304,6 +312,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
                     if (!_stopWriteInFlight)
                     {
                         _pendingStopValue = null;
+                        _stopConfirmationVersion++;
                         IsStopPending = false;
                     }
                 }
@@ -501,13 +510,13 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         ReturnPointTitle = SelectedPointTitle(chainNodes, roleStates, x => x.IsLoader);
     }
 
-    private Task DispatchAsync(SignalBinding? binding, bool value)
+    private Task DispatchAsync(SignalBinding? binding, bool value, ModbusWriteMode? requiredWriteMode = null)
     {
         if (binding is null)
             return Task.CompletedTask;
 
         return _commandDispatcher.DispatchAsync(
-            new SignalWriteRequest(binding.SignalId, value, binding.ValueType));
+            new SignalWriteRequest(binding.SignalId, value, binding.ValueType) { RequiredWriteMode = requiredWriteMode });
     }
 
     private Task OpenParametersAsync()
@@ -530,7 +539,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         CommandErrorMessage = null;
         try
         {
-            await DispatchAsync(_startBinding, true);
+            await DispatchAsync(_startBinding, true, ModbusWriteMode.Pulse);
         }
         catch (Exception ex)
         {
@@ -560,14 +569,20 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         CommandErrorMessage = null;
         try
         {
-            await DispatchAsync(_stopBinding, value);
+            await DispatchAsync(_stopBinding, value, IsStopToggle ? ModbusWriteMode.Latched : null);
             await UpdateUiAsync(() =>
             {
                 _stopWriteInFlight = false;
                 if (_stopReadbackMatched)
                 {
                     _pendingStopValue = null;
+                    _stopConfirmationVersion++;
                     IsStopPending = false;
+                }
+                else
+                {
+                    var version = ++_stopConfirmationVersion;
+                    _stopConfirmationTask = ConfirmStopReadbackAsync(value, version);
                 }
             });
         }
@@ -577,9 +592,42 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             {
                 _pendingStopValue = null;
                 _stopWriteInFlight = false;
+                _stopConfirmationVersion++;
                 IsStopPending = false;
                 CommandErrorMessage = $"СТОП не подтверждён: {ex.Message}";
                 this.RaisePropertyChanged(nameof(IsStopChecked));
+            });
+        }
+    }
+
+    private async Task ConfirmStopReadbackAsync(bool requestedValue, int version)
+    {
+        try
+        {
+            await Task.Delay(_stopConfirmationTimeout);
+            await UpdateUiAsync(() =>
+            {
+                if (version != _stopConfirmationVersion || _pendingStopValue != requestedValue)
+                    return;
+
+                _pendingStopValue = null;
+                _stopConfirmationVersion++;
+                IsStopPending = false;
+                CommandErrorMessage = "СТОП не подтверждён свежим состоянием PLC в отведённое время.";
+                this.RaisePropertyChanged(nameof(IsStopChecked));
+            });
+        }
+        catch (Exception ex)
+        {
+            await UpdateUiAsync(() =>
+            {
+                if (version == _stopConfirmationVersion)
+                {
+                    _pendingStopValue = null;
+                    _stopConfirmationVersion++;
+                    IsStopPending = false;
+                    CommandErrorMessage = $"СТОП не подтверждён: {ex.Message}";
+                }
             });
         }
     }

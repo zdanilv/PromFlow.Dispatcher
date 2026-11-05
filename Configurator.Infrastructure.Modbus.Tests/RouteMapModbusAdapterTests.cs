@@ -24,6 +24,26 @@ public sealed class RouteMapModbusAdapterTests
         Assert.Equal([("command", true)], service.Writes);
     }
 
+    [Theory]
+    [InlineData("custom.start", ModbusWriteMode.Latched, ModbusWriteMode.Pulse)]
+    [InlineData("custom.stop", ModbusWriteMode.Pulse, ModbusWriteMode.Latched)]
+    public async Task Dispatcher_RejectsWrongCommandModeBeforeAnyWrite(
+        string signalId, ModbusWriteMode actualMode, ModbusWriteMode requiredMode)
+    {
+        var service = new FakeModbusService();
+        var dispatcher = new ModbusTcpCommandDispatcher(
+            service, new TestOptionsMonitor(CreateOptions(CreatePoint(signalId, actualMode))));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.DispatchAsync(new SignalWriteRequest(signalId, true, SignalValueType.Bool)
+            {
+                RequiredWriteMode = requiredMode
+            }));
+
+        Assert.Contains($"requires {requiredMode}", error.Message);
+        Assert.Empty(service.Writes);
+    }
+
     [Fact]
     public async Task Dispatcher_PulseCommand_AlwaysResetsValue()
     {
