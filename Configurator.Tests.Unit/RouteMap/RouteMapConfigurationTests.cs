@@ -543,7 +543,8 @@ public sealed class RouteMapConfigurationTests
         Assert.Contains(SignalBindingRole.Enabled, viewModel.NodeBindingRoles);
         Assert.Contains(SignalBindingRole.Enabled, viewModel.SegmentBindingRoles);
         Assert.Contains(SignalBindingRole.Enabled, viewModel.CardBindingRoles);
-        Assert.Contains(SignalBindingRole.Enabled, viewModel.AutomaticModeBindingRoles);
+        Assert.Empty(viewModel.AutomaticModeBindingRoles);
+        Assert.Empty(viewModel.ManualModeBindingRoles);
         Assert.Contains(SignalBindingRole.ResetCommand, viewModel.ResetBindingRoles);
         Assert.Contains(SignalBindingRole.Enabled, viewModel.ResetBindingRoles);
     }
@@ -553,6 +554,8 @@ public sealed class RouteMapConfigurationTests
     {
         using var scope = new TempConfigurationScope();
         var document = scope.Mapper.CreateSeedDocument();
+        document.TopBar.Automatic.Bindings.Single(x => x.Role == SignalBindingRole.AutomaticModeCommand).SignalId = "custom.auto";
+        document.TopBar.Manual.Bindings.Single(x => x.Role == SignalBindingRole.ManualModeCommand).SignalId = "custom.manual";
         document.TopBar.Automatic.Bindings.Add(new SignalBindingConfiguration
         {
             Role = SignalBindingRole.Enabled,
@@ -566,6 +569,8 @@ public sealed class RouteMapConfigurationTests
 
         Assert.Equal("system.mode.automatic.enabled", definition.TopBar!.Automatic.EnabledBinding?.SignalId);
         Assert.Contains(roundTrip.TopBar.Automatic.Bindings, x => x.Role == SignalBindingRole.Enabled);
+        Assert.Equal("custom.auto", roundTrip.TopBar.Automatic.Bindings.Single(x => x.Role == SignalBindingRole.AutomaticModeCommand).SignalId);
+        Assert.Equal("custom.manual", roundTrip.TopBar.Manual.Bindings.Single(x => x.Role == SignalBindingRole.ManualModeCommand).SignalId);
     }
 
     [Fact]
@@ -582,21 +587,16 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Settings_adds_and_removes_optional_top_bar_enabled_binding()
+    public void Settings_rejects_mode_bindings_and_keeps_reset_enabled_binding_editable()
     {
         using var scope = new TempConfigurationScope();
         using var manager = scope.CreateManager();
         using var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
 
         viewModel.AddBindingCommand.Execute("automatic").Subscribe();
-        var enabled = Assert.Single(viewModel.Draft.TopBar.Automatic.Bindings, x => x.Role == SignalBindingRole.Enabled);
-
-        Assert.Equal("system.mode.automatic.enabled", enabled.SignalId);
-        Assert.Equal(SignalBindingDirection.Read, enabled.Direction);
-        Assert.Equal(SignalValueType.Bool, enabled.ValueType);
-
-        viewModel.RemoveBindingCommand.Execute(enabled).Subscribe();
+        viewModel.AddBindingCommand.Execute("manual").Subscribe();
         Assert.DoesNotContain(viewModel.Draft.TopBar.Automatic.Bindings, x => x.Role == SignalBindingRole.Enabled);
+        Assert.DoesNotContain(viewModel.Draft.TopBar.Manual.Bindings, x => x.Role == SignalBindingRole.Enabled);
 
         viewModel.AddBindingCommand.Execute("reset").Subscribe();
         var resetEnabled = Assert.Single(viewModel.Draft.TopBar.Reset.Bindings, x => x.Role == SignalBindingRole.Enabled);
@@ -861,11 +861,12 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Top_bar_button_colors_resolve_pressed_checked_normal_priority()
+    public void Top_bar_reset_and_emergency_colors_resolve_pressed_checked_normal_priority()
     {
         var viewModel = new TopBarViewModel(settingsDialogService: null, settings: RouteMapSeed.Create().TopBar);
 
-        Assert.Equal(Color.Parse("#ECEFF1"), BrushColor(viewModel.AutomaticBackground));
+        Assert.False(viewModel.IsAutomaticCommandEnabled);
+        Assert.False(viewModel.IsManualCommandEnabled);
         Assert.Equal(Color.Parse("#ECEFF1"), BrushColor(viewModel.ResetBackground));
         Assert.Equal(Color.Parse("#FF2626"), BrushColor(viewModel.EmergencyBackground));
         Assert.Equal(Color.Parse("#101820"), BrushColor(viewModel.EmergencyForeground));
@@ -877,14 +878,8 @@ public sealed class RouteMapConfigurationTests
             hasEmergency: true,
             isConnectionAvailable: true);
 
-        Assert.Equal(Color.Parse("#003CA3"), BrushColor(viewModel.AutomaticBackground));
-        Assert.Equal(Color.Parse("#FFFFFF"), BrushColor(viewModel.AutomaticForeground));
         Assert.Equal(Color.Parse("#D1C300"), BrushColor(viewModel.ResetBackground));
         Assert.Equal(Color.Parse("#D10000"), BrushColor(viewModel.EmergencyBackground));
-
-        viewModel.SetAutomaticPressed(true);
-        Assert.Equal(Color.Parse("#8AB5FF"), BrushColor(viewModel.AutomaticBackground));
-        Assert.Equal(Color.Parse("#FFFFFF"), BrushColor(viewModel.AutomaticForeground));
 
         viewModel.SetResetPressed(true);
         Assert.Equal(Color.Parse("#D1C300"), BrushColor(viewModel.ResetBackground));
@@ -1218,9 +1213,7 @@ public sealed class RouteMapConfigurationTests
 
         await viewModel.SwitchToAutomaticCommand.Execute().FirstAsync();
 
-        Assert.Collection(dispatcher.Requests,
-            request => Assert.Equal(("custom.manual", false), (request.SignalId, request.Value)),
-            request => Assert.Equal(("custom.auto", true), (request.SignalId, request.Value)));
+        Assert.Empty(dispatcher.Requests);
     }
 
     [Fact]
@@ -1297,7 +1290,7 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public async Task Top_bar_automatic_failure_restores_readback_without_compensating_write()
+    public async Task Top_bar_automatic_command_is_inert_even_when_enabled()
     {
         var errors = new List<string>();
         var dispatcher = new RecordingFailingDispatcher(failOnRequest: 2);
@@ -1316,11 +1309,8 @@ public sealed class RouteMapConfigurationTests
 
         Assert.False(viewModel.IsAutomaticMode);
         Assert.True(viewModel.IsManualMode);
-        Assert.Collection(dispatcher.Requests,
-            request => Assert.Equal(("system.mode.manual", false), (request.SignalId, request.Value)),
-            request => Assert.Equal(("system.mode.automatic", true), (request.SignalId, request.Value)));
-        Assert.Single(errors);
-        Assert.Contains("АВТОМАТ", errors[0]);
+        Assert.Empty(dispatcher.Requests);
+        Assert.Empty(errors);
     }
 
     [Fact]

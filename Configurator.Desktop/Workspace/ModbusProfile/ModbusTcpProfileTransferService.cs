@@ -59,6 +59,8 @@ public sealed class ModbusTcpProfileTransferService : IModbusTcpProfileTransferS
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         var profile = ModbusTcpProfile.Create(_runtimeOptions.CurrentValue, _mapOptions.CurrentValue);
+        if (profile.DataMap.Any(point => IsObsoleteModeSignal(point.Name)))
+            throw new InvalidOperationException("Профиль содержит устаревшие режимы. Сначала очистите Modbus.DataMap через редактор SignalId ↔ Modbus.");
         var json = JsonSerializer.Serialize(profile, JsonOptions);
         await File.WriteAllTextAsync(path, json, cancellationToken);
     }
@@ -182,6 +184,12 @@ public sealed class ModbusTcpProfileTransferService : IModbusTcpProfileTransferS
         profile.AlarmMap ??= [];
         profile.AddressLabels ??= [];
 
+        if (profile.DataMap.Any(point => IsObsoleteModeSignal(point.Name)))
+        {
+            return ModbusTcpProfileValidation.Failure(
+                "Профиль содержит устаревшие system.mode.automatic/manual. Удалите эти точные записи из копии профиля и повторите импорт; остальные точки сохраняйте без изменений.");
+        }
+
         var endpointError = ValidateRuntime(profile.Runtime);
         if (!string.IsNullOrWhiteSpace(endpointError))
         {
@@ -220,6 +228,10 @@ public sealed class ModbusTcpProfileTransferService : IModbusTcpProfileTransferS
             RangeCorrection = BuildRangeCorrection(profile)
         };
     }
+
+    private static bool IsObsoleteModeSignal(string? name) =>
+        string.Equals(name, "system.mode.automatic", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(name, "system.mode.manual", StringComparison.OrdinalIgnoreCase);
 
     private static string? ValidateRuntime(ModbusTcpRuntimeSettings runtime)
     {

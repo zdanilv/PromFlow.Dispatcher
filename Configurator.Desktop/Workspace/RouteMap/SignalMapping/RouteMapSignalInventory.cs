@@ -137,8 +137,6 @@ internal static class RouteMapSignalInventory
     {
         if (definition.TopBar is not null)
         {
-            yield return ("TopBar.АВТОМАТ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Automatic.Binding, false);
-            yield return ("TopBar.РУЧНОЙ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Manual.Binding, false);
             yield return ("TopBar.СБРОС", RouteMapSignalElementCategory.TopBar, definition.TopBar.Reset.Binding, true);
             yield return (
                 "TopBar.АВАРИЯ",
@@ -146,10 +144,6 @@ internal static class RouteMapSignalInventory
                 definition.TopBar.Emergency.Binding,
                 false);
 
-            if (definition.TopBar.Automatic.EnabledBinding is not null)
-                yield return ("TopBar.АВТОМАТ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Automatic.EnabledBinding, false);
-            if (definition.TopBar.Manual.EnabledBinding is not null)
-                yield return ("TopBar.РУЧНОЙ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Manual.EnabledBinding, false);
             if (definition.TopBar.Reset.EnabledBinding is not null)
                 yield return ("TopBar.СБРОС", RouteMapSignalElementCategory.TopBar, definition.TopBar.Reset.EnabledBinding, false);
             if (definition.TopBar.Emergency.EnabledBinding is not null)

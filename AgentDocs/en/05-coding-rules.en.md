@@ -76,9 +76,10 @@ Follow these rules when changing RouteMap, Modbus TCP, SignalId mapping, or rela
 - When `connection.connected=false`, cards show `Не в сети` with the muted indicator
   independently from their status/text binding. The `Н` button stays available in both
   modes for local parameter save; do not control it with card `Enabled` or connection.
-- `Start`/`Stop` mutual exclusion writes `false` to the opposite command before `true`
-  to the selected command; a readback conflict of two `true` values displays only `Stop`
-  as checked.
+- The bucket PowerStandby is a read-only `PowerFeedback` indicator; input,
+  readback, and `Enabled=false` must not dispatch selector commands.
+- Momentary Start requests only `StartCommand=true` for a bounded Pulse; Stop
+  toggles only its own Latched `true/false`. Snapshots never dispatch a write.
 - Optimistic UI state is temporary until readback arrives.
 
 ## Visual Studio Visibility

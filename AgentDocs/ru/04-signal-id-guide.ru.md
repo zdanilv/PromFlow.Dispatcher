@@ -14,8 +14,6 @@ PLC. RouteMap, ViewModel и XAML должны знать только `SignalId`
 Примеры:
 
 ```text
-system.mode.automatic
-system.mode.manual
 system.reset
 system.emergency
 system.fault
@@ -24,17 +22,20 @@ route.node.bsu_1.target
 route.node.bsu_1.loader
 route.bsu2_to_bucket.fragment_1.active
 equip.bucket.start
+equip.bucket.power
 equip.bucket.start.off
 equip.bucket.stop
 equip.bucket.stop.off
-equip.bucket.selector.off
-equip.bucket.selector.on
 equip.bucket.enabled
 equip.bucket.text
 equip.bucket.parameter
 connection.status
 connection.connected
 ```
+
+`system.mode.automatic`, `system.mode.manual` и `equip.bucket.selector.on/off` —
+исторические имена. Они не входят в активный inventory новой карточки и TopBar;
+старые поля JSON читаются только для совместимости.
 
 Используйте латинские буквы в нижнем регистре, цифры, точки и `_` внутри объекта.
 Не используйте физические адреса:
@@ -75,15 +76,18 @@ Direction должен соответствовать Modbus access:
 | `Text` | `String` или число | card status |
 | `Value` | любой поддержанный | extra runtime value |
 | `EquipmentParameter` | любой поддержанный | настраиваемый параметр оборудования карточки |
-| `StartCommand`, `StopCommand` | `Bool` | equipment commands |
-| `UncheckedCommand`, `CheckedCommand` | `Bool` | two-bit toggle command for card button `С` |
+| `StartCommand` | `Bool` | моментальный `ПУСК`, одна команда `true`; Modbus Pulse выполняет `false` |
+| `StopCommand` | `Bool` | `СТОП` Toggle, Latched `true/false` и readback |
+| `PowerFeedback` | `Bool` | read-only индикатор питания; good/fresh 0 красный, 1 зелёный, иначе unknown |
+| `UncheckedCommand`, `CheckedCommand` | `Bool` | только исторические карточки без `PowerFeedback` |
 | `StartOffFeedback`, `StopOffFeedback` | `Bool` | read-only disable bits for card start/stop buttons |
 | `TargetCommand`, `LoaderCommand` | `Bool` | node menu commands |
-| `AutomaticModeCommand`, `ManualModeCommand`, `ResetCommand`, `EmergencyCommand` | `Bool` | TopBar commands |
+| `ResetCommand`, `EmergencyCommand` | `Bool` | действующие команды TopBar |
+| `AutomaticModeCommand`, `ManualModeCommand` | `Bool` | obsolete, сохранены только в исторических DTO |
 | `Enabled` | `Bool` | optional read-only availability of a configured element |
 
 `StartOffFeedback=true` или `StopOffFeedback=true` отключает соответствующую кнопку
-карточки и визуально сбрасывает `IsChecked=false` без записи команды. Остальные
+карточки; для исторических Toggle-карточек checked снимается без записи команды. Остальные
 `*OffFeedback` и `State` — legacy. Не используйте их в новом поведении.
 
 `EquipmentParameter` используется только для списка параметров оборудования карточки.
@@ -91,14 +95,16 @@ Direction должен соответствовать Modbus access:
 `Карточки`; такие SignalId автоматически появляются в `SignalId ↔ Modbus`, а
 физический адрес по-прежнему задается только в `Modbus.DataMap`.
 
-`UncheckedCommand` и `CheckedCommand` обязательны для каждой карточки и имеют направление
-`ReadWrite`. Они должны использовать разные SignalId и Latched Modbus-точки.
+Для новой карточки «Кюбель Л.К.» `PowerFeedback` использует `Read/Bool`
+`equip.bucket.power`; Start требует Pulse, Stop — Latched. Физический адрес Power
+нужно назначить по PLC-контракту, не копируя старый selector.
+`UncheckedCommand` и `CheckedCommand` остаются лишь для исторических карточек без
+`PowerFeedback` и не создаются для новой карточки.
 `ResetCommand` обязателен для TopBar-кнопки `СБРОС`, по умолчанию использует
 `system.reset` и требует `ReadWrite/Bool/Pulse`. `Enabled` всегда имеет
 направление `Read`; `false` отключает элемент, отсутствие binding/значения означает
-enabled, bad/stale означает offline. Для карточки `Enabled=false` не блокирует кнопку
-`С` при наличии связи, но инициирует один reset selector-команд:
-`CheckedCommand=false`, затем `UncheckedCommand=false`.
+enabled, bad/stale означает offline. Для карточки с `PowerFeedback` хороший
+`Enabled=false` не отправляет selector-записей.
 
 ## Системные SignalId
 

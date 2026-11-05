@@ -76,11 +76,8 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
 - У `NotificationsPanelView` сохраняйте минимум `400`, но не фиксируйте `MaxWidth`:
   вкладка `История` должна расширять правую колонку RouteMap по ширине таблицы.
 - Runtime readback не должен повторно отправлять команды.
-- Readback кнопки `С` считается checked только для `Unchecked=false` и `Checked=true`;
-  конфликт двух `true` отображается unchecked и не исправляется скрытой записью.
-- Reset selector-команд при хорошем карточном `Enabled=false` — единственное исключение:
-  он выполняется один раз на непрерывный disabled-эпизод и не должен повторяться на
-  каждом polling snapshot.
+- PowerStandby карточки «Кюбель Л.К.» — read-only индикатор `PowerFeedback`;
+  click, клавиатура, readback и `Enabled=false` не создают команд selector.
 - Диалог параметров карточки должен сохранять только `Write`/`ReadWrite` значения;
   `Read` строки отображаются без редактирования, а `Сохранить` не закрывает диалог.
   Offline-сохранение валидирует ввод, но не требует `Modbus.DataMap`, не вызывает
@@ -94,8 +91,8 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
 - При `connection.connected=false` карточки показывают `Не в сети` серым индикатором
   независимо от status/text binding. Кнопка `Н` остаётся доступной в обоих режимах для
   локального сохранения параметров.
-- Взаимоисключение `ПУСК`/`СТОП` должно писать `false` в противоположную команду перед
-  `true` в выбранную; snapshot-конфликт двух `true` отображается как checked только `СТОП`.
+- Моментальный `ПУСК` должен запрашивать только `StartCommand=true` для Pulse;
+  Toggle `СТОП` пишет только свой Latched `true/false`. Snapshot не инициирует запись.
 - Optimistic UI state допустим только как временное состояние до readback.
 
 ## Visual Studio visibility

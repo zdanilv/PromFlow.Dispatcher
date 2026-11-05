@@ -26,12 +26,10 @@ public sealed class TopBarViewModel : ViewModelBase
     private bool _isEmergencyPressed;
     private bool _isResetHovered;
     private bool _isEmergencyHovered;
-    private bool _isAutomaticCommandEnabled = true;
-    private bool _isManualCommandEnabled = true;
+    private bool _isAutomaticCommandEnabled;
+    private bool _isManualCommandEnabled;
     private bool _isResetCommandEnabled = true;
     private bool _isEmergencyCommandEnabled = true;
-    private bool _lastAutomaticReadback;
-    private bool _lastManualReadback = true;
     private bool _lastEmergencyReadback;
 
     public TopBarViewModel(
@@ -52,8 +50,9 @@ public sealed class TopBarViewModel : ViewModelBase
         _disabledColor = (palette ?? new RouteMapPaletteSettings()).Disabled;
         IsSettingsVisible = isSettingsVisible;
 
-        SwitchToAutomaticCommand = ReactiveCommand.CreateFromTask(SwitchToAutomaticAsync);
-        SwitchToManualCommand = ReactiveCommand.CreateFromTask(SwitchToManualAsync);
+        // Retain the public commands for existing callers; legacy modes are inert.
+        SwitchToAutomaticCommand = ReactiveCommand.Create(() => { });
+        SwitchToManualCommand = ReactiveCommand.Create(() => { });
         ResetCommand = ReactiveCommand.CreateFromTask(ExecuteResetAsync);
         EmergencyCommand = ReactiveCommand.CreateFromTask(ExecuteEmergencyAsync);
         OpenSettingsCommand = ReactiveCommand.CreateFromTask(() =>
@@ -111,7 +110,7 @@ public sealed class TopBarViewModel : ViewModelBase
     }
 
     public bool AreCommandsEnabled =>
-        IsAutomaticCommandEnabled && IsManualCommandEnabled && IsResetCommandEnabled && IsEmergencyCommandEnabled;
+        IsResetCommandEnabled && IsEmergencyCommandEnabled;
 
     public bool IsSettingsVisible { get; }
 
@@ -154,15 +153,13 @@ public sealed class TopBarViewModel : ViewModelBase
         bool isResetCommandEnabled = true,
         bool isEmergencyCommandEnabled = true)
     {
-        _lastAutomaticReadback = isAutomaticMode;
-        _lastManualReadback = isManualMode;
         _lastEmergencyReadback = hasEmergency;
         IsAutomaticMode = isAutomaticMode;
         IsManualMode = isManualMode;
         IsResetActive = isResetActive;
         HasEmergency = hasEmergency;
-        IsAutomaticCommandEnabled = isConnectionAvailable && isAutomaticCommandEnabled;
-        IsManualCommandEnabled = isConnectionAvailable && isManualCommandEnabled;
+        IsAutomaticCommandEnabled = false;
+        IsManualCommandEnabled = false;
         IsResetCommandEnabled = isConnectionAvailable && isResetCommandEnabled;
         IsEmergencyCommandEnabled = isConnectionAvailable && isEmergencyCommandEnabled;
         this.RaisePropertyChanged(nameof(AreCommandsEnabled));
@@ -229,42 +226,6 @@ public sealed class TopBarViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(EmergencyForeground));
     }
 
-    private async Task SwitchToAutomaticAsync()
-    {
-        if (!IsAutomaticCommandEnabled)
-            return;
-
-        await ExecuteCommandAsync(
-            AutomaticText,
-            async () =>
-            {
-                IsAutomaticMode = true;
-                IsManualMode = false;
-                RaiseButtonProperties();
-                await DispatchAsync(_settings.Manual.Binding, false);
-                await DispatchAsync(_settings.Automatic.Binding, true);
-            },
-            RestoreModeReadback);
-    }
-
-    private async Task SwitchToManualAsync()
-    {
-        if (!IsManualCommandEnabled)
-            return;
-
-        await ExecuteCommandAsync(
-            ManualText,
-            async () =>
-            {
-                IsAutomaticMode = false;
-                IsManualMode = true;
-                RaiseButtonProperties();
-                await DispatchAsync(_settings.Automatic.Binding, false);
-                await DispatchAsync(_settings.Manual.Binding, true);
-            },
-            RestoreModeReadback);
-    }
-
     private async Task ExecuteEmergencyAsync()
     {
         if (!IsEmergencyCommandEnabled)
@@ -326,13 +287,6 @@ public sealed class TopBarViewModel : ViewModelBase
         }
 
         _commandSuccessHandler?.Invoke();
-    }
-
-    private void RestoreModeReadback()
-    {
-        IsAutomaticMode = _lastAutomaticReadback;
-        IsManualMode = _lastManualReadback;
-        RaiseButtonProperties();
     }
 
     private void RestoreEmergencyReadback()

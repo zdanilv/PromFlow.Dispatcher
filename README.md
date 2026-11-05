@@ -70,6 +70,8 @@ exit
 
 `Modbus.DataMap` связывает `SignalId` с адресами PLC; `Modbus.AlarmMap` описывает тревоги. `ModbusDemo.DataMap` — прежняя demo-конфигурация, не карта Route Map. `system.fault` относится к `Modbus.DataMap`. Адресация, запись и ACK — в [руководстве Modbus TCP](AgentDocs/ru/03-modbus-tcp-guide.ru.md).
 
+В карточке «Кюбель Л.К.» PowerStandby показывает read-only бит питания (красный/зелёный, серый при неизвестном качестве); `ПУСК` отправляет ограниченный Pulse, `СТОП` остаётся Toggle с readback. Кнопки `АВТОМАТ` и `РУЧНОЙ` скрыты из рабочего TopBar и исключены из активной настройки SignalId. Эти программные команды не заменяют блокировки PLC.
+
 ## Конфигурация и пользовательские данные
 
 Поставляемый `Configurator.Boot/appsettings.json` задаёт defaults и install-level `Application.WorkMode`; приложение его не перезаписывает. Изменяемые настройки и карты хранятся в профиле пользователя:

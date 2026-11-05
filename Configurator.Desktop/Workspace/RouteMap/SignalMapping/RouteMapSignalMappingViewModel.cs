@@ -28,6 +28,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
     private readonly IAppConfigService _appConfigService;
     private readonly IModbusDataMapValidator _validator;
     private readonly IModbusDataMapRuntime _dataMapRuntime;
+    private readonly IModbusTcpService? _modbusTcpService;
     private readonly IModbusTcpProfileFilePicker? _profileFilePicker;
     private readonly IModbusTcpProfileTransferService? _profileTransferService;
     private readonly IDialogService? _dialogService;
@@ -51,13 +52,15 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         IModbusDataMapRuntime dataMapRuntime,
         IModbusTcpProfileFilePicker? profileFilePicker = null,
         IModbusTcpProfileTransferService? profileTransferService = null,
-        IDialogService? dialogService = null)
+        IDialogService? dialogService = null,
+        IModbusTcpService? modbusTcpService = null)
     {
         _configurationManager = configurationManager;
         _optionsMonitor = optionsMonitor;
         _appConfigService = appConfigService;
         _validator = validator;
         _dataMapRuntime = dataMapRuntime;
+        _modbusTcpService = modbusTcpService;
         _profileFilePicker = profileFilePicker;
         _profileTransferService = profileTransferService;
         _dialogService = dialogService;
@@ -189,12 +192,36 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         }
 
         var latest = _optionsMonitor.CurrentValue.Clone();
+        var activeUsages = RouteMapSignalInventory.Build(_configurationManager.CurrentDefinition)
+            .Where(item => IsObsoleteModeSignal(item.SignalId))
+            .Select(item => item.SignalId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (activeUsages.Length > 0)
+        {
+            ErrorMessage = $"Очистка устаревших режимов остановлена: SignalId {string.Join(", ", activeUsages)} используется другим активным binding.";
+            return;
+        }
+
+        var obsoleteMappings = latest.DataMap
+            .Where(point => IsObsoleteModeSignal(point.Name))
+            .ToArray();
+        if (obsoleteMappings.Length > 0)
+        {
+            if (_modbusTcpService is not null &&
+                (_modbusTcpService.State.ClientState != ModbusConnectionState.Stopped ||
+                 _modbusTcpService.State.ServerState != ModbusConnectionState.Stopped))
+            {
+                ErrorMessage = "Для очистки устаревших режимов остановите клиент и сервер Modbus TCP, затем повторите сохранение.";
+                return;
+            }
+        }
         var routeSignalIds = Rows
             .Where(row => !row.IsSystem)
             .Select(row => row.SignalId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         latest.DataMap = latest.DataMap
-            .Where(point => !routeSignalIds.Contains(point.Name))
+            .Where(point => !routeSignalIds.Contains(point.Name) && !IsObsoleteModeSignal(point.Name))
             .Select(point => point.Clone())
             .Concat(Rows.Where(row => row.IsMapped && !row.IsSystem).Select(row => row.ToOptions()))
             .ToList();
@@ -215,6 +242,14 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             HasExternalChanges = false;
             RefreshPhysicalAddresses();
 
+            if (obsoleteMappings.Length > 0)
+            {
+                // Starting a role can race with the awaited file save. The next role start
+                // reads the reloaded options; avoid replacing a map during a live pulse.
+                StatusMessage = "Устаревшие режимы удалены из сохранённого Modbus.DataMap. Перезапустите роль Modbus TCP, если она была запущена во время сохранения.";
+                return;
+            }
+
             var applyResult = _dataMapRuntime.ApplyDataMap(latest.DataMap);
             if (!applyResult.Succeeded)
             {
@@ -229,6 +264,10 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             ErrorMessage = $"Не удалось сохранить связи SignalId: {ex.Message}";
         }
     }
+
+    private static bool IsObsoleteModeSignal(string? signalId) =>
+        string.Equals(signalId, "system.mode.automatic", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(signalId, "system.mode.manual", StringComparison.OrdinalIgnoreCase);
 
     private void Reload()
     {

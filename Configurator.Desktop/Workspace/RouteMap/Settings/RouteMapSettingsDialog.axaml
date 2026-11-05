@@ -113,7 +113,7 @@
           <ScrollViewer Margin="8">
             <StackPanel Spacing="12">
               <TextBlock Classes="section" Text="Кнопки верхней панели"/>
-              <Border Classes="editor" DataContext="{Binding Draft.TopBar.Automatic}">
+              <Border Classes="editor" IsVisible="False" DataContext="{Binding Draft.TopBar.Automatic}">
                 <StackPanel>
                   <TextBlock Classes="section" Text="АВТОМАТ"/>
                   <StackPanel Width="260">
@@ -127,7 +127,7 @@
                                                  RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
                 </StackPanel>
               </Border>
-              <Border Classes="editor" DataContext="{Binding Draft.TopBar.Manual}">
+              <Border Classes="editor" IsVisible="False" DataContext="{Binding Draft.TopBar.Manual}">
                 <StackPanel>
                   <TextBlock Classes="section" Text="РУЧНОЙ"/>
                   <StackPanel Width="260">

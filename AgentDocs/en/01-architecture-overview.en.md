@@ -103,8 +103,9 @@ The UI may apply optimistic checked state, but readback is the source of truth. 
 `ReadWrite` values must not trigger another write.
 After a successful `DispatchAsync`, the switchable `RouteMapSignalRuntime` separately
 records the sent signal in `RouteMapSessionJournal`.
-Card `Start` and `Stop` are mutually exclusive: selecting one writes `false` to the
-opposite command before writing `true` to the selected command. Runtime readback and
+For the bucket card, momentary Start requests only `StartCommand=true`; the
+dispatcher completes its bounded Pulse reset. Stop independently writes Latched
+`StopCommand=true/false`; neither action changes the other bit. Runtime readback and
 `StartOffFeedback`/`StopOffFeedback` update UI without writing back to PLC.
 The card-parameters dialog opened by `Н` uses the same `IEquipmentCommandDispatcher`:
 `Write` and `ReadWrite` rows are sent as `SignalWriteRequest`, while `Read` rows only

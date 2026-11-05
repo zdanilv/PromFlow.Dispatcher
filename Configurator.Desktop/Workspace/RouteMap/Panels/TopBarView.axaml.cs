@@ -55,12 +55,6 @@ public partial class TopBarView : ReactiveUserControl<TopBarViewModel>
 
         switch (buttonName)
         {
-            case "AutomaticButton":
-                ViewModel.SetAutomaticPressed(pressed);
-                break;
-            case "ManualButton":
-                ViewModel.SetManualPressed(pressed);
-                break;
             case "ResetButton":
                 ViewModel.SetResetPressed(pressed);
                 break;
@@ -92,7 +86,7 @@ public partial class TopBarView : ReactiveUserControl<TopBarViewModel>
 
         while (control is not null)
         {
-            if (control.Name is "AutomaticButton" or "ManualButton" or "ResetButton" or "EmergencyButton")
+            if (control.Name is "ResetButton" or "EmergencyButton")
                 return control.Name;
 
             control = control.Parent as Control;

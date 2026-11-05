@@ -52,6 +52,67 @@ public sealed class ModbusTcpProfileTransferServiceTests
     }
 
     [Fact]
+    public async Task Export_RefusesProfileContainingLegacyModeSignal()
+    {
+        var map = new ModbusOptions
+        {
+            DataMap = [new ModbusDataPointOptions
+            {
+                Name = "system.mode.automatic",
+                Area = ModbusDataArea.Coil,
+                Address = 0,
+                Length = 1,
+                Access = ModbusDataAccess.ReadWrite,
+                Type = ModbusValueType.Bool
+            }]
+        };
+        var service = CreateService(CreateRuntimeOptions(), map, out _, out _);
+        var path = CreateTemporaryPath();
+
+        try
+        {
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ExportAsync(path));
+            Assert.Contains("устаревшие режимы", error.Message);
+            Assert.False(File.Exists(path));
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ReadAndValidate_LegacyModeSignals_FailsWithTargetedDiagnostic()
+    {
+        var service = CreateService(CreateRuntimeOptions(), new ModbusOptions(), out var config, out _);
+        var profile = ModbusTcpProfile.Create(CreateRuntimeOptions(), new ModbusOptions());
+        profile.DataMap = [new ModbusDataPointOptions
+        {
+            Name = "system.mode.manual",
+            Area = ModbusDataArea.Coil,
+            Address = 0,
+            Length = 1,
+            Access = ModbusDataAccess.ReadWrite,
+            Type = ModbusValueType.Bool
+        }];
+        var path = CreateTemporaryPath();
+
+        try
+        {
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(profile, JsonOptions));
+            var result = await service.ReadAndValidateAsync(path);
+
+            Assert.False(result.Succeeded);
+            Assert.Contains("устаревшие", result.ErrorMessage);
+            Assert.Equal(0, config.SaveSectionsCallCount);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task ReadAndValidate_LegacyProfileWithoutAddressLabels_UsesEmptyCatalog()
     {
         var service = CreateService(CreateRuntimeOptions(), new ModbusOptions(), out _, out _);

@@ -196,7 +196,6 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         var stopItem = inventory.Single(x => x.SignalId == "equip.bucket.stop");
         var resetItem = inventory.Single(x => x.SignalId == "system.reset");
         var cardEnabled = inventory.Single(x => x.SignalId == "equip.bucket.enabled");
-        var topBarEnabled = inventory.Single(x => x.SignalId == "system.mode.automatic.enabled");
 
         Assert.Equal(ModbusDataAccess.Read, powerItem.RequiredAccess);
         Assert.Equal(SignalValueType.Bool, powerItem.ExpectedType);
@@ -214,8 +213,35 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         Assert.True(resetItem.RequiresPulseWriteMode);
         Assert.Contains(nameof(SignalBindingRole.ResetCommand), resetItem.Roles);
         Assert.Equal(ModbusDataAccess.Read, cardEnabled.RequiredAccess);
-        Assert.Equal(ModbusDataAccess.Read, topBarEnabled.RequiredAccess);
-        Assert.Contains(nameof(SignalBindingRole.Enabled), topBarEnabled.Roles);
+        Assert.DoesNotContain(inventory, x => x.SignalId.StartsWith("system.mode.", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void SignalInventory_hides_top_bar_modes_but_keeps_custom_reuse_visible()
+    {
+        var seed = RouteMapSeed.Create();
+        var card = seed.MapEquipment.Single();
+        var definition = seed with
+        {
+            MapEquipment =
+            [
+                card with
+                {
+                    Bindings = card.Bindings.Append(new SignalBinding(
+                        SignalBindingRole.Value,
+                        "system.mode.automatic",
+                        SignalBindingDirection.Read,
+                        SignalValueType.Bool)).ToArray()
+                }
+            ]
+        };
+
+        var inventory = RouteMapSignalInventory.Build(definition);
+
+        var reused = Assert.Single(inventory, item => item.SignalId == "system.mode.automatic");
+        Assert.Equal(RouteMapSignalElementCategory.Card, reused.Category);
+        Assert.DoesNotContain(inventory, item => item.SignalId == "system.mode.manual");
+        Assert.DoesNotContain(inventory, item => item.SignalId is "system.mode.automatic.enabled" or "system.mode.manual.enabled");
     }
 
     [Fact]
@@ -1001,6 +1027,24 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
             [
                 new ModbusDataPointOptions
                 {
+                    Name = "system.mode.automatic",
+                    Area = ModbusDataArea.HoldingRegister,
+                    Address = 0,
+                    Length = 1,
+                    Type = ModbusValueType.Bool,
+                    Access = ModbusDataAccess.ReadWrite
+                },
+                new ModbusDataPointOptions
+                {
+                    Name = "system.mode.manual",
+                    Area = ModbusDataArea.HoldingRegister,
+                    Address = 0,
+                    Length = 1,
+                    Type = ModbusValueType.Bool,
+                    Access = ModbusDataAccess.ReadWrite
+                },
+                new ModbusDataPointOptions
+                {
                     Name = "diagnostic.unrelated",
                     Area = ModbusDataArea.Coil,
                     Address = 19,
@@ -1038,8 +1082,97 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         Assert.Contains(config.SavedModbus.DataMap, point => point.Name == "diagnostic.unrelated");
         Assert.Contains(config.SavedModbus.DataMap, point => point.Name == "equip.bucket.state");
         Assert.Contains(config.SavedModbus.DataMap, point => point.Name == "system.emergency");
-        Assert.Contains(runtime.Applied, point => point.Name == "system.emergency");
+        Assert.DoesNotContain(config.SavedModbus.DataMap, point =>
+            point.Name is "system.mode.automatic" or "system.mode.manual");
+        Assert.Empty(runtime.Applied);
+        Assert.Contains("Перезапустите роль Modbus TCP", viewModel.StatusMessage);
         Assert.False(viewModel.IsDirty);
+    }
+
+    [Fact]
+    public async Task MappingSave_StopsCleanupWhenObsoleteSignalIsUsedByAnotherActiveBinding()
+    {
+        using var scope = new ConfigurationScope();
+        var draft = scope.Manager.CreateDraft();
+        draft.Cards[0].Bindings.Add(new Configurator.Desktop.Workspace.RouteMap.Configuration.SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.Value,
+            SignalId = "system.mode.automatic",
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.Bool
+        });
+        Assert.True(scope.Manager.Apply(draft).IsSuccess);
+
+        var options = new ModbusOptions
+        {
+            Client = new ModbusEndpointOptions { CoilCount = 20, RegisterCount = 20 },
+            Server = new ModbusEndpointOptions { CoilCount = 20, RegisterCount = 20 },
+            DataMap =
+            [
+                new ModbusDataPointOptions
+                {
+                    Name = "system.mode.automatic",
+                    Area = ModbusDataArea.HoldingRegister,
+                    Address = 0,
+                    Length = 1,
+                    Type = ModbusValueType.Bool,
+                    Access = ModbusDataAccess.ReadWrite
+                }
+            ]
+        };
+        var config = new RecordingAppConfigService();
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(options),
+            config,
+            new ModbusDataMapValidator(),
+            new RecordingDataMapRuntime());
+
+        await viewModel.SaveAsync();
+
+        Assert.Null(config.SavedModbus);
+        Assert.Contains("используется другим активным binding", viewModel.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task MappingSave_RefusesObsoleteCleanupWhileModbusRoleIsRunning()
+    {
+        using var scope = new ConfigurationScope();
+        var options = new ModbusOptions
+        {
+            DataMap = [new ModbusDataPointOptions
+            {
+                Name = "system.mode.automatic",
+                Area = ModbusDataArea.HoldingRegister,
+                Address = 0,
+                Length = 1,
+                Type = ModbusValueType.Bool,
+                Access = ModbusDataAccess.ReadWrite
+            }]
+        };
+        var config = new RecordingAppConfigService();
+        var runtime = new RecordingDataMapRuntime();
+        var modbus = new StubModbusTcpService(new ModbusServiceState(
+            ModbusRunMode.Client,
+            ModbusConnectionState.Running,
+            ModbusConnectionState.Stopped,
+            false,
+            "Running",
+            null,
+            DateTimeOffset.UtcNow));
+        using var viewModel = new RouteMapSignalMappingViewModel(
+            scope.Manager,
+            new TestOptionsMonitor(options),
+            config,
+            new ModbusDataMapValidator(),
+            runtime,
+            modbusTcpService: modbus);
+
+        await viewModel.SaveAsync();
+
+        Assert.Null(config.SavedModbus);
+        Assert.Empty(runtime.Applied);
+        Assert.Contains("остановите клиент и сервер", viewModel.ErrorMessage);
     }
 
     [Fact]
@@ -1155,6 +1288,19 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
             Applied = dataMap.Select(point => point.Clone()).ToArray();
             return ModbusOperationResult.Success();
         }
+    }
+
+    private sealed class StubModbusTcpService(ModbusServiceState state) : IModbusTcpService
+    {
+        public ModbusServiceState State { get; } = state;
+        public event EventHandler<ModbusServiceState>? StateChanged;
+        public Task<ModbusOperationResult> StartClientAsync(ModbusOptions? options = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ModbusOperationResult> StartServerAsync(ModbusOptions? options = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ModbusOperationResult> StopAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ModbusOperationResult<T>> GetAsync<T>(string name, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ModbusOperationResult> SetAsync<T>(string name, T value, CancellationToken ct = default) => throw new NotImplementedException();
+        public IDisposable Subscribe(string name, Action<ModbusDataValue> onChanged) => throw new NotImplementedException();
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class CapturingLogger<T> : ILogger<T>

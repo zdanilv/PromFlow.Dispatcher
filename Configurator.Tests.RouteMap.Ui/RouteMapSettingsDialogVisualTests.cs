@@ -1069,10 +1069,11 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.True(reset.Bounds.Right <= emergency.Bounds.Left);
         Assert.Equal(Color.Parse("#ECEFF1"), Assert.IsType<SolidColorBrush>(reset.Background).Color);
         Assert.Equal(Color.Parse("#FF2626"), Assert.IsType<SolidColorBrush>(emergency.Background).Color);
-        Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(automatic.BorderBrush).Color);
-        Assert.Equal(Color.Parse("#CCD3D8"), Assert.IsAssignableFrom<ISolidColorBrush>(manual.BorderBrush).Color);
-        Assert.Equal(HorizontalAlignment.Center, automatic.HorizontalContentAlignment);
-        Assert.Equal(VerticalAlignment.Center, automatic.VerticalContentAlignment);
+        Assert.False(automatic.IsVisible);
+        Assert.False(manual.IsVisible);
+        Assert.True(reset.IsVisible);
+        Assert.True(emergency.IsVisible);
+        Assert.Equal(3, view.GetVisualDescendants().OfType<Grid>().First().ColumnDefinitions.Count);
         Assert.Equal(HorizontalAlignment.Center, reset.HorizontalContentAlignment);
         Assert.Equal(VerticalAlignment.Center, reset.VerticalContentAlignment);
         var texts = view.GetVisualDescendants().OfType<TextBlock>().Select(textBlock => textBlock.Text).ToArray();
@@ -1082,6 +1083,23 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.DoesNotContain("Ожидание", texts);
 
         window.Close();
+    }
+
+    [AvaloniaFact]
+    public void TopBar_settings_hide_mode_editors_and_keep_reset_and_emergency()
+    {
+        using var fixture = new DialogFixture(1320, 780);
+        fixture.SelectTab(2);
+
+        var editors = fixture.Dialog.GetVisualDescendants().OfType<Border>()
+            .Where(border => border.Classes.Contains("editor"))
+            .ToArray();
+        Assert.False(editors.Single(border => ReferenceEquals(border.DataContext, fixture.ViewModel.Draft.TopBar.Automatic)).IsVisible);
+        Assert.False(editors.Single(border => ReferenceEquals(border.DataContext, fixture.ViewModel.Draft.TopBar.Manual)).IsVisible);
+        Assert.True(editors.Single(border => ReferenceEquals(border.DataContext, fixture.ViewModel.Draft.TopBar.Reset)).IsVisible);
+        Assert.True(editors.Single(border => ReferenceEquals(border.DataContext, fixture.ViewModel.Draft.TopBar.Emergency)).IsVisible);
+        Assert.Empty(fixture.ViewModel.AutomaticModeBindingRoles);
+        Assert.Empty(fixture.ViewModel.ManualModeBindingRoles);
     }
 
     [AvaloniaFact]
@@ -1227,22 +1245,12 @@ public sealed class RouteMapSettingsDialogVisualTests
         topBarWindow.Show();
         Dispatcher.UIThread.RunJobs();
 
-        var automatic = topBar.FindControl<ToggleButton>("AutomaticButton")!;
         var reset = topBar.FindControl<ToggleButton>("ResetButton")!;
         var emergency = topBar.FindControl<ToggleButton>("EmergencyButton")!;
-        Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(automatic.Background).Color);
+        Assert.False(topBar.FindControl<ToggleButton>("AutomaticButton")!.IsVisible);
+        Assert.False(topBar.FindControl<ToggleButton>("ManualButton")!.IsVisible);
         Assert.Equal(Color.Parse("#D1C300"), Assert.IsAssignableFrom<ISolidColorBrush>(reset.Background).Color);
         Assert.Equal(Color.Parse("#D10000"), Assert.IsAssignableFrom<ISolidColorBrush>(emergency.Background).Color);
-
-        topBarViewModel.ApplyRuntime(
-            isAutomaticMode: false,
-            isManualMode: true,
-            isResetActive: false,
-            hasEmergency: true,
-            isConnectionAvailable: true);
-        Dispatcher.UIThread.RunJobs();
-        var manual = topBar.FindControl<ToggleButton>("ManualButton")!;
-        Assert.Equal(Color.Parse("#003CA3"), Assert.IsAssignableFrom<ISolidColorBrush>(manual.Background).Color);
 
         var cardViewModel = new EquipmentCardViewModel(RouteMapSeed.Create().MapEquipment.Single(), new NoOpCommandDispatcher());
         var card = new EquipmentCardView { DataContext = cardViewModel };
@@ -1282,8 +1290,8 @@ public sealed class RouteMapSettingsDialogVisualTests
         window.Show();
         Dispatcher.UIThread.RunJobs();
 
-        Assert.False(view.FindControl<ToggleButton>("AutomaticButton")!.IsEnabled);
-        Assert.False(view.FindControl<ToggleButton>("ManualButton")!.IsEnabled);
+        Assert.False(view.FindControl<ToggleButton>("AutomaticButton")!.IsVisible);
+        Assert.False(view.FindControl<ToggleButton>("ManualButton")!.IsVisible);
         Assert.False(view.FindControl<ToggleButton>("ResetButton")!.IsEnabled);
         Assert.False(view.FindControl<ToggleButton>("EmergencyButton")!.IsEnabled);
 
@@ -1315,8 +1323,8 @@ public sealed class RouteMapSettingsDialogVisualTests
         window.Show();
         Dispatcher.UIThread.RunJobs();
 
-        Assert.False(view.FindControl<ToggleButton>("AutomaticButton")!.IsEnabled);
-        Assert.True(view.FindControl<ToggleButton>("ManualButton")!.IsEnabled);
+        Assert.False(view.FindControl<ToggleButton>("AutomaticButton")!.IsVisible);
+        Assert.False(view.FindControl<ToggleButton>("ManualButton")!.IsVisible);
         Assert.False(view.FindControl<ToggleButton>("ResetButton")!.IsEnabled);
         Assert.False(view.FindControl<ToggleButton>("EmergencyButton")!.IsEnabled);
         Assert.True(view.GetVisualDescendants().OfType<Button>().Single(x => x.Classes.Contains("settings")).IsEnabled);

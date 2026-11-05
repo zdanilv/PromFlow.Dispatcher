@@ -15,8 +15,7 @@ Recommended format:
 Examples:
 
 ```text
-system.mode.automatic
-system.mode.manual
+system.reset
 system.emergency
 system.fault
 route.node.bsu_1.active
@@ -24,6 +23,7 @@ route.node.bsu_1.target
 route.node.bsu_1.loader
 route.bsu2_to_bucket.fragment_1.active
 equip.bucket.start
+equip.bucket.power
 equip.bucket.start.off
 equip.bucket.stop
 equip.bucket.stop.off
@@ -32,6 +32,10 @@ equip.bucket.parameter
 connection.status
 connection.connected
 ```
+
+`system.mode.automatic/manual` and `equip.bucket.selector.on/off` are legacy names.
+They are not active mappings for the current bucket card and TopBar; historical
+JSON fields remain readable for compatibility.
 
 Use lowercase Latin letters, digits, dots, and `_` inside object identifiers. Do not encode
 transport details such as `coil_15` or `register_40003_bit_2`.
@@ -79,13 +83,16 @@ Supported value types map to Modbus types as follows:
 | `Text` | string or number | card status |
 | `Value` | supported value | extra runtime value |
 | `EquipmentParameter` | supported value | configurable equipment-card parameter |
-| `StartCommand`, `StopCommand` | `Bool` | equipment commands |
+| `StartCommand` | `Bool` | momentary Start, requires a Modbus Pulse |
+| `StopCommand` | `Bool` | Stop Toggle with Latched true/false and readback |
+| `PowerFeedback` | `Bool` | read-only power indicator; unknown on bad/stale/offline data |
 | `StartOffFeedback`, `StopOffFeedback` | `Bool` | card start/stop disable bits |
 | `TargetCommand`, `LoaderCommand` | `Bool` | node menu commands |
-| `AutomaticModeCommand`, `ManualModeCommand`, `EmergencyCommand` | `Bool` | TopBar commands |
+| `ResetCommand`, `EmergencyCommand` | `Bool` | active TopBar commands |
+| `AutomaticModeCommand`, `ManualModeCommand` | `Bool` | obsolete, historical DTOs only |
 
-`StartOffFeedback=true` or `StopOffFeedback=true` disables the matching card button and
-visually resets `IsChecked=false` without writing a command. Other `*OffFeedback` roles
+`StartOffFeedback=true` or `StopOffFeedback=true` disables the matching card button;
+historical Toggle cards also clear checked without writing a command. Other `*OffFeedback` roles
 and `State` are legacy concepts and must not be used for new behavior.
 
 `EquipmentParameter` is used only by the equipment-parameter list on a card. Admins set

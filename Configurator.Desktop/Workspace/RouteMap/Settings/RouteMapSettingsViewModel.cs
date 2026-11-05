@@ -136,9 +136,9 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public IReadOnlyList<SignalBindingRole> CardBindingRoles =>
         SelectedCard is { } card && !UsesPowerFeedback(card) ? LegacyCardBindingRoles : PowerCardBindingRoles;
     public IReadOnlyList<SignalBindingRole> AutomaticModeBindingRoles { get; } =
-        [SignalBindingRole.AutomaticModeCommand, SignalBindingRole.Enabled];
+        [];
     public IReadOnlyList<SignalBindingRole> ManualModeBindingRoles { get; } =
-        [SignalBindingRole.ManualModeCommand, SignalBindingRole.Enabled];
+        [];
     public IReadOnlyList<SignalBindingRole> ResetBindingRoles { get; } =
         [SignalBindingRole.ResetCommand, SignalBindingRole.Enabled];
     public IReadOnlyList<SignalBindingRole> EmergencyBindingRoles { get; } =
@@ -151,6 +151,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         SignalBindingRole.State or
         SignalBindingRole.TargetOffFeedback or
         SignalBindingRole.LoaderOffFeedback or
+        SignalBindingRole.AutomaticModeCommand or
+        SignalBindingRole.ManualModeCommand or
         SignalBindingRole.AutomaticModeOffFeedback or
         SignalBindingRole.ManualModeOffFeedback or
         SignalBindingRole.EmergencyOffFeedback;
@@ -379,8 +381,6 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
             "node" => SelectedNode?.Bindings,
             "segment" => SelectedSegment?.Bindings,
             "card" => SelectedCard?.Bindings,
-            "automatic" => Draft.TopBar.Automatic.Bindings,
-            "manual" => Draft.TopBar.Manual.Bindings,
             "reset" => Draft.TopBar.Reset.Bindings,
             "emergency" => Draft.TopBar.Emergency.Bindings,
             _ => null,
@@ -388,7 +388,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         if (bindings is null)
             return;
 
-        if (scope is "automatic" or "manual" or "reset" or "emergency")
+        if (scope is "reset" or "emergency")
         {
             if (bindings.Any(x => x.Role == SignalBindingRole.Enabled))
                 return;
@@ -409,6 +409,10 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private void RemoveBinding(SignalBindingConfiguration binding)
     {
+        // Historical mode settings are retained only for JSON compatibility.
+        if (Draft.TopBar.Automatic.Bindings.Contains(binding) || Draft.TopBar.Manual.Bindings.Contains(binding))
+            return;
+
         if (IsRequiredBinding(binding))
         {
             ErrorMessage = $"Binding {binding.Role} обязателен для текущего объекта и не может быть удален.";
@@ -417,8 +421,6 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         SelectedNode?.Bindings.Remove(binding);
         SelectedSegment?.Bindings.Remove(binding);
         SelectedCard?.Bindings.Remove(binding);
-        Draft.TopBar.Automatic.Bindings.Remove(binding);
-        Draft.TopBar.Manual.Bindings.Remove(binding);
         Draft.TopBar.Reset.Bindings.Remove(binding);
         Draft.TopBar.Emergency.Bindings.Remove(binding);
     }
@@ -531,10 +533,6 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private static void EnsureTopBarBindings(RouteTopBarConfiguration topBar)
     {
-        EnsureBinding(topBar.Automatic.Bindings, SignalBindingRole.AutomaticModeCommand, "system.mode.automatic", SignalBindingDirection.ReadWrite);
-        RemoveBindings(topBar.Automatic.Bindings, SignalBindingRole.AutomaticModeOffFeedback);
-        EnsureBinding(topBar.Manual.Bindings, SignalBindingRole.ManualModeCommand, "system.mode.manual", SignalBindingDirection.ReadWrite);
-        RemoveBindings(topBar.Manual.Bindings, SignalBindingRole.ManualModeOffFeedback);
         EnsureBinding(topBar.Reset.Bindings, SignalBindingRole.ResetCommand, "system.reset", SignalBindingDirection.ReadWrite);
         EnsureBinding(topBar.Emergency.Bindings, SignalBindingRole.EmergencyCommand, "system.emergency", SignalBindingDirection.ReadWrite);
         topBar.Emergency.ButtonKind = RouteCommandButtonKind.Toggle;

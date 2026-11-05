@@ -128,6 +128,28 @@ RMW, ACK, schema migration и изменений между слоями. Review
 
 ## Диагностика SignalId ↔ Modbus
 
+### Матрица карточки «Кюбель Л.К.» и скрытых режимов
+
+Все автоматические проверки используют mocks/headless UI или локальный Modbus
+loopback. Связь с реальным ПР103 и физические записи в эту матрицу не входят.
+
+| ID | Стимул | Ожидаемое | Проверка |
+|---|---|---|---|
+| PWR-01…04 | Good `false/true`, Bad/Stale/offline, click/Space/Enter | Красный/зелёный/серый PowerStandby; `SignalWriteRequest=0` | `RouteMapRuntimeMapperTests`, `EquipmentCardViewModelTests`, headless UI |
+| PWR-05 | `Enabled=false`, snapshot | Нет selector reset и записи от индикатора | Unit |
+| STA-01…05 | ПУСК, двойной click, отпускание, Stop=true, timeout/cancellation | Один Pulse `true→false` с bounded cleanup; Stop не меняется, ошибка видна | Unit + `RouteMapModbusAdapterTests` + loopback |
+| STP-01…04 | Checked/unchecked, внешний readback, ошибка | Только Stop `true/false`; Start не меняется, readback не пишет, ошибка видна | Unit + loopback |
+| TOP-01…04 | user/admin TopBar, старый JSON, сохранение mapping | Нет видимых Auto/Manual/gap и их строк; Reset/Emergency сохранены | Headless + unit + config service |
+| CFG-01…05 | v16/старше → v17, повторная миграция, JSON round-trip, duplicate/rename, неверный write mode | Данные и параметры сохранены; obsolete не оживают; Start=Pulse/Stop=Latched | `RouteMapConfigurationTests`, `RouteMapSignalRuntimeAndMappingTests` |
+| SAF-01…02 | Offline и второй writer в том же HR | Нет команд от Power; ограничение не маскируется тестом | Mock + review PLC-контракта |
+
+Резервную копию и idempotent cleanup проверяйте через временный пользовательский
+`appsettings.json`; custom reuse exact obsolete SignalId должен остановить сохранение.
+Исторический Modbus-профиль с такими точками должен получить диагностический отказ при
+импорте. `ApplyDataMap` во время очистки не вызывается; после сохранения нужен
+следующий запуск роли Modbus TCP. Проверяйте сохранение остальных `system.*`,
+`AlarmMap`, `UnitId`, адресов и неизвестных пользовательских полей.
+
 | Симптом | Проверить |
 |---|---|
 | `Не настроен` | Нет точки `Modbus.DataMap` с `Name == SignalId` |
@@ -141,13 +163,13 @@ RMW, ACK, schema migration и изменений между слоями. Review
 | Offline lock не сработал | Системный `connection.connected`, mapper и `AreCommandsEnabled` |
 | Общая авария не окрашивает карту | Точка `Modbus.DataMap` с `Name=system.fault`, `Read/Bool`, good quality и значение `true` |
 | `ПУСК`/`СТОП` не отключается по PLC | Роли `StartOffFeedback`/`StopOffFeedback`, направление `Read`, тип `Bool`, значение `true` |
-| `ПУСК` и `СТОП` одновременно checked | Readback `StartCommand`/`StopCommand`; при конфликте UI должен показывать checked только `СТОП` |
-| `С` не переключается | Проверьте обязательные `UncheckedCommand`/`CheckedCommand`, разные SignalId, `ReadWrite/Bool`, Latched и наличие readback |
-| `С` показывает неверное состояние | Checked допустим только при `Unchecked=false`, `Checked=true`; конфликт двух `true` отображается unchecked |
-| `С` отключилась вместе с карточкой | При good `Enabled=false` карточки должны отключаться визуал, `ПУСК` и `СТОП`; `Н` остаётся доступной offline в обоих режимах, а `С` остается активной при `connection.connected=true` |
+| `ПУСК` остался checked | Для «Кюбель Л.К.» требуется моментальная `Button`; команда `StartCommand=true`, Modbus Pulse завершает `false` |
+| `СТОП` показывает неверное состояние | Проверить good/fresh readback `StopCommand`, Latched `true/false` и сообщения об ошибках |
+| PowerStandby показывает серый | Проверить `PowerFeedback` `Read/Bool`, `equip.bucket.power`, качество Good, freshness и Modbus-связь |
+| PowerStandby показывает красный при отключённой связи | Missing/Bad/Stale/offline должны давать neutral unknown, а не «OFF» |
 | `Н` недоступна или зависит от регистра | `Enabled=false` и `connection.connected=false` не должны отключать `Н` ни в одном режиме |
 | Offline setpoint не отправился | Проверьте `route-map.json`: `pendingAutoDispatch=true` до первого Modbus reconnect; после попытки pending снимается, а ошибка остаётся в `lastDispatchError` |
-| `С` не сбрасывает selector при disabled | При первом хорошем `Enabled=false` должны уйти две записи: `CheckedCommand=false`, затем `UncheckedCommand=false`; повторный snapshot не дублирует запись |
+| После сохранения видны obsolete режимы | Остановить роли Modbus TCP, сохранить `SignalId ↔ Modbus`; проверить exact `system.mode.automatic/manual`, резервную копию и другие активные usages |
 | `СБРОС` не работает | Проверьте TopBar `ResetCommand`, SignalId `system.reset`, `ReadWrite/Bool`, Pulse, `PulseDurationMs`, readback и optional `Enabled` этой кнопки |
 | Элемент не отключается | Роль `Enabled` должна быть `Read/Bool` с good quality и значением `false`; missing оставляет enabled, bad/stale дает Offline |
 | Параметр карточки не появился в mapping | Настройка добавлена во вкладке `Карточки`, роль `EquipmentParameter`, непустой `SignalId`, применена RouteMap definition |
@@ -204,8 +226,8 @@ RMW, ACK, schema migration и изменений между слоями. Review
 16. Проверить панель `Уведомления`: элемент появляется после диалога, `Хорошо` снимает unread, `X` и `Очистить список` удаляют только после `Alarm=false`.
 17. Проверить вкладку `История`: панель расширяется, команды/received SignalId/тревоги появляются со стрелками направления, объединенным столбцом `Роли / объекты` и числовым offset-адресом.
 18. Проверить `system.fault=true`: RouteMap переходит в общий аварийный вид, `false` возвращает обычную per-object логику.
-19. По одной разрешить команды оборудования; проверить взаимоисключение `ПУСК`/`СТОП` и `StartOffFeedback`/`StopOffFeedback`.
-20. Проверить кнопку `С`: две последовательные записи, readback, конфликт двух `true`, разные Bool-точки, запрет Pulse и reset selector-команд при good `Enabled=false`.
+19. По одной разрешить команды оборудования; проверить отдельный Pulse `ПУСК`, Latched `СТОП`, readback и `StartOffFeedback`/`StopOffFeedback` без перекрёстных записей.
+20. Проверить неинтерактивный PowerStandby: Good false/true/unknown, отсутствие записи при вводе и snapshot, отсутствие selector reset при good `Enabled=false`.
 21. Проверить `СБРОС`: положение слева от `АВАРИЯ`, yellow normal state, `system.reset`, readback, Pulse и validation error для Latched.
 22. Проверить `Enabled=false` отдельно для каждой TopBar-кнопки, узла, линии и карточки, а также missing/bad/stale.
 23. Проверить параметры карточек: `Н` доступна offline в обоих режимах независимо от `Enabled`; проверить локальное сохранение `Write`/`ReadWrite` без DataMap/dispatcher, восстановление после перезапуска, единственную автоотправку всех pending после reconnect, сохранение ошибки без автоповтора и ручную повторную попытку. Также проверить Bool-переключатель, `WORD`/`DWORD`/`DATE`, read-only строки, скрытие `SignalId • Type` в user-режиме и авто-строки `EquipmentParameter` в `SignalId ↔ Modbus`.

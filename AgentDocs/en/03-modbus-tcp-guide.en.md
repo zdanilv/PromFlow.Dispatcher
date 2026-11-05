@@ -5,7 +5,7 @@ in `Modbus.DataMap`; endpoint and lifecycle belong to `ModbusDemo`.
 
 Mutable `Modbus` and `ModbusDemo` sections are saved in the shared
 `%LOCALAPPDATA%\Configurator\appsettings.json`. Admin mode exposes them through
-`SignalId ↔ Modbus`, `Менеджер тревог`, and `Modbus Demo`; user mode hides those tabs
+`SignalId ↔ Modbus`, `Менеджер тревог`, and `Modbus TCP`; user mode hides those tabs
 while the runtime, autostart, mappings, and alarm dialogs keep using the same saved values.
 
 ## Data Map Separation
@@ -14,7 +14,7 @@ while the runtime, autostart, mappings, and alarm dialogs keep using the same sa
 |---|---|
 | `Modbus.DataMap` | Production RouteMap `SignalId` mapping to coils/registers/bits |
 | `Modbus.AlarmMap` | User alarm/confirmation dialogs and acknowledgement bits |
-| `ModbusDemo.DataMap` | Controls on the `Modbus Demo` screen only |
+| `ModbusDemo.DataMap` | Legacy/demo controls only |
 
 Never add RouteMap SignalIds to `ModbusDemo.DataMap`.
 Never add operator alarms to `Modbus.DataMap`: use `Modbus.AlarmMap` so RouteMap does not
@@ -62,6 +62,20 @@ Bool inside holding register:
 
 `Name` must match `SignalBinding.SignalId`. Keep one canonical casing even though lookup
 is case-insensitive.
+
+The bucket card uses three separate points: `equip.bucket.power` (`Read/Bool`),
+`equip.bucket.start` (`ReadWrite/Bool/Pulse`, default 300 ms), and
+`equip.bucket.stop` (`ReadWrite/Bool/Latched`). The PowerStandby indicator never
+writes; Stop toggles true/false according to readback. Old selector addresses must
+not be assigned to Power without confirming the physical PLC variable.
+
+`system.mode.automatic` and `system.mode.manual` are obsolete. New defaults and
+the active SignalId inventory omit them. Saving the SignalId mapping while both
+Modbus roles are stopped removes only those exact names from the user DataMap,
+after checking for other active bindings. The existing user appsettings file is
+backed up before removal. Unknown fields on surviving points are retained;
+the cleaned map is used at the next role start. Historical profiles containing
+either obsolete name are rejected on import/export with a cleanup diagnostic.
 
 RouteMap card equipment parameters use the `EquipmentParameter` role and appear in
 `SignalId ↔ Modbus` as normal domain `SignalId` rows. Their `Direction` determines the

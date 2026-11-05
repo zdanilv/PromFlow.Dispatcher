@@ -133,7 +133,7 @@
             BorderThickness="0,0,0,1"
             MinHeight="64"
             Padding="16,8">
-        <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+        <Grid ColumnDefinitions="Auto,*,Auto">
             <StackPanel Orientation="Horizontal"
                         VerticalAlignment="Center"
                         Spacing="12">
@@ -152,32 +152,28 @@
             </StackPanel>
 
             <StackPanel Grid.Column="1"
+                        IsVisible="False"
                         Orientation="Horizontal"
-                        VerticalAlignment="Center"
-                        Margin="28,0,0,0">
+                        VerticalAlignment="Center">
                 <ToggleButton x:Name="AutomaticButton"
+                              IsVisible="False"
                               Classes="mode"
                               Content="{Binding AutomaticText}"
                               Background="{Binding AutomaticBackground}"
                               Foreground="{Binding AutomaticForeground}"
                               IsChecked="{Binding IsAutomaticMode}"
-                              IsEnabled="{Binding IsAutomaticCommandEnabled}"
-                              PointerEntered="Button_PointerEntered"
-                              PointerExited="Button_PointerExited"
-                              Command="{Binding SwitchToAutomaticCommand}"/>
+                              IsEnabled="{Binding IsAutomaticCommandEnabled}"/>
                 <ToggleButton x:Name="ManualButton"
+                              IsVisible="False"
                               Classes="mode"
                               Content="{Binding ManualText}"
                               Background="{Binding ManualBackground}"
                               Foreground="{Binding ManualForeground}"
                               IsChecked="{Binding IsManualMode}"
-                              IsEnabled="{Binding IsManualCommandEnabled}"
-                              PointerEntered="Button_PointerEntered"
-                              PointerExited="Button_PointerExited"
-                              Command="{Binding SwitchToManualCommand}"/>
+                              IsEnabled="{Binding IsManualCommandEnabled}"/>
             </StackPanel>
 
-            <StackPanel Grid.Column="2"
+            <StackPanel Grid.Column="1"
                         Orientation="Horizontal"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
@@ -210,7 +206,7 @@
                         Command="{Binding OpenSettingsCommand}"/>
             </StackPanel>
 
-            <StackPanel Grid.Column="3"
+            <StackPanel Grid.Column="2"
                         Margin="16,0"
                         Orientation="Horizontal"
                         VerticalAlignment="Center">

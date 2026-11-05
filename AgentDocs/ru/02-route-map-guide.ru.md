@@ -36,11 +36,11 @@ RouteMap — первая вкладка Workspace и операторская �
 - legacy-заявки и шаблоны заявок из seed;
 - display settings и placeholder rules.
 
-Актуальный пользовательский JSON имеет `schemaVersion = 16`:
+Актуальный пользовательский JSON имеет `schemaVersion = 17`:
 
 ```json
 {
-  "schemaVersion": 16,
+  "schemaVersion": 17,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -54,7 +54,7 @@ RouteMap — первая вкладка Workspace и операторская �
 JSON не сериализует Avalonia-типы. Цвета хранятся строками `#RRGGBB` или `#AARRGGBB`,
 enum — строками, размеры и отступы — собственными DTO.
 
-Цвета операторских кнопок TopBar и кнопок `С`/`ПУСК`/`СТОП` карточки не входят в definition:
+Цвета операторских кнопок TopBar и индикатора PowerStandby/кнопок `ПУСК`/`СТОП` карточки не входят в definition:
 они фиксированы в UI для состояний normal, hover, pressed и checked. В JSON остаются
 тексты кнопок, bindings и стили самой карточки.
 
@@ -85,15 +85,14 @@ PLC-mapped `system.fault=true` переводит все runtime-объекты 
 `Visible=false` скрывает объект. `Fault=true` перекрывает active route. Bad quality или
 stale по активному сигналу переводят объект в `Offline`.
 
-Опциональная роль `Enabled` доступна для каждой кнопки TopBar, узла, линии и карточки.
+Опциональная роль `Enabled` доступна для действующих кнопок TopBar (`СБРОС`, `АВАРИЯ`), узла, линии и карточки.
 Это `Read/Bool`: хорошее значение `false` дает состояние `Disabled`, блокирует ввод и
 использует темно-серый `Map.Palette.Disabled`; отсутствие binding или значения оставляет
 элемент доступным. Bad/stale сохраняет обычное состояние `Offline`.
 Для карточки `Enabled=false` отключает визуал, `ПУСК` и `СТОП`, но не управляет
-кнопкой `Н`: она доступна без подключения в обоих режимах. Кнопка `С` остается
-доступной, пока есть Modbus-связь. При первом
-хорошем `Enabled=false` карточка один раз сбрасывает selector-команды в PLC:
-`CheckedCommand=false`, затем `UncheckedCommand=false`.
+кнопкой `Н`: она доступна без подключения в обоих режимах. Для карточки с
+`PowerFeedback` индикатор питания остаётся только отображением; `Enabled=false`
+не порождает selector-записей.
 
 Системный `connection.connected=false` означает недоступную Modbus-связь: mapper
 форсирует `Offline` для всех узлов и линий, а карточки показывают текст `Не в сети`
@@ -103,9 +102,27 @@ stale по активному сигналу переводят объект в 
 
 ## Команды
 
-`ПУСК`, `СТОП`, `АВАРИЯ`, `АВТОМАТ`, `РУЧНОЙ`, `TargetCommand` и `LoaderCommand` работают
-как toggle/readback-команды. UI пишет `true` при включении и `false` при снятии или
-переключении. PLC должен вернуть readback, чтобы состояние UI стало окончательным.
+Карточка «Кюбель Л.К.» использует `equip.bucket.power` (`PowerFeedback`,
+`Read/Bool`), `equip.bucket.start` (`StartCommand`, `ReadWrite/Bool/Pulse`) и
+`equip.bucket.stop` (`StopCommand`, `ReadWrite/Bool/Latched`). PowerStandby размером
+40×40 — неинтерактивный индикатор: хороший свежий `false` даёт красный `#D10000`,
+`true` — зелёный `#00D107`; missing/Bad/Stale/offline или неверный тип дают
+нейтральный серый и подсказку о неизвестном состоянии. Клик, клавиши, readback и
+`Enabled=false` не отправляют запись от индикатора. Адрес питания задаётся вручную:
+старый writable selector не является доказанным физическим feedback.
+
+`ПУСК` — моментальная `Button`: одно действие передаёт только `StartCommand=true`.
+Modbus dispatcher выполняет один Pulse `true → delay → false` с настроенным
+`PulseDurationMs` (default 300 мс). Отпускание указателя не пишет `false`;
+повторное нажатие не накладывает второй импульс. При неопределённом исходе `true`
+делается ограниченная попытка `false`, ошибка видна оператору. `ПУСК` не снимает
+`СТОП`; факт работы привода определяется отдельным PLC feedback.
+
+`СТОП` остаётся `ToggleButton`: checked пишет только `StopCommand=true`, unchecked —
+только `StopCommand=false`. Финальное положение берётся из хорошего свежего readback;
+snapshot не инициирует обратную запись. Ошибка записи/подтверждения отображается.
+Это обычная программная команда, не аварийный останов и не PLC interlock.
+`АВАРИЯ`, `TargetCommand` и `LoaderCommand` сохраняют прежнюю семантику.
 
 `СБРОС` — отдельная моментальная команда `system.reset` с ролью `ResetCommand`:
 `ReadWrite/Bool`, режим записи Modbus `Pulse`, не `Latched`. При нажатии UI отправляет
@@ -113,25 +130,15 @@ stale по активному сигналу переводят объект в 
 записью `false` после `PulseDurationMs`. Кнопка временно показывает активное состояние
 во время отправки и учитывает последующий readback; подробности — в [гайде Modbus TCP](03-modbus-tcp-guide.ru.md).
 
-`ПУСК` и `СТОП` на карточках взаимоисключающие: включение `ПУСК` сначала пишет
-`StopCommand=false`, затем `StartCommand=true`; включение `СТОП` сначала пишет
-`StartCommand=false`, затем `StopCommand=true`. Если snapshot вернул оба command-бита
-`true`, UI показывает включенным только `СТОП`.
-
-Кнопка `С` размером `40x40` находится слева от `Н` и всегда является ToggleButton.
-Она использует обязательные `ReadWrite/Bool` роли `UncheckedCommand` и
-`CheckedCommand`. Включение пишет `UncheckedCommand=false`, затем
-`CheckedCommand=true`; выключение — `CheckedCommand=false`, затем
-`UncheckedCommand=true`. Readback показывает checked только для пары `false/true`;
-`false/false` и конфликт `true/true` отображаются unchecked без обратной записи.
-Если у карточки хороший `Enabled=false`, `С` визуально становится unchecked и отправляет
-ровно две reset-записи в порядке `CheckedCommand=false`, `UncheckedCommand=false`.
-Повторный snapshot с тем же `Enabled=false` не дублирует записи; missing/bad/stale
-`Enabled` reset-запись не инициируют.
+Исторические карточки без `PowerFeedback` сохраняют прежнюю selector-семантику для
+совместимости JSON; новые и мигрированные карточки «Кюбель Л.К.» её не используют.
+Режимы `АВТОМАТ` и `РУЧНОЙ` скрыты в user/admin TopBar и редакторе настроек, их
+команды инертны, а SignalId исключены из активного inventory. Legacy-поля TopBar
+сохраняются при чтении и сохранении старого JSON.
 
 `StartOffFeedback` и `StopOffFeedback` снова являются активными ролями карточек. Это
-`Read/Bool` сигналы: `true` отключает соответствующую кнопку и визуально снимает
-`IsChecked=false`, не выполняя обратную запись в PLC. Остальные `*OffFeedback` и `State`
+`Read/Bool` сигналы: `true` отключает соответствующую кнопку; для исторических
+Toggle-карточек также снимает checked без обратной записи в PLC. Остальные `*OffFeedback` и `State`
 остаются legacy.
 
 Кнопка `Н` в заголовке карточки открывает модальный диалог параметров оборудования.
@@ -199,11 +206,13 @@ RouteMap справа показывает `NotificationsPanelView`: вклад�
 там, через `Modbus.DataMap`. Новые параметры по умолчанию получают тип `Word`; старые
 `UInt16` остаются валидными и совместимыми.
 
-Новые и мигрированные карточки всегда содержат selector-bindings с SignalId
-`<cardId>.selector.off` и `<cardId>.selector.on`. Миграция `v12 -> v13` добавляет TopBar
+Новые и мигрированные карточки с моментальным Start содержат `PowerFeedback` с
+`<cardId>.power` без автоматического назначения физического адреса. Старые selector
+bindings не возвращаются для «Кюбель Л.К.». Миграция `v12 -> v13` добавляет TopBar
 `СБРОС` с обязательным `ResetCommand` и SignalId `system.reset`. `Enabled` остается
-опциональным и добавляется администратором. На TopBar опциональный `Enabled` можно
-добавлять и удалять, а основной command-binding остается обязательным.
+опциональным и добавляется администратором. На действующих кнопках TopBar
+опциональный `Enabled` можно добавлять и удалять, а основной command-binding
+остаётся обязательным. Исторические `Automatic/Manual` редактированию не подлежат.
 
 `ПРИМЕНИТЬ` валидирует и публикует definition без записи файла. `СОХРАНИТЬ` валидирует,
 атомарно сохраняет JSON и публикует definition. Невалидный документ не публикуется.

@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Diagnostics;
 using System.IO;
+using Configurator.Application.Services.Modbus.Configuration;
 
 namespace Configurator.Infrastructure.Services
 {
@@ -89,14 +90,30 @@ namespace Configurator.Infrastructure.Services
                     Directory.CreateDirectory(directory);
 
                 var root = new JsonObject();
+                string? originalJson = null;
                 if (File.Exists(_configFilePath))
                 {
-                    var json = await File.ReadAllTextAsync(_configFilePath, ct);
-                    if (!string.IsNullOrWhiteSpace(json))
-                        root = JsonNode.Parse(json)?.AsObject() ?? new JsonObject();
+                    originalJson = await File.ReadAllTextAsync(_configFilePath, ct);
+                    if (!string.IsNullOrWhiteSpace(originalJson))
+                        root = JsonNode.Parse(originalJson)?.AsObject() ?? new JsonObject();
                 }
 
-                root[sectionName] = JsonSerializer.SerializeToNode(value, JsonOptions);
+                var replacement = JsonSerializer.SerializeToNode(value, JsonOptions);
+                if (sectionName == ModbusOptions.SectionName && value is ModbusOptions &&
+                    GetProperty(root, sectionName) is JsonObject oldModbus && replacement is JsonObject newModbus)
+                {
+                    var needsBackup = RemovesObsoleteModeMapping(oldModbus, newModbus);
+                    // A saved profile may contain fields this application version does not model.
+                    // Keep them on every save, including repeated reconciliation.
+                    PreserveUnknownModbusFields(oldModbus, newModbus);
+                    if (needsBackup && originalJson is not null)
+                    {
+                        var backupPath = _configFilePath + ".before-mode-cleanup." + Guid.NewGuid().ToString("N") + ".bak";
+                        await File.WriteAllTextAsync(backupPath, originalJson, ct);
+                    }
+                }
+
+                SetSection(root, sectionName, replacement);
                 await File.WriteAllTextAsync(_configFilePath, root.ToJsonString(JsonOptions), ct);
 
                 if (_configuration is IConfigurationRoot configurationRoot)
@@ -108,6 +125,69 @@ namespace Configurator.Infrastructure.Services
             {
                 _saveGate.Release();
             }
+        }
+
+        private static bool RemovesObsoleteModeMapping(JsonObject oldModbus, JsonObject newModbus)
+        {
+            if (GetProperty(oldModbus, "DataMap") is not JsonArray oldMap ||
+                GetProperty(newModbus, "DataMap") is not JsonArray newMap)
+                return false;
+
+            return oldMap.OfType<JsonObject>()
+                .Select(point => GetProperty(point, "Name")?.GetValue<string>())
+                .Where(IsObsoleteModeSignal)
+                .Any(name => !newMap.OfType<JsonObject>().Any(point =>
+                    string.Equals(GetProperty(point, "Name")?.GetValue<string>(), name, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private static bool IsObsoleteModeSignal(string? name) =>
+            string.Equals(name, "system.mode.automatic", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(name, "system.mode.manual", StringComparison.OrdinalIgnoreCase);
+
+        private static void PreserveUnknownModbusFields(JsonObject oldModbus, JsonObject newModbus)
+        {
+            PreserveMissingProperties(oldModbus, newModbus);
+            PreserveArrayEntries(oldModbus, newModbus, "DataMap", "Name");
+            PreserveArrayEntries(oldModbus, newModbus, "AlarmMap", "Id");
+            PreserveArrayEntries(oldModbus, newModbus, "AddressLabels", "Area", "Address", "BitIndex");
+        }
+
+        private static void PreserveArrayEntries(JsonObject source, JsonObject target, string arrayName, params string[] identity)
+        {
+            if (GetProperty(source, arrayName) is not JsonArray oldArray ||
+                GetProperty(target, arrayName) is not JsonArray nextArray)
+                return;
+
+            foreach (var next in nextArray.OfType<JsonObject>())
+            {
+                var old = oldArray.OfType<JsonObject>().FirstOrDefault(point =>
+                    identity.All(key => string.Equals(GetProperty(point, key)?.ToJsonString(),
+                        GetProperty(next, key)?.ToJsonString(), StringComparison.OrdinalIgnoreCase)));
+                if (old is not null)
+                    PreserveMissingProperties(old, next);
+            }
+        }
+
+        private static void PreserveMissingProperties(JsonObject source, JsonObject target)
+        {
+            foreach (var property in source)
+            {
+                var existing = GetProperty(target, property.Key);
+                if (!target.Any(item => string.Equals(item.Key, property.Key, StringComparison.OrdinalIgnoreCase)))
+                    target[property.Key] = property.Value?.DeepClone();
+                else if (property.Value is JsonObject sourceChild && existing is JsonObject targetChild)
+                    PreserveMissingProperties(sourceChild, targetChild);
+            }
+        }
+
+        private static JsonNode? GetProperty(JsonObject source, string name) =>
+            source.FirstOrDefault(property => string.Equals(property.Key, name, StringComparison.OrdinalIgnoreCase)).Value;
+
+        private static void SetSection(JsonObject root, string sectionName, JsonNode? replacement)
+        {
+            var existingName = root.Select(property => property.Key)
+                .FirstOrDefault(name => string.Equals(name, sectionName, StringComparison.OrdinalIgnoreCase));
+            root[existingName ?? sectionName] = replacement;
         }
 
         /// <inheritdoc />
@@ -134,16 +214,30 @@ namespace Configurator.Infrastructure.Services
                     Directory.CreateDirectory(directory);
 
                 var root = new JsonObject();
+                string? originalJson = null;
                 if (File.Exists(_configFilePath))
                 {
-                    var json = await File.ReadAllTextAsync(_configFilePath, ct);
-                    if (!string.IsNullOrWhiteSpace(json))
-                        root = JsonNode.Parse(json)?.AsObject() ?? new JsonObject();
+                    originalJson = await File.ReadAllTextAsync(_configFilePath, ct);
+                    if (!string.IsNullOrWhiteSpace(originalJson))
+                        root = JsonNode.Parse(originalJson)?.AsObject() ?? new JsonObject();
                 }
 
                 foreach (var section in sections)
                 {
-                    root[section.Key] = JsonSerializer.SerializeToNode(section.Value, JsonOptions);
+                    var replacement = JsonSerializer.SerializeToNode(section.Value, JsonOptions);
+                    if (section.Key == ModbusOptions.SectionName && section.Value is ModbusOptions &&
+                        GetProperty(root, section.Key) is JsonObject oldModbus && replacement is JsonObject newModbus)
+                    {
+                        var needsBackup = RemovesObsoleteModeMapping(oldModbus, newModbus);
+                        PreserveUnknownModbusFields(oldModbus, newModbus);
+                        if (needsBackup && originalJson is not null)
+                        {
+                            var backupPath = _configFilePath + ".before-mode-cleanup." + Guid.NewGuid().ToString("N") + ".bak";
+                            await File.WriteAllTextAsync(backupPath, originalJson, ct);
+                        }
+                    }
+
+                    SetSection(root, section.Key, replacement);
                 }
 
                 await File.WriteAllTextAsync(_configFilePath, root.ToJsonString(JsonOptions), ct);

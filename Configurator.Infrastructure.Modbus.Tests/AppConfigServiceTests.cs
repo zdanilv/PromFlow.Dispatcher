@@ -79,6 +79,117 @@ public sealed class AppConfigServiceTests
     }
 
     [Fact]
+    public async Task SaveSectionAsync_BackupsExactLegacyModeCleanupAndPreservesUnknownModbusFields()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"DesktopTemplate-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "appsettings.json");
+        const string original = """
+            {
+              "Modbus": {
+                "CustomOption": { "Keep": true },
+                "DataMap": [
+                  { "Name": "system.mode.automatic", "Area": "Coil", "Address": 0, "Length": 1, "Access": "ReadWrite", "Type": "Bool", "VendorMetadata": "legacy" },
+                  { "Name": "diagnostic.keep", "Area": "Coil", "Address": 1, "Length": 1, "Access": "Read", "Type": "Bool", "VendorMetadata": "custom" }
+                ]
+              },
+              "Unrelated": { "Value": 42 }
+            }
+            """;
+
+        try
+        {
+            await File.WriteAllTextAsync(path, original);
+            var service = new AppConfigService(new ConfigurationBuilder().Build(), path);
+            var options = new ModbusOptions
+            {
+                DataMap =
+                [
+                    new()
+                    {
+                        Name = "diagnostic.keep",
+                        Area = ModbusDataArea.Coil,
+                        Address = 1,
+                        Length = 1,
+                        Access = ModbusDataAccess.Read,
+                        Type = ModbusValueType.Bool
+                    }
+                ]
+            };
+
+            await service.SaveSectionAsync(ModbusOptions.SectionName, options);
+
+            var saved = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
+            Assert.True(saved["Unrelated"]!["Value"]!.GetValue<int>() == 42);
+            Assert.True(saved["Modbus"]!["CustomOption"]!["Keep"]!.GetValue<bool>());
+            Assert.Equal("custom", saved["Modbus"]!["DataMap"]![0]!["VendorMetadata"]!.GetValue<string>());
+            Assert.DoesNotContain(saved["Modbus"]!["DataMap"]!.AsArray(), point =>
+                point!["Name"]!.GetValue<string>().StartsWith("system.mode.", StringComparison.Ordinal));
+
+            var backup = Assert.Single(Directory.GetFiles(directory, "appsettings.json.before-mode-cleanup.*.bak"));
+            Assert.Equal(original, await File.ReadAllTextAsync(backup));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SaveSectionAsync_LowercaseLegacyMapBacksUpAndRepeatedSaveKeepsUnknownEntries()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"DesktopTemplate-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "appsettings.json");
+        const string original = """
+            {
+              "modbus": {
+                "dataMap": [
+                  { "name": "system.mode.manual", "Area": "Coil", "Address": 0, "Length": 1, "Access": "ReadWrite", "Type": "Bool" },
+                  { "name": "custom.keep", "Area": "Coil", "Address": 1, "Length": 1, "Access": "Read", "Type": "Bool", "ExtraPoint": 17 }
+                ],
+                "alarmMap": [{ "id": "alarm.keep", "ExtraAlarm": "retained" }],
+                "addressLabels": [{ "Area": "Coil", "Address": 2, "BitIndex": null, "ExtraLabel": "retained" }]
+              }
+            }
+            """;
+
+        try
+        {
+            await File.WriteAllTextAsync(path, original);
+            var service = new AppConfigService(new ConfigurationBuilder().Build(), path);
+            var options = new ModbusOptions
+            {
+                DataMap = [new ModbusDataPointOptions
+                {
+                    Name = "custom.keep", Area = ModbusDataArea.Coil, Address = 1,
+                    Length = 1, Access = ModbusDataAccess.Read, Type = ModbusValueType.Bool
+                }],
+                AlarmMap = [new ModbusAlarmOptions { Id = "alarm.keep" }],
+                AddressLabels = [new ModbusAddressLabelOptions
+                {
+                    Area = ModbusDataArea.Coil, Address = 2, BitIndex = null
+                }]
+            };
+
+            await service.SaveSectionAsync(ModbusOptions.SectionName, options);
+            await service.SaveSectionAsync(ModbusOptions.SectionName, options);
+
+            var saved = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
+            var modbus = saved["modbus"]!;
+            Assert.False(saved.ContainsKey("Modbus"));
+            Assert.Equal(17, modbus["DataMap"]![0]!["ExtraPoint"]!.GetValue<int>());
+            Assert.Equal("retained", modbus["AlarmMap"]![0]!["ExtraAlarm"]!.GetValue<string>());
+            Assert.Equal("retained", modbus["AddressLabels"]![0]!["ExtraLabel"]!.GetValue<string>());
+            Assert.Single(Directory.GetFiles(directory, "appsettings.json.before-mode-cleanup.*.bak"));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task SaveSectionAsyncCreatesMissingSharedFileAndReloadsConfiguration()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"DesktopTemplate-{Guid.NewGuid():N}");

@@ -121,9 +121,10 @@ UI может оптимистично обновить checked-состояни
 через readback. Входной `ReadWrite` сигнал не должен порождать повторную запись.
 После успешного `DispatchAsync` переключаемый `RouteMapSignalRuntime` отдельно записывает
 отправленный сигнал в `RouteMapSessionJournal`.
-Карточные `ПУСК` и `СТОП` взаимоисключающие: включение одной кнопки сначала пишет
-`false` в команду другой, затем `true` в выбранную команду. Runtime readback и
-`StartOffFeedback`/`StopOffFeedback` обновляют UI без обратной записи в PLC.
+Для карточки «Кюбель Л.К.» `ПУСК` отправляет только `StartCommand=true`, а
+dispatcher завершает Pulse ограниченной попыткой `false`; `СТОП` отдельно пишет
+Latched `StopCommand=true/false`. Команды не меняют бит друг друга. Runtime
+readback и `StartOffFeedback`/`StopOffFeedback` обновляют UI без обратной записи в PLC.
 Диалог параметров карточки, открываемый кнопкой `Н`, использует тот же
 `IEquipmentCommandDispatcher`: строки `Write` и `ReadWrite` отправляются как
 `SignalWriteRequest`, а `Read` строки только показывают последнее хорошее значение.

@@ -26,11 +26,11 @@ admin mode is preserved for the next user-mode launch.
 
 ## Definition And Schema
 
-The current user profile schema is version `16`:
+The current user profile schema is version `17`:
 
 ```json
 {
-  "schemaVersion": 16,
+  "schemaVersion": 17,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -79,18 +79,29 @@ still visually mark selected nodes until those roles are cleared.
 
 ## Commands
 
-`Start`, `Stop`, `Emergency`, `Automatic`, `Manual`, `TargetCommand`, and `LoaderCommand`
-are toggle/readback commands. UI writes `true` on selection and `false` on clearing or
-switching. PLC readback synchronizes final state.
+The bucket card uses `equip.bucket.power` as a read-only `PowerFeedback` Bool signal.
+Its 40×40 PowerStandby icon is red for a good, fresh `false`, green for a good,
+fresh `true`, and neutral gray for missing, bad, stale, offline, or invalid data.
+Input and snapshots never dispatch a command from this indicator. Its physical
+address must be mapped from the PLC contract, never inferred from the old selector.
 
-Card `Start` and `Stop` are mutually exclusive: selecting `Start` writes
-`StopCommand=false` before `StartCommand=true`; selecting `Stop` writes
-`StartCommand=false` before `StopCommand=true`. If readback returns both command bits
-`true`, UI shows only `Stop` as checked.
+`Start` is a momentary Button. One activation requests only `StartCommand=true`;
+the Modbus Pulse writes `true`, waits the configured duration (300 ms by default),
+then makes a bounded attempt to write `false`. It never clears Stop. `Stop` remains
+a ToggleButton that writes only `StopCommand=true/false`; good, fresh readback
+determines the final checked state, and snapshot updates do not write back.
+Dispatch/confirmation errors remain visible. These software controls do not replace
+PLC interlocks or a safety stop. `Emergency`, `TargetCommand`, and `LoaderCommand`
+retain their existing semantics.
+
+`Automatic` and `Manual` are hidden in user and admin TopBar and settings. Their
+commands are inert and their SignalIds are absent from the active mapping inventory.
+Historical TopBar JSON fields remain readable for compatibility. `Reset` remains
+an active `system.reset` Pulse command, and `Emergency` remains available.
 
 `StartOffFeedback` and `StopOffFeedback` are active card-only `Read/Bool` roles.
-`true` disables the matching button and visually resets `IsChecked=false` without writing
-back to PLC. Other `*OffFeedback` roles and `State` remain legacy.
+`true` disables the matching button and, for historical Toggle cards, clears checked
+without writing back to PLC. Other `*OffFeedback` roles and `State` remain legacy.
 
 The `Н` button in the card header opens a modal equipment-parameters dialog. Parameters
 are stored on the card as `EquipmentParameter`: `Title`, `SignalId`, `Direction`, and
