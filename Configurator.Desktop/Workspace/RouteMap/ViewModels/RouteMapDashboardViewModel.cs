@@ -41,6 +41,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private string? _commandErrorMessage;
     private string _connectionStatusText = "Ожидание";
     private bool _wasConnectionAvailable;
+    private int _disposed;
     private int _isDispatchingPendingParameters;
 
     public RouteMapDashboardViewModel(
@@ -89,26 +90,37 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
 
         _definitionSubscription = configurationManager.DefinitionChanges
             .Skip(1)
-            .Subscribe(definition => Dispatcher.UIThread.Post(() => ApplyDefinition(definition)));
-
-        _signalSubscription = signalProvider
-            .Observe()
-            .Subscribe(signals =>
+            .Subscribe(definition => Dispatcher.UIThread.Post(() =>
             {
-                var isLiveSnapshot = signals is not null;
-                signals ??= UnavailableSnapshot;
-                var definition = Definition;
-                var runtimeState = MapSnapshot(signals, definition);
-                Dispatcher.UIThread.Post(() =>
-                {
-                    _lastSignals = signals;
-                    ApplyRuntime(!ReferenceEquals(definition, Definition)
-                        ? MapSnapshot(signals, Definition)
-                        : runtimeState, isLiveSnapshot);
-                    if (isLiveSnapshot)
-                        _sessionJournal.RecordSignalSnapshot(signals, Definition, _modbusOptions.CurrentValue);
-                });
-            });
+                if (Volatile.Read(ref _disposed) == 0)
+                    ApplyDefinition(definition);
+            }));
+
+        _signalSubscription = signalProvider is RouteMapSignalRuntime runtime
+            ? runtime.ObserveUpdates().Subscribe(update => QueueSnapshot(update.Signals, runtime, update.Generation, update.SourceChanged))
+            : signalProvider.Observe().Subscribe(signals => QueueSnapshot(signals));
+    }
+
+    private void QueueSnapshot(IReadOnlyDictionary<string, SignalValue>? signals,
+        RouteMapSignalRuntime? runtime = null, long generation = 0, bool sourceChanged = false)
+    {
+        void ApplySnapshot()
+        {
+            if (Volatile.Read(ref _disposed) != 0 || (runtime is not null && !runtime.IsCurrentGeneration(generation)))
+                return;
+
+            _lastSignals = signals ?? UnavailableSnapshot;
+            // Invalidation updates the UI; only live snapshots drive parameter dispatch on reconnect.
+            ApplyRuntime(MapSnapshot(_lastSignals, Definition), isLiveSnapshot: signals is not null);
+            if (signals is not null)
+                _sessionJournal.RecordSignalSnapshot(signals, Definition, _modbusOptions.CurrentValue);
+        }
+
+        // Settings switch the source on the UI thread. Invalidate the old command gates before returning to input.
+        if (sourceChanged && Dispatcher.UIThread.CheckAccess())
+            ApplySnapshot();
+        else
+            Dispatcher.UIThread.Post(ApplySnapshot, sourceChanged ? DispatcherPriority.Send : DispatcherPriority.Default);
     }
 
     public RouteMapDefinition Definition
@@ -186,6 +198,9 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
         _signalSubscription.Dispose();
         _definitionSubscription.Dispose();
         NotificationsPanel.Dispose();
@@ -194,10 +209,19 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
 
     private void ApplyDefinition(RouteMapDefinition definition)
     {
+        // A table edit must keep in-flight command and readback state on an otherwise unchanged card.
+        var existingCards = _lastSignals is not null && Definition.Display?.Palette == definition.Display?.Palette
+            ? MapEquipmentCards.ToDictionary(card => card.Id)
+            : null;
         Definition = definition;
         MapEquipmentCards.Clear();
         foreach (var card in definition.MapEquipment)
-            MapEquipmentCards.Add(CreateEquipmentCardViewModel(card));
+        {
+            var viewModel = existingCards?.GetValueOrDefault(card.Id);
+            MapEquipmentCards.Add(viewModel is not null && viewModel.TryUpdateStatusMapping(card)
+                ? viewModel
+                : CreateEquipmentCardViewModel(card));
+        }
 
         NodeRoleStates = definition.Nodes.ToDictionary(
             x => x.Id,
@@ -247,8 +271,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             runtimeState.IsResetCommandEnabled,
             runtimeState.IsEmergencyCommandEnabled);
         foreach (var card in MapEquipmentCards)
-            card.ApplyRuntime(runtimeState.Find(card.Id), runtimeState.IsConnectionAvailable,
-                allowSelectorReset: isLiveSnapshot);
+            card.ApplyRuntime(runtimeState.Find(card.Id), runtimeState.IsConnectionAvailable, isLiveSnapshot);
 
         ApplyNodeRoleReadback(runtimeState);
 

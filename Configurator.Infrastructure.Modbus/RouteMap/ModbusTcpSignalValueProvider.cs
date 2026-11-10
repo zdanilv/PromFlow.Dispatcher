@@ -14,12 +14,13 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
     private readonly IModbusTcpService _modbusService;
     private readonly IOptionsMonitor<ModbusOptions> _modbusOptions;
     private readonly ILogger<ModbusTcpSignalValueProvider> _logger;
-    private readonly SignalSnapshotObservable _observable = new();
+    private readonly SignalSnapshotObservable _observable;
     private readonly Timer _staleTimer;
     private readonly int _staleAfterMs;
     private readonly object _sync = new();
     private ModbusDataSnapshot _latestSnapshot;
     private ModbusServiceState _latestState;
+    private DateTimeOffset _snapshotNotBefore;
     private bool _disposed;
 
     public ModbusTcpSignalValueProvider(
@@ -33,12 +34,20 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
         _modbusService = modbusService;
         _modbusOptions = modbusOptions;
         _logger = logger;
-        _latestState = modbusService.State;
-        _latestSnapshot = IsRuntimeRunning(_latestState) ? snapshotSource.CurrentSnapshot : ModbusDataSnapshot.Empty;
+        _observable = new SignalSnapshotObservable(_sync);
         _staleAfterMs = Math.Clamp(runtimeOptions.Value.StaleAfterMs, 250, 60000);
 
-        _snapshotSource.SnapshotChanged += OnSnapshotChanged;
-        _modbusService.StateChanged += OnStateChanged;
+        lock (_sync)
+        {
+            _snapshotSource.SnapshotChanged += OnSnapshotChanged;
+            _modbusService.StateChanged += OnStateChanged;
+            _latestState = modbusService.State;
+            _snapshotNotBefore = _latestState.UpdatedAt;
+            var cached = snapshotSource.CurrentSnapshot;
+            _latestSnapshot = IsRuntimeRunning(_latestState) && cached.Timestamp > _snapshotNotBefore
+                ? cached
+                : ModbusDataSnapshot.Empty;
+        }
         _staleTimer = new Timer(
             _ => PublishCurrent(),
             null,
@@ -52,12 +61,13 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
 
     public void Dispose()
     {
-        if (_disposed)
+        lock (_sync)
         {
-            return;
+            if (_disposed)
+                return;
+            _disposed = true;
         }
 
-        _disposed = true;
         _snapshotSource.SnapshotChanged -= OnSnapshotChanged;
         _modbusService.StateChanged -= OnStateChanged;
         _staleTimer.Dispose();
@@ -67,8 +77,16 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
     {
         lock (_sync)
         {
-            _latestState = snapshot.State;
-            _latestSnapshot = IsRuntimeRunning(_latestState) ? snapshot : ModbusDataSnapshot.Empty;
+            if (_disposed || !IsRuntimeRunning(_latestState) || !IsRuntimeRunning(snapshot.State))
+                return;
+
+            // A data-map reset publishes an empty snapshot with the sentinel timestamp.
+            if (snapshot.Timestamp != DateTimeOffset.MinValue &&
+                (snapshot.Timestamp <= _snapshotNotBefore || snapshot.Timestamp < _latestSnapshot.Timestamp ||
+                    snapshot.Timestamp > DateTimeOffset.Now))
+                return;
+
+            _latestSnapshot = snapshot;
         }
 
         PublishCurrent();
@@ -78,10 +96,17 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
     {
         lock (_sync)
         {
-            _latestState = state;
-            // A Running state notification can arrive before the first poll after reconnect.
-            if (!IsRuntimeRunning(state))
+            if (_disposed)
+                return;
+
+            var wasRunning = IsRuntimeRunning(_latestState);
+            _latestState = _modbusService.State;
+            // Clear on every loss of connection, even if the clock moved back or Running already followed it.
+            if (!wasRunning || !IsRuntimeRunning(state) || !IsRuntimeRunning(_latestState))
+            {
+                _snapshotNotBefore = _latestState.UpdatedAt;
                 _latestSnapshot = ModbusDataSnapshot.Empty;
+            }
         }
 
         PublishCurrent();
@@ -89,27 +114,25 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
 
     private void PublishCurrent()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        ModbusDataSnapshot snapshot;
-        ModbusServiceState state;
+        var points = _modbusOptions.CurrentValue.DataMap;
         lock (_sync)
         {
-            snapshot = _latestSnapshot;
-            state = _latestState;
+            if (!_disposed)
+                PublishSnapshot(points, _latestSnapshot, _latestState);
         }
+    }
 
+    private void PublishSnapshot(IEnumerable<ModbusDataPointOptions> points, ModbusDataSnapshot snapshot, ModbusServiceState state)
+    {
         var now = DateTimeOffset.Now;
         var isRuntimeRunning = IsRuntimeRunning(state);
         var isStale = snapshot.Timestamp == DateTimeOffset.MinValue
+            || snapshot.Timestamp > now
             || now - snapshot.Timestamp > TimeSpan.FromMilliseconds(_staleAfterMs);
         var isConnected = isRuntimeRunning && !isStale;
         var signals = new Dictionary<string, SignalValue>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var point in _modbusOptions.CurrentValue.DataMap.Where(point => point.IsReadable))
+        foreach (var point in points.Where(point => point.IsReadable))
         {
             if (!TryMapType(point.Type, out var signalType))
             {
@@ -154,7 +177,7 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
     private static bool TryMapType(ModbusValueType type, out SignalValueType signalType) =>
         SignalModbusTypeCompatibility.TryMapFromModbus(type, out signalType);
 
-    private sealed class SignalSnapshotObservable : IObservable<IReadOnlyDictionary<string, SignalValue>>
+    private sealed class SignalSnapshotObservable(object deliverySync) : IObservable<IReadOnlyDictionary<string, SignalValue>>
     {
         private readonly object _sync = new();
         private readonly List<IObserver<IReadOnlyDictionary<string, SignalValue>>> _observers = [];
@@ -163,16 +186,19 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
         public IDisposable Subscribe(IObserver<IReadOnlyDictionary<string, SignalValue>> observer)
         {
             ArgumentNullException.ThrowIfNull(observer);
-            IReadOnlyDictionary<string, SignalValue>? current;
-            lock (_sync)
+            // Replay and live delivery share a lock. Membership remains separate so an
+            // observer can unsubscribe while another observer is receiving a snapshot.
+            lock (deliverySync)
             {
-                _observers.Add(observer);
-                current = _current;
-            }
+                IReadOnlyDictionary<string, SignalValue>? current;
+                lock (_sync)
+                {
+                    _observers.Add(observer);
+                    current = _current;
+                }
 
-            if (current is not null)
-            {
-                observer.OnNext(current);
+                if (current is not null)
+                    observer.OnNext(current);
             }
 
             return new Subscription(() => Unsubscribe(observer));

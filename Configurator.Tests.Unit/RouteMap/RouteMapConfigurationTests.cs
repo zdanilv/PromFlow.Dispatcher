@@ -293,6 +293,10 @@ public sealed class RouteMapConfigurationTests
         var original = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
         original["customDocumentData"] = new JsonArray(1, 2);
         original["cards"]![0]!["customCardData"] = new JsonObject { ["tag"] = "keep" };
+        original["cards"]![0]!["parameters"]![0]!["vendorTag"] = new JsonObject { ["channel"] = 7 };
+        original["cards"]![0]!["bindings"]![0]!["vendorTag"] = "binding";
+        original["map"]!["palette"]!["vendorTag"] = "palette";
+        original["segments"]![0]!["vendorTag"] = new JsonArray("segment", true);
         var originalJson = original.ToJsonString();
         await File.WriteAllTextAsync(scope.Path, originalJson);
 
@@ -325,6 +329,8 @@ public sealed class RouteMapConfigurationTests
         Assert.Null(reopened.LastLoadError);
         Assert.Equal(mapping.Entries, reopened.CurrentDefinition.MapEquipment[0].StatusMapping!.Entries);
         Assert.Equal(persistedJson, await File.ReadAllTextAsync(scope.Path));
+        Assert.True((await reopened.SaveAndApplyAsync(reopened.CreateDraft())).IsSuccess);
+        Assert.True(JsonNode.DeepEquals(original, JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))));
     }
 
     [Fact]

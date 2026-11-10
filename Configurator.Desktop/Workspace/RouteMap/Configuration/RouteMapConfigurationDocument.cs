@@ -14,6 +14,9 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
     private bool _isInvalid;
     private string? _validationMessage;
 
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
     public string Id
     {
         get => _id;
@@ -61,6 +64,9 @@ public sealed class RouteMapSettingsConfiguration
     public double FragmentLength { get; set; } = 100;
     public double FragmentGap { get; set; } = 6;
     public RouteMapPaletteConfiguration Palette { get; set; } = new();
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class RouteMapPaletteConfiguration
@@ -79,6 +85,9 @@ public sealed class RouteMapPaletteConfiguration
     public string NodeFill { get; set; } = "#AEB5BA";
     public string Selection { get; set; } = "#21428E";
     public string Hover { get; set; } = "#1E6BFF";
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class RouteChainConfiguration : RouteMapConfigurationItem
@@ -119,6 +128,9 @@ public sealed class RouteNodeStyleConfiguration
     public double LabelFontSize { get; set; } = 11;
     public string ActiveOutlineColor { get; set; } = "#00A6A6";
     public double ActiveOutlineThickness { get; set; } = 3;
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class RouteTopBarConfiguration
@@ -127,6 +139,9 @@ public sealed class RouteTopBarConfiguration
     public RouteTopBarButtonConfiguration Manual { get; set; } = new();
     public RouteTopBarButtonConfiguration Reset { get; set; } = new();
     public RouteTopBarEmergencyButtonConfiguration Emergency { get; set; } = new();
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 
     public static RouteTopBarConfiguration CreateDefault() => new()
     {
@@ -145,6 +160,9 @@ public class RouteTopBarButtonConfiguration : ReactiveObject
 {
     public string Text { get; set; } = string.Empty;
     public ObservableCollection<SignalBindingConfiguration> Bindings { get; set; } = [];
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 
     public static RouteTopBarButtonConfiguration Create(
         string text,
@@ -234,6 +252,9 @@ public sealed class RouteSegmentActiveFragmentConfiguration : ReactiveObject
         Direction = SignalBindingDirection.Read,
         ValueType = SignalValueType.Bool,
     };
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class RouteSegmentStyleConfiguration
@@ -248,6 +269,9 @@ public sealed class RouteSegmentStyleConfiguration
     public RouteLineCap LineCap { get; set; } = RouteLineCap.Round;
     public string LabelColor { get; set; } = "#77828D";
     public double LabelFontSize { get; set; } = 11;
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class EquipmentCardConfiguration : RouteMapConfigurationItem
@@ -292,9 +316,6 @@ public sealed class EquipmentCardConfiguration : RouteMapConfigurationItem
                 };
         }
     }
-
-    [JsonExtensionData]
-    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 
     public RouteObjectState State { get; set; } = RouteObjectState.Idle;
     public bool CanStart
@@ -506,6 +527,9 @@ public sealed class EquipmentCardParameterConfiguration : ReactiveObject
     private bool _pendingAutoDispatch;
     private string? _lastDispatchError;
 
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
     public string Title
     {
         get => _title;
@@ -604,6 +628,9 @@ public sealed class EquipmentCardStyleConfiguration
     public string StopText { get; set; } = "СТОП";
     public string SendPrefix { get; set; } = "Отправить";
     public string ReturnPrefix { get; set; } = "Возврат";
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class RoutePlaceholderRuleConfiguration : RouteMapConfigurationItem
@@ -625,6 +652,9 @@ public sealed class RoutePlaceholderStyleConfiguration
     public RouteThicknessConfiguration BorderThickness { get; set; } = new() { Left = 2 };
     public RouteCornerRadiusConfiguration CornerRadius { get; set; } = new();
     public RouteThicknessConfiguration Margin { get; set; } = RouteThicknessConfiguration.Uniform(5);
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class RouteThicknessConfiguration
@@ -633,6 +663,9 @@ public sealed class RouteThicknessConfiguration
     public double Top { get; set; }
     public double Right { get; set; }
     public double Bottom { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 
     public static RouteThicknessConfiguration Uniform(double value) =>
         new() { Left = value, Top = value, Right = value, Bottom = value };
@@ -644,6 +677,9 @@ public sealed class RouteCornerRadiusConfiguration
     public double TopRight { get; set; }
     public double BottomRight { get; set; }
     public double BottomLeft { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class SignalBindingConfiguration : ReactiveObject
@@ -652,6 +688,9 @@ public sealed class SignalBindingConfiguration : ReactiveObject
     private string _signalId = string.Empty;
     private SignalBindingDirection _direction;
     private SignalValueType _valueType;
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 
     public SignalBindingRole Role { get => _role; set => this.RaiseAndSetIfChanged(ref _role, value); }
     public string SignalId { get => _signalId; set => this.RaiseAndSetIfChanged(ref _signalId, value); }

@@ -367,6 +367,110 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         Assert.Empty(fixture.Commands.Requests);
     }
 
+    [AvaloniaFact]
+    public void Dashboard_ignores_queued_definition_and_live_snapshot_after_disposal()
+    {
+        using var fixture = new MigratedStatusFixture();
+        var definition = fixture.Dashboard.Definition;
+        var runtime = fixture.Dashboard.RuntimeState;
+        var draft = fixture.Manager.CreateDraft();
+        draft.Cards.Single().Title = "Новая подпись";
+        Assert.True(fixture.Manager.Apply(draft).IsSuccess);
+        fixture.Signals.OnNext(fixture.Mock.CreateSnapshot(3));
+
+        fixture.DisposeDashboard();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(0, fixture.Parameters.Attempts);
+        Assert.Empty(fixture.Commands.Requests);
+        Assert.Same(definition, fixture.Dashboard.Definition);
+        Assert.Same(runtime, fixture.Dashboard.RuntimeState);
+    }
+
+    [AvaloniaFact]
+    public void Switching_to_modbus_discards_a_queued_mock_snapshot_until_the_first_modbus_poll()
+    {
+        using var fixture = new MigratedStatusFixture();
+        fixture.Signals.OnNext(fixture.Mock.CreateSnapshot(3));
+        fixture.SwitchToModbus();
+        Dispatcher.UIThread.RunJobs();
+
+        fixture.AssertStatus(null, "Не в сети", fixture.Palette.Offline, null,
+            EquipmentStatusQuality.Disconnected, false, false);
+        Assert.Equal(0, fixture.Parameters.Attempts);
+        Assert.Empty(fixture.Commands.Requests);
+
+        fixture.ModbusSignals.OnNext(fixture.Mock.CreateSnapshot(3));
+        Dispatcher.UIThread.RunJobs();
+        fixture.AssertStatus(3, "Выполнение", "#126534", EquipmentStatusCategory.Information,
+            EquipmentStatusQuality.Known, true, true);
+        Assert.Equal(1, fixture.Parameters.Attempts);
+        Assert.Empty(fixture.Commands.Requests);
+    }
+
+    [AvaloniaFact]
+    public void Switching_between_healthy_sources_does_not_trigger_pending_parameter_dispatch()
+    {
+        using var fixture = new MigratedStatusFixture();
+        fixture.Publish(fixture.Mock.CreateSnapshot(3));
+        var attempts = fixture.Parameters.Attempts;
+        fixture.ModbusSignals.OnNext(fixture.Mock.CreateSnapshot(1));
+
+        fixture.SwitchToModbus();
+        Dispatcher.UIThread.RunJobs();
+
+        fixture.AssertStatus(1, "Ожидание", "#99445566", EquipmentStatusCategory.Information,
+            EquipmentStatusQuality.Known, true, true);
+        Assert.Equal(attempts, fixture.Parameters.Attempts);
+        Assert.Empty(fixture.Commands.Requests);
+    }
+
+    [AvaloniaFact]
+    public void Applying_status_text_keeps_stop_pending_until_live_readback()
+    {
+        using var fixture = new MigratedStatusFixture();
+        var snapshot = fixture.Mock.CreateSnapshot(3).ToDictionary();
+        const string stopId = "equip.bucket.stop";
+        SetSignal(snapshot, stopId, false);
+        fixture.Publish(snapshot);
+        fixture.Card.RequestStopChange(true);
+        Assert.True(fixture.Card.IsStopPending);
+
+        var draft = fixture.Manager.CreateDraft();
+        draft.Cards.Single().StatusMapping!.Entries.Single(entry => entry.Code == 3).Text = "Новый статус";
+        Assert.True(fixture.Manager.Apply(draft).IsSuccess);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Новый статус", fixture.Card.StatusText);
+        Assert.True(fixture.Card.IsStopPending);
+        Assert.False(fixture.Card.CanStop);
+        fixture.Card.RequestStopChange(true);
+        Assert.Equal(stopId, Assert.Single(fixture.Commands.Requests).SignalId);
+
+        SetSignal(snapshot, stopId, true);
+        fixture.Signals.OnNext(snapshot);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(fixture.Card.IsStopChecked);
+        Assert.False(fixture.Card.IsStopPending);
+        Assert.Single(fixture.Commands.Requests);
+    }
+
+    [AvaloniaFact]
+    public void Migrated_palette_with_historical_trailing_newline_renders_unknown_status()
+    {
+        using var fixture = new MigratedStatusFixture();
+        var draft = fixture.Manager.CreateDraft();
+        draft.Map.Palette.Warning = "#1122AB\n";
+        Assert.True(fixture.Manager.Apply(draft).IsSuccess);
+        var snapshot = fixture.Mock.CreateSnapshot(3).ToDictionary();
+        SetText(snapshot, 9);
+        fixture.Publish(snapshot);
+
+        Assert.Equal("Неизвестный статус (код 9)", fixture.Card.StatusText);
+        Assert.Equal(Color.Parse("#1122AB"), Assert.IsAssignableFrom<ISolidColorBrush>(fixture.Card.StatusBrush).Color);
+        Assert.Equal("#1122AB\n", fixture.Manager.CurrentDocument.Map.Palette.Warning);
+    }
+
     private static SignalValue TextSignal(object? value, SignalValueType type = SignalValueType.UInt16,
         bool isGood = true, bool isStale = false) =>
         new(MigratedStatusFixture.TextId, value, type, DateTimeOffset.UnixEpoch, isGood, isStale);
@@ -393,6 +497,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         private readonly RouteMapSignalRuntime _signalRuntime;
         private readonly RouteMapDashboardView _view;
         private readonly Window _window;
+        private bool _dashboardDisposed;
 
         public MigratedStatusFixture()
         {
@@ -420,7 +525,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
                 Subscriptions++;
                 return Signals;
             }));
-            _signalRuntime = new RouteMapSignalRuntime(provider, Commands, new EmptySignalProvider(),
+            _signalRuntime = new RouteMapSignalRuntime(provider, Commands, new TestSignalProvider(ModbusSignals),
                 Commands, RouteMapSignalSource.Mock);
             Dashboard = new RouteMapDashboardViewModel(Manager, _signalRuntime, new RouteMapRuntimeMapper(Manager),
                 _signalRuntime, new NoOpSettingsDialogService(), notifications, journal,
@@ -440,6 +545,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         public NoOpCommandDispatcher Commands { get; } = new();
         public RecordingParameterDispatcher Parameters { get; } = new();
         public Subject<IReadOnlyDictionary<string, SignalValue>> Signals { get; } = new();
+        public ReplaySubject<IReadOnlyDictionary<string, SignalValue>> ModbusSignals { get; } = new(1);
         public int Subscriptions { get; private set; }
         public EquipmentCardViewModel Card => Dashboard.MapEquipmentCards.Single(card => card.Id == BucketId);
         public EquipmentCardView CardView => _view.GetVisualDescendants().OfType<EquipmentCardView>()
@@ -451,6 +557,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
 
         public RouteMapConfigurationManager OpenManager() =>
             new(Storage, _mapper, new RouteMapConfigurationValidator(), new RouteMapConfigurationMigrator());
+
+        public void SwitchToModbus() => _signalRuntime.SwitchSource(RouteMapSignalSource.Modbus);
 
         public void Publish(IReadOnlyDictionary<string, SignalValue> snapshot)
         {
@@ -479,12 +587,22 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         public void Dispose()
         {
             _window.Close();
-            Dashboard.Dispose();
+            DisposeDashboard();
             _signalRuntime.Dispose();
             Assert.False(Signals.HasObservers);
             Signals.Dispose();
+            ModbusSignals.Dispose();
             Manager.Dispose();
             Directory.Delete(_directory, recursive: true);
+        }
+
+        public void DisposeDashboard()
+        {
+            if (_dashboardDisposed)
+                return;
+
+            Dashboard.Dispose();
+            _dashboardDisposed = true;
         }
 
         private static SignalBindingConfiguration BoolBinding(SignalBindingRole role, string id) =>

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -105,6 +106,7 @@ public sealed class RouteMapConfigurationMigrator
                     wasMigrated = true;
                     break;
                 case 14:
+                    ApplyVersion15(document);
                     document.SchemaVersion = 15;
                     wasMigrated = true;
                     break;
@@ -439,6 +441,33 @@ public sealed class RouteMapConfigurationMigrator
             EnsureBinding(card.Bindings, SignalBindingRole.PowerFeedback, "equip.bucket.power", SignalBindingDirection.Read);
             card.Bindings.First(binding => binding.Role == SignalBindingRole.PowerFeedback).SignalId = "equip.bucket.power";
         }
+    }
+
+    private static void ApplyVersion15(RouteMapConfigurationDocument document)
+    {
+        // These fields were retired in v15. Retain other unknown properties during migration.
+        string[] topBarColors = ["normalBackground", "hoverBackground", "pressedBackground", "checkedBackground",
+            "normalForeground", "pressedForeground", "checkedForeground"];
+        if (document.TopBar is { } topBar)
+        {
+            foreach (var button in new[] { topBar.Automatic, topBar.Manual, topBar.Reset, topBar.Emergency })
+                RemoveRetiredProperties(button?.ExtensionData, topBarColors);
+        }
+
+        string[] cardColors = ["startColor", "startPressedColor", "startCheckedColor", "startForegroundColor",
+            "startPressedForegroundColor", "startCheckedForegroundColor", "stopColor", "stopPressedColor",
+            "stopCheckedColor", "stopForegroundColor", "stopPressedForegroundColor", "stopCheckedForegroundColor"];
+        foreach (var card in document.Cards)
+            RemoveRetiredProperties(card.Style?.ExtensionData, cardColors);
+    }
+
+    private static void RemoveRetiredProperties(Dictionary<string, JsonElement>? extensionData, string[] retiredProperties)
+    {
+        if (extensionData is null)
+            return;
+
+        foreach (var key in extensionData.Keys.Where(key => retiredProperties.Contains(key, StringComparer.OrdinalIgnoreCase)).ToArray())
+            extensionData.Remove(key);
     }
 
     private static void ApplyVersion18(RouteMapConfigurationDocument document)

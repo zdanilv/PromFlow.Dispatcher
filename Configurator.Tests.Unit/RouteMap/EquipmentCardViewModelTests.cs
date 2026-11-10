@@ -151,7 +151,7 @@ public sealed class EquipmentCardViewModelTests
         var disabled = new RouteObjectRuntimeState(card.Id, RouteObjectState.Disabled, null, null,
             true, false, false, IsEnabled: false, ShouldResetSelectorCommands: true);
 
-        viewModel.ApplyRuntime(disabled, isConnectionAvailable: true, allowSelectorReset: false);
+        viewModel.ApplyRuntime(disabled, isConnectionAvailable: true, isLiveSnapshot: false);
         viewModel.ApplyRuntime(disabled);
         Assert.Empty(dispatcher.Requests);
 

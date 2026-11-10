@@ -1,3 +1,4 @@
+using System.Reactive.Linq;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
@@ -55,7 +56,21 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
 
     public event EventHandler<RouteMapSignalSourceChangedEventArgs>? SourceChanged;
 
-    public IObservable<IReadOnlyDictionary<string, SignalValue>> Observe() => _observable;
+    public IObservable<IReadOnlyDictionary<string, SignalValue>> Observe() => ObserveUpdates()
+        .Where(update => !update.SourceChanged)
+        .Select(update => update.Signals!);
+
+    internal IObservable<SnapshotUpdate> ObserveUpdates() => Observable.Create<SnapshotUpdate>(observer =>
+    {
+        lock (_sync)
+            return _observable.Subscribe(observer);
+    });
+
+    internal bool IsCurrentGeneration(long generation)
+    {
+        lock (_sync)
+            return !_disposed && generation == _generation;
+    }
 
     public void SwitchSource(RouteMapSignalSource source)
     {
@@ -75,11 +90,14 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
             }
 
             previousSource = _currentSource;
+            var sourceChanged = _initialized;
             _currentSource = source;
             _initialized = true;
             generation = ++_generation;
             _activeSubscription?.Dispose();
             _activeSubscription = null;
+            if (sourceChanged)
+                _observable.Publish(new SnapshotUpdate(generation, null, SourceChanged: true));
         }
 
         var subscription = ProviderFor(source).Observe().Subscribe(
@@ -171,22 +189,25 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
             {
                 return;
             }
-        }
 
-        _observable.Publish(snapshot);
+            _observable.Publish(new SnapshotUpdate(generation, snapshot));
+        }
     }
 
-    private sealed class SignalSnapshotObservable : IObservable<IReadOnlyDictionary<string, SignalValue>>, IDisposable
+    internal sealed record SnapshotUpdate(long Generation, IReadOnlyDictionary<string, SignalValue>? Signals,
+        bool SourceChanged = false);
+
+    private sealed class SignalSnapshotObservable : IObservable<SnapshotUpdate>, IDisposable
     {
         private readonly object _sync = new();
-        private readonly List<IObserver<IReadOnlyDictionary<string, SignalValue>>> _observers = [];
-        private IReadOnlyDictionary<string, SignalValue>? _current;
+        private readonly List<IObserver<SnapshotUpdate>> _observers = [];
+        private SnapshotUpdate? _current;
         private bool _disposed;
 
-        public IDisposable Subscribe(IObserver<IReadOnlyDictionary<string, SignalValue>> observer)
+        public IDisposable Subscribe(IObserver<SnapshotUpdate> observer)
         {
             ArgumentNullException.ThrowIfNull(observer);
-            IReadOnlyDictionary<string, SignalValue>? current;
+            SnapshotUpdate? current;
             lock (_sync)
             {
                 ObjectDisposedException.ThrowIf(_disposed, this);
@@ -202,9 +223,9 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
             return new Subscription(() => Unsubscribe(observer));
         }
 
-        public void Publish(IReadOnlyDictionary<string, SignalValue> snapshot)
+        public void Publish(SnapshotUpdate snapshot)
         {
-            IObserver<IReadOnlyDictionary<string, SignalValue>>[] observers;
+            IObserver<SnapshotUpdate>[] observers;
             lock (_sync)
             {
                 if (_disposed)
@@ -239,7 +260,7 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
             }
         }
 
-        private void Unsubscribe(IObserver<IReadOnlyDictionary<string, SignalValue>> observer)
+        private void Unsubscribe(IObserver<SnapshotUpdate> observer)
         {
             lock (_sync)
             {

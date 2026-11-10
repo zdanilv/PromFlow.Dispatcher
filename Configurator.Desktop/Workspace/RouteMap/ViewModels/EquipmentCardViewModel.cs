@@ -19,7 +19,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private readonly IEquipmentCommandDispatcher _commandDispatcher;
     private readonly IEquipmentCardParametersDialogService? _parametersDialogService;
     private readonly Func<IReadOnlyDictionary<string, SignalValue>?>? _signalSnapshotAccessor;
-    private readonly EquipmentCommandCard _card;
+    private EquipmentCommandCard _card;
     private readonly SignalBinding? _startBinding;
     private readonly SignalBinding? _stopBinding;
     private readonly SignalBinding? _uncheckedBinding;
@@ -439,9 +439,20 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     };
 
     public void ApplyRuntime(RouteObjectRuntimeState? runtimeState, bool isConnectionAvailable = true)
-        => ApplyRuntime(runtimeState, isConnectionAvailable, allowSelectorReset: true);
+        => ApplyRuntime(runtimeState, isConnectionAvailable, isLiveSnapshot: true);
 
-    internal void ApplyRuntime(RouteObjectRuntimeState? runtimeState, bool isConnectionAvailable, bool allowSelectorReset)
+    internal bool TryUpdateStatusMapping(EquipmentCommandCard card)
+    {
+        if ((!IsStopPending && !IsStartBusy) || (_card.StatusMapping is null && card.StatusMapping is null) ||
+            !_card.Bindings.SequenceEqual(card.Bindings) || !_card.Parameters.SequenceEqual(card.Parameters) ||
+            _card != card with { Bindings = _card.Bindings, Parameters = _card.Parameters, StatusMapping = _card.StatusMapping })
+            return false;
+
+        _card = card;
+        return true;
+    }
+
+    internal void ApplyRuntime(RouteObjectRuntimeState? runtimeState, bool isConnectionAvailable, bool isLiveSnapshot)
     {
         IsConnectionAvailable = isConnectionAvailable;
         if (runtimeState is null)
@@ -481,7 +492,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             if (IsStartToggle)
                 IsStartChecked = runtimeState.IsStartChecked && !runtimeState.IsStopChecked;
             SetStopChecked(runtimeState.IsStopChecked);
-            if (isConnectionAvailable && runtimeState.StopCommandReadback is bool stopReadback &&
+            if (isLiveSnapshot && isConnectionAvailable && runtimeState.StopCommandReadback is bool stopReadback &&
                 stopReadback == runtimeState.IsStopChecked && stopReadback == _pendingStopValue)
             {
                 _stopReadbackMatched = true;
@@ -522,7 +533,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         {
             var shouldDispatchSelectorReset = runtimeState.ShouldResetSelectorCommands && !_isSelectorResetActive;
             _isSelectorResetActive = runtimeState.ShouldResetSelectorCommands;
-            if (shouldDispatchSelectorReset && allowSelectorReset)
+            if (shouldDispatchSelectorReset && isLiveSnapshot)
                 RequestSelectorReset();
         }
     }

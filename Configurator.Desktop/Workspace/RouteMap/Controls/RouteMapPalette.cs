@@ -28,7 +28,8 @@ public static class RouteMapPalette
     public static readonly Pen SelectionPen = new(SelectionBrush, 3);
     public static readonly Pen HoverPen = new(HoverBrush, 2);
 
-    public static IBrush Brush(string color) => new SolidColorBrush(Color.Parse(color));
+    // Historical palette validation accepted a trailing line feed after the hex color.
+    public static IBrush Brush(string color) => new SolidColorBrush(Color.Parse(color.TrimEnd('\n')));
 
     public static IBrush BrushForState(RouteObjectState state, RouteMapPaletteSettings palette, string? idleColor = null)
     {

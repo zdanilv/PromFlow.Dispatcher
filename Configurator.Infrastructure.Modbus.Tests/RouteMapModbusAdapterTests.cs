@@ -287,7 +287,7 @@ public sealed class RouteMapModbusAdapterTests
     [Fact]
     public void SignalProvider_MapsValuesAndConnectionQualityWithoutThrowing()
     {
-        var running = RunningState();
+        var running = RunningState() with { UpdatedAt = DateTimeOffset.Now.AddSeconds(-2) };
         var source = new FakeSnapshotSource();
         var service = new FakeModbusService(running);
         var point = CreatePoint("route.node.bsu_1.active", ModbusWriteMode.Latched);
@@ -306,6 +306,11 @@ public sealed class RouteMapModbusAdapterTests
             NullLogger<ModbusTcpSignalValueProvider>.Instance);
         var observer = new RecordingObserver();
         using var subscription = provider.Observe().Subscribe(observer);
+
+        source.Publish(StatusSnapshot(wordPoint.Name, running, DateTimeOffset.Now.AddSeconds(-1)));
+        Assert.Equal((ushort)3, observer.Latest[wordPoint.Name].Value);
+        Assert.True(observer.Latest[wordPoint.Name].IsStale);
+        Assert.Equal(false, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
 
         source.Publish(new ModbusDataSnapshot(
             new Dictionary<string, ModbusDataValue>(StringComparer.OrdinalIgnoreCase)
@@ -390,11 +395,117 @@ public sealed class RouteMapModbusAdapterTests
         Assert.True(observer.Latest[wordPoint.Name].IsQualityGood);
         Assert.Equal((ushort)1, observer.Latest[wordPoint.Name].Value);
         Assert.Equal(true, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
-
-        source.Publish(source.CurrentSnapshot with { Timestamp = DateTimeOffset.Now.AddSeconds(-1), State = running });
-        Assert.True(observer.Latest[wordPoint.Name].IsStale);
-        Assert.Equal(false, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
     }
+
+    [Fact]
+    public async Task Provider_does_not_publish_an_in_flight_old_snapshot_after_reconnect()
+    {
+        var running = RunningState() with { UpdatedAt = DateTimeOffset.Now.AddSeconds(-2) };
+        var source = new FakeSnapshotSource();
+        var service = new FakeModbusService(running);
+        const string textId = "equip.bucket.text";
+        var options = new TestOptionsMonitor(CreateOptions(CreateRegisterPoint(textId, ModbusValueType.UInt16, 1)));
+        using var provider = new ModbusTcpSignalValueProvider(source, service, options,
+            Options.Create(new RouteMapRuntimeOptions { StaleAfterMs = 60000 }),
+            NullLogger<ModbusTcpSignalValueProvider>.Instance);
+        var observer = new RecordingObserver();
+        using var subscription = provider.Observe().Subscribe(observer);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeout = TimeSpan.FromSeconds(10);
+        var oldSnapshot = StatusSnapshot(textId, running, running.UpdatedAt.AddMilliseconds(500));
+        var publication = Task.Run(() =>
+        {
+            var publishingThread = Environment.CurrentManagedThreadId;
+            options.BeforeRead = () =>
+            {
+                if (Environment.CurrentManagedThreadId == publishingThread)
+                {
+                    entered.SetResult();
+                    resume.Task.WaitAsync(timeout).GetAwaiter().GetResult();
+                }
+            };
+            source.Publish(oldSnapshot);
+        });
+
+        try
+        {
+            await entered.Task.WaitAsync(timeout);
+            service.PublishState(running with { ClientState = ModbusConnectionState.Reconnecting, UpdatedAt = oldSnapshot.Timestamp });
+            running = running with { UpdatedAt = oldSnapshot.Timestamp };
+            service.PublishState(running);
+        }
+        finally
+        {
+            resume.TrySetResult();
+            await publication.WaitAsync(timeout);
+            options.BeforeRead = null;
+        }
+
+        Assert.Equal(false, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
+        Assert.False(observer.Latest[textId].IsQualityGood);
+        source.Publish(oldSnapshot with { State = running });
+        Assert.False(observer.Latest[textId].IsQualityGood);
+
+        source.Publish(StatusSnapshot(textId, running, DateTimeOffset.Now));
+        Assert.True(observer.Latest[textId].IsQualityGood);
+        Assert.Equal(true, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
+        Assert.Empty(service.RawWrites);
+    }
+
+    [Fact]
+    public void Provider_created_during_reconnect_rejects_the_previous_connection_cache()
+    {
+        var running = RunningState() with { UpdatedAt = DateTimeOffset.Now.AddSeconds(-1) };
+        var source = new FakeSnapshotSource();
+        var service = new FakeModbusService(running);
+        const string textId = "equip.bucket.text";
+        source.Publish(StatusSnapshot(textId, running, running.UpdatedAt.AddMilliseconds(-1)));
+        var options = new TestOptionsMonitor(CreateOptions(CreateRegisterPoint(textId, ModbusValueType.UInt16, 1)));
+        using var provider = new ModbusTcpSignalValueProvider(source, service, options,
+            Options.Create(new RouteMapRuntimeOptions { StaleAfterMs = 60000 }),
+            NullLogger<ModbusTcpSignalValueProvider>.Instance);
+        var observer = new RecordingObserver();
+        using var subscription = provider.Observe().Subscribe(observer);
+
+        Assert.Equal(false, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
+        Assert.False(observer.Latest[textId].IsQualityGood);
+        source.Publish(StatusSnapshot(textId, running, DateTimeOffset.Now));
+        Assert.True(observer.Latest[textId].IsQualityGood);
+        Assert.Empty(service.RawWrites);
+    }
+
+    [Fact]
+    public void Provider_invalidates_cache_when_disconnect_state_has_an_earlier_wall_clock_timestamp()
+    {
+        var running = RunningState() with { UpdatedAt = DateTimeOffset.Now.AddSeconds(-1) };
+        var source = new FakeSnapshotSource();
+        var service = new FakeModbusService(running);
+        const string textId = "equip.bucket.text";
+        var options = new TestOptionsMonitor(CreateOptions(CreateRegisterPoint(textId, ModbusValueType.UInt16, 1)));
+        using var provider = new ModbusTcpSignalValueProvider(source, service, options,
+            Options.Create(new RouteMapRuntimeOptions { StaleAfterMs = 60000 }),
+            NullLogger<ModbusTcpSignalValueProvider>.Instance);
+        var observer = new RecordingObserver();
+        using var subscription = provider.Observe().Subscribe(observer);
+        source.Publish(StatusSnapshot(textId, running, DateTimeOffset.Now));
+        Assert.Equal(true, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
+
+        service.PublishState(running with
+        {
+            ClientState = ModbusConnectionState.Reconnecting,
+            UpdatedAt = running.UpdatedAt.AddSeconds(-1),
+        });
+
+        Assert.Equal(false, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
+        Assert.False(observer.Latest[textId].IsQualityGood);
+    }
+
+    private static ModbusDataSnapshot StatusSnapshot(string textId, ModbusServiceState state, DateTimeOffset timestamp) =>
+        new(new Dictionary<string, ModbusDataValue>
+        {
+            [textId] = new(textId, ModbusDataArea.HoldingRegister, 0, 1, ModbusValueType.UInt16, (ushort)3, timestamp),
+        }, timestamp, state);
 
     private static ModbusDataPointOptions CreatePoint(string name, ModbusWriteMode writeMode)
         => new()
@@ -438,7 +549,17 @@ public sealed class RouteMapModbusAdapterTests
 
     private sealed class TestOptionsMonitor(ModbusOptions value) : IOptionsMonitor<ModbusOptions>
     {
-        public ModbusOptions CurrentValue { get; } = value;
+        public Action? BeforeRead { get; set; }
+
+        public ModbusOptions CurrentValue
+        {
+            get
+            {
+                BeforeRead?.Invoke();
+                return value;
+            }
+        }
+
         public ModbusOptions Get(string? name) => CurrentValue;
         public IDisposable? OnChange(Action<ModbusOptions, string?> listener) => null;
     }
