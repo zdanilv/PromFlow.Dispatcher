@@ -360,6 +360,130 @@ public sealed class RouteMapRuntimeMapperTests
         Assert.Equal(expectedText, runtime.Find("equip.bucket")?.Text);
     }
 
+    [Theory]
+    [InlineData(3, true, false, false, "Авария системы", RouteObjectState.Fault, EquipmentStatusQuality.ForcedFault)]
+    [InlineData(3, false, true, false, "Авария оборудования", RouteObjectState.Fault, EquipmentStatusQuality.ForcedFault)]
+    [InlineData(2, false, false, false, "Авария", RouteObjectState.Fault, EquipmentStatusQuality.Known)]
+    [InlineData(3, false, false, false, "Выполнение", RouteObjectState.Disabled, EquipmentStatusQuality.Known)]
+    [InlineData(9, false, false, true, "Неизвестный статус (код 9)", RouteObjectState.Warning, EquipmentStatusQuality.UnknownCode)]
+    public void Map_prioritizes_fault_disabled_and_unknown_only_for_mapped_cards(
+        ushort code, bool globalFault, bool localFault, bool enabled, string text,
+        RouteObjectState expectedState, EquipmentStatusQuality quality)
+    {
+        var seed = RouteMapSeed.Create();
+        var card = seed.MapEquipment.Single();
+        var mapped = card with
+        {
+            Bindings = [
+                .. card.Bindings,
+                new(SignalBindingRole.Fault, "equip.bucket.fault", SignalBindingDirection.Read, SignalValueType.Bool),
+                new(SignalBindingRole.Enabled, "equip.bucket.enabled", SignalBindingDirection.Read, SignalValueType.Bool)]
+        };
+        var legacy = mapped with { Id = "legacy", StatusMapping = null };
+        var definition = seed with { MapEquipment = [mapped, legacy] };
+        var signals = new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.text"] = Sample("equip.bucket.text", code, SignalValueType.UInt16),
+            ["equip.bucket.fault"] = Sample("equip.bucket.fault", localFault, SignalValueType.Bool),
+            ["equip.bucket.enabled"] = Sample("equip.bucket.enabled", enabled, SignalValueType.Bool),
+            [RouteMapSystemSignalIds.GlobalFault] = Sample(RouteMapSystemSignalIds.GlobalFault, globalFault, SignalValueType.Bool)
+        };
+
+        var runtime = new RouteMapRuntimeMapper(definition).Map(signals);
+        var status = runtime.Find(card.Id)!;
+        var legacyStatus = runtime.Find(legacy.Id)!;
+
+        Assert.Equal(text, status.Text);
+        Assert.Equal(expectedState, status.State);
+        Assert.Equal(quality, status.EquipmentStatus?.Quality);
+        Assert.Equal(enabled, status.IsEnabled);
+        Assert.False(status.CanStart);
+        Assert.False(status.CanStop);
+        Assert.Null(legacyStatus.EquipmentStatus);
+        Assert.Equal(!enabled ? RouteObjectState.Disabled : RouteObjectState.Idle, legacyStatus.State);
+        Assert.Equal(code switch { 2 => "Авария", 3 => "Выполнение", _ => card.StatusText }, legacyStatus.Text);
+    }
+
+    [Theory]
+    [InlineData(true, false, true, true, false, false, false, true)]
+    [InlineData(false, true, true, true, false, false, true, false)]
+    [InlineData(false, false, true, true, true, false, false, true)]
+    [InlineData(false, false, true, true, false, true, true, false)]
+    [InlineData(false, false, false, false, false, false, false, false)]
+    public void Map_intersects_status_blocks_with_card_flags_and_off_feedback(
+        bool blockStart, bool blockStop, bool canStart, bool canStop, bool startOff, bool stopOff,
+        bool expectedStart, bool expectedStop)
+    {
+        var seed = RouteMapSeed.Create();
+        var card = seed.MapEquipment.Single();
+        var definition = seed with
+        {
+            MapEquipment = [card with
+            {
+                CanStart = canStart,
+                CanStop = canStop,
+                StatusMapping = card.StatusMapping! with
+                {
+                    Entries = [new(42, "Ограничение", "#654321", EquipmentStatusCategory.Warning, blockStart, blockStop)]
+                },
+                Bindings = [
+                    .. card.Bindings,
+                    new(SignalBindingRole.StartOffFeedback, "start.off", SignalBindingDirection.Read, SignalValueType.Bool),
+                    new(SignalBindingRole.StopOffFeedback, "stop.off", SignalBindingDirection.Read, SignalValueType.Bool)]
+            }]
+        };
+        var runtime = new RouteMapRuntimeMapper(definition).Map(new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.text"] = Sample("equip.bucket.text", (ushort)42, SignalValueType.Word),
+            ["start.off"] = Sample("start.off", startOff, SignalValueType.Bool),
+            ["stop.off"] = Sample("stop.off", stopOff, SignalValueType.Bool)
+        }).Find(card.Id)!;
+
+        Assert.Equal("Ограничение", runtime.Text);
+        Assert.Equal("#654321", runtime.EquipmentStatus?.Color);
+        Assert.Equal(RouteObjectState.Warning, runtime.State);
+        Assert.Equal(expectedStart, runtime.CanStart);
+        Assert.Equal(expectedStop, runtime.CanStop);
+    }
+
+    [Fact]
+    public void Map_bad_text_keeps_its_own_quality_and_does_not_invalidate_good_power_feedback()
+    {
+        var runtime = new RouteMapRuntimeMapper(RouteMapSeed.Create()).Map(new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.text"] = Sample("equip.bucket.text", (ushort)3, SignalValueType.UInt16) with { IsQualityGood = false },
+            ["equip.bucket.power"] = Sample("equip.bucket.power", true, SignalValueType.Bool)
+        }).Find("equip.bucket")!;
+
+        Assert.Equal(EquipmentStatusQuality.BadOrStale, runtime.EquipmentStatus?.Quality);
+        Assert.Equal("Нет достоверного статуса", runtime.Text);
+        Assert.True(runtime.IsPowerOn);
+        Assert.False(runtime.CanStart);
+        Assert.False(runtime.CanStop);
+    }
+
+    [Fact]
+    public void Map_bad_text_preserves_selector_gate_for_mapped_cards_without_power_feedback()
+    {
+        var seed = RouteMapSeed.Create();
+        var card = seed.MapEquipment.Single();
+        var definition = seed with
+        {
+            MapEquipment = [card with { Bindings = card.Bindings.Where(binding => binding.Role != SignalBindingRole.PowerFeedback).ToArray() }]
+        };
+        var mapper = new RouteMapRuntimeMapper(definition);
+        const string textId = "equip.bucket.text";
+        var text = Sample(textId, (ushort)3, SignalValueType.UInt16);
+        var runtime = mapper.Map(new Dictionary<string, SignalValue> { [textId] = text with { IsStale = true } }).Find(card.Id)!;
+
+        Assert.Equal(EquipmentStatusQuality.BadOrStale, runtime.EquipmentStatus?.Quality);
+        Assert.False(runtime.IsSelectorCommandEnabled);
+        Assert.True(mapper.Map(new Dictionary<string, SignalValue> { [textId] = text }).Find(card.Id)!.IsSelectorCommandEnabled);
+    }
+
+    private static SignalValue Sample(string id, object value, SignalValueType type) =>
+        new(id, value, type, DateTimeOffset.UnixEpoch, IsQualityGood: true, IsStale: false);
+
     [Fact]
     public void Map_reads_bucket_start_and_stop_checked_state()
     {
@@ -692,6 +816,7 @@ public sealed class RouteMapRuntimeMapperTests
         var now = DateTimeOffset.UtcNow;
         var signals = new Dictionary<string, SignalValue>
         {
+            ["equip.bucket.text"] = Sample("equip.bucket.text", (ushort)3, SignalValueType.UInt16),
             ["equip.bucket.state"] = new(
                 "equip.bucket.state",
                 (ushort)3,

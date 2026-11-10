@@ -2,6 +2,7 @@ using Configurator.Application.Services.Signals;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
+using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Avalonia;
 using Avalonia.Media;
@@ -26,6 +27,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private readonly bool _hasPowerFeedback;
     private readonly RouteMapPaletteSettings _palette;
     private readonly bool _usesDefaultPalette;
+    private EquipmentStatusPresentation? _statusPresentation;
     private string _statusText;
     private string _sendPointTitle = EmptyRoutePointText;
     private string _returnPointTitle = EmptyRoutePointText;
@@ -77,9 +79,10 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         _usesDefaultPalette = palette is null;
         _palette = palette ?? new RouteMapPaletteSettings();
         _statusText = card.StatusText;
-        _state = card.State;
-        _canStart = card.CanStart;
-        _canStop = card.CanStop;
+        _statusPresentation = ResolveMissingStatus(isConnectionAvailable: true);
+        _state = _statusPresentation?.StateOverride ?? card.State;
+        _canStart = card.StatusMapping is null && card.CanStart;
+        _canStop = card.StatusMapping is null && card.CanStop;
         _commandDispatcher = commandDispatcher;
         _parametersDialogService = parametersDialogService;
         _signalSnapshotAccessor = signalSnapshotAccessor;
@@ -246,9 +249,12 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public string SendPointText => $"{Style.SendPrefix}: {SendPointTitle}";
     public string ReturnPointText => $"{Style.ReturnPrefix}: {ReturnPointTitle}";
 
+    public EquipmentStatusPresentation? StatusPresentation => _statusPresentation;
+    public string? StatusToolTip => StatusPresentation?.DiagnosticText;
+
     public string StatusText
     {
-        get => _statusText;
+        get => StatusPresentation?.Text ?? _statusText;
         set
         {
             this.RaiseAndSetIfChanged(ref _statusText, value);
@@ -287,7 +293,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             if (_isStartChecked == value)
                 return;
 
-            if (IsStartMomentary)
+            if (IsStartMomentary || (!_isApplyingRuntime && _card.StatusMapping is not null && !CanStart))
                 return;
             SetStartChecked(value);
             if (!_isApplyingRuntime)
@@ -428,7 +434,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         _ => PaletteBrush(_palette.MutedText, RouteMapPalette.MutedTextBrush),
     };
 
-    public IBrush StatusBrush => !IsEnabled ? DisabledBrush : StatusText switch
+    public IBrush StatusBrush => StatusPresentation is { } status ? RouteMapPalette.Brush(status.Color)
+        : !IsEnabled ? DisabledBrush : StatusText switch
     {
         "Ожидание" => PaletteBrush(_palette.Warning, RouteMapPalette.WarningBrush),
         "Выключено" => PaletteBrush(_palette.MutedText, RouteMapPalette.MutedTextBrush),
@@ -442,10 +449,23 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     };
 
     public void ApplyRuntime(RouteObjectRuntimeState? runtimeState, bool isConnectionAvailable = true)
+        => ApplyRuntime(runtimeState, isConnectionAvailable, allowSelectorReset: true);
+
+    internal void ApplyRuntime(RouteObjectRuntimeState? runtimeState, bool isConnectionAvailable, bool allowSelectorReset)
     {
         IsConnectionAvailable = isConnectionAvailable;
         if (runtimeState is null)
         {
+            if (_card.StatusMapping is not null)
+            {
+                CanStart = false;
+                CanStop = false;
+                var missingStatus = ResolveMissingStatus(isConnectionAvailable);
+                State = missingStatus?.StateOverride ?? _card.State;
+                IsEnabled = isConnectionAvailable;
+                ApplyStatus(missingStatus);
+            }
+
             if (HasPowerFeedback && _isPowerOn is not null)
             {
                 _isPowerOn = null;
@@ -458,11 +478,15 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         _isApplyingRuntime = true;
         try
         {
-            State = runtimeState.State;
-            StatusText = runtimeState.Text ?? StatusText;
-            CanStart = runtimeState.CanStart;
-            CanStop = runtimeState.CanStop;
+            var status = runtimeState.EquipmentStatus ?? ResolveMissingStatus(
+                isConnectionAvailable && runtimeState.State != RouteObjectState.Offline, runtimeState.IsEnabled);
+            State = status?.StateOverride ?? runtimeState.State;
+            if (status is null)
+                StatusText = runtimeState.Text ?? StatusText;
+            CanStart = runtimeState.CanStart && (status is null || status.IsTrusted && !status.BlockStart);
+            CanStop = runtimeState.CanStop && (status is null || status.IsTrusted && !status.BlockStop);
             IsEnabled = runtimeState.IsEnabled;
+            ApplyStatus(status);
             IsSelectorEnabled = runtimeState.IsSelectorCommandEnabled;
             if (IsStartToggle)
                 IsStartChecked = runtimeState.IsStartChecked && !runtimeState.IsStopChecked;
@@ -493,13 +517,34 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             _isApplyingRuntime = false;
         }
 
-        if (!HasPowerFeedback)
+        if (!HasPowerFeedback && _card.StatusMapping is null)
         {
             var shouldDispatchSelectorReset = runtimeState.ShouldResetSelectorCommands && !_isSelectorResetActive;
             _isSelectorResetActive = runtimeState.ShouldResetSelectorCommands;
-            if (shouldDispatchSelectorReset)
+            if (shouldDispatchSelectorReset && allowSelectorReset)
                 RequestSelectorReset();
         }
+    }
+
+    private EquipmentStatusPresentation? ResolveMissingStatus(bool isConnectionAvailable, bool isEnabled = true)
+    {
+        if (_card.StatusMapping is not { } mapping)
+            return null;
+
+        var textBinding = _card.Bindings.FirstOrDefault(binding => binding.Role == SignalBindingRole.Text);
+        return EquipmentStatusResolver.Resolve(mapping, textBinding, null,
+            isConnectionAvailable, hasGlobalFault: false, hasLocalFault: false, isEnabled, _palette);
+    }
+
+    private void ApplyStatus(EquipmentStatusPresentation? status)
+    {
+        if (Equals(_statusPresentation, status))
+            return;
+
+        this.RaiseAndSetIfChanged(ref _statusPresentation, status, nameof(StatusPresentation));
+        this.RaisePropertyChanged(nameof(StatusText));
+        this.RaisePropertyChanged(nameof(StatusBrush));
+        this.RaisePropertyChanged(nameof(StatusToolTip));
     }
 
     public void ApplyRouteSelection(

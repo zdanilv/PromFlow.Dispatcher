@@ -206,6 +206,7 @@
 					 Width="8"
 					 Height="8"
 					 Fill="{Binding StatusBrush}"
+					 ToolTip.Tip="{Binding StatusToolTip}"
 					 HorizontalAlignment="Left"
 					 VerticalAlignment="Center"
 					 Margin="0,3,3,5"/>
@@ -217,6 +218,7 @@
 					 Margin="0,3,0,5">
 				<TextBlock Text="{Binding StatusText}"
 						   Foreground="{Binding StatusBrush}"
+						   ToolTip.Tip="{Binding StatusToolTip}"
 						   FontSize="{Binding StatusFontSize}"
 						   TextWrapping="NoWrap"
 						   VerticalAlignment="Center"/>

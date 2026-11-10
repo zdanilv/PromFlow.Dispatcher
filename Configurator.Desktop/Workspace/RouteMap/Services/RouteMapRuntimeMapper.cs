@@ -20,12 +20,16 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
     }
 
     public RouteMapRuntimeState Map(IReadOnlyDictionary<string, SignalValue> signals)
+        => Map(signals, _configurationManager?.CurrentDefinition ?? _fixedDefinition
+            ?? throw new InvalidOperationException("RouteMap definition is unavailable."));
+
+    internal RouteMapRuntimeState Map(IReadOnlyDictionary<string, SignalValue> signals, RouteMapDefinition displayedDefinition)
     {
         var objects = new Dictionary<string, RouteObjectRuntimeState>();
-        var definition = _configurationManager?.CurrentDefinition ?? _fixedDefinition
-            ?? throw new InvalidOperationException("RouteMap definition is unavailable.");
+        var definition = _fixedDefinition ?? displayedDefinition;
         var isConnectionAvailable = ReadConnectionAvailable(signals);
         var isGlobalFaultActive = ReadBool(signals, RouteMapSystemSignalIds.GlobalFault);
+        var palette = definition.Display?.Palette ?? new RouteMapPaletteSettings();
 
         foreach (var node in definition.Nodes)
             objects[node.Id] = MapObject(
@@ -76,7 +80,9 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 forceOffline: !isConnectionAvailable,
                 forceFault: isGlobalFaultActive,
                 forceCommandsDisabled: !isConnectionAvailable,
-                offlineText: "Не в сети");
+                offlineText: "Не в сети",
+                statusMapping: equipment.StatusMapping,
+                statusPalette: palette);
         }
 
         return new RouteMapRuntimeState(
@@ -107,7 +113,9 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         bool forceOffline = false,
         bool forceFault = false,
         bool forceCommandsDisabled = false,
-        string? offlineText = null)
+        string? offlineText = null,
+        EquipmentStatusMapping? statusMapping = null,
+        RouteMapPaletteSettings? statusPalette = null)
     {
         var text = textFallback;
         string? valueText = null;
@@ -129,11 +137,20 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         bool? isLoader = null;
         bool? isTarget = null;
         var activeFragmentIndexes = new HashSet<int>();
+        SignalBinding? statusBinding = null;
+        SignalValue? statusSignal = null;
 
         foreach (var binding in bindings)
         {
             if (IsIgnoredRuntimeRole(binding.Role))
                 continue;
+
+            if (statusMapping is not null && binding.Role == SignalBindingRole.Text)
+            {
+                statusBinding = binding;
+                signals.TryGetValue(binding.SignalId, out statusSignal);
+                continue;
+            }
 
             if (!signals.TryGetValue(binding.SignalId, out var signal))
                 continue;
@@ -277,9 +294,25 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             && state is not RouteObjectState.Disabled;
         if (forceOffline && !string.IsNullOrWhiteSpace(offlineText))
             text = offlineText;
-        var shouldResetSelectorCommands = !hasPowerFeedbackBinding && hasGoodDisabledSignal && !forceOffline && !isOffline;
+        var shouldResetSelectorCommands = statusMapping is null
+            && !hasPowerFeedbackBinding && hasGoodDisabledSignal && !forceOffline && !isOffline;
+
+        EquipmentStatusPresentation? equipmentStatus = null;
+        if (statusMapping is not null)
+        {
+            equipmentStatus = EquipmentStatusResolver.Resolve(statusMapping, statusBinding, statusSignal,
+                isConnectionAvailable: state != RouteObjectState.Offline,
+                hasGlobalFault: forceFault,
+                hasLocalFault: hasFault || state == RouteObjectState.Fault,
+                isEnabled: isEnabled && state != RouteObjectState.Disabled,
+                palette: statusPalette ?? new RouteMapPaletteSettings());
+            state = equipmentStatus.StateOverride ?? state;
+            text = equipmentStatus.Text;
+        }
+
         var isSelectorCommandEnabled = !hasPowerFeedbackBinding && !forceCommandsDisabled
-            && state is not RouteObjectState.Offline;
+            && state is not RouteObjectState.Offline
+            && statusSignal is not ({ IsQualityGood: false } or { IsStale: true });
 
         return new RouteObjectRuntimeState(
             objectId,
@@ -287,8 +320,10 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             text,
             valueText,
             isVisible,
-            canStartFallback && commandsAllowed && !isStartOff,
-            canStopFallback && commandsAllowed && !isStopOff,
+            canStartFallback && commandsAllowed && !isStartOff
+                && (equipmentStatus is null || equipmentStatus.IsTrusted && !equipmentStatus.BlockStart),
+            canStopFallback && commandsAllowed && !isStopOff
+                && (equipmentStatus is null || equipmentStatus.IsTrusted && !equipmentStatus.BlockStop),
             isStartChecked,
             isStopChecked,
             hasActiveSignal,
@@ -296,10 +331,13 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             isTarget,
             activeFragmentIndexes,
             IsSelectorChecked: !hasPowerFeedbackBinding && isEnabled && isCheckedSelector && !isUncheckedSelector,
-            IsEnabled: state is not RouteObjectState.Offline and not RouteObjectState.Disabled,
+            IsEnabled: isEnabled && state is not RouteObjectState.Offline and not RouteObjectState.Disabled,
             IsSelectorCommandEnabled: isSelectorCommandEnabled,
             ShouldResetSelectorCommands: shouldResetSelectorCommands,
-            IsPowerOn: state == RouteObjectState.Offline ? null : isPowerOn);
+            IsPowerOn: state == RouteObjectState.Offline ? null : isPowerOn)
+        {
+            EquipmentStatus = equipmentStatus
+        };
     }
 
     private static bool ReadTopBarBool(

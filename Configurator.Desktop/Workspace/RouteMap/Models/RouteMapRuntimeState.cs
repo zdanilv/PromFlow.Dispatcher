@@ -49,4 +49,7 @@ public sealed record RouteObjectRuntimeState(
     bool IsEnabled = true,
     bool IsSelectorCommandEnabled = true,
     bool ShouldResetSelectorCommands = false,
-    bool? IsPowerOn = null);
+    bool? IsPowerOn = null)
+{
+    public EquipmentStatusPresentation? EquipmentStatus { get; init; }
+}

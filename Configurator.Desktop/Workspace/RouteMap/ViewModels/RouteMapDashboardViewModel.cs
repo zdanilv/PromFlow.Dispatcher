@@ -88,11 +88,14 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             .Observe()
             .Subscribe(signals =>
             {
-                _lastSignals = signals;
-                var runtimeState = runtimeMapper.Map(signals);
+                var definition = Definition;
+                var runtimeState = MapSnapshot(signals, definition);
                 Dispatcher.UIThread.Post(() =>
                 {
-                    ApplyRuntime(runtimeState);
+                    _lastSignals = signals;
+                    ApplyRuntime(!ReferenceEquals(definition, Definition)
+                        ? MapSnapshot(signals, Definition)
+                        : runtimeState);
                     _sessionJournal.RecordSignalSnapshot(signals, Definition, _modbusOptions.CurrentValue);
                 });
             });
@@ -196,8 +199,11 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
 
         ApplyEquipmentRouteSelections();
         if (_lastSignals is not null)
-            ApplyRuntime(_runtimeMapper.Map(_lastSignals));
+            ApplyRuntime(MapSnapshot(_lastSignals, definition), isConfigurationReplay: true);
     }
+
+    private RouteMapRuntimeState MapSnapshot(IReadOnlyDictionary<string, SignalValue> signals, RouteMapDefinition definition) =>
+        _runtimeMapper is RouteMapRuntimeMapper mapper ? mapper.Map(signals, definition) : _runtimeMapper.Map(signals);
 
     private static bool ContainsRuntimeObject(RouteMapDefinition definition, string? objectId)
     {
@@ -211,11 +217,12 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             || definition.Chains.Any(x => x.Id == objectId);
     }
 
-    private void ApplyRuntime(RouteMapRuntimeState runtimeState)
+    private void ApplyRuntime(RouteMapRuntimeState runtimeState, bool isConfigurationReplay = false)
     {
         var shouldDispatchPendingParameters =
-            runtimeState.IsConnectionAvailable && !_wasConnectionAvailable;
-        _wasConnectionAvailable = runtimeState.IsConnectionAvailable;
+            !isConfigurationReplay && runtimeState.IsConnectionAvailable && !_wasConnectionAvailable;
+        if (!isConfigurationReplay)
+            _wasConnectionAvailable = runtimeState.IsConnectionAvailable;
         RuntimeState = runtimeState;
         if (IsConnectionStatusVisible)
             ConnectionStatusText = runtimeState.ConnectionStatusText;
@@ -230,7 +237,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             runtimeState.IsResetCommandEnabled,
             runtimeState.IsEmergencyCommandEnabled);
         foreach (var card in MapEquipmentCards)
-            card.ApplyRuntime(runtimeState.Find(card.Id), runtimeState.IsConnectionAvailable);
+            card.ApplyRuntime(runtimeState.Find(card.Id), runtimeState.IsConnectionAvailable,
+                allowSelectorReset: !isConfigurationReplay);
 
         ApplyNodeRoleReadback(runtimeState);
 

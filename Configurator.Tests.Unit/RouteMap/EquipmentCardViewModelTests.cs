@@ -1,6 +1,7 @@
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
+using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 using System.Reactive.Threading.Tasks;
 using Xunit;
@@ -9,6 +10,158 @@ namespace Configurator.Tests.Unit.RouteMap;
 
 public sealed class EquipmentCardViewModelTests
 {
+    [Theory]
+    [InlineData(0, "Выключен", "#77828D", true)]
+    [InlineData(1, "Ожидание", "#D99B22", true)]
+    [InlineData(2, "Авария", "#D95D4E", false)]
+    [InlineData(3, "Выполнение", "#3A9D5D", true)]
+    [InlineData(4, "Выгрузка", "#3A9D5D", true)]
+    [InlineData(5, "Загрузка", "#3A9D5D", true)]
+    public async Task Applies_structured_status_and_enforces_command_availability(
+        ushort code, string text, string color, bool canCommand)
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var card = RouteMapSeed.Create().MapEquipment.Single();
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+
+        Assert.False(viewModel.CanStart);
+        Assert.False(viewModel.CanStop);
+        Assert.Equal("Нет достоверного статуса", viewModel.StatusText);
+
+        viewModel.ApplyRuntime(BucketRuntime(code));
+
+        Assert.Equal(text, viewModel.StatusText);
+        Assert.Equal(Avalonia.Media.Color.Parse(color), BrushColor(viewModel.StatusBrush));
+        Assert.Equal(code, viewModel.StatusPresentation?.Code);
+        Assert.Equal(canCommand, viewModel.CanStart);
+        Assert.Equal(canCommand, viewModel.CanStop);
+        Assert.Contains("equip.bucket.text", viewModel.StatusToolTip);
+        Assert.Empty(dispatcher.Requests);
+
+        if (!canCommand)
+        {
+            await viewModel.StartCommand.Execute().ToTask();
+            viewModel.IsStopChecked = true;
+            Assert.Empty(dispatcher.Requests);
+        }
+    }
+
+    [Theory]
+    [InlineData(EquipmentStatusQuality.UnknownCode, "Неизвестный статус (код 9)", "#D99B22")]
+    [InlineData(EquipmentStatusQuality.Missing, "Нет достоверного статуса", "#77828D")]
+    [InlineData(EquipmentStatusQuality.BadOrStale, "Нет достоверного статуса", "#77828D")]
+    [InlineData(EquipmentStatusQuality.WrongType, "Нет достоверного статуса", "#77828D")]
+    [InlineData(EquipmentStatusQuality.Disconnected, "Не в сети", "#3F474D")]
+    [InlineData(EquipmentStatusQuality.ForcedFault, "Авария системы", "#D95D4E")]
+    public void Status_replaces_previous_color_and_recovers_on_good_snapshot(
+        EquipmentStatusQuality quality, string expectedText, string expectedColor)
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var definition = RouteMapSeed.Create();
+        var card = definition.MapEquipment.Single();
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+        var mapper = new RouteMapRuntimeMapper(definition);
+        const string textId = "equip.bucket.text";
+        const string powerId = "equip.bucket.power";
+        var signals = new Dictionary<string, SignalValue>
+        {
+            [textId] = new(textId, (ushort)3, SignalValueType.UInt16, DateTimeOffset.UnixEpoch, true, false),
+            [powerId] = new(powerId, true, SignalValueType.Bool, DateTimeOffset.UnixEpoch, true, false)
+        };
+        var goodText = signals[textId];
+        viewModel.ApplyRuntime(mapper.Map(signals).Find(card.Id));
+        Assert.Equal("Выполнение", viewModel.StatusText);
+
+        switch (quality)
+        {
+            case EquipmentStatusQuality.UnknownCode:
+                signals[textId] = goodText with { Value = (ushort)9 };
+                break;
+            case EquipmentStatusQuality.Missing:
+                signals.Remove(textId);
+                break;
+            case EquipmentStatusQuality.BadOrStale:
+                signals[textId] = goodText with { IsStale = true };
+                break;
+            case EquipmentStatusQuality.WrongType:
+                signals[textId] = goodText with { Value = "3" };
+                break;
+            case EquipmentStatusQuality.Disconnected:
+                var connectionId = RouteMapSystemSignalIds.ConnectionConnected;
+                signals[connectionId] = new(connectionId, false, SignalValueType.Bool, DateTimeOffset.UnixEpoch, true, false);
+                break;
+            case EquipmentStatusQuality.ForcedFault:
+                var faultId = RouteMapSystemSignalIds.GlobalFault;
+                signals[faultId] = new(faultId, true, SignalValueType.Bool, DateTimeOffset.UnixEpoch, true, false);
+                break;
+        }
+
+        var runtime = mapper.Map(signals);
+        viewModel.ApplyRuntime(runtime.Find(card.Id), runtime.IsConnectionAvailable);
+
+        Assert.Equal(expectedText, viewModel.StatusText);
+        Assert.Equal(Avalonia.Media.Color.Parse(expectedColor), BrushColor(viewModel.StatusBrush));
+        Assert.Equal(quality, viewModel.StatusPresentation?.Quality);
+        Assert.False(viewModel.CanStart);
+        Assert.False(viewModel.CanStop);
+        Assert.Equal(Avalonia.Media.Color.Parse(runtime.IsConnectionAvailable ? "#00D107" : "#3F474D"),
+            BrushColor(viewModel.PowerIndicatorBackground));
+
+        viewModel.ApplyRuntime(BucketRuntime(3));
+        Assert.Equal("Выполнение", viewModel.StatusText);
+        Assert.Equal(Avalonia.Media.Color.Parse("#3A9D5D"), BrushColor(viewModel.StatusBrush));
+        Assert.True(viewModel.CanStart);
+        Assert.True(viewModel.CanStop);
+        Assert.Empty(dispatcher.Requests);
+    }
+
+    [Fact]
+    public void Mapped_toggle_start_respects_status_gate_and_applies_readback_without_writes()
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var card = RouteMapSeed.Create().MapEquipment.Single() with { StartButtonKind = RouteCommandButtonKind.Toggle };
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+        viewModel.ApplyRuntime(BucketRuntime(2));
+
+        viewModel.IsStartChecked = true;
+
+        Assert.False(viewModel.IsStartChecked);
+        Assert.Empty(dispatcher.Requests);
+        viewModel.ApplyRuntime(BucketRuntime(2) with { IsStartChecked = true });
+        Assert.True(viewModel.IsStartChecked);
+        Assert.Empty(dispatcher.Requests);
+
+        viewModel.ApplyRuntime(BucketRuntime(3));
+        viewModel.IsStartChecked = true;
+        Assert.Equal(("equip.bucket.start", true), (Assert.Single(dispatcher.Requests).SignalId, dispatcher.Requests[0].Value));
+    }
+
+    [Fact]
+    public void Legacy_selector_reset_is_not_replayed_when_configuration_is_applied()
+    {
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var card = RouteMapSeed.Create().MapEquipment.Single() with
+        {
+            StatusMapping = null,
+            Bindings = [
+                new(SignalBindingRole.CheckedCommand, "legacy.on", SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+                new(SignalBindingRole.UncheckedCommand, "legacy.off", SignalBindingDirection.ReadWrite, SignalValueType.Bool)]
+        };
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+        var disabled = new RouteObjectRuntimeState(card.Id, RouteObjectState.Disabled, null, null,
+            true, false, false, IsEnabled: false, ShouldResetSelectorCommands: true);
+
+        viewModel.ApplyRuntime(disabled, isConnectionAvailable: true, allowSelectorReset: false);
+        viewModel.ApplyRuntime(disabled);
+        Assert.Empty(dispatcher.Requests);
+
+        viewModel.ApplyRuntime(disabled with { State = RouteObjectState.Idle, IsEnabled = true, ShouldResetSelectorCommands = false });
+        viewModel.ApplyRuntime(disabled);
+        Assert.Collection(dispatcher.Requests,
+            request => Assert.Equal(("legacy.on", false), (request.SignalId, request.Value)),
+            request => Assert.Equal(("legacy.off", false), (request.SignalId, request.Value)));
+    }
+
     [Fact]
     public void ApplyRuntime_updates_checked_state_without_dispatching_commands()
     {
@@ -38,6 +191,7 @@ public sealed class EquipmentCardViewModelTests
         var dispatcher = new CapturingEquipmentCommandDispatcher();
         var card = RouteMapSeed.Create().MapEquipment.Single();
         var viewModel = new EquipmentCardViewModel(card, dispatcher);
+        viewModel.ApplyRuntime(BucketRuntime());
 
         await viewModel.StartCommand.Execute().ToTask();
         viewModel.IsStartChecked = true;
@@ -53,12 +207,12 @@ public sealed class EquipmentCardViewModelTests
         var dispatcher = new CapturingEquipmentCommandDispatcher();
         var card = RouteMapSeed.Create().MapEquipment.Single();
         var viewModel = new EquipmentCardViewModel(card, dispatcher);
+        viewModel.ApplyRuntime(BucketRuntime());
 
         viewModel.IsStopChecked = true;
         Assert.False(viewModel.IsStopChecked);
         Assert.True(viewModel.IsStopPending);
-        viewModel.ApplyRuntime(new RouteObjectRuntimeState(card.Id, RouteObjectState.Idle, card.StatusText,
-            null, true, true, true, IsStopChecked: true));
+        viewModel.ApplyRuntime(BucketRuntime(isStopChecked: true));
         Assert.True(viewModel.IsStopChecked);
         Assert.False(viewModel.IsStopPending);
         viewModel.IsStopChecked = false;
@@ -74,6 +228,7 @@ public sealed class EquipmentCardViewModelTests
     {
         var dispatcher = new BlockingEquipmentCommandDispatcher();
         var viewModel = new EquipmentCardViewModel(RouteMapSeed.Create().MapEquipment.Single(), dispatcher);
+        viewModel.ApplyRuntime(BucketRuntime());
 
         var first = viewModel.StartCommand.Execute().ToTask();
         Assert.True(viewModel.IsStartBusy);
@@ -94,11 +249,11 @@ public sealed class EquipmentCardViewModelTests
         var dispatcher = new BlockingEquipmentCommandDispatcher();
         var card = RouteMapSeed.Create().MapEquipment.Single();
         var viewModel = new EquipmentCardViewModel(card, dispatcher);
+        viewModel.ApplyRuntime(BucketRuntime());
 
         viewModel.IsStopChecked = true;
         Assert.True(viewModel.IsStopPending);
-        viewModel.ApplyRuntime(new RouteObjectRuntimeState(card.Id, RouteObjectState.Idle, card.StatusText,
-            null, true, true, true, IsStopChecked: true));
+        viewModel.ApplyRuntime(BucketRuntime(isStopChecked: true));
         Assert.True(viewModel.IsStopChecked);
         Assert.True(viewModel.IsStopPending);
         Assert.False(viewModel.CanStop);
@@ -116,6 +271,7 @@ public sealed class EquipmentCardViewModelTests
     {
         var dispatcher = new FailingEquipmentCommandDispatcher();
         var viewModel = new EquipmentCardViewModel(RouteMapSeed.Create().MapEquipment.Single(), dispatcher);
+        viewModel.ApplyRuntime(BucketRuntime());
 
         await viewModel.StartCommand.Execute().ToTask();
         Assert.True(viewModel.HasCommandError);
@@ -135,6 +291,7 @@ public sealed class EquipmentCardViewModelTests
     {
         var dispatcher = new CapturingEquipmentCommandDispatcher();
         var viewModel = new EquipmentCardViewModel(RouteMapSeed.Create().MapEquipment.Single(), dispatcher);
+        viewModel.ApplyRuntime(BucketRuntime());
 
         await viewModel.StartCommand.Execute().ToTask();
         viewModel.IsStopChecked = true;
@@ -151,10 +308,10 @@ public sealed class EquipmentCardViewModelTests
         var card = RouteMapSeed.Create().MapEquipment.Single();
         var viewModel = new EquipmentCardViewModel(card, dispatcher,
             stopConfirmationTimeout: TimeSpan.FromMilliseconds(20));
+        viewModel.ApplyRuntime(BucketRuntime());
 
         viewModel.IsStopChecked = true;
-        viewModel.ApplyRuntime(new RouteObjectRuntimeState(card.Id, RouteObjectState.Idle, card.StatusText,
-            null, true, true, true, IsStopChecked: false));
+        viewModel.ApplyRuntime(BucketRuntime());
 
         Assert.True(SpinWait.SpinUntil(() => !viewModel.IsStopPending, TimeSpan.FromSeconds(2)));
         Assert.False(viewModel.IsStopChecked);
@@ -449,9 +606,16 @@ public sealed class EquipmentCardViewModelTests
     private static EquipmentCardViewModel CreateViewModel()
     {
         return new EquipmentCardViewModel(
-            RouteMapSeed.Create().MapEquipment.Single(),
+            RouteMapSeed.Create().MapEquipment.Single() with { StatusMapping = null },
             new CapturingEquipmentCommandDispatcher());
     }
+
+    private static RouteObjectRuntimeState BucketRuntime(ushort code = 0, bool isStopChecked = false) =>
+        new RouteMapRuntimeMapper(RouteMapSeed.Create()).Map(new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.text"] = new("equip.bucket.text", code, SignalValueType.UInt16, DateTimeOffset.UnixEpoch, true, false),
+            ["equip.bucket.stop"] = new("equip.bucket.stop", isStopChecked, SignalValueType.Bool, DateTimeOffset.UnixEpoch, true, false)
+        }).Find("equip.bucket")!;
 
     private static IReadOnlyList<RouteNode> CreateChainNodes(RouteMapDefinition definition)
     {

@@ -1,4 +1,5 @@
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
@@ -1137,11 +1138,71 @@ public sealed class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
+    public void Equipment_card_refreshes_status_tooltip_and_command_gates_after_configuration_apply()
+    {
+        var seed = RouteMapSeed.Create();
+        var storage = new RouteMapConfigurationStorage(Path.Combine(Path.GetTempPath(), $"route-map-{Guid.NewGuid():N}.json"));
+        using var manager = new RouteMapConfigurationManager(storage, new RouteMapConfigurationMapper(seed),
+            new RouteMapConfigurationValidator(), new RouteMapConfigurationMigrator());
+        using var signals = new Subject<IReadOnlyDictionary<string, SignalValue>>();
+        var dispatcher = new NoOpCommandDispatcher();
+        var journal = new RouteMapSessionJournal();
+        var notifications = new NotificationsPanelViewModel(journal, new NoOpDialogService(), new NoOpBitWriter());
+        using var dashboard = new RouteMapDashboardViewModel(manager, new TestSignalProvider(signals),
+            new RouteMapRuntimeMapper(manager), dispatcher, new NoOpSettingsDialogService(), notifications,
+            journal, new StaticOptionsMonitor(new ModbusOptions()));
+        var view = new RouteMapDashboardView { DataContext = dashboard };
+        var window = new Window { Width = 1300, Height = 760, Content = view };
+        window.Show();
+        try
+        {
+            var good = BucketSignals(3);
+            signals.OnNext(good);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Выполнение", dashboard.MapEquipmentCards.Single().StatusText);
+            Assert.True(dashboard.MapEquipmentCards.Single().CanStart);
+
+            var draft = manager.CreateDraft();
+            var entry = draft.Cards.Single().StatusMapping!.Entries.Single(item => item.Code == 3);
+            entry.Text = "Ограничение оператора";
+            entry.Color = "#7A357D";
+            entry.BlockStart = true;
+            Assert.True(manager.Apply(draft).IsSuccess);
+            signals.OnNext(good);
+            Dispatcher.UIThread.RunJobs();
+
+            var card = Assert.Single(view.GetVisualDescendants().OfType<EquipmentCardView>());
+            var label = Assert.Single(card.GetVisualDescendants().OfType<TextBlock>(),
+                item => item.Text == "Ограничение оператора");
+            Assert.Equal(Color.Parse("#7A357D"), Assert.IsAssignableFrom<ISolidColorBrush>(label.Foreground).Color);
+            var tooltip = Assert.IsType<string>(ToolTip.GetTip(label));
+            Assert.Contains("equip.bucket.text", tooltip);
+            Assert.Contains("Код: 3", tooltip);
+            Assert.Contains("Статус запрещает ПУСК", tooltip);
+            Assert.False(card.FindControl<Button>("StartButton")!.IsEffectivelyEnabled);
+            Assert.True(card.FindControl<ToggleButton>("StopButton")!.IsEffectivelyEnabled);
+            Assert.Empty(dispatcher.Requests);
+
+            signals.OnNext(BucketSignals(9, isStopChecked: true));
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Неизвестный статус (код 9)", label.Text);
+            Assert.False(card.FindControl<ToggleButton>("StopButton")!.IsEffectivelyEnabled);
+            Assert.Empty(dispatcher.Requests);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
     public void Momentary_start_pointer_release_dispatches_one_activation()
     {
         var card = RouteMapSeed.Create().MapEquipment.Single();
         var dispatcher = new NoOpCommandDispatcher();
-        var view = new EquipmentCardView { DataContext = new EquipmentCardViewModel(card, dispatcher) };
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+        viewModel.ApplyRuntime(BucketRuntime());
+        var view = new EquipmentCardView { DataContext = viewModel };
         var window = new Window { Width = 340, Height = 200, Content = view };
         window.Show();
         Dispatcher.UIThread.RunJobs();
@@ -1165,6 +1226,7 @@ public sealed class RouteMapSettingsDialogVisualTests
         var card = RouteMapSeed.Create().MapEquipment.Single();
         var dispatcher = new NoOpCommandDispatcher();
         var viewModel = new EquipmentCardViewModel(card, dispatcher);
+        viewModel.ApplyRuntime(BucketRuntime());
         var view = new EquipmentCardView { DataContext = viewModel };
         var window = new Window { Width = 340, Height = 200, Content = view };
         window.Show();
@@ -1183,8 +1245,7 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.False(stop.IsChecked);
         Assert.True(viewModel.IsStopPending);
 
-        viewModel.ApplyRuntime(new RouteObjectRuntimeState(card.Id, RouteObjectState.Idle, card.StatusText,
-            null, true, true, true, IsStopChecked: true));
+        viewModel.ApplyRuntime(BucketRuntime(isStopChecked: true));
         Dispatcher.UIThread.RunJobs();
         Assert.True(stop.IsChecked);
         Assert.Single(dispatcher.Requests);
@@ -1196,8 +1257,7 @@ public sealed class RouteMapSettingsDialogVisualTests
         Assert.Equal(false, dispatcher.Requests[1].Value);
         Assert.Equal("equip.bucket.stop", dispatcher.Requests[1].SignalId);
         Assert.True(stop.IsChecked);
-        viewModel.ApplyRuntime(new RouteObjectRuntimeState(card.Id, RouteObjectState.Idle, card.StatusText,
-            null, true, true, true, IsStopChecked: false));
+        viewModel.ApplyRuntime(BucketRuntime());
         Dispatcher.UIThread.RunJobs();
         Assert.False(stop.IsChecked);
         window.Close();
@@ -1557,6 +1617,16 @@ public sealed class RouteMapSettingsDialogVisualTests
     private static string TextOf(TextBlock textBlock) =>
         string.Concat((textBlock.Inlines?.OfType<Run>() ?? Enumerable.Empty<Run>()).Select(run => run.Text));
 
+    private static RouteObjectRuntimeState BucketRuntime(bool isStopChecked = false) =>
+        new RouteMapRuntimeMapper(RouteMapSeed.Create()).Map(BucketSignals(0, isStopChecked)).Find("equip.bucket")!;
+
+    private static IReadOnlyDictionary<string, SignalValue> BucketSignals(ushort code, bool isStopChecked = false) =>
+        new Dictionary<string, SignalValue>
+        {
+            ["equip.bucket.text"] = new("equip.bucket.text", code, SignalValueType.UInt16, DateTimeOffset.UnixEpoch, true, false),
+            ["equip.bucket.stop"] = new("equip.bucket.stop", isStopChecked, SignalValueType.Bool, DateTimeOffset.UnixEpoch, true, false)
+        };
+
     private sealed class DialogFixture : IDisposable
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), "route-map-ui-tests", Guid.NewGuid().ToString("N"));
@@ -1676,6 +1746,11 @@ public sealed class RouteMapSettingsDialogVisualTests
     {
         public IObservable<IReadOnlyDictionary<string, SignalValue>> Observe() =>
             Observable.Empty<IReadOnlyDictionary<string, SignalValue>>();
+    }
+
+    private sealed class TestSignalProvider(IObservable<IReadOnlyDictionary<string, SignalValue>> signals) : ISignalValueProvider
+    {
+        public IObservable<IReadOnlyDictionary<string, SignalValue>> Observe() => signals;
     }
 
     private sealed class NoOpCommandDispatcher : IEquipmentCommandDispatcher
