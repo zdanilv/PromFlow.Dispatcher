@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -35,7 +36,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 17;
+    public const int CurrentSchemaVersion = 18;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();
@@ -45,6 +46,9 @@ public sealed class RouteMapConfigurationDocument
     public ObservableCollection<RouteSegmentConfiguration> Segments { get; set; } = [];
     public ObservableCollection<EquipmentCardConfiguration> Cards { get; set; } = [];
     public ObservableCollection<RoutePlaceholderRuleConfiguration> PlaceholderRules { get; set; } = [];
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class RouteMapSettingsConfiguration
@@ -253,9 +257,21 @@ public sealed class EquipmentCardConfiguration : RouteMapConfigurationItem
     private RouteCommandButtonKind _stopButtonKind = RouteCommandButtonKind.Toggle;
     private bool _startOffFeedbackEnabled;
     private bool _stopOffFeedbackEnabled;
+    private EquipmentStatusMappingConfiguration? _statusMapping;
 
     public string Title { get; set; } = string.Empty;
     public string StatusText { get; set; } = "Выключено";
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public EquipmentStatusMappingConfiguration? StatusMapping
+    {
+        get => _statusMapping;
+        set => this.RaiseAndSetIfChanged(ref _statusMapping, value);
+    }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
     public RouteObjectState State { get; set; } = RouteObjectState.Idle;
     public bool CanStart
     {
@@ -315,6 +331,82 @@ public sealed class EquipmentCardConfiguration : RouteMapConfigurationItem
     public EquipmentCardStyleConfiguration Style { get; set; } = new();
     public ObservableCollection<SignalBindingConfiguration> Bindings { get; set; } = [];
     public ObservableCollection<EquipmentCardParameterConfiguration> Parameters { get; set; } = [];
+}
+
+public sealed class EquipmentStatusMappingConfiguration : ReactiveObject
+{
+    private string _unknownText = string.Empty;
+    private string _unavailableText = string.Empty;
+
+    public string UnknownText
+    {
+        get => _unknownText;
+        set => this.RaiseAndSetIfChanged(ref _unknownText, value);
+    }
+
+    public string UnavailableText
+    {
+        get => _unavailableText;
+        set => this.RaiseAndSetIfChanged(ref _unavailableText, value);
+    }
+
+    public ObservableCollection<EquipmentStatusEntryConfiguration> Entries { get; set; } = [];
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+public sealed class EquipmentStatusEntryConfiguration : ReactiveObject
+{
+    private int _code;
+    private string _text = string.Empty;
+    private string _color = string.Empty;
+    private EquipmentStatusCategory _category;
+    private bool _blockStart;
+    private bool _blockStop;
+
+    [JsonRequired]
+    public int Code
+    {
+        get => _code;
+        set => this.RaiseAndSetIfChanged(ref _code, value);
+    }
+
+    public string Text
+    {
+        get => _text;
+        set => this.RaiseAndSetIfChanged(ref _text, value);
+    }
+
+    public string Color
+    {
+        get => _color;
+        set => this.RaiseAndSetIfChanged(ref _color, value);
+    }
+
+    [JsonRequired]
+    public EquipmentStatusCategory Category
+    {
+        get => _category;
+        set => this.RaiseAndSetIfChanged(ref _category, value);
+    }
+
+    [JsonRequired]
+    public bool BlockStart
+    {
+        get => _blockStart;
+        set => this.RaiseAndSetIfChanged(ref _blockStart, value);
+    }
+
+    [JsonRequired]
+    public bool BlockStop
+    {
+        get => _blockStop;
+        set => this.RaiseAndSetIfChanged(ref _blockStop, value);
+    }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class EquipmentCardParameterConfiguration : ReactiveObject

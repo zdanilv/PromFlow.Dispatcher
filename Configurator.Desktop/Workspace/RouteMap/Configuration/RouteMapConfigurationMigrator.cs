@@ -118,6 +118,11 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 17;
                     wasMigrated = true;
                     break;
+                case 17:
+                    ApplyVersion18(document);
+                    document.SchemaVersion = 18;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }
@@ -433,6 +438,29 @@ public sealed class RouteMapConfigurationMigrator
             RemoveBindings(card.Bindings, SignalBindingRole.UncheckedCommand, SignalBindingRole.CheckedCommand);
             EnsureBinding(card.Bindings, SignalBindingRole.PowerFeedback, "equip.bucket.power", SignalBindingDirection.Read);
             card.Bindings.First(binding => binding.Role == SignalBindingRole.PowerFeedback).SignalId = "equip.bucket.power";
+        }
+    }
+
+    private static void ApplyVersion18(RouteMapConfigurationDocument document)
+    {
+        var palette = document.Map?.Palette is { } configuredPalette
+            ? RouteMapConfigurationMapper.ToModel(configuredPalette)
+            : new RouteMapPaletteSettings();
+
+        // v17 allowed a trailing newline in palette colors. Keep the palette itself intact.
+        var statusPalette = palette with
+        {
+            MutedText = palette.MutedText?.TrimEnd('\n') ?? string.Empty,
+            Warning = palette.Warning?.TrimEnd('\n') ?? string.Empty,
+            Fault = palette.Fault?.TrimEnd('\n') ?? string.Empty,
+            Ready = palette.Ready?.TrimEnd('\n') ?? string.Empty,
+        };
+
+        foreach (var card in document.Cards.Where(card => card.Id == "equip.bucket" && card.StatusMapping is null))
+        {
+            // Older custom cards can have a different Text contract or no Text binding.
+            if (card.Bindings.Any(RouteMapConfigurationValidator.IsStatusTextBinding))
+                card.StatusMapping = RouteMapConfigurationMapper.ToConfiguration(RouteMapSeed.CreateBucketStatusMapping(statusPalette));
         }
     }
 

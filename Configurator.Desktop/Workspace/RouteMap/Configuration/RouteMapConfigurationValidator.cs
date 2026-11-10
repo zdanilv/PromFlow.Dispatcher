@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Configuration;
@@ -221,6 +222,7 @@ public sealed class RouteMapConfigurationValidator
                 cardAllowedRoles.Add(SignalBindingRole.CheckedCommand);
             }
             ValidateBindings(errors, "card", card.Id, card.Bindings, cardAllowedRoles);
+            ValidateCardStatusMapping(errors, card);
             ValidateCardParameters(errors, card);
             if (card.CanStart)
             {
@@ -315,6 +317,69 @@ public sealed class RouteMapConfigurationValidator
             Add(errors, "card", card.Id, nameof(EquipmentCardParameterConfiguration.SignalId),
                 $"SignalId настройки оборудования '{duplicate.Key}' указан несколько раз.");
         }
+    }
+
+    private static void ValidateCardStatusMapping(
+        ICollection<RouteMapConfigurationError> errors,
+        EquipmentCardConfiguration card)
+    {
+        if (card.StatusMapping is not { } mapping)
+            return;
+
+        const string scope = "card";
+        const string property = nameof(EquipmentCardConfiguration.StatusMapping);
+        if (!card.Bindings.Any(IsStatusTextBinding))
+            Add(errors, scope, card.Id, property, "Таблица статусов требует binding Text с направлением Read и типом UInt16 или Word.");
+
+        ValidateStatusText(errors, card.Id, $"{property}.{nameof(mapping.UnknownText)}", mapping.UnknownText);
+        ValidateStatusText(errors, card.Id, $"{property}.{nameof(mapping.UnavailableText)}", mapping.UnavailableText);
+
+        var entriesProperty = $"{property}.{nameof(mapping.Entries)}";
+        if (mapping.Entries is not { Count: >= 1 and <= 256 } entries)
+        {
+            Add(errors, scope, card.Id, entriesProperty, "Таблица статусов должна содержать от 1 до 256 строк.");
+            return;
+        }
+
+        var codes = new HashSet<int>();
+        for (var index = 0; index < entries.Count; index++)
+        {
+            var row = $"{entriesProperty}[{index}]";
+            var entry = entries[index];
+            if (entry is null)
+            {
+                Add(errors, scope, card.Id, row, "Строка таблицы статусов обязательна.");
+                continue;
+            }
+
+            var codeProperty = $"{row}.{nameof(entry.Code)}";
+            if (entry.Code is < ushort.MinValue or > ushort.MaxValue)
+                Add(errors, scope, card.Id, codeProperty, "Код статуса должен быть в диапазоне 0–65535.");
+            else if (!codes.Add(entry.Code))
+                Add(errors, scope, card.Id, codeProperty, $"Код статуса {entry.Code} уже указан.");
+
+            ValidateStatusText(errors, card.Id, $"{row}.{nameof(entry.Text)}", entry.Text);
+            if (entry.Color is not { Length: 7 or 9 } || !ColorPattern.IsMatch(entry.Color))
+                Add(errors, scope, card.Id, $"{row}.{nameof(entry.Color)}", "Цвет должен иметь формат #RRGGBB или #AARRGGBB.");
+            ValidateEnum(errors, scope, card.Id, $"{row}.{nameof(entry.Category)}", entry.Category);
+            if (entry.Category == EquipmentStatusCategory.Fault && (!entry.BlockStart || !entry.BlockStop))
+                Add(errors, scope, card.Id, row, "Аварийный статус должен блокировать ПУСК и СТОП.");
+        }
+    }
+
+    internal static bool IsStatusTextBinding(SignalBindingConfiguration binding) =>
+        binding.Role == SignalBindingRole.Text &&
+        binding.Direction == SignalBindingDirection.Read &&
+        binding.ValueType is SignalValueType.UInt16 or SignalValueType.Word;
+
+    private static void ValidateStatusText(
+        ICollection<RouteMapConfigurationError> errors,
+        string cardId,
+        string property,
+        string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text.Length > 100)
+            Add(errors, "card", cardId, property, "Текст статуса должен содержать от 1 до 100 символов.");
     }
 
     private static void ValidateBindings(

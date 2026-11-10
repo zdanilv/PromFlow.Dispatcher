@@ -205,6 +205,7 @@ public sealed class RouteMapConfigurationStorage
             AllowTrailingCommas = true,
             ReadCommentHandling = JsonCommentHandling.Skip,
         };
+        options.Converters.Add(new JsonStringEnumConverter<EquipmentStatusCategory>(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
         options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
         return options;
     }

@@ -1,4 +1,5 @@
 using System.Reactive.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Media;
 using Configurator.Application.Services.Dialogs;
@@ -183,12 +184,13 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Migrator_v16_to_v17_replaces_only_bucket_selector_bindings_idempotently()
+    public void Migrator_from_v16_replaces_only_bucket_selector_bindings_idempotently()
     {
         using var scope = new TempConfigurationScope();
         var document = scope.Mapper.CreateSeedDocument();
         document.SchemaVersion = 16;
         var bucket = document.Cards.Single();
+        bucket.StatusMapping = null;
         bucket.Title = "Пользовательский кюбель";
         bucket.Style.Width = 391;
         bucket.Parameters.Add(new EquipmentCardParameterConfiguration
@@ -232,7 +234,7 @@ public sealed class RouteMapConfigurationTests
         var secondMigration = migrator.Migrate(reopened);
 
         Assert.False(secondMigration.WasMigrated);
-        Assert.Equal(17, migrated.SchemaVersion);
+        Assert.Equal(18, migrated.SchemaVersion);
         var migratedBucket = migrated.Cards.Single(card => card.Id == "equip.bucket");
         Assert.Equal("Пользовательский кюбель", migratedBucket.Title);
         Assert.Equal(391, migratedBucket.Style.Width);
@@ -250,6 +252,306 @@ public sealed class RouteMapConfigurationTests
         Assert.DoesNotContain(migratedCustom.Bindings, binding => binding.Role == SignalBindingRole.PowerFeedback);
         Assert.Equal("equip.other.selector.on", migratedCustom.Bindings.Single(binding => binding.Role == SignalBindingRole.CheckedCommand).SignalId);
         Assert.Equal("system.mode.automatic", migrated.TopBar.Automatic.Bindings.Single(binding => binding.Role == SignalBindingRole.AutomaticModeCommand).SignalId);
+    }
+
+    [Fact]
+    public async Task Manager_migrates_v17_bucket_with_custom_palette_and_preserves_the_document()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var bucket = document.Cards.Single();
+        var seedMapping = bucket.StatusMapping!;
+        Assert.Equal(new[] { "#77828D", "#D99B22", "#D95D4E", "#3A9D5D", "#3A9D5D", "#3A9D5D" },
+            seedMapping.Entries.Select(entry => entry.Color));
+        document.SchemaVersion = 17;
+        bucket.StatusMapping = null;
+        bucket.StatusText = "Пользовательский резерв";
+        bucket.CanStart = false;
+        bucket.Style.Width = 390;
+        bucket.Bindings.Single(binding => binding.Role == SignalBindingRole.PowerFeedback).SignalId = "custom.power";
+        bucket.Bindings.Single(binding => binding.Role == SignalBindingRole.Text).ValueType = SignalValueType.Word;
+        bucket.Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = "Уставка",
+            SignalId = "equip.bucket.setpoint",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Float32,
+            SavedValue = "4.2",
+            PendingAutoDispatch = true,
+            LastDispatchError = "offline",
+        });
+        document.Map.Palette.MutedText = "#112233";
+        document.Map.Palette.Warning = "#99445566";
+        document.Map.Palette.Fault = "#778899";
+        document.Map.Palette.Ready = "#AABBCC\n";
+        var legacy = scope.Storage.Clone(document).Cards.Single();
+        legacy.Id = "equip.other";
+        legacy.AttachedChainId = null;
+        legacy.Bindings.Single(binding => binding.Role == SignalBindingRole.Text).ValueType = SignalValueType.String;
+        document.Cards.Add(legacy);
+        await scope.Storage.SaveActiveAsync(document);
+        var original = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+        original["customDocumentData"] = new JsonArray(1, 2);
+        original["cards"]![0]!["customCardData"] = new JsonObject { ["tag"] = "keep" };
+        var originalJson = original.ToJsonString();
+        await File.WriteAllTextAsync(scope.Path, originalJson);
+
+        using var manager = scope.CreateManager();
+
+        Assert.Null(manager.LastLoadError);
+        Assert.Equal(18, manager.CurrentDocument.SchemaVersion);
+        Assert.Equal(originalJson, await File.ReadAllTextAsync(scope.Path + ".bak"));
+        var mapping = manager.CurrentDefinition.MapEquipment.Single(card => card.Id == "equip.bucket").StatusMapping!;
+        Assert.Equal("Неизвестный статус", mapping.UnknownText);
+        Assert.Equal("Нет достоверного статуса", mapping.UnavailableText);
+        Assert.Equal(new EquipmentStatusEntry[]
+        {
+            new(0, "Выключен", "#112233", EquipmentStatusCategory.Normal, false, false),
+            new(1, "Ожидание", "#99445566", EquipmentStatusCategory.Information, false, false),
+            new(2, "Авария", "#778899", EquipmentStatusCategory.Fault, true, true),
+            new(3, "Выполнение", "#AABBCC", EquipmentStatusCategory.Information, false, false),
+            new(4, "Выгрузка", "#AABBCC", EquipmentStatusCategory.Information, false, false),
+            new(5, "Загрузка", "#AABBCC", EquipmentStatusCategory.Information, false, false),
+        }, mapping.Entries);
+        Assert.Null(manager.CurrentDefinition.MapEquipment.Single(card => card.Id == legacy.Id).StatusMapping);
+
+        var persistedJson = await File.ReadAllTextAsync(scope.Path);
+        var persisted = JsonNode.Parse(persistedJson)!;
+        original["schemaVersion"] = 18;
+        original["cards"]![0]!["statusMapping"] = persisted["cards"]![0]!["statusMapping"]!.DeepClone();
+        Assert.True(JsonNode.DeepEquals(original, persisted));
+
+        using var reopened = scope.CreateManager();
+        Assert.Null(reopened.LastLoadError);
+        Assert.Equal(mapping.Entries, reopened.CurrentDefinition.MapEquipment[0].StatusMapping!.Entries);
+        Assert.Equal(persistedJson, await File.ReadAllTextAsync(scope.Path));
+    }
+
+    [Fact]
+    public void Migrator_preserves_an_existing_v17_table()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.SchemaVersion = 17;
+        var mapping = document.Cards.Single().StatusMapping!;
+        mapping.Entries[0].Text = "Свой статус";
+        mapping.Entries[0].Color = "#102030";
+
+        var migrator = new RouteMapConfigurationMigrator();
+        Assert.True(migrator.Migrate(document).WasMigrated);
+        Assert.False(migrator.Migrate(document).WasMigrated);
+        Assert.Equal(18, document.SchemaVersion);
+        Assert.Same(mapping, document.Cards.Single().StatusMapping);
+        Assert.Equal("Свой статус", mapping.Entries[0].Text);
+        Assert.Equal("#102030", mapping.Entries[0].Color);
+    }
+
+    [Fact]
+    public void Migrator_reaches_v18_from_all_older_versions()
+    {
+        using var scope = new TempConfigurationScope();
+        var migrator = new RouteMapConfigurationMigrator();
+        var validator = new RouteMapConfigurationValidator();
+        for (var version = 1; version <= 16; version++)
+        {
+            var document = scope.Mapper.CreateSeedDocument();
+            document.SchemaVersion = version;
+            document.Cards.Single().StatusMapping = null;
+
+            Assert.True(migrator.Migrate(document).WasMigrated);
+            Assert.Equal(18, document.SchemaVersion);
+            Assert.Equal(6, document.Cards.Single().StatusMapping!.Entries.Count);
+            Assert.Empty(validator.Validate(document).Errors);
+        }
+    }
+
+    [Theory]
+    [InlineData(17, false)]
+    [InlineData(17, true)]
+    [InlineData(18, false)]
+    public async Task Manager_loads_bucket_in_legacy_mode_without_a_status_mapping(int version, bool removeText)
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.SchemaVersion = version;
+        var bucket = document.Cards.Single();
+        bucket.StatusMapping = null;
+        bucket.Title = "Пользовательская карточка";
+        var text = bucket.Bindings.Single(binding => binding.Role == SignalBindingRole.Text);
+        if (removeText)
+            bucket.Bindings.Remove(text);
+        else
+            text.ValueType = SignalValueType.String;
+        await scope.Storage.SaveActiveAsync(document);
+        if (version == 18)
+        {
+            var json = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+            json["cards"]![0]!["statusMapping"] = null;
+            await File.WriteAllTextAsync(scope.Path, json.ToJsonString());
+        }
+
+        using var manager = scope.CreateManager();
+
+        Assert.Null(manager.LastLoadError);
+        Assert.Equal(18, manager.CurrentDocument.SchemaVersion);
+        var card = Assert.Single(manager.CurrentDefinition.MapEquipment);
+        Assert.Equal(bucket.Title, card.Title);
+        Assert.Null(card.StatusMapping);
+        var mapper = new RouteMapRuntimeMapper(manager);
+        var signals = new Dictionary<string, SignalValue>
+        {
+            [text.SignalId] = new(text.SignalId, "Пользовательский текст", SignalValueType.String, DateTimeOffset.UtcNow, true, false),
+        };
+        Assert.Equal(removeText ? bucket.StatusText : "Пользовательский текст", mapper.Map(signals).Find(card.Id)?.Text);
+        signals[text.SignalId] = new(text.SignalId, "9", SignalValueType.String, DateTimeOffset.UtcNow, true, false);
+        Assert.Equal(bucket.StatusText, mapper.Map(signals).Find(card.Id)?.Text);
+    }
+
+    [Fact]
+    public async Task Status_mapping_round_trips_through_apply_save_load_export_and_import()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var draft = manager.CreateDraft();
+        var mapping = draft.Cards.Single().StatusMapping!;
+        mapping.UnknownText = "Свой неизвестный код";
+        mapping.UnavailableText = "Нет данных";
+        mapping.Entries[0].BlockStop = true;
+        mapping.Entries.Add(new EquipmentStatusEntryConfiguration
+        {
+            Code = ushort.MaxValue,
+            Text = "Особый статус",
+            Color = "#80ABCDEF",
+            Category = EquipmentStatusCategory.Warning,
+            BlockStart = true,
+        });
+        var expected = scope.Mapper.ToDefinition(draft).MapEquipment.Single().StatusMapping!;
+
+        Assert.True(manager.Validate(draft).IsSuccess);
+        Assert.True(manager.Apply(draft).IsSuccess);
+        Assert.False(File.Exists(scope.Path));
+        Assert.Equal(expected.Entries, manager.CurrentDefinition.MapEquipment.Single().StatusMapping!.Entries);
+        Assert.True((await manager.SaveAndApplyAsync(draft)).IsSuccess);
+        var loaded = await manager.LoadActiveDraftAsync();
+        var exportPath = scope.Path + ".export";
+        Assert.True((await manager.ExportDraftAsync(exportPath, loaded)).IsSuccess);
+        var imported = await manager.ImportDraftAsync(exportPath);
+
+        var exported = JsonNode.Parse(await File.ReadAllTextAsync(exportPath))!;
+        var exportedEntries = exported["cards"]![0]!["statusMapping"]!["entries"]!.AsArray();
+        Assert.Equal(new[] { "normal", "information", "fault", "information", "information", "information", "warning" },
+            exportedEntries.Select(entry => entry!["category"]!.GetValue<string>()));
+        Assert.False(exportedEntries[0]!["blockStart"]!.GetValue<bool>());
+        Assert.True(exportedEntries[0]!["blockStop"]!.GetValue<bool>());
+        var domain = scope.Mapper.ToDefinition(imported);
+        var reserialized = scope.Mapper.ToDocument(domain).Cards.Single().StatusMapping!;
+        Assert.Equal(expected.UnknownText, reserialized.UnknownText);
+        Assert.Equal(expected.UnavailableText, reserialized.UnavailableText);
+        Assert.Equal(expected.Entries, domain.MapEquipment.Single().StatusMapping!.Entries);
+        Assert.Equal(expected.Entries,
+            reserialized.Entries.Select(entry => new EquipmentStatusEntry(
+                (ushort)entry.Code, entry.Text, entry.Color, entry.Category, entry.BlockStart, entry.BlockStop)));
+        mapping.Entries[0].Text = "Изменённый черновик";
+        Assert.Equal("Выключен", manager.CurrentDefinition.MapEquipment.Single().StatusMapping!.Entries[0].Text);
+    }
+
+    [Fact]
+    public void Validator_reports_invalid_status_mapping_fields()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var card = document.Cards.Single();
+        var mapping = card.StatusMapping!;
+        mapping.UnknownText = " ";
+        mapping.UnavailableText = new string('а', 101);
+        mapping.Entries[0].Code = -1;
+        mapping.Entries[1].Code = 65536;
+        mapping.Entries[1].Text = string.Empty;
+        mapping.Entries[2].BlockStart = false;
+        mapping.Entries[3].Category = (EquipmentStatusCategory)99;
+        mapping.Entries[4].Code = 3;
+        mapping.Entries[4].Color = "#123456\n";
+        mapping.Entries[5].Color = "red";
+        mapping.Entries.Add(null!);
+        var text = card.Bindings.Single(binding => binding.Role == SignalBindingRole.Text);
+        var validator = new RouteMapConfigurationValidator();
+
+        card.Bindings.Remove(text);
+        var errors = validator.Validate(document).Errors;
+        Assert.Equal(new[]
+        {
+            "StatusMapping", "StatusMapping.UnknownText", "StatusMapping.UnavailableText",
+            "StatusMapping.Entries[0].Code", "StatusMapping.Entries[1].Code", "StatusMapping.Entries[1].Text",
+            "StatusMapping.Entries[2]", "StatusMapping.Entries[3].Category", "StatusMapping.Entries[4].Code",
+            "StatusMapping.Entries[4].Color", "StatusMapping.Entries[5].Color", "StatusMapping.Entries[6]",
+        }, errors.Select(error => error.Property));
+        Assert.All(errors, error => Assert.Equal(card.Id, error.ObjectId));
+        card.Bindings.Add(text);
+        text.ValueType = SignalValueType.String;
+        Assert.Contains(validator.Validate(document).Errors, error => error.Property == "StatusMapping");
+        text.ValueType = SignalValueType.Word;
+        text.Direction = SignalBindingDirection.ReadWrite;
+        Assert.Contains(validator.Validate(document).Errors, error => error.Property == "StatusMapping");
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(256, true)]
+    [InlineData(257, false)]
+    public void Validator_checks_status_mapping_row_count(int count, bool valid)
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var entries = document.Cards.Single().StatusMapping!.Entries;
+        entries.Clear();
+        for (var code = 0; code < count; code++)
+            entries.Add(new() { Code = code, Text = "Статус", Color = "#123456" });
+
+        Assert.Equal(valid, new RouteMapConfigurationValidator().Validate(document).IsValid);
+    }
+
+    [Theory]
+    [InlineData("category", "\"invalid\"")]
+    [InlineData("category", "0")]
+    [InlineData("code", "1.5")]
+    [InlineData("code", null)]
+    [InlineData("blockStop", "\"false\"")]
+    public async Task Storage_rejects_invalid_status_mapping_json(string property, string? value)
+    {
+        using var scope = new TempConfigurationScope();
+        await scope.Storage.SaveActiveAsync(scope.Mapper.CreateSeedDocument());
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+        var row = json["cards"]![0]!["statusMapping"]!["entries"]![0]!.AsObject();
+        if (value is null)
+            row.Remove(property);
+        else
+            row[property] = JsonNode.Parse(value);
+        await File.WriteAllTextAsync(scope.Path, json.ToJsonString());
+
+        await Assert.ThrowsAsync<JsonException>(() => scope.Storage.LoadActiveAsync());
+    }
+
+    [Fact]
+    public async Task Invalid_status_mapping_cannot_publish_or_overwrite_a_profile()
+    {
+        using var scope = new TempConfigurationScope();
+        await scope.Storage.SaveActiveAsync(scope.Mapper.CreateSeedDocument());
+        var originalJson = await File.ReadAllTextAsync(scope.Path);
+        using var manager = scope.CreateManager();
+        var originalDefinition = manager.CurrentDefinition;
+        var notifications = new List<RouteMapDefinition>();
+        using var subscription = manager.DefinitionChanges.Subscribe(notifications.Add);
+        var invalid = manager.CreateDraft();
+        invalid.Cards.Single().StatusMapping!.Entries[2].BlockStop = false;
+
+        Assert.False(manager.Validate(invalid).IsSuccess);
+        Assert.False(manager.Apply(invalid).IsSuccess);
+        Assert.False((await manager.SaveAndApplyAsync(invalid)).IsSuccess);
+        Assert.False((await manager.ExportDraftAsync(scope.Path, invalid)).IsSuccess);
+        Assert.Same(originalDefinition, manager.CurrentDefinition);
+        Assert.Single(notifications);
+        Assert.Equal(originalJson, await File.ReadAllTextAsync(scope.Path));
     }
 
     [Fact]
@@ -574,16 +876,27 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public void Settings_duplicate_card_rewrites_power_signal_id()
+    public void Settings_duplicate_card_rewrites_power_signal_id_and_clones_status_mapping()
     {
         using var scope = new TempConfigurationScope();
         using var manager = scope.CreateManager();
         using var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        var source = viewModel.SelectedCard!;
+        var sourceMapping = source.StatusMapping!;
 
         viewModel.DuplicateCardCommand.Execute().Subscribe();
 
         var card = viewModel.SelectedCard!;
         Assert.Equal($"{card.Id}.power", card.Bindings.Single(x => x.Role == SignalBindingRole.PowerFeedback).SignalId);
+        Assert.Equal(source.Bindings.Single(x => x.Role == SignalBindingRole.Text).SignalId,
+            card.Bindings.Single(x => x.Role == SignalBindingRole.Text).SignalId);
+        var mapping = card.StatusMapping!;
+        Assert.NotSame(sourceMapping, mapping);
+        Assert.NotSame(sourceMapping.Entries, mapping.Entries);
+        Assert.Equal(sourceMapping.Entries.Select(row => (row.Code, row.Color)), mapping.Entries.Select(row => (row.Code, row.Color)));
+        Assert.NotSame(sourceMapping.Entries[0], mapping.Entries[0]);
+        mapping.Entries[0].Color = "#AABBCC";
+        Assert.Equal("#77828D", sourceMapping.Entries[0].Color);
     }
 
     [Fact]

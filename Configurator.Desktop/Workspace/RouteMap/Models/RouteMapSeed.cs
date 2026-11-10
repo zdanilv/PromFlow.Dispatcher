@@ -54,7 +54,10 @@ public static class RouteMapSeed
 
         var mapEquipment = new[]
         {
-            Equipment("equip.bucket", "Кюбель Л.К.", canStart: true, canStop: true),
+            Equipment("equip.bucket", "Кюбель Л.К.", canStart: true, canStop: true) with
+            {
+                StatusMapping = CreateBucketStatusMapping(new RouteMapPaletteSettings()),
+            },
         };
 
         var requests = new[]
@@ -81,6 +84,18 @@ public static class RouteMapSeed
             templates,
             TopBar: CreateTopBar());
     }
+
+    internal static EquipmentStatusMapping CreateBucketStatusMapping(RouteMapPaletteSettings palette) => new(
+        [
+            new(0, "Выключен", palette.MutedText, EquipmentStatusCategory.Normal, false, false),
+            new(1, "Ожидание", palette.Warning, EquipmentStatusCategory.Information, false, false),
+            new(2, "Авария", palette.Fault, EquipmentStatusCategory.Fault, true, true),
+            new(3, "Выполнение", palette.Ready, EquipmentStatusCategory.Information, false, false),
+            new(4, "Выгрузка", palette.Ready, EquipmentStatusCategory.Information, false, false),
+            new(5, "Загрузка", palette.Ready, EquipmentStatusCategory.Information, false, false),
+        ],
+        "Неизвестный статус",
+        "Нет достоверного статуса");
 
     private static RouteNode Node(
         string id,

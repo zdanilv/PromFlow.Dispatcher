@@ -366,6 +366,7 @@ public sealed class RouteMapConfigurationMapper
             Id = card.Id,
             Title = card.Title,
             StatusText = card.StatusText,
+            StatusMapping = card.StatusMapping is { } mapping ? ToConfiguration(mapping) : null,
             State = card.State,
             CanStart = card.CanStart,
             CanStop = card.CanStop,
@@ -414,8 +415,36 @@ public sealed class RouteMapConfigurationMapper
             ToModel(card.Style))
         {
             Parameters = card.Parameters.Select(ToModel).ToArray(),
+            StatusMapping = card.StatusMapping is { } mapping ? ToModel(mapping) : null,
         };
     }
+
+    internal static EquipmentStatusMappingConfiguration ToConfiguration(EquipmentStatusMapping mapping) => new()
+    {
+        UnknownText = mapping.UnknownText,
+        UnavailableText = mapping.UnavailableText,
+        Entries = new ObservableCollection<EquipmentStatusEntryConfiguration>(mapping.Entries.Select(entry =>
+            new EquipmentStatusEntryConfiguration
+            {
+                Code = entry.Code,
+                Text = entry.Text,
+                Color = entry.Color,
+                Category = entry.Category,
+                BlockStart = entry.BlockStart,
+                BlockStop = entry.BlockStop,
+            })),
+    };
+
+    private static EquipmentStatusMapping ToModel(EquipmentStatusMappingConfiguration mapping) => new(
+        mapping.Entries.Select(entry => new EquipmentStatusEntry(
+            checked((ushort)entry.Code),
+            entry.Text,
+            entry.Color,
+            entry.Category,
+            entry.BlockStart,
+            entry.BlockStop)).ToArray(),
+        mapping.UnknownText,
+        mapping.UnavailableText);
 
     private static EquipmentCardParameterConfiguration ToConfiguration(EquipmentCardParameter parameter) => new()
     {
@@ -588,7 +617,7 @@ public sealed class RouteMapConfigurationMapper
         Hover = palette.Hover,
     };
 
-    private static RouteMapPaletteSettings ToModel(RouteMapPaletteConfiguration palette) => new()
+    internal static RouteMapPaletteSettings ToModel(RouteMapPaletteConfiguration palette) => new()
     {
         Background = palette.Background,
         Text = palette.Text,

@@ -344,6 +344,27 @@ public sealed record EquipmentCardParameter(
     bool PendingAutoDispatch = false,
     string? LastDispatchError = null);
 
+public enum EquipmentStatusCategory
+{
+    Normal,
+    Information,
+    Warning,
+    Fault
+}
+
+public sealed record EquipmentStatusEntry(
+    ushort Code,
+    string Text,
+    string Color,
+    EquipmentStatusCategory Category,
+    bool BlockStart,
+    bool BlockStop);
+
+public sealed record EquipmentStatusMapping(
+    IReadOnlyList<EquipmentStatusEntry> Entries,
+    string UnknownText,
+    string UnavailableText);
+
 public sealed record EquipmentCommandCard(
     string Id,
     string Title,
@@ -363,6 +384,7 @@ public sealed record EquipmentCommandCard(
     EquipmentCardStyle? Style = null)
 {
     public IReadOnlyList<EquipmentCardParameter> Parameters { get; init; } = [];
+    public EquipmentStatusMapping? StatusMapping { get; init; }
 }
 
 public sealed record RoutePlaceholderRule(
