@@ -144,6 +144,8 @@ public sealed class RouteMapSettingsDialogVisualTests
 
             Assert.False(userView.FindControl<Border>("ConnectionStatusOverlay")!.IsVisible);
             Assert.True(userView.FindControl<Border>("RouteMapStateLegendOverlay")!.IsVisible);
+            Assert.False(userViewModel.TopBar.IsSettingsVisible);
+            Assert.True(adminViewModel.TopBar.IsSettingsVisible);
             Assert.True(userViewModel.MapEquipmentCards.Single().IsParametersButtonEnabled);
             userWindow.Close();
         }
@@ -981,6 +983,169 @@ public sealed class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
+    public void Card_settings_status_controls_edit_the_draft_and_display_validation()
+    {
+        using var fixture = new DialogFixture(1320, 780);
+        fixture.SelectTab(5);
+        Assert.Equal("equip.bucket", fixture.ViewModel.SelectedCard!.Id);
+        Assert.Contains(fixture.Dialog.GetVisualDescendants().OfType<TextBlock>(),
+            text => text.Text == "Технологические статусы");
+        var published = fixture.Manager.CurrentDefinition;
+        var toggle = fixture.Dialog.FindControl<CheckBox>("UseStatusMapping")!;
+        Assert.True(toggle.IsChecked);
+        Grid[] Rows() => fixture.Dialog.GetVisualDescendants().OfType<Grid>()
+            .Where(grid => grid.Classes.Contains("status-row")).ToArray();
+        Assert.Equal(new[] { "0", "1", "2", "3", "4", "5" },
+            Rows().Select(row => row.Children.OfType<TextBox>().First().Text));
+
+        var addButton = fixture.Dialog.GetVisualDescendants().OfType<Button>()
+            .Single(button => Equals(button.Content, "Добавить статус"));
+        toggle.SetCurrentValue(ToggleButton.IsCheckedProperty, false);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(fixture.ViewModel.SelectedCard.StatusMapping);
+        Assert.False(addButton.IsEffectivelyVisible);
+        toggle.SetCurrentValue(ToggleButton.IsCheckedProperty, true);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(6, Rows().Length);
+        addButton.Command!.Execute(addButton.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(7, Rows().Length);
+        var row = Rows()[6];
+        var fields = row.GetVisualDescendants().OfType<TextBox>().ToArray();
+        var preview = row.GetVisualDescendants().OfType<Border>()
+            .Single(border => border.Classes.Contains("status-color-preview"));
+        var category = row.Children.OfType<ComboBox>().Single();
+        var flags = row.Children.OfType<CheckBox>().ToArray();
+        var error = row.Children.OfType<TextBlock>().Single();
+        Assert.Equal("6", fields[0].Text);
+        Assert.Equal(Enum.GetValues<EquipmentStatusCategory>(), category.Items.Cast<EquipmentStatusCategory>());
+
+        fields[0].BringIntoView();
+        Assert.True(fields[0].Focus());
+        fields[0].SelectAll();
+        fixture.Window.KeyTextInput("1.5");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(error.IsVisible);
+        Assert.Contains("0–65535", error.Text);
+        fields[0].SelectAll();
+        fixture.Window.KeyTextInput("0");
+        fields[1].SetCurrentValue(TextBox.TextProperty, "Подготовка ✓");
+        fields[2].SetCurrentValue(TextBox.TextProperty, "#Авария");
+        category.SetCurrentValue(SelectingItemsControl.SelectedItemProperty, EquipmentStatusCategory.Warning);
+        flags[0].SetCurrentValue(ToggleButton.IsCheckedProperty, true);
+        Assert.False(flags[1].IsChecked);
+        flags[1].SetCurrentValue(ToggleButton.IsCheckedProperty, true);
+        flags[0].SetCurrentValue(ToggleButton.IsCheckedProperty, false);
+        Assert.True(flags[1].IsChecked);
+        category.SetCurrentValue(SelectingItemsControl.SelectedItemProperty, EquipmentStatusCategory.Fault);
+        Dispatcher.UIThread.RunJobs();
+        Assert.All(flags, flag =>
+        {
+            Assert.True(flag.IsChecked);
+            Assert.False(flag.IsEffectivelyEnabled);
+        });
+        Assert.Contains("уже указан", error.Text);
+        Assert.Contains("#RRGGBB", error.Text);
+        Assert.Equal(Colors.Transparent, Assert.IsAssignableFrom<ISolidColorBrush>(preview.Background).Color);
+
+        fixture.ViewModel.Apply();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains(fixture.Dialog.GetVisualDescendants().OfType<TextBlock>(),
+            text => text.IsEffectivelyVisible && text.Text == fixture.ViewModel.ErrorMessage &&
+                text.Text?.Contains("уже указан", StringComparison.Ordinal) == true);
+        Assert.Same(published, fixture.Manager.CurrentDefinition);
+
+        fields[0].SetCurrentValue(TextBox.TextProperty, "42");
+        fields[2].SetCurrentValue(TextBox.TextProperty, "#FF112233");
+        fixture.Dialog.FindControl<TextBox>("UnknownStatusText")!
+            .SetCurrentValue(TextBox.TextProperty, "Не описан");
+        fixture.Dialog.FindControl<TextBox>("UnavailableStatusText")!
+            .SetCurrentValue(TextBox.TextProperty, "Недоступен");
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(error.IsVisible);
+        Assert.Equal(Color.Parse("#FF112233"), Assert.IsAssignableFrom<ISolidColorBrush>(preview.Background).Color);
+        var mapping = fixture.ViewModel.SelectedCard.StatusMapping!;
+        var entry = mapping.Entries[6];
+        Assert.Equal((42, "Подготовка ✓", "#FF112233", EquipmentStatusCategory.Fault, true, true),
+            (entry.Code, entry.Text, entry.Color, entry.Category, entry.BlockStart, entry.BlockStop));
+        Assert.Equal("Не описан", mapping.UnknownText);
+        Assert.Equal("Недоступен", mapping.UnavailableText);
+
+        var remove = row.Children.OfType<Button>().Single(button => Equals(button.Content, "Удалить"));
+        remove.Command!.Execute(remove.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(6, Rows().Length);
+        Assert.Same(published, fixture.Manager.CurrentDefinition);
+        fixture.ViewModel.Apply();
+        Assert.Equal("Не описан", fixture.Manager.CurrentDefinition.MapEquipment.Single().StatusMapping!.UnknownText);
+        fixture.Window.Close();
+
+        var storage = new RouteMapConfigurationStorage(fixture.Manager.ActiveFilePath);
+        using var reopened = new RouteMapSettingsViewModel(fixture.Manager, storage, new NullFilePicker());
+        var reopenedDialog = new RouteMapSettingsDialog { DataContext = reopened };
+        var reopenedWindow = new Window { Width = 1320, Height = 780, Content = reopenedDialog };
+        reopenedWindow.Show();
+        try
+        {
+            reopenedDialog.GetVisualDescendants().OfType<TabControl>().Single().SelectedIndex = 5;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Не описан", reopenedDialog.FindControl<TextBox>("UnknownStatusText")!.Text);
+            Assert.Equal(6, reopenedDialog.GetVisualDescendants().OfType<Grid>()
+                .Count(grid => grid.Classes.Contains("status-row")));
+        }
+        finally
+        {
+            reopenedWindow.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void Card_settings_status_table_scrolls_and_keeps_columns_and_equipment_settings_separate()
+    {
+        using var fixture = new DialogFixture(1320, 780);
+        fixture.SelectTab(5);
+        var entries = fixture.ViewModel.SelectedCard!.StatusMapping!.Entries;
+        foreach (var code in Enumerable.Range(6, 60))
+            entries.Add(new EquipmentStatusEntryConfiguration { Code = code, Text = "Длинная таблица", Color = "#77828D" });
+        Dispatcher.UIThread.RunJobs();
+
+        var cardScroll = fixture.Dialog.FindControl<ScrollViewer>("CardEditorScroll")!;
+        var tableScroll = fixture.Dialog.FindControl<ScrollViewer>("StatusTableScroll")!;
+        var lastRow = fixture.Dialog.GetVisualDescendants().OfType<Grid>()
+            .Last(grid => grid.Classes.Contains("status-row"));
+        var addButton = fixture.Dialog.GetVisualDescendants().OfType<Button>()
+            .Single(button => Equals(button.Content, "Добавить статус"));
+        var equipment = fixture.Dialog.GetVisualDescendants().OfType<TextBlock>()
+            .Single(text => text.Text == "Настройки оборудования");
+        Assert.True(cardScroll.Extent.Height > cardScroll.Viewport.Height);
+        Assert.True(tableScroll.Extent.Width <= tableScroll.Viewport.Width + 1);
+        var cells = lastRow.Children.Where(control => Grid.GetRow(control) == 0).ToArray();
+        Assert.All(cells, cell =>
+        {
+            Assert.True(cell.Bounds.Width > 0);
+            Assert.InRange(cell.Bounds.Right, 0, lastRow.Bounds.Width + 1);
+        });
+        Assert.All(cells.Zip(cells.Skip(1)), pair => Assert.True(pair.First.Bounds.Right <= pair.Second.Bounds.Left));
+        addButton.BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(cardScroll.Offset.Y > 0);
+        Assert.InRange(addButton.TranslatePoint(default, cardScroll)!.Value.Y, 0,
+            cardScroll.Viewport.Height - addButton.Bounds.Height + 1);
+        Assert.True(equipment.TranslatePoint(default, cardScroll)!.Value.Y >
+            addButton.TranslatePoint(default, cardScroll)!.Value.Y + addButton.Bounds.Height);
+
+        fixture.Dialog.Width = 1060;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(tableScroll.Extent.Width > tableScroll.Viewport.Width);
+        cells[^1].BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(tableScroll.Offset.X > 0);
+        Assert.InRange(cells[^1].TranslatePoint(default, tableScroll)!.Value.X, 0,
+            tableScroll.Viewport.Width - cells[^1].Bounds.Width + 1);
+    }
+
+    [AvaloniaFact]
     public void Card_settings_add_parameter_and_signal_mapping_includes_it()
     {
         using var fixture = new DialogFixture(1320, 780);
@@ -1150,7 +1315,8 @@ public sealed class RouteMapSettingsDialogVisualTests
         var notifications = new NotificationsPanelViewModel(journal, new NoOpDialogService(), new NoOpBitWriter());
         using var dashboard = new RouteMapDashboardViewModel(manager, new TestSignalProvider(signals),
             new RouteMapRuntimeMapper(manager), dispatcher, new NoOpSettingsDialogService(), notifications,
-            journal, new StaticOptionsMonitor(new ModbusOptions()));
+            journal, new StaticOptionsMonitor(new ModbusOptions()),
+            Options.Create(new ApplicationOptions { WorkMode = ApplicationOptions.UserWorkMode }));
         var view = new RouteMapDashboardView { DataContext = dashboard };
         var window = new Window { Width = 1300, Height = 760, Content = view };
         window.Show();
@@ -1162,13 +1328,15 @@ public sealed class RouteMapSettingsDialogVisualTests
             Assert.Equal("Выполнение", dashboard.MapEquipmentCards.Single().StatusText);
             Assert.True(dashboard.MapEquipmentCards.Single().CanStart);
 
-            var draft = manager.CreateDraft();
-            var entry = draft.Cards.Single().StatusMapping!.Entries.Single(item => item.Code == 3);
+            using var editor = new RouteMapSettingsViewModel(manager, storage, new NullFilePicker());
+            var entry = editor.SelectedCard!.StatusMapping!.Entries.Single(item => item.Code == 3);
             entry.Text = "Ограничение оператора";
             entry.Color = "#7A357D";
             entry.BlockStart = true;
-            Assert.True(manager.Apply(draft).IsSuccess);
-            signals.OnNext(good);
+            Assert.Equal("Выполнение", dashboard.MapEquipmentCards.Single().StatusText);
+            Assert.Empty(dispatcher.Requests);
+            editor.Apply();
+            Assert.Null(editor.ErrorMessage);
             Dispatcher.UIThread.RunJobs();
 
             var card = Assert.Single(view.GetVisualDescendants().OfType<EquipmentCardView>());

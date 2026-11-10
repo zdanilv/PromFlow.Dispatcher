@@ -876,6 +876,223 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
+    public void Settings_status_table_toggle_and_card_selection_only_change_the_draft()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var published = manager.CurrentDefinition;
+        using (var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker()))
+        {
+            var bucket = viewModel.SelectedCard!;
+            var bindings = bucket.Bindings.ToArray();
+            bucket.StatusMapping!.Entries[0].Text = "Черновик";
+            bucket.UseStatusMapping = false;
+            Assert.Null(bucket.StatusMapping);
+            bucket.UseStatusMapping = true;
+            Assert.Equal(Enumerable.Range(0, 6), bucket.StatusMapping!.Entries.Select(entry => entry.Code));
+            Assert.Equal("Выключен", bucket.StatusMapping.Entries[0].Text);
+            Assert.Equal(bindings, bucket.Bindings);
+            Assert.Equal("Неизвестный статус", bucket.StatusMapping.UnknownText);
+            Assert.Equal("Нет достоверного статуса", bucket.StatusMapping.UnavailableText);
+
+            viewModel.AddCardCommand.Execute().Subscribe();
+            var custom = viewModel.SelectedCard!;
+            Assert.Null(custom.StatusMapping);
+            var customBindings = custom.Bindings.ToArray();
+            custom.UseStatusMapping = true;
+            var mapping = custom.StatusMapping!;
+            Assert.Empty(mapping.Entries);
+            Assert.Contains("от 1 до 256", mapping.ValidationMessage);
+            Assert.Contains("binding Text", mapping.ValidationMessage);
+            Assert.Equal(customBindings, custom.Bindings);
+
+            viewModel.AddStatusCommand.Execute().Subscribe();
+            var entry = Assert.Single(mapping.Entries);
+            entry.CodeInput = "65535";
+            entry.Text = "Состояние линии";
+            entry.Color = "#80123456";
+            entry.EditorCategory = EquipmentStatusCategory.Warning;
+            entry.BlockStart = true;
+            Assert.False(entry.BlockStop);
+            entry.BlockStop = true;
+            entry.BlockStart = false;
+            Assert.True(entry.BlockStop);
+            entry.EditorCategory = EquipmentStatusCategory.Fault;
+            Assert.True(entry.BlockStart);
+            Assert.True(entry.BlockStop);
+            Assert.False(entry.CanEditBlocks);
+            Assert.Equal(65535, entry.Code);
+
+            viewModel.SelectedCard = bucket;
+            viewModel.SelectedCard = custom;
+            Assert.Same(entry, Assert.Single(custom.StatusMapping!.Entries));
+            Assert.Equal("Состояние линии", entry.Text);
+            Assert.Equal("#80123456", entry.Color);
+            viewModel.AddStatusCommand.Execute().Subscribe();
+            Assert.Equal(0, mapping.Entries[1].Code);
+            viewModel.RemoveStatusCommand.Execute(entry).Subscribe();
+            Assert.Equal(0, Assert.Single(mapping.Entries).Code);
+            Assert.Equal(6, bucket.StatusMapping.Entries.Count);
+            Assert.Same(published, manager.CurrentDefinition);
+            Assert.False(File.Exists(scope.Path));
+        }
+
+        using var reopened = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        Assert.Equal("Выключен", Assert.Single(reopened.Draft.Cards).StatusMapping!.Entries[0].Text);
+        Assert.Same(published, manager.CurrentDefinition);
+    }
+
+    [Fact]
+    public async Task Settings_invalid_status_edits_block_apply_and_save_and_show_inline_errors()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var published = manager.CurrentDefinition;
+        using var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        var card = viewModel.SelectedCard!;
+        var mapping = card.StatusMapping!;
+        var binding = card.Bindings.Single(binding => binding.Role == SignalBindingRole.Text);
+        binding.ValueType = SignalValueType.String;
+        mapping.UnknownText = new string('я', 101);
+        mapping.UnavailableText = " ";
+        mapping.Entries[1].CodeInput = "0";
+        mapping.Entries[1].Color = "#broken";
+        mapping.Entries[1].Text = " ";
+        mapping.Entries[2].BlockStop = false;
+
+        Assert.Contains("binding Text", mapping.ValidationMessage);
+        Assert.Contains("Текст неизвестного статуса", mapping.ValidationMessage);
+        Assert.Contains("Текст недостоверного статуса", mapping.ValidationMessage);
+        Assert.Contains("уже указан", mapping.Entries[1].ValidationMessage);
+        Assert.Contains("#RRGGBB", mapping.Entries[1].ValidationMessage);
+        Assert.Contains("от 1 до 100", mapping.Entries[1].ValidationMessage);
+        Assert.Contains("должен блокировать", mapping.Entries[2].ValidationMessage);
+        viewModel.Apply();
+        Assert.Contains("уже указан", viewModel.ErrorMessage);
+        await viewModel.SaveAsync();
+        Assert.Contains("уже указан", viewModel.ErrorMessage);
+        Assert.Same(published, manager.CurrentDefinition);
+        Assert.False(File.Exists(scope.Path));
+
+        binding.ValueType = SignalValueType.Word;
+        mapping.UnknownText = "Неизвестен";
+        mapping.UnavailableText = "Нет данных";
+        mapping.Entries[1].Color = "#FFABCDEF";
+        mapping.Entries[1].Text = "Ожидание";
+        mapping.Entries[2].EditorCategory = EquipmentStatusCategory.Fault;
+        Assert.Empty(mapping.ValidationMessage!);
+        foreach (var invalidCode in new[] { "", "1.2", "65536", "слово", "-1", "99999999999" })
+        {
+            mapping.Entries[1].CodeInput = invalidCode;
+            Assert.Equal(invalidCode, mapping.Entries[1].CodeInput);
+            Assert.Contains("0–65535", mapping.Entries[1].ValidationMessage);
+            Assert.False(manager.Validate(viewModel.Draft).IsSuccess);
+        }
+        mapping.Entries[1].CodeInput = "1";
+        Assert.Empty(mapping.Entries[1].ValidationMessage!);
+        Assert.True(manager.Validate(viewModel.Draft).IsSuccess);
+
+        viewModel.AddCardCommand.Execute().Subscribe();
+        var custom = viewModel.SelectedCard!;
+        custom.UseStatusMapping = true;
+        viewModel.Apply();
+        Assert.Contains("от 1 до 256", viewModel.ErrorMessage);
+        Assert.Contains("binding Text", viewModel.ErrorMessage);
+        viewModel.AddStatusCommand.Execute().Subscribe();
+        custom.StatusMapping!.Entries[0].Text = "Собственный статус";
+        viewModel.Apply();
+        Assert.Contains("binding Text", viewModel.ErrorMessage);
+        Assert.Same(published, manager.CurrentDefinition);
+
+        custom.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.Text,
+            SignalId = $"{custom.Id}.text",
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.UInt16,
+        });
+        viewModel.Apply();
+        Assert.Null(viewModel.ErrorMessage);
+        Assert.Equal("Собственный статус", manager.CurrentDefinition.MapEquipment.Single(item => item.Id == custom.Id)
+            .StatusMapping!.Entries[0].Text);
+        Assert.Equal("Выключен", manager.CurrentDefinition.MapEquipment.Single(item => item.Id == card.Id)
+            .StatusMapping!.Entries[0].Text);
+    }
+
+    [Fact]
+    public async Task Settings_import_v17_edit_apply_save_and_export_v18_preserve_legacy_and_custom_data()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var source = manager.CreateDraft();
+        source.SchemaVersion = 17;
+        source.Cards[0].StatusMapping = null;
+        source.Cards[0].StatusText = "Резервный статус";
+        source.Cards[0].ExtensionData = new() { ["custom"] = JsonSerializer.SerializeToElement("keep") };
+        var legacy = scope.Storage.Clone(source).Cards[0];
+        legacy.Id = "equip.legacy";
+        legacy.AttachedChainId = null;
+        legacy.StatusText = "Резерв legacy";
+        source.Cards.Add(legacy);
+        var inputPath = scope.Path + ".v17";
+        var outputPath = scope.Path + ".export";
+        await scope.Storage.SaveAsync(inputPath, source);
+        using var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new StatusTestFilePicker(inputPath, outputPath));
+        var published = manager.CurrentDefinition;
+        await viewModel.ImportCommand.Execute().FirstAsync();
+        Assert.Same(published, manager.CurrentDefinition);
+        Assert.Equal(18, viewModel.Draft.SchemaVersion);
+        var mapping = viewModel.SelectedCard!.StatusMapping!;
+        Assert.Equal(6, mapping.Entries.Count);
+        Assert.Null(viewModel.Draft.Cards[1].StatusMapping);
+
+        var entry = mapping.Entries[0];
+        entry.CodeInput = "42";
+        entry.Text = " Готово ✓ ";
+        entry.Color = "#FF126534";
+        entry.EditorCategory = EquipmentStatusCategory.Warning;
+        entry.BlockStop = true;
+        mapping.UnknownText = "Состояние неизвестно";
+        mapping.UnavailableText = "Состояние недоступно";
+        Assert.Same(published, manager.CurrentDefinition);
+        Assert.False(File.Exists(scope.Path));
+        viewModel.Apply();
+        Assert.Null(viewModel.ErrorMessage);
+        Assert.False(File.Exists(scope.Path));
+        var definition = manager.CurrentDefinition;
+        var configured = definition.MapEquipment[0].StatusMapping!;
+        Assert.Equal(new EquipmentStatusEntry(42, " Готово ✓ ", "#FF126534", EquipmentStatusCategory.Warning, false, true),
+            configured.Entries[0]);
+        Assert.Equal("Резерв legacy", definition.MapEquipment[1].StatusText);
+        Assert.Null(definition.MapEquipment[1].StatusMapping);
+
+        await viewModel.SaveAsync();
+        Assert.Null(viewModel.ErrorMessage);
+        using var reopened = scope.CreateManager();
+        Assert.Null(reopened.LastLoadError);
+        Assert.Equal(configured.Entries, reopened.CurrentDefinition.MapEquipment[0].StatusMapping!.Entries);
+        Assert.Equal(configured.UnknownText, reopened.CurrentDefinition.MapEquipment[0].StatusMapping!.UnknownText);
+        Assert.Equal(configured.UnavailableText, reopened.CurrentDefinition.MapEquipment[0].StatusMapping!.UnavailableText);
+        Assert.Equal("keep", reopened.CurrentDocument.Cards[0].ExtensionData!["custom"].GetString());
+
+        await viewModel.ExportCommand.Execute().FirstAsync();
+        Assert.Null(viewModel.ErrorMessage);
+        var exported = await manager.ImportDraftAsync(outputPath);
+        Assert.Equal(18, exported.SchemaVersion);
+        Assert.Equal("Резервный статус", exported.Cards[0].StatusText);
+        Assert.Equal(" Готово ✓ ", exported.Cards[0].StatusMapping!.Entries[0].Text);
+        Assert.Null(exported.Cards[1].StatusMapping);
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(await File.ReadAllTextAsync(scope.Path)),
+            JsonNode.Parse(await File.ReadAllTextAsync(outputPath))));
+
+        viewModel.SelectedCard!.UseStatusMapping = false;
+        Assert.NotNull(manager.CurrentDefinition.MapEquipment[0].StatusMapping);
+        viewModel.Apply();
+        Assert.Null(manager.CurrentDefinition.MapEquipment[0].StatusMapping);
+        Assert.NotNull((await scope.Storage.LoadActiveAsync())!.Cards[0].StatusMapping);
+    }
+
+    [Fact]
     public void Settings_duplicate_card_rewrites_power_signal_id_and_clones_status_mapping()
     {
         using var scope = new TempConfigurationScope();
@@ -883,6 +1100,7 @@ public sealed class RouteMapConfigurationTests
         using var viewModel = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
         var source = viewModel.SelectedCard!;
         var sourceMapping = source.StatusMapping!;
+        sourceMapping.Entries[1].CodeInput = "1.5";
 
         viewModel.DuplicateCardCommand.Execute().Subscribe();
 
@@ -895,6 +1113,7 @@ public sealed class RouteMapConfigurationTests
         Assert.NotSame(sourceMapping.Entries, mapping.Entries);
         Assert.Equal(sourceMapping.Entries.Select(row => (row.Code, row.Color)), mapping.Entries.Select(row => (row.Code, row.Color)));
         Assert.NotSame(sourceMapping.Entries[0], mapping.Entries[0]);
+        Assert.Equal("1.5", mapping.Entries[1].CodeInput);
         mapping.Entries[0].Color = "#AABBCC";
         Assert.Equal("#77828D", sourceMapping.Entries[0].Color);
     }
@@ -1696,6 +1915,12 @@ public sealed class RouteMapConfigurationTests
             request => Assert.Equal(("route.node.bsu_1.loader", false), (request.SignalId, request.Value)),
             request => Assert.Equal(("route.node.concrete_bucket.target", false), (request.SignalId, request.Value)),
             request => Assert.Equal(("route.node.bsu_1.target", true), (request.SignalId, request.Value)));
+    }
+
+    private sealed class StatusTestFilePicker(string importPath, string exportPath) : IRouteMapSettingsFilePicker
+    {
+        public Task<string?> PickImportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(importPath);
+        public Task<string?> PickExportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(exportPath);
     }
 
     private sealed class NullFilePicker : IRouteMapSettingsFilePicker

@@ -319,7 +319,7 @@ public sealed class RouteMapConfigurationValidator
         }
     }
 
-    private static void ValidateCardStatusMapping(
+    internal static void ValidateCardStatusMapping(
         ICollection<RouteMapConfigurationError> errors,
         EquipmentCardConfiguration card)
     {
@@ -328,8 +328,8 @@ public sealed class RouteMapConfigurationValidator
 
         const string scope = "card";
         const string property = nameof(EquipmentCardConfiguration.StatusMapping);
-        if (!card.Bindings.Any(IsStatusTextBinding))
-            Add(errors, scope, card.Id, property, "Таблица статусов требует binding Text с направлением Read и типом UInt16 или Word.");
+        if (!card.Bindings.Any(binding => IsStatusTextBinding(binding) && !string.IsNullOrWhiteSpace(binding.SignalId)))
+            Add(errors, scope, card.Id, property, "Укажите SignalId в binding Text с направлением Read и типом UInt16 или Word.");
 
         ValidateStatusText(errors, card.Id, $"{property}.{nameof(mapping.UnknownText)}", mapping.UnknownText);
         ValidateStatusText(errors, card.Id, $"{property}.{nameof(mapping.UnavailableText)}", mapping.UnavailableText);
@@ -354,7 +354,7 @@ public sealed class RouteMapConfigurationValidator
 
             var codeProperty = $"{row}.{nameof(entry.Code)}";
             if (entry.Code is < ushort.MinValue or > ushort.MaxValue)
-                Add(errors, scope, card.Id, codeProperty, "Код статуса должен быть в диапазоне 0–65535.");
+                Add(errors, scope, card.Id, codeProperty, "Укажите целый код статуса в диапазоне 0–65535.");
             else if (!codes.Add(entry.Code))
                 Add(errors, scope, card.Id, codeProperty, $"Код статуса {entry.Code} уже указан.");
 

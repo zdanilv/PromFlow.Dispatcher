@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Reactive;
+using System.Reactive.Disposables;
+using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Signals;
@@ -19,6 +21,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     private readonly IRouteMapSignalRuntime? _signalRuntime;
     private readonly IAppConfigService? _appConfigService;
     private readonly Subject<bool> _result = new();
+    private readonly SerialDisposable _statusMappingSubscriptions = new();
     private readonly Dictionary<RouteMapConfigurationItem, string> _knownIds = new();
     private RouteMapConfigurationDocument _draft;
     private RouteChainConfiguration? _selectedChain;
@@ -77,6 +80,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         DeletePlaceholderCommand = ReactiveCommand.Create(DeletePlaceholder);
         AddBindingCommand = ReactiveCommand.Create<string>(AddBinding);
         RemoveBindingCommand = ReactiveCommand.Create<SignalBindingConfiguration>(RemoveBinding);
+        AddStatusCommand = ReactiveCommand.Create(AddStatus);
+        RemoveStatusCommand = ReactiveCommand.Create<EquipmentStatusEntryConfiguration>(RemoveStatus);
         AddCardParameterCommand = ReactiveCommand.Create(AddCardParameter);
         RemoveCardParameterCommand = ReactiveCommand.Create<EquipmentCardParameterConfiguration>(RemoveCardParameter);
 
@@ -92,6 +97,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public IReadOnlyList<RouteNodeMenuKind> NodeMenuKinds { get; } = Enum.GetValues<RouteNodeMenuKind>();
     public IReadOnlyList<RouteNodeLabelPlacement> NodeLabelPlacements { get; } = Enum.GetValues<RouteNodeLabelPlacement>();
     public IReadOnlyList<RouteObjectState> ObjectStates { get; } = Enum.GetValues<RouteObjectState>();
+    public IReadOnlyList<EquipmentStatusCategory> EquipmentStatusCategories { get; } = Enum.GetValues<EquipmentStatusCategory>();
     public IReadOnlyList<RouteSegmentKind> SegmentKinds { get; } = Enum.GetValues<RouteSegmentKind>();
     public IReadOnlyList<RouteElbowOrder> ElbowOrders { get; } = Enum.GetValues<RouteElbowOrder>();
     public IReadOnlyList<RouteLineCap> LineCaps { get; } = Enum.GetValues<RouteLineCap>();
@@ -182,6 +188,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         {
             this.RaiseAndSetIfChanged(ref _selectedCard, value);
             this.RaisePropertyChanged(nameof(CardBindingRoles));
+            ObserveSelectedStatusMapping();
         }
     }
     public RoutePlaceholderRuleConfiguration? SelectedPlaceholderRule { get => _selectedPlaceholderRule; set => this.RaiseAndSetIfChanged(ref _selectedPlaceholderRule, value); }
@@ -244,6 +251,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> DeletePlaceholderCommand { get; }
     public ReactiveCommand<string, Unit> AddBindingCommand { get; }
     public ReactiveCommand<SignalBindingConfiguration, Unit> RemoveBindingCommand { get; }
+    public ReactiveCommand<Unit, Unit> AddStatusCommand { get; }
+    public ReactiveCommand<EquipmentStatusEntryConfiguration, Unit> RemoveStatusCommand { get; }
     public ReactiveCommand<Unit, Unit> AddCardParameterCommand { get; }
     public ReactiveCommand<EquipmentCardParameterConfiguration, Unit> RemoveCardParameterCommand { get; }
 
@@ -254,6 +263,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
             _signalRuntime.SourceChanged -= OnSignalSourceChanged;
         }
         DetachDraft(_draft);
+        _statusMappingSubscriptions.Dispose();
         _result.Dispose();
     }
 
@@ -357,7 +367,31 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     private void DuplicateChain() { if (SelectedChain is null) return; var item = Clone(x => x.Chains, SelectedChain); item.Id = UniqueId(SelectedChain.Id, Draft.Chains.Select(x => x.Id)); Draft.Chains.Add(item); SelectedChain = item; }
     private void DuplicateNode() { if (SelectedNode is null) return; var item = Clone(x => x.Nodes, SelectedNode); item.Id = UniqueId(SelectedNode.Id, Draft.Nodes.Select(x => x.Id)); RewriteNodeBindingIds(item); EnsureNodeBindings(item); Draft.Nodes.Add(item); SelectedNode = item; }
     private void DuplicateSegment() { if (SelectedSegment is null) return; var item = Clone(x => x.Segments, SelectedSegment); item.Id = UniqueId(SelectedSegment.Id, Draft.Segments.Select(x => x.Id)); RewriteSegmentBindingIds(item); EnsureSegmentActiveBinding(item); RouteSegmentActiveFragmentSynchronizer.Ensure(Draft, item); Draft.Segments.Add(item); SelectedSegment = item; }
-    private void DuplicateCard() { if (SelectedCard is null) return; var sourceId = SelectedCard.Id; var item = Clone(x => x.Cards, SelectedCard); item.Id = UniqueId(SelectedCard.Id, Draft.Cards.Select(x => x.Id)); item.AttachedChainId = null; RewriteCardBindingIds(item, sourceId); EnsureCardBindings(item); foreach (var parameter in item.Parameters) parameter.ClearSavedSetpoint(); Draft.Cards.Add(item); SelectedCard = item; }
+    private void DuplicateCard()
+    {
+        if (SelectedCard is not { } source)
+            return;
+
+        var item = Clone(x => x.Cards, source);
+        item.Id = UniqueId(source.Id, Draft.Cards.Select(x => x.Id));
+        item.AttachedChainId = null;
+        RewriteCardBindingIds(item, source.Id);
+        EnsureCardBindings(item);
+        foreach (var parameter in item.Parameters)
+            parameter.ClearSavedSetpoint();
+
+        if (source.StatusMapping?.Entries is { } sourceEntries && item.StatusMapping?.Entries is { } entries)
+        {
+            for (var index = 0; index < sourceEntries.Count; index++)
+            {
+                if (sourceEntries[index] is { } sourceEntry)
+                    entries[index].CodeInput = sourceEntry.CodeInput;
+            }
+        }
+
+        Draft.Cards.Add(item);
+        SelectedCard = item;
+    }
     private void DuplicatePlaceholder() { if (SelectedPlaceholderRule is null) return; var item = Clone(x => x.PlaceholderRules, SelectedPlaceholderRule); item.Id = UniqueId(SelectedPlaceholderRule.Id, Draft.PlaceholderRules.Select(x => x.Id)); Draft.PlaceholderRules.Add(item); SelectedPlaceholderRule = item; }
 
     private void DeleteChain() { if (SelectedChain is null) return; var deps = Draft.Cards.Where(x => x.AttachedChainId == SelectedChain.Id).Select(x => $"карточка {x.Id}"); if (BlockDelete(deps)) return; Draft.Chains.Remove(SelectedChain); SelectedChain = Draft.Chains.FirstOrDefault(); }
@@ -423,6 +457,96 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         SelectedCard?.Bindings.Remove(binding);
         Draft.TopBar.Reset.Bindings.Remove(binding);
         Draft.TopBar.Emergency.Bindings.Remove(binding);
+    }
+
+    private void AddStatus()
+    {
+        if (SelectedCard?.StatusMapping?.Entries is not { } entries)
+            return;
+
+        if (entries.Count >= 256)
+        {
+            ErrorMessage = "Таблица статусов может содержать до 256 строк.";
+            return;
+        }
+
+        var usedCodes = entries.Where(entry => entry is not null).Select(entry => entry.Code).ToHashSet();
+        var code = 0;
+        while (usedCodes.Contains(code))
+            code++;
+
+        entries.Add(new EquipmentStatusEntryConfiguration { Code = code, Color = "#77828D" });
+    }
+
+    private void RemoveStatus(EquipmentStatusEntryConfiguration entry) =>
+        SelectedCard?.StatusMapping?.Entries?.Remove(entry);
+
+    private void ObserveSelectedStatusMapping()
+    {
+        _statusMappingSubscriptions.Disposable = null;
+        if (SelectedCard is not { StatusMapping: { } mapping } card)
+            return;
+
+        var subscriptions = new CompositeDisposable();
+        _statusMappingSubscriptions.Disposable = subscriptions;
+
+        void Validate() => UpdateStatusValidation(card, mapping);
+        void CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => ObserveSelectedStatusMapping();
+
+        card.Bindings.CollectionChanged += CollectionChanged;
+        subscriptions.Add(Disposable.Create(() => card.Bindings.CollectionChanged -= CollectionChanged));
+        foreach (var binding in card.Bindings)
+            subscriptions.Add(binding.Changed.Subscribe(_ => Validate()));
+
+        subscriptions.Add(mapping.Changed
+            .Where(change => change.PropertyName is nameof(mapping.UnknownText) or nameof(mapping.UnavailableText))
+            .Subscribe(_ => Validate()));
+
+        if (mapping.Entries is { } entries)
+        {
+            entries.CollectionChanged += CollectionChanged;
+            subscriptions.Add(Disposable.Create(() => entries.CollectionChanged -= CollectionChanged));
+            foreach (var entry in entries)
+            {
+                if (entry is not null)
+                    subscriptions.Add(entry.Changed
+                        .Where(change => change.PropertyName is nameof(entry.Code) or nameof(entry.Text)
+                            or nameof(entry.Color) or nameof(entry.Category) or nameof(entry.BlockStart) or nameof(entry.BlockStop))
+                        .Subscribe(_ => Validate()));
+            }
+        }
+
+        Validate();
+    }
+
+    private static void UpdateStatusValidation(EquipmentCardConfiguration card, EquipmentStatusMappingConfiguration mapping)
+    {
+        const string statusPath = nameof(EquipmentCardConfiguration.StatusMapping);
+        const string entriesPath = statusPath + "." + nameof(EquipmentStatusMappingConfiguration.Entries);
+        var errors = new List<RouteMapConfigurationError>();
+        RouteMapConfigurationValidator.ValidateCardStatusMapping(errors, card);
+        mapping.ValidationMessage = string.Join(Environment.NewLine, errors
+            .Where(error => !error.Property.StartsWith(entriesPath + "[", StringComparison.Ordinal))
+            .Select(error => error.Property switch
+            {
+                statusPath + "." + nameof(mapping.UnknownText) => $"Текст неизвестного статуса. {error.Message}",
+                statusPath + "." + nameof(mapping.UnavailableText) => $"Текст недостоверного статуса. {error.Message}",
+                _ => error.Message,
+            }));
+
+        if (mapping.Entries is not { } entries)
+            return;
+
+        for (var index = 0; index < entries.Count; index++)
+        {
+            if (entries[index] is not { } entry)
+                continue;
+
+            var rowPath = $"{entriesPath}[{index}]";
+            entry.ValidationMessage = string.Join(Environment.NewLine, errors
+                .Where(error => error.Property == rowPath || error.Property.StartsWith(rowPath + ".", StringComparison.Ordinal))
+                .Select(error => error.Message));
+        }
     }
 
     private void AddCardParameter()
@@ -705,6 +829,9 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private void OnItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (ReferenceEquals(sender, SelectedCard) && e.PropertyName == nameof(EquipmentCardConfiguration.StatusMapping))
+            ObserveSelectedStatusMapping();
+
         if (sender is RouteNodeConfiguration node && e.PropertyName == nameof(RouteNodeConfiguration.MenuKind))
             EnsureNodeBindings(node);
         if (sender is EquipmentCardConfiguration changedCard &&

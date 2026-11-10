@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Configurator.Application.Services.Signals;
@@ -266,7 +267,30 @@ public sealed class EquipmentCardConfiguration : RouteMapConfigurationItem
     public EquipmentStatusMappingConfiguration? StatusMapping
     {
         get => _statusMapping;
-        set => this.RaiseAndSetIfChanged(ref _statusMapping, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _statusMapping, value);
+            this.RaisePropertyChanged(nameof(UseStatusMapping));
+        }
+    }
+
+    [JsonIgnore]
+    public bool UseStatusMapping
+    {
+        get => StatusMapping is not null;
+        set
+        {
+            if (value == UseStatusMapping)
+                return;
+
+            StatusMapping = !value ? null : Id == "equip.bucket"
+                ? RouteMapConfigurationMapper.ToConfiguration(RouteMapSeed.CreateBucketStatusMapping(new RouteMapPaletteSettings()))
+                : new EquipmentStatusMappingConfiguration
+                {
+                    UnknownText = "Неизвестный статус",
+                    UnavailableText = "Нет достоверного статуса",
+                };
+        }
     }
 
     [JsonExtensionData]
@@ -337,6 +361,7 @@ public sealed class EquipmentStatusMappingConfiguration : ReactiveObject
 {
     private string _unknownText = string.Empty;
     private string _unavailableText = string.Empty;
+    private string? _validationMessage;
 
     public string UnknownText
     {
@@ -352,6 +377,13 @@ public sealed class EquipmentStatusMappingConfiguration : ReactiveObject
 
     public ObservableCollection<EquipmentStatusEntryConfiguration> Entries { get; set; } = [];
 
+    [JsonIgnore]
+    public string? ValidationMessage
+    {
+        get => _validationMessage;
+        set => this.RaiseAndSetIfChanged(ref _validationMessage, value);
+    }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
@@ -359,17 +391,40 @@ public sealed class EquipmentStatusMappingConfiguration : ReactiveObject
 public sealed class EquipmentStatusEntryConfiguration : ReactiveObject
 {
     private int _code;
+    private string? _codeInput;
     private string _text = string.Empty;
     private string _color = string.Empty;
     private EquipmentStatusCategory _category;
     private bool _blockStart;
     private bool _blockStop;
+    private string? _validationMessage;
 
     [JsonRequired]
     public int Code
     {
         get => _code;
-        set => this.RaiseAndSetIfChanged(ref _code, value);
+        set
+        {
+            _codeInput = null;
+            this.RaiseAndSetIfChanged(ref _code, value);
+            this.RaisePropertyChanged(nameof(CodeInput));
+        }
+    }
+
+    [JsonIgnore]
+    public string CodeInput
+    {
+        get => _codeInput ?? Code.ToString(CultureInfo.InvariantCulture);
+        set
+        {
+            _codeInput = value ?? string.Empty;
+            // Keep incomplete input in the draft and give the validator an out-of-range code.
+            var code = int.TryParse(_codeInput, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : -1;
+            this.RaiseAndSetIfChanged(ref _code, code, nameof(Code));
+            this.RaisePropertyChanged();
+        }
     }
 
     public string Text
@@ -388,8 +443,32 @@ public sealed class EquipmentStatusEntryConfiguration : ReactiveObject
     public EquipmentStatusCategory Category
     {
         get => _category;
-        set => this.RaiseAndSetIfChanged(ref _category, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _category, value);
+            this.RaisePropertyChanged(nameof(EditorCategory));
+            this.RaisePropertyChanged(nameof(CanEditBlocks));
+        }
     }
+
+    [JsonIgnore]
+    public EquipmentStatusCategory EditorCategory
+    {
+        get => Category;
+        set
+        {
+            if (value == EquipmentStatusCategory.Fault)
+            {
+                BlockStart = true;
+                BlockStop = true;
+            }
+
+            Category = value;
+        }
+    }
+
+    [JsonIgnore]
+    public bool CanEditBlocks => Category != EquipmentStatusCategory.Fault;
 
     [JsonRequired]
     public bool BlockStart
@@ -403,6 +482,13 @@ public sealed class EquipmentStatusEntryConfiguration : ReactiveObject
     {
         get => _blockStop;
         set => this.RaiseAndSetIfChanged(ref _blockStop, value);
+    }
+
+    [JsonIgnore]
+    public string? ValidationMessage
+    {
+        get => _validationMessage;
+        set => this.RaiseAndSetIfChanged(ref _validationMessage, value);
     }
 
     [JsonExtensionData]
@@ -560,10 +646,15 @@ public sealed class RouteCornerRadiusConfiguration
     public double BottomLeft { get; set; }
 }
 
-public sealed class SignalBindingConfiguration
+public sealed class SignalBindingConfiguration : ReactiveObject
 {
-    public SignalBindingRole Role { get; set; }
-    public string SignalId { get; set; } = string.Empty;
-    public SignalBindingDirection Direction { get; set; }
-    public SignalValueType ValueType { get; set; }
+    private SignalBindingRole _role;
+    private string _signalId = string.Empty;
+    private SignalBindingDirection _direction;
+    private SignalValueType _valueType;
+
+    public SignalBindingRole Role { get => _role; set => this.RaiseAndSetIfChanged(ref _role, value); }
+    public string SignalId { get => _signalId; set => this.RaiseAndSetIfChanged(ref _signalId, value); }
+    public SignalBindingDirection Direction { get => _direction; set => this.RaiseAndSetIfChanged(ref _direction, value); }
+    public SignalValueType ValueType { get => _valueType; set => this.RaiseAndSetIfChanged(ref _valueType, value); }
 }

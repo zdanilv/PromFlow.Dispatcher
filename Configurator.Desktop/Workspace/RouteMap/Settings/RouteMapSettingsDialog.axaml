@@ -1,5 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="using:Avalonia.Data.Converters"
+             xmlns:input="using:Avalonia.Input.TextInput"
              xmlns:settings="clr-namespace:Configurator.Desktop.Workspace.RouteMap.Settings"
              x:Class="Configurator.Desktop.Workspace.RouteMap.Settings.RouteMapSettingsDialog"
              x:Name="Root"
@@ -249,11 +251,11 @@
         <TabItem Header="Карточки">
           <Grid ColumnDefinitions="300,*" ColumnSpacing="14" Margin="8">
             <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8"><TextBox PlaceholderText="Поиск карточки" Text="{Binding CardSearch}"/><ListBox Grid.Row="1" ItemsSource="{Binding FilteredCards}" SelectedItem="{Binding SelectedCard}"><ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4"><TextBlock Text="{Binding Id}" FontWeight="SemiBold"/><TextBlock Text="{Binding Title}"/><TextBlock Text="{Binding ValidationMessage}" Foreground="#B43D3D" FontSize="11" TextWrapping="Wrap"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox><WrapPanel Grid.Row="2"><Button Classes="small" Content="Добавить" Command="{Binding AddCardCommand}"/><Button Classes="small" Content="Дублировать" Command="{Binding DuplicateCardCommand}"/><Button Classes="small" Content="Удалить" Command="{Binding DeleteCardCommand}"/></WrapPanel></Grid>
-            <Border Grid.Column="1" Classes="editor"><ScrollViewer><StackPanel DataContext="{Binding SelectedCard}">
+            <Border Grid.Column="1" Classes="editor"><ScrollViewer x:Name="CardEditorScroll"><StackPanel DataContext="{Binding SelectedCard}">
               <TextBlock Classes="section" Text="Карточка фиксированного шаблона"/><UniformGrid Columns="3">
-                <StackPanel><TextBlock Classes="label" Text="ID"/><TextBox Classes="form" Text="{Binding Id}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Заголовок"/><TextBox Classes="form" Text="{Binding Title}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Статус"/><TextBox Classes="form" Text="{Binding StatusText}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="ID"/><TextBox Classes="form" Text="{Binding Id}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Заголовок"/><TextBox Classes="form" Text="{Binding Title}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Статус — резервный текст (legacy)"/><TextBox Classes="form" Text="{Binding StatusText}"/></StackPanel>
                 <StackPanel><TextBlock Classes="label" Text="Цепочка"/><TextBox Classes="form" Text="{Binding AttachedChainId}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Правый offset"/><TextBox Classes="form" Text="{Binding AttachedCardRightOffset}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Вид якоря"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.AnchorKinds, ElementName=Root}" SelectedItem="{Binding VerticalAnchorKind}"/></StackPanel>
-                <StackPanel><TextBlock Classes="label" Text="NodeId якоря"/><TextBox Classes="form" Text="{Binding VerticalAnchorNodeId}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Состояние"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.ObjectStates, ElementName=Root}" SelectedItem="{Binding State}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="NodeId якоря"/><TextBox Classes="form" Text="{Binding VerticalAnchorNodeId}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Состояние — статическое состояние"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.ObjectStates, ElementName=Root}" SelectedItem="{Binding State}"/></StackPanel>
               </UniformGrid><WrapPanel><CheckBox Content="Видна" IsChecked="{Binding IsVisible}" Margin="0,0,18,0"/><CheckBox Content="Можно ПУСК" IsChecked="{Binding CanStart}" Margin="0,0,18,0"/><CheckBox Content="Можно СТОП" IsChecked="{Binding CanStop}"/></WrapPanel>
               <TextBlock Classes="section" Text="Размеры, подписи и стиль"/><UniformGrid Columns="4">
                 <StackPanel><TextBlock Classes="label" Text="Ширина"/><TextBox Classes="form" Text="{Binding Style.Width}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Мин. ширина"/><TextBox Classes="form" Text="{Binding Style.MinimumWidth}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Высота"/><TextBox Classes="form" Text="{Binding Style.Height}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Фон"/><TextBox Classes="form" Text="{Binding Style.BackgroundColor}"/></StackPanel>
@@ -267,6 +269,77 @@
                                              AddCommand="{Binding DataContext.AddBindingCommand, ElementName=Root}"
                                              AddCommandParameter="card"
                                              RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
+              <TextBlock Classes="section" Text="Технологические статусы"/>
+              <CheckBox x:Name="UseStatusMapping" Content="Использовать таблицу статусов"
+                        IsChecked="{Binding UseStatusMapping, Mode=TwoWay}"/>
+              <StackPanel IsVisible="{Binding UseStatusMapping}">
+                <StackPanel DataContext="{Binding StatusMapping}" Spacing="6">
+                  <TextBlock Classes="label" TextWrapping="Wrap"
+                             Text="Неизвестные и недостоверные статусы запрещают команды ПУСК и СТОП. Категория Fault всегда блокирует обе команды. Настройки карточки не заменяют блокировки безопасности PLC."/>
+                  <TextBlock Classes="label" TextWrapping="Wrap"
+                             Text="Цвет задаёт отображение, категория — диагностический смысл. Флажки добавляют программные запреты. Окончательное выполнение команд контролирует PLC."/>
+                  <TextBlock Text="Текст неизвестного статуса"/>
+                  <TextBox x:Name="UnknownStatusText" Text="{Binding UnknownText, Mode=TwoWay}"
+                           AutomationProperties.Name="Текст неизвестного статуса"/>
+                  <TextBlock Classes="label" TextWrapping="Wrap"
+                             Text="Используется для кода, которого нет в таблице. Полученный код отображается рядом с текстом."/>
+                  <TextBlock Text="Текст недостоверного статуса"/>
+                  <TextBox x:Name="UnavailableStatusText" Text="{Binding UnavailableText, Mode=TwoWay}"
+                           AutomationProperties.Name="Текст недостоверного статуса"/>
+                  <TextBlock Classes="label" TextWrapping="Wrap"
+                             Text="Используется при отсутствующем, недостоверном или неподдерживаемом значении сигнала с учётом приоритетов отображения."/>
+                  <TextBlock Classes="status-mapping-error" Text="{Binding ValidationMessage}"
+                             IsVisible="{Binding ValidationMessage, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}"
+                             Foreground="#A22F2F" TextWrapping="Wrap"/>
+                  <ScrollViewer x:Name="StatusTableScroll" HorizontalScrollBarVisibility="Auto"
+                                VerticalScrollBarVisibility="Disabled">
+                    <StackPanel MinWidth="800">
+                      <Grid ColumnDefinitions="86,*,120,125,102,102,80" ColumnSpacing="6" Margin="0,0,0,4">
+                        <TextBlock Classes="label" Text="Код"/>
+                        <TextBlock Grid.Column="1" Classes="label" Text="Текст"/>
+                        <TextBlock Grid.Column="2" Classes="label" Text="Цвет"/>
+                        <TextBlock Grid.Column="3" Classes="label" Text="Категория"/>
+                        <TextBlock Grid.Column="4" Classes="label" Text="Блокировать ПУСК" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="5" Classes="label" Text="Блокировать СТОП" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="6" Classes="label" Text="Действие"/>
+                      </Grid>
+                      <ItemsControl ItemsSource="{Binding Entries}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Grid Classes="status-row" ColumnDefinitions="86,*,120,125,102,102,80"
+                                  RowDefinitions="Auto,Auto" ColumnSpacing="6" Margin="0,2">
+                              <TextBox Text="{Binding CodeInput, Mode=TwoWay}" AutomationProperties.Name="Код"
+                                       input:TextInputOptions.ContentType="Digits"/>
+                              <TextBox Grid.Column="1" Text="{Binding Text, Mode=TwoWay}" AutomationProperties.Name="Текст"/>
+                              <Grid Grid.Column="2" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <TextBox Text="{Binding Color, Mode=TwoWay}" AutomationProperties.Name="Цвет"
+                                         PlaceholderText="#RRGGBB" ToolTip.Tip="#RRGGBB или #AARRGGBB"/>
+                                <Border Grid.Column="1" Classes="status-color-preview" Width="14" Height="14"
+                                        VerticalAlignment="Center" BorderThickness="1" BorderBrush="#D9DEE2"
+                                        Background="{Binding Color, Converter={x:Static settings:RouteMapSettingsDialog.StatusColorPreview}}"/>
+                              </Grid>
+                              <ComboBox Grid.Column="3" HorizontalAlignment="Stretch"
+                                        ItemsSource="{Binding DataContext.EquipmentStatusCategories, ElementName=Root}"
+                                        SelectedItem="{Binding EditorCategory, Mode=TwoWay}" AutomationProperties.Name="Категория"/>
+                              <CheckBox Grid.Column="4" HorizontalAlignment="Center" IsChecked="{Binding BlockStart, Mode=TwoWay}"
+                                        IsEnabled="{Binding CanEditBlocks}" AutomationProperties.Name="Блокировать ПУСК"/>
+                              <CheckBox Grid.Column="5" HorizontalAlignment="Center" IsChecked="{Binding BlockStop, Mode=TwoWay}"
+                                        IsEnabled="{Binding CanEditBlocks}" AutomationProperties.Name="Блокировать СТОП"/>
+                              <Button Grid.Column="6" Content="Удалить"
+                                      Command="{Binding DataContext.RemoveStatusCommand, ElementName=Root}" CommandParameter="{Binding}"/>
+                              <TextBlock Grid.Row="1" Grid.ColumnSpan="7" Classes="status-row-error" Text="{Binding ValidationMessage}"
+                                         IsVisible="{Binding ValidationMessage, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}"
+                                         Foreground="#A22F2F" TextWrapping="Wrap"/>
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                  </ScrollViewer>
+                  <Button Content="Добавить статус" HorizontalAlignment="Left"
+                          Command="{Binding DataContext.AddStatusCommand, ElementName=Root}"/>
+                </StackPanel>
+              </StackPanel>
               <TextBlock Classes="section" Text="Настройки оборудования"/>
               <ScrollViewer HorizontalScrollBarVisibility="Auto"
                             VerticalScrollBarVisibility="Disabled">
