@@ -73,7 +73,7 @@ Direction должен соответствовать Modbus access:
 | `Fault` | `Bool` | read-only alarm state |
 | `ActiveRoute` | `Bool` | read-only route highlight |
 | `ActiveRouteFragment` | `Bool` | read-only split-line highlight |
-| `Text` | `String` или число | card status |
+| `Text` | `UInt16` / `Word` с таблицей статусов, `String` или число для legacy | Технологический статус карточки |
 | `Value` | любой поддержанный | extra runtime value |
 | `EquipmentParameter` | любой поддержанный | настраиваемый параметр оборудования карточки |
 | `StartCommand` | `Bool` | моментальный `ПУСК`, одна команда `true`; Modbus Pulse выполняет `false` |
@@ -89,6 +89,19 @@ Direction должен соответствовать Modbus access:
 `StartOffFeedback=true` или `StopOffFeedback=true` отключает соответствующую кнопку
 карточки; для исторических Toggle-карточек checked снимается без записи команды. Остальные
 `*OffFeedback` и `State` — legacy. Не используйте их в новом поведении.
+
+Карточка с `statusMapping` получает числовой код через существующую привязку
+`Text` (`Read/UInt16` или `Read/Word`). У «Кюбель Л.К.» это `equip.bucket.text`.
+Сама таблица, тексты, цвета и категории хранятся в JSON карточки Route Map.
+Физический адрес принадлежит точке `Modbus.DataMap` с тем же SignalId. Добавление
+строки таблицы меняет интерпретацию кода и не создаёт регистр или дополнительный SignalId.
+Валидатор Route Map проверяет наличие и контракт `Text`, а
+`RouteMapModbusBindingDiagnostics` сообщает об отсутствующей точке, недостаточном
+доступе или несовместимом типе в `Modbus.DataMap`.
+
+`system.fault` — отдельный read-only сигнал общей аварии. `Modbus.AlarmMap`
+обслуживает операторские тревоги и подтверждения независимо от таблиц статусов.
+Порядок индикации и настройки описан в [руководстве Route Map](02-route-map-guide.ru.md).
 
 `EquipmentParameter` используется только для списка параметров оборудования карточки.
 Администратор задает `Title`, `SignalId`, `Direction` и `ValueType` во вкладке
@@ -111,7 +124,7 @@ enabled, bad/stale означает offline. Для карточки с `PowerFe
 | SignalId | Тип | Назначение |
 |---|---|---|
 | `connection.status` | `String` | Текст состояния Modbus runtime для TopBar |
-| `connection.connected` | `Bool` | `true`, когда Modbus runtime running и snapshot не stale |
+| `connection.connected` | `Bool` | `true`, когда Modbus runtime running и доступен свежий snapshot текущего подключения |
 | `system.fault` | `Bool` | PLC-mapped общий сигнал аварии RouteMap; `true` переводит элементы карты в fault-вид |
 
 `connection.status` и `connection.connected` создает provider: они отображаются в

@@ -504,6 +504,39 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
     }
 
     [Fact]
+    public void ModbusBindingDiagnostics_reports_missing_unreadable_and_incompatible_card_status_points()
+    {
+        const string signalId = "equip.bucket.text";
+        using var scope = new ConfigurationScope();
+        Assert.NotNull(scope.Manager.CurrentDefinition.MapEquipment.Single().StatusMapping);
+        using var runtime = new RouteMapSignalRuntime(
+            new ManualSignalProvider(), new RecordingCommandDispatcher(),
+            new ManualSignalProvider(), new RecordingCommandDispatcher(), RouteMapSignalSource.Modbus);
+
+        string[] WarningsFor(params ModbusDataPointOptions[] points)
+        {
+            var logger = new CapturingLogger<RouteMapModbusBindingDiagnostics>();
+            using var diagnostics = new RouteMapModbusBindingDiagnostics(
+                scope.Manager, new TestOptionsMonitor(new ModbusOptions { DataMap = points.ToList() }), runtime, logger);
+            return logger.Warnings.Where(message => message.Contains(signalId, StringComparison.Ordinal)).ToArray();
+        }
+
+        Assert.Contains("missing from Modbus.DataMap", Assert.Single(WarningsFor()));
+        Assert.Contains("requires read access", Assert.Single(WarningsFor(new ModbusDataPointOptions
+        {
+            Name = signalId, Access = ModbusDataAccess.Write, Type = ModbusValueType.UInt16
+        })));
+        Assert.Contains("expects UInt16, but Modbus.DataMap defines Bool", Assert.Single(WarningsFor(new ModbusDataPointOptions
+        {
+            Name = signalId, Access = ModbusDataAccess.Read, Type = ModbusValueType.Bool
+        })));
+        Assert.Empty(WarningsFor(new ModbusDataPointOptions
+        {
+            Name = signalId, Access = ModbusDataAccess.Read, Type = ModbusValueType.Word
+        }));
+    }
+
+    [Fact]
     public void SignalInventory_DoesNotExposeLegacyStateSignals()
     {
         var seed = RouteMapSeed.Create();

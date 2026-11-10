@@ -33,8 +33,8 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
         _modbusService = modbusService;
         _modbusOptions = modbusOptions;
         _logger = logger;
-        _latestSnapshot = snapshotSource.CurrentSnapshot;
         _latestState = modbusService.State;
+        _latestSnapshot = IsRuntimeRunning(_latestState) ? snapshotSource.CurrentSnapshot : ModbusDataSnapshot.Empty;
         _staleAfterMs = Math.Clamp(runtimeOptions.Value.StaleAfterMs, 250, 60000);
 
         _snapshotSource.SnapshotChanged += OnSnapshotChanged;
@@ -67,8 +67,8 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
     {
         lock (_sync)
         {
-            _latestSnapshot = snapshot;
             _latestState = snapshot.State;
+            _latestSnapshot = IsRuntimeRunning(_latestState) ? snapshot : ModbusDataSnapshot.Empty;
         }
 
         PublishCurrent();
@@ -79,6 +79,9 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
         lock (_sync)
         {
             _latestState = state;
+            // A Running state notification can arrive before the first poll after reconnect.
+            if (!IsRuntimeRunning(state))
+                _latestSnapshot = ModbusDataSnapshot.Empty;
         }
 
         PublishCurrent();
@@ -100,8 +103,7 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
         }
 
         var now = DateTimeOffset.Now;
-        var isRuntimeRunning = state.ClientState == ModbusConnectionState.Running
-            || state.ServerState == ModbusConnectionState.Running;
+        var isRuntimeRunning = IsRuntimeRunning(state);
         var isStale = snapshot.Timestamp == DateTimeOffset.MinValue
             || now - snapshot.Timestamp > TimeSpan.FromMilliseconds(_staleAfterMs);
         var isConnected = isRuntimeRunning && !isStale;
@@ -145,6 +147,9 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
 
         _observable.Publish(signals);
     }
+
+    private static bool IsRuntimeRunning(ModbusServiceState state) =>
+        state.ClientState == ModbusConnectionState.Running || state.ServerState == ModbusConnectionState.Running;
 
     private static bool TryMapType(ModbusValueType type, out SignalValueType signalType) =>
         SignalModbusTypeCompatibility.TryMapFromModbus(type, out signalType);

@@ -16,6 +16,13 @@ namespace Configurator.Desktop.Workspace.RouteMap.ViewModels;
 
 public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
 {
+    private static readonly IReadOnlyDictionary<string, SignalValue> UnavailableSnapshot =
+        new Dictionary<string, SignalValue>
+        {
+            [RouteMapSystemSignalIds.ConnectionConnected] = new(RouteMapSystemSignalIds.ConnectionConnected,
+                false, SignalValueType.Bool, DateTimeOffset.MinValue, IsQualityGood: false, IsStale: true)
+        };
+
     private readonly IDisposable _signalSubscription;
     private readonly IDisposable _definitionSubscription;
     private readonly IRouteMapRuntimeMapper<RouteMapRuntimeState> _runtimeMapper;
@@ -88,6 +95,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             .Observe()
             .Subscribe(signals =>
             {
+                var isLiveSnapshot = signals is not null;
+                signals ??= UnavailableSnapshot;
                 var definition = Definition;
                 var runtimeState = MapSnapshot(signals, definition);
                 Dispatcher.UIThread.Post(() =>
@@ -95,8 +104,9 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
                     _lastSignals = signals;
                     ApplyRuntime(!ReferenceEquals(definition, Definition)
                         ? MapSnapshot(signals, Definition)
-                        : runtimeState);
-                    _sessionJournal.RecordSignalSnapshot(signals, Definition, _modbusOptions.CurrentValue);
+                        : runtimeState, isLiveSnapshot);
+                    if (isLiveSnapshot)
+                        _sessionJournal.RecordSignalSnapshot(signals, Definition, _modbusOptions.CurrentValue);
                 });
             });
     }
@@ -199,7 +209,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
 
         ApplyEquipmentRouteSelections();
         if (_lastSignals is not null)
-            ApplyRuntime(MapSnapshot(_lastSignals, definition), isConfigurationReplay: true);
+            ApplyRuntime(MapSnapshot(_lastSignals, definition), isLiveSnapshot: false);
     }
 
     private RouteMapRuntimeState MapSnapshot(IReadOnlyDictionary<string, SignalValue> signals, RouteMapDefinition definition) =>
@@ -217,11 +227,11 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             || definition.Chains.Any(x => x.Id == objectId);
     }
 
-    private void ApplyRuntime(RouteMapRuntimeState runtimeState, bool isConfigurationReplay = false)
+    private void ApplyRuntime(RouteMapRuntimeState runtimeState, bool isLiveSnapshot)
     {
         var shouldDispatchPendingParameters =
-            !isConfigurationReplay && runtimeState.IsConnectionAvailable && !_wasConnectionAvailable;
-        if (!isConfigurationReplay)
+            isLiveSnapshot && runtimeState.IsConnectionAvailable && !_wasConnectionAvailable;
+        if (isLiveSnapshot)
             _wasConnectionAvailable = runtimeState.IsConnectionAvailable;
         RuntimeState = runtimeState;
         if (IsConnectionStatusVisible)
@@ -238,7 +248,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             runtimeState.IsEmergencyCommandEnabled);
         foreach (var card in MapEquipmentCards)
             card.ApplyRuntime(runtimeState.Find(card.Id), runtimeState.IsConnectionAvailable,
-                allowSelectorReset: !isConfigurationReplay);
+                allowSelectorReset: isLiveSnapshot);
 
         ApplyNodeRoleReadback(runtimeState);
 

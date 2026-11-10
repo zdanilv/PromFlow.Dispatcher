@@ -122,6 +122,7 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         var isVisible = true;
         var isStartChecked = false;
         var isStopChecked = false;
+        bool? stopCommandReadback = null;
         var isStartOff = false;
         var isStopOff = false;
         var hasPowerFeedbackBinding = bindings.Any(binding => binding.Role == SignalBindingRole.PowerFeedback);
@@ -209,7 +210,12 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                     break;
                 case SignalBindingRole.StopCommand:
                     if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite)
+                    {
                         isStopChecked = ReadBool(signal, isStopChecked);
+                        if (binding.ValueType == SignalValueType.Bool &&
+                            signal.ValueType == SignalValueType.Bool && signal.Value is bool stopValue)
+                            stopCommandReadback = stopValue;
+                    }
                     break;
                 case SignalBindingRole.StopOffFeedback:
                     isStopOff = ReadBool(signal, isStopOff);
@@ -336,7 +342,8 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             ShouldResetSelectorCommands: shouldResetSelectorCommands,
             IsPowerOn: state == RouteObjectState.Offline ? null : isPowerOn)
         {
-            EquipmentStatus = equipmentStatus
+            EquipmentStatus = equipmentStatus,
+            StopCommandReadback = state == RouteObjectState.Offline ? null : stopCommandReadback
         };
     }
 

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -47,16 +48,29 @@ public sealed class RouteMapModbusAdapterTests
     [Fact]
     public async Task Dispatcher_PulseCommand_AlwaysResetsValue()
     {
-        var service = new FakeModbusService();
-        var point = CreatePoint("pulse", ModbusWriteMode.Pulse);
-        point.PulseDurationMs = 1;
+        const string signalId = "equip.bucket.start";
+        var writeTimes = new List<long>();
+        var service = new FakeModbusService
+        {
+            WriteHandler = (_, _, _) =>
+            {
+                writeTimes.Add(Stopwatch.GetTimestamp());
+                return Task.FromResult(ModbusOperationResult.Success());
+            }
+        };
+        var point = CreatePoint(signalId, ModbusWriteMode.Pulse);
+        point.PulseDurationMs = 100;
         var dispatcher = new ModbusTcpCommandDispatcher(
             service,
             new TestOptionsMonitor(CreateOptions(point)));
 
-        await dispatcher.DispatchAsync(new SignalWriteRequest("pulse", true, SignalValueType.Bool));
+        await dispatcher.DispatchAsync(new SignalWriteRequest(signalId, true, SignalValueType.Bool)
+        {
+            RequiredWriteMode = ModbusWriteMode.Pulse
+        });
 
-        Assert.Equal([("pulse", true), ("pulse", false)], service.Writes);
+        Assert.Equal([(signalId, true), (signalId, false)], service.Writes);
+        Assert.True(Stopwatch.GetElapsedTime(writeTimes[0], writeTimes[1]) >= TimeSpan.FromMilliseconds(80));
     }
 
     [Theory]
@@ -356,8 +370,29 @@ public sealed class RouteMapModbusAdapterTests
         Assert.Equal(false, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
 
         service.PublishState(running);
+        Assert.False(observer.Latest[wordPoint.Name].IsQualityGood);
+        Assert.Equal(false, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
+
+        var refreshedAt = DateTimeOffset.Now;
+        source.Publish(source.CurrentSnapshot with
+        {
+            Timestamp = refreshedAt,
+            State = running,
+            Values = new Dictionary<string, ModbusDataValue>
+            {
+                [wordPoint.Name] = source.CurrentSnapshot.Values[wordPoint.Name] with
+                {
+                    Value = (ushort)1,
+                    Timestamp = refreshedAt
+                }
+            }
+        });
+        Assert.True(observer.Latest[wordPoint.Name].IsQualityGood);
+        Assert.Equal((ushort)1, observer.Latest[wordPoint.Name].Value);
+        Assert.Equal(true, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
+
         source.Publish(source.CurrentSnapshot with { Timestamp = DateTimeOffset.Now.AddSeconds(-1), State = running });
-        Assert.True(observer.Latest[point.Name].IsStale);
+        Assert.True(observer.Latest[wordPoint.Name].IsStale);
         Assert.Equal(false, observer.Latest[RouteMapSystemSignalIds.ConnectionConnected].Value);
     }
 

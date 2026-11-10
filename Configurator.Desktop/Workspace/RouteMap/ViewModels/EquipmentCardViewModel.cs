@@ -312,16 +312,6 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             if (_isApplyingRuntime)
             {
                 SetStopChecked(value);
-                if (_pendingStopValue == value)
-                {
-                    _stopReadbackMatched = true;
-                    if (!_stopWriteInFlight)
-                    {
-                        _pendingStopValue = null;
-                        _stopConfirmationVersion++;
-                        IsStopPending = false;
-                    }
-                }
                 return;
             }
 
@@ -490,7 +480,18 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             IsSelectorEnabled = runtimeState.IsSelectorCommandEnabled;
             if (IsStartToggle)
                 IsStartChecked = runtimeState.IsStartChecked && !runtimeState.IsStopChecked;
-            IsStopChecked = runtimeState.IsStopChecked;
+            SetStopChecked(runtimeState.IsStopChecked);
+            if (isConnectionAvailable && runtimeState.StopCommandReadback is bool stopReadback &&
+                stopReadback == runtimeState.IsStopChecked && stopReadback == _pendingStopValue)
+            {
+                _stopReadbackMatched = true;
+                if (!_stopWriteInFlight)
+                {
+                    _pendingStopValue = null;
+                    _stopConfirmationVersion++;
+                    IsStopPending = false;
+                }
+            }
             if (HasPowerFeedback)
             {
                 var powerOn = isConnectionAvailable && runtimeState.State != RouteObjectState.Offline

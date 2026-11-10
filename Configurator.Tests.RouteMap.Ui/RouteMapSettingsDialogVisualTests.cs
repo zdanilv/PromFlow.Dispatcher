@@ -48,7 +48,7 @@ using Xunit;
 
 namespace Configurator.Tests.RouteMap.Ui;
 
-public sealed class RouteMapSettingsDialogVisualTests
+public sealed partial class RouteMapSettingsDialogVisualTests
 {
     [AvaloniaFact]
     public void RouteMap_dashboard_shows_admin_legend_and_selected_object_prefix()

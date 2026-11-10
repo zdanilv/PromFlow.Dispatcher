@@ -316,7 +316,69 @@ public sealed class EquipmentCardViewModelTests
         Assert.True(SpinWait.SpinUntil(() => !viewModel.IsStopPending, TimeSpan.FromSeconds(2)));
         Assert.False(viewModel.IsStopChecked);
         Assert.Contains("СТОП не подтверждён", viewModel.CommandErrorMessage);
+        viewModel.ApplyRuntime(BucketRuntime(code: 3, isConnected: false), isConnectionAvailable: false);
+        viewModel.ApplyRuntime(BucketRuntime(code: 1));
+        Assert.True(viewModel.CanStop);
+        Assert.False(viewModel.IsStopChecked);
         Assert.Single(dispatcher.Requests);
+    }
+
+    [Fact]
+    public void Stop_release_waits_for_fresh_readback_through_status_and_connection_changes()
+    {
+        const string stopId = "equip.bucket.stop";
+        const string offId = "test.bucket.stop-off";
+        var seed = RouteMapSeed.Create();
+        var bucket = seed.MapEquipment.Single();
+        var card = bucket with
+        {
+            Bindings = [..bucket.Bindings, new(SignalBindingRole.StopOffFeedback, offId,
+                SignalBindingDirection.Read, SignalValueType.Bool)]
+        };
+        var mapper = new RouteMapRuntimeMapper(seed with { MapEquipment = [card] });
+        var dispatcher = new CapturingEquipmentCommandDispatcher();
+        var viewModel = new EquipmentCardViewModel(card, dispatcher);
+
+        void Publish(ushort code, bool? stop, bool isGood = true, bool isStale = false,
+            bool isConnected = true, bool isOff = false)
+        {
+            var connectionId = RouteMapSystemSignalIds.ConnectionConnected;
+            var snapshot = new Dictionary<string, SignalValue>
+            {
+                ["equip.bucket.text"] = new("equip.bucket.text", code, SignalValueType.UInt16, DateTimeOffset.UnixEpoch, true, false),
+                [connectionId] = new(connectionId, isConnected, SignalValueType.Bool, DateTimeOffset.UnixEpoch, true, false),
+                [offId] = new(offId, isOff, SignalValueType.Bool, DateTimeOffset.UnixEpoch, true, false),
+            };
+            if (stop.HasValue)
+                snapshot[stopId] = new(stopId, stop.Value, SignalValueType.Bool, DateTimeOffset.UnixEpoch, isGood, isStale);
+            var runtime = mapper.Map(snapshot);
+            viewModel.ApplyRuntime(runtime.Find(card.Id), runtime.IsConnectionAvailable);
+        }
+
+        Publish(3, stop: true);
+        Assert.True(viewModel.IsStopChecked);
+        viewModel.RequestStopChange(false);
+        Assert.True(viewModel.IsStopPending);
+
+        Publish(2, stop: null);
+        Assert.True(viewModel.IsStopPending);
+        Publish(4, stop: false, isGood: false);
+        Assert.True(viewModel.IsStopPending);
+        Publish(5, stop: false, isStale: true);
+        Assert.True(viewModel.IsStopPending);
+        Publish(3, stop: false, isConnected: false);
+        Assert.True(viewModel.IsStopPending);
+        Publish(3, stop: true, isOff: true);
+        Assert.False(viewModel.IsStopChecked);
+        Assert.True(viewModel.IsStopPending);
+
+        Publish(1, stop: false);
+        Assert.False(viewModel.IsStopChecked);
+        Assert.False(viewModel.IsStopPending);
+        Assert.True(viewModel.CanStop);
+        var request = Assert.Single(dispatcher.Requests);
+        Assert.Equal(stopId, request.SignalId);
+        Assert.Equal(false, request.Value);
     }
 
     [Fact]
@@ -610,11 +672,13 @@ public sealed class EquipmentCardViewModelTests
             new CapturingEquipmentCommandDispatcher());
     }
 
-    private static RouteObjectRuntimeState BucketRuntime(ushort code = 0, bool isStopChecked = false) =>
+    private static RouteObjectRuntimeState BucketRuntime(ushort code = 0, bool isStopChecked = false, bool isConnected = true) =>
         new RouteMapRuntimeMapper(RouteMapSeed.Create()).Map(new Dictionary<string, SignalValue>
         {
             ["equip.bucket.text"] = new("equip.bucket.text", code, SignalValueType.UInt16, DateTimeOffset.UnixEpoch, true, false),
-            ["equip.bucket.stop"] = new("equip.bucket.stop", isStopChecked, SignalValueType.Bool, DateTimeOffset.UnixEpoch, true, false)
+            ["equip.bucket.stop"] = new("equip.bucket.stop", isStopChecked, SignalValueType.Bool, DateTimeOffset.UnixEpoch, true, false),
+            [RouteMapSystemSignalIds.ConnectionConnected] = new(RouteMapSystemSignalIds.ConnectionConnected,
+                isConnected, SignalValueType.Bool, DateTimeOffset.UnixEpoch, true, false)
         }).Find("equip.bucket")!;
 
     private static IReadOnlyList<RouteNode> CreateChainNodes(RouteMapDefinition definition)

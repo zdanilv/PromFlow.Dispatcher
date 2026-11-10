@@ -52,4 +52,5 @@ public sealed record RouteObjectRuntimeState(
     bool? IsPowerOn = null)
 {
     public EquipmentStatusPresentation? EquipmentStatus { get; init; }
+    internal bool? StopCommandReadback { get; init; }
 }
