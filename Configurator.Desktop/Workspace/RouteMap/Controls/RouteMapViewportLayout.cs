@@ -13,16 +13,17 @@ internal sealed record RouteMapViewportLayout(
     public const double DefaultCardHeight = 141;
     public const double CardGap = 18;
     public const double MapPadding = 18;
-    private const double CompactLegendInset = 110;
+    private const double CompactLegendInset = 130;
     private const double CompactLabelReserve = 30;
     private const double TerminalLabelRoom = 60;
     public bool CardsBelow { get; init; }
-    public bool FitFragmentEndpoints { get; init; }
+    public bool FitFragmentRanges { get; init; }
 
     public static RouteMapViewportLayout Create(
         RouteMapDefinition definition,
         double viewWidth,
-        double viewHeight)
+        double viewHeight,
+        double measuredCardHeight = 0)
     {
         var display = definition.Display ?? new RouteMapDisplaySettings();
         var logicalBounds = RouteMapBoundsCalculator.CalculateDefinitionBounds(definition);
@@ -56,7 +57,7 @@ internal sealed record RouteMapViewportLayout(
 
         // Keep the right column whenever it gives the standard route at least as much space.
         // Comparing scales makes the geometry continuous at the layout change.
-        var compactHeight = height - cardHeight - display.CardColumnGap - CompactLegendInset;
+        var compactHeight = height - Math.Max(cardHeight, measuredCardHeight) - display.CardColumnGap - CompactLegendInset;
         if (attachedChains.Length == 1 && compactHeight > display.MapPadding * 2 && hasStandardTerminals)
         {
             var compactBounds = new Rect(0, CompactLegendInset, width, compactHeight);
@@ -85,7 +86,7 @@ internal sealed record RouteMapViewportLayout(
             }
             return new RouteMapViewportLayout(transform, logicalBounds, bounds, rightReserve)
             {
-                FitFragmentEndpoints = hasStandardTerminals,
+                FitFragmentRanges = hasStandardTerminals,
             };
         }
     }

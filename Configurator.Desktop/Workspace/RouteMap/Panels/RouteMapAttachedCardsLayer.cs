@@ -16,6 +16,9 @@ public sealed class RouteMapAttachedCardsLayer : Panel
     public static readonly StyledProperty<IEnumerable<EquipmentCardViewModel>?> CardsProperty =
         AvaloniaProperty.Register<RouteMapAttachedCardsLayer, IEnumerable<EquipmentCardViewModel>?>(nameof(Cards));
 
+    public static readonly DirectProperty<RouteMapAttachedCardsLayer, double> MeasuredCardHeightProperty =
+        AvaloniaProperty.RegisterDirect<RouteMapAttachedCardsLayer, double>(nameof(MeasuredCardHeight), layer => layer.MeasuredCardHeight);
+
     public static readonly StyledProperty<IBrush> PlaceholderBorderBrushProperty =
         AvaloniaProperty.Register<RouteMapAttachedCardsLayer, IBrush>(
             nameof(PlaceholderBorderBrush),
@@ -32,6 +35,7 @@ public sealed class RouteMapAttachedCardsLayer : Panel
             new CornerRadius(0));
 
     private INotifyCollectionChanged? _subscribedCards;
+    private double _measuredCardHeight;
     private readonly List<EquipmentCardView> _cardViews = [];
     private readonly List<RouteMapAttachedCardPlaceholder> _placeholderCards = [];
 
@@ -52,6 +56,8 @@ public sealed class RouteMapAttachedCardsLayer : Panel
         get => GetValue(CardsProperty);
         set => SetValue(CardsProperty, value);
     }
+
+    public double MeasuredCardHeight => _measuredCardHeight;
 
     public IBrush PlaceholderBorderBrush
     {
@@ -86,13 +92,17 @@ public sealed class RouteMapAttachedCardsLayer : Panel
 
     protected override Size MeasureOverride(Size availableSize)
     {
+        var measuredCardHeight = 0d;
         foreach (var child in _cardViews)
         {
             var width = child.DataContext is EquipmentCardViewModel card
                 ? card.CardWidth
                 : RouteMapAttachedCardLayout.DefaultCardWidth;
-            child.Measure(new Size(width, availableSize.Height));
+            child.Measure(new Size(Math.Min(width, availableSize.Width), double.PositiveInfinity));
+            if (child.DataContext is EquipmentCardViewModel { IsVisible: true })
+                measuredCardHeight = Math.Max(measuredCardHeight, child.DesiredSize.Height);
         }
+        SetAndRaise(MeasuredCardHeightProperty, ref _measuredCardHeight, measuredCardHeight);
 
         foreach (var placeholder in _placeholderCards)
             placeholder.Measure(new Size(RouteMapAttachedCardLayout.DefaultCardWidth, availableSize.Height));
@@ -107,7 +117,7 @@ public sealed class RouteMapAttachedCardsLayer : Panel
             return ArrangeAtOrigin(finalSize);
 
         var placeholderBounds = new List<(Rect Bounds, RoutePlaceholderRule Rule)>();
-        var viewport = RouteMapViewportLayout.Create(definition, finalSize.Width, finalSize.Height);
+        var viewport = RouteMapViewportLayout.Create(definition, finalSize.Width, finalSize.Height, MeasuredCardHeight);
         var transform = viewport.Transform;
         var cardGap = (definition.Display ?? new RouteMapDisplaySettings()).CardColumnGap;
 
@@ -131,8 +141,9 @@ public sealed class RouteMapAttachedCardsLayer : Panel
 
             var chainBounds = RouteMapBoundsCalculator.CalculateChainBounds(chain, nodesById, segmentsById);
             var chainRight = viewport.CardsBelow ? -cardGap : CalculateChainRightView(chain, chainBounds, nodesById, transform);
+            var cardHeight = Math.Max(card.CardHeight, child.DesiredSize.Height);
             var centerY = viewport.CardsBelow
-                ? finalSize.Height - card.CardHeight / 2
+                ? finalSize.Height - cardHeight / 2
                 : RouteMapAttachedCardLayout.ResolveAnchorCenterY(chain, chainBounds, nodesById, transform);
             var bounds = RouteMapAttachedCardLayout.CalculateBounds(
                 finalSize.Width,
@@ -140,22 +151,12 @@ public sealed class RouteMapAttachedCardsLayer : Panel
                 chainRight,
                 centerY,
                 chain.AttachedCardRightOffset,
-                card.CardHeight,
+                cardHeight,
                 card.CardWidth,
                 card.MinimumCardWidth,
                 cardGap);
 
-            child.Measure(new Size(bounds.Width, finalSize.Height));
-            bounds = RouteMapAttachedCardLayout.CalculateBounds(
-                finalSize.Width,
-                finalSize.Height,
-                chainRight,
-                centerY,
-                chain.AttachedCardRightOffset,
-                card.CardHeight,
-                card.CardWidth,
-                card.MinimumCardWidth,
-                cardGap);
+            child.Measure(new Size(bounds.Width, double.PositiveInfinity));
             child.Arrange(bounds);
 
             foreach (var rule in (definition.PlaceholderRules ?? []).Where(x => x.IsVisible && x.CardId == card.Id))

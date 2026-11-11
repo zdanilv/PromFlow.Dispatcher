@@ -67,6 +67,19 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             });
         Assert.Equal("wash", Assert.Single(fixture.Dashboard.NodeRoleStates.Values, state => state.IsTarget).ObjectId);
         Assert.True(fixture.Dashboard.NodeRoleStates["bsu_1"].IsLoader);
+
+        SetSignal(snapshot, "route.node.concrete_bucket.target", false);
+        SetSignal(snapshot, "route.node.wash.target", true);
+        fixture.Publish(snapshot);
+        Assert.Equal(2, fixture.Commands.Requests.Count);
+
+        await fixture.Dashboard.ToggleNodeTargetCommand.Execute("wash").ToTask();
+        Assert.Equal(3, fixture.Commands.Requests.Count);
+        var deselection = fixture.Commands.Requests.Last();
+        Assert.Equal(("route.node.wash.target", false), (deselection.SignalId, deselection.Value));
+        Assert.Equal(ModbusWriteMode.Latched, deselection.RequiredWriteMode);
+        Assert.DoesNotContain(fixture.Dashboard.NodeRoleStates.Values, state => state.IsTarget);
+        Assert.True(fixture.Dashboard.NodeRoleStates["bsu_1"].IsLoader);
     }
 
     [AvaloniaFact]
@@ -609,7 +622,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             var map = Map;
             var definition = Dashboard.Definition;
             var node = definition.Nodes.Single(item => item.Id == id);
-            var transform = RouteMapViewportLayout.Create(definition, map.Bounds.Width, map.Bounds.Height).Transform;
+            var transform = map.CreateViewportLayout(definition).Transform;
             var position = map.TranslatePoint(transform.ToViewPoint(node.X, node.Y), _window)!.Value;
             _window.MouseMove(position);
             _window.MouseDown(position, MouseButton.Left);
@@ -619,9 +632,10 @@ public sealed partial class RouteMapSettingsDialogVisualTests
 
         public void Publish(IReadOnlyDictionary<string, SignalValue> snapshot)
         {
+            var commandCount = Commands.Requests.Count;
             Signals.OnNext(snapshot.ToDictionary());
             Dispatcher.UIThread.RunJobs();
-            Assert.Empty(Commands.Requests);
+            Assert.Equal(commandCount, Commands.Requests.Count);
         }
 
         public void AssertStatus(ushort? code, string text, string color, EquipmentStatusCategory? category,

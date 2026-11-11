@@ -21,7 +21,7 @@ public partial class RouteMapDashboardView : ReactiveUserControl<RouteMapDashboa
         connectionStatus.SizeChanged += (_, _) => UpdateLegendHeight();
         map.PropertyChanged += (_, change) =>
         {
-            if (change.Property == RouteMapControl.DefinitionProperty)
+            if (change.Property == RouteMapControl.DefinitionProperty || change.Property == RouteMapControl.MeasuredCardHeightProperty)
                 UpdateLegendHeight();
         };
     }
@@ -32,7 +32,7 @@ public partial class RouteMapDashboardView : ReactiveUserControl<RouteMapDashboa
             legend.TranslatePoint(new Point(legend.Bounds.Width, 0), map) is not { } legendTopRight)
             return;
 
-        var layout = RouteMapViewportLayout.Create(definition, map.Bounds.Width, map.Bounds.Height);
+        var layout = map.CreateViewportLayout(definition);
         var topLeft = layout.Transform.ToViewPoint(layout.LogicalRouteBounds.X, layout.LogicalRouteBounds.Y);
         // Circles and labels use DIP sizes, independent of the route scale.
         const double clearance = 26;

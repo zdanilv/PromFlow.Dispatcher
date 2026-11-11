@@ -511,6 +511,12 @@ public sealed class RouteMapConfigurationMigrator
         var chain = document.Chains.Single(item => item.Id == "chain.bucket_route");
         var nodes = StandardNodeIds.Select(id => document.Nodes.Single(node => node.Id == id)).ToArray();
         var segments = StandardSegmentIds.Select(id => document.Segments.Single(segment => segment.Id == id)).ToArray();
+        if (nodes[1].Kind != RouteNodeKind.Mixer || nodes[2].Kind != RouteNodeKind.Mixer ||
+            nodes[3].Kind != RouteNodeKind.ServicePoint ||
+            segments[0].Kind != RouteSegmentKind.Straight || segments[1].Kind != RouteSegmentKind.Straight ||
+            segments[2].Kind != RouteSegmentKind.RoundedElbow90 || segments[3].Kind != RouteSegmentKind.Straight)
+            return;
+
         for (var index = 0; index < segments.Length; index++)
         {
             if (segments[index].FromNodeId != nodes[index].Id || segments[index].ToNodeId != nodes[index + 1].Id)
@@ -529,7 +535,6 @@ public sealed class RouteMapConfigurationMigrator
 
         // Leave custom links, terminal roles and reserved IDs alone.
         if (!IsLegacyTerminal(lower) || !IsLegacyTerminal(upper) ||
-            lowerLine.Kind != RouteSegmentKind.Straight || bucketLine.Kind != RouteSegmentKind.Straight ||
             lower.X != bsu1.X || lower.Y <= bsu1.Y || upper.Y != bucket.Y || upper.X <= bucket.X ||
             runtimeItems.Any(item => item.Id == wash.Id || item.Id == upperLine.Id) ||
             document.Segments.Any(line =>

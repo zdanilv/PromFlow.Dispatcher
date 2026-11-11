@@ -26,8 +26,9 @@
                                                   NodeRoleStates="{Binding NodeRoleStates}"
                                                   ToggleNodeTargetCommand="{Binding ToggleNodeTargetCommand}"
                                                   ToggleNodeLoaderCommand="{Binding ToggleNodeLoaderCommand}"
-                                                  AreCommandsEnabled="{Binding RuntimeState.IsConnectionAvailable}"/>
-                        <panels:RouteMapAttachedCardsLayer Definition="{Binding Definition}"
+                                                  AreCommandsEnabled="{Binding RuntimeState.IsConnectionAvailable}"
+                                                  MeasuredCardHeight="{Binding #AttachedCardsLayer.MeasuredCardHeight}"/>
+                        <panels:RouteMapAttachedCardsLayer x:Name="AttachedCardsLayer" Definition="{Binding Definition}"
                                                            Cards="{Binding MapEquipmentCards}"
                                                            ClipToBounds="False"/>
                         <Grid HorizontalAlignment="Left"

@@ -114,8 +114,10 @@ public sealed class RouteMapDeadEndVisualTests
 
     [Theory]
     [InlineData(RouteObjectState.ActiveRoute)]
+    [InlineData(RouteObjectState.Running)]
     [InlineData(RouteObjectState.Fault)]
     [InlineData(RouteObjectState.Offline)]
+    [InlineData(RouteObjectState.Disabled)]
     public Task Body_keeps_its_state_but_terminal_cap_and_anchor_do_not(RouteObjectState state) =>
         RunOnUiThread(() => AssertBodyState(state));
 
@@ -193,7 +195,7 @@ public sealed class RouteMapDeadEndVisualTests
     }
 
     internal static IReadOnlyList<Size> WindowSizes { get; } =
-        [new(800, 600), new(1024, 768), new(1142, 749), new(1280, 720), new(1366, 768), new(1920, 1080), new(800, 600)];
+        [new(800, 600), new(1024, 768), new(1142, 749), new(1280, 720), new(1366, 768), new(1920, 1080), new(800, 900), new(800, 600)];
 
     internal static void SaveFrame(Bitmap frame, string name)
     {
@@ -280,8 +282,9 @@ public sealed class RouteMapDeadEndVisualTests
             var style = lower.Style!;
             var bodyColor = Color.Parse(state switch
             {
-                RouteObjectState.ActiveRoute => style.ActiveColor,
+                RouteObjectState.ActiveRoute or RouteObjectState.Running => style.ActiveColor,
                 RouteObjectState.Fault => palette.Fault,
+                RouteObjectState.Disabled => palette.Disabled,
                 _ => palette.Offline,
             });
             var capColor = Color.Parse(style.NormalColor);

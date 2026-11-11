@@ -194,7 +194,11 @@ internal static class RouteSegmentGeometry
             return false;
 
         // Station circles use a fixed DIP radius. Leave room for the short body when the map shrinks.
-        var halfStroke = Math.Max(style.Thickness, TerminalActiveThickness(style)) * transform.Scale / 2;
+        var viewStroke = Math.Max(style.Thickness, TerminalActiveThickness(style)) * transform.Scale;
+        if (!double.IsFinite(viewStroke) || viewStroke <= 0)
+            return false;
+
+        var halfStroke = viewStroke / 2;
         var minimumLength = (stationStyle.Radius + stationStyle.BorderThickness / 2 + 6) * transform.NodeScale + halfStroke;
         cap = new RouteTerminalCap(
             transform.ToViewPoint(logicalCap.Start.X, logicalCap.Start.Y),
@@ -397,16 +401,26 @@ internal static class RouteSegmentGeometry
         return ProjectRangesToInterval(logicalRanges, start, end);
     }
 
-    internal static IReadOnlyList<RoutePathRange> TrimViewEndpoints(
+    internal static IReadOnlyList<RoutePathRange> FitViewFragmentRanges(
         IReadOnlyList<RoutePathRange> ranges, double viewLength,
-        RouteNode from, RouteNode to, RouteSegmentStyle style, double nodeScale)
+        RouteNode from, RouteNode to, RouteSegmentStyle style, double nodeScale, double scale)
     {
         var start = EndpointTrim(from, style) * nodeScale;
         var end = viewLength - EndpointTrim(to, style) * nodeScale;
-        return ranges.Select(range =>
+        // Ordinary line pens stay in DIP. At reduced scales their round ends can cover the projected gap.
+        var capTrim = style.LineCap == RouteLineCap.Round
+            ? Math.Max(0, Math.Max(style.Thickness, style.ActiveThickness) * (1 - scale) / 2)
+            : 0;
+        return ranges.Select((range, index) =>
         {
             var trimmedStart = Math.Max(start, range.Start);
-            return new RoutePathRange(trimmedStart, Math.Max(trimmedStart, Math.Min(end, range.End)));
+            var trimmedEnd = Math.Min(end, range.End);
+            var trim = Math.Min(capTrim, Math.Max(0, trimmedEnd - trimmedStart) / 4);
+            if (index > 0 && ranges[index - 1].End < range.Start)
+                trimmedStart += trim;
+            if (index + 1 < ranges.Count && range.End < ranges[index + 1].Start)
+                trimmedEnd -= trim;
+            return new RoutePathRange(trimmedStart, Math.Max(trimmedStart, trimmedEnd));
         }).ToArray();
     }
 

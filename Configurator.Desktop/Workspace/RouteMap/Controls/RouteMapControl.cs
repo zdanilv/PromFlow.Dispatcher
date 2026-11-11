@@ -37,6 +37,9 @@ public sealed class RouteMapControl : Control
     public static readonly StyledProperty<bool> AreCommandsEnabledProperty =
         AvaloniaProperty.Register<RouteMapControl, bool>(nameof(AreCommandsEnabled), defaultValue: true);
 
+    public static readonly StyledProperty<double> MeasuredCardHeightProperty =
+        AvaloniaProperty.Register<RouteMapControl, double>(nameof(MeasuredCardHeight));
+
     internal MenuFlyout? ActiveNodeFlyout { get; private set; }
 
     static RouteMapControl()
@@ -46,7 +49,8 @@ public sealed class RouteMapControl : Control
             RuntimeStateProperty,
             SelectedObjectIdProperty,
             HoveredObjectIdProperty,
-            NodeRoleStatesProperty);
+            NodeRoleStatesProperty,
+            MeasuredCardHeightProperty);
     }
 
     public RouteMapDefinition? Definition
@@ -97,6 +101,15 @@ public sealed class RouteMapControl : Control
         set => SetValue(AreCommandsEnabledProperty, value);
     }
 
+    public double MeasuredCardHeight
+    {
+        get => GetValue(MeasuredCardHeightProperty);
+        set => SetValue(MeasuredCardHeightProperty, value);
+    }
+
+    internal RouteMapViewportLayout CreateViewportLayout(RouteMapDefinition definition) =>
+        RouteMapViewportLayout.Create(definition, Bounds.Width, Bounds.Height, MeasuredCardHeight);
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
@@ -107,7 +120,7 @@ public sealed class RouteMapControl : Control
             return;
 
         var runtimeState = RuntimeState ?? RouteMapRuntimeState.Empty;
-        var layout = RouteMapViewportLayout.Create(Definition, Bounds.Width, Bounds.Height);
+        var layout = CreateViewportLayout(Definition);
         var transform = layout.Transform;
 
         DrawSegments(context, Definition, runtimeState, layout);
@@ -153,10 +166,7 @@ public sealed class RouteMapControl : Control
         if (Definition is null)
             return null;
 
-        var transform = RouteMapViewportLayout.Create(
-            Definition,
-            Bounds.Width,
-            Bounds.Height).Transform;
+        var transform = CreateViewportLayout(Definition).Transform;
 
         return RouteMapHitTester.HitTest(
             Definition,
@@ -216,10 +226,10 @@ public sealed class RouteMapControl : Control
             {
                 var logicalPath = RouteSegmentGeometry.Create(segment, new Point(from.X, from.Y), new Point(to.X, to.Y));
                 viewRanges = RouteSegmentGeometry.ProjectRanges(logicalRanges, logicalPath.Length, viewPath.Length);
-                if (layout.FitFragmentEndpoints)
+                if (layout.FitFragmentRanges)
                 {
-                    viewRanges = RouteSegmentGeometry.TrimViewEndpoints(
-                        viewRanges, viewPath.Length, from, to, style, transform.NodeScale);
+                    viewRanges = RouteSegmentGeometry.FitViewFragmentRanges(
+                        viewRanges, viewPath.Length, from, to, style, transform.NodeScale, transform.Scale);
                 }
             }
             else

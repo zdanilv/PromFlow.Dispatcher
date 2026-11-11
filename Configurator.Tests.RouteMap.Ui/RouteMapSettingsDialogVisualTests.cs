@@ -206,8 +206,12 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         }
     }
 
-    [AvaloniaFact]
-    public void Dashboard_keeps_the_route_card_and_last_legend_row_separate_during_resizes()
+    [AvaloniaTheory]
+    [InlineData(1)]
+    [InlineData(1.25)]
+    [InlineData(1.5)]
+    [InlineData(2)]
+    public void Dashboard_keeps_the_route_card_and_last_legend_row_separate_during_resizes(double dpi)
     {
         using var manager = new RouteMapConfigurationManager(
             new RouteMapConfigurationStorage(Path.Combine(Path.GetTempPath(), $"route-map-{Guid.NewGuid():N}.json")),
@@ -225,6 +229,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         window.Show();
         try
         {
+            window.SetRenderScaling(dpi);
             foreach (var size in RouteMapDeadEndVisualTests.WindowSizes)
             {
                 window.Width = size.Width;
@@ -243,7 +248,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
                 Assert.True(lastTop >= 0 && lastTop + last.Bounds.Height <= scroll.Viewport.Height + 1);
                 var legendBottomRight = legend.TranslatePoint(new Point(legend.Bounds.Width, legend.Bounds.Height), map)!.Value;
                 Assert.True(legendBottomRight.Y <= map.Bounds.Height);
-                var viewport = RouteMapViewportLayout.Create(map.Definition!, map.Bounds.Width, map.Bounds.Height);
+                var viewport = map.CreateViewportLayout(map.Definition!);
                 var route = viewport.Transform.ToViewPoint(viewport.LogicalRouteBounds.X, viewport.LogicalRouteBounds.Y);
                 Assert.True(legendBottomRight.X < route.X || legendBottomRight.Y <= route.Y);
                 var nodes = map.Definition!.Nodes.ToDictionary(node => node.Id);
@@ -269,6 +274,12 @@ public sealed partial class RouteMapSettingsDialogVisualTests
                 var card = dashboard.GetVisualDescendants().OfType<EquipmentCardView>().Single();
                 var cardOrigin = card.TranslatePoint(default, map)!.Value;
                 Assert.True(card.Bounds.Width >= RouteMapAttachedCardLayout.MinimumCardWidth);
+                foreach (var button in new[] { card.FindControl<Button>("StartButton")!, card.FindControl<ToggleButton>("StopButton")! })
+                {
+                    var buttonBottom = button.TranslatePoint(new Point(0, button.Bounds.Height), map)!.Value.Y;
+                    Assert.True(buttonBottom <= map.Bounds.Height + 1,
+                        $"{button.Name} is clipped at {size}: bottom {buttonBottom}, viewport {map.Bounds.Height}.");
+                }
                 if (viewport.CardsBelow)
                 {
                     Assert.True(cardOrigin.Y >= viewport.MapViewBounds.Bottom);
@@ -290,9 +301,9 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             if (string.IsNullOrEmpty(HeadlessTestApplication.ScreenshotDirectory))
                 return;
 
-            using var frame = new RenderTargetBitmap(PixelSize.FromSize(dashboard.Bounds.Size, 1));
+            using var frame = new RenderTargetBitmap(PixelSize.FromSize(dashboard.Bounds.Size, dpi), new Vector(96 * dpi, 96 * dpi));
             frame.Render(dashboard);
-            RouteMapDeadEndVisualTests.SaveFrame(frame, name);
+            RouteMapDeadEndVisualTests.SaveFrame(frame, $"{name}-{dpi * 100:0}");
         }
     }
 

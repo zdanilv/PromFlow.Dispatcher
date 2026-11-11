@@ -124,6 +124,22 @@ public sealed class RouteSegmentGeometryTests
             segment, new RouteSegmentStyle { Thickness = thickness }, default, new Point(x, y), out _));
     }
 
+    [Theory]
+    [InlineData(double.MaxValue, 5)]
+    [InlineData(4, double.MaxValue)]
+    public void DeadEnd_rejects_a_stroke_that_overflows_after_scaling(double thickness, double activeThickness)
+    {
+        var segment = DeadEnd() with { TerminalCapLength = 28 };
+        var seed = RouteMapSeed.Create();
+        var from = seed.Nodes.Single(node => node.Id == "wash");
+        var to = seed.Nodes.Single(node => node.Id == "dead_end_upper");
+        var transform = RouteMapTransform.Create(100, 100, 1000, 1000);
+
+        Assert.False(RouteSegmentGeometry.TryCreateTerminalViewGeometry(segment, from, to,
+            new RouteSegmentStyle { Thickness = thickness, ActiveThickness = activeThickness },
+            transform, new Rect(0, 0, 1000, 1000), out _, out _, out _));
+    }
+
     [Fact]
     public void Rounded_elbow_builds_tangent_lines_and_quarter_circle()
     {
@@ -257,6 +273,31 @@ public sealed class RouteSegmentGeometryTests
             Assert.Equal(logicalRanges[index].Start / logicalPath.Length, projected[index].Start / viewPath.Length, precision: 8);
             Assert.Equal(logicalRanges[index].End / logicalPath.Length, projected[index].End / viewPath.Length, precision: 8);
         }
+    }
+
+    [Theory]
+    [InlineData(0.25)]
+    [InlineData(0.5)]
+    public void Round_strokes_leave_the_projected_fragment_gaps_visible(double scale)
+    {
+        var seed = RouteMapSeed.Create();
+        var segment = seed.Segments.Single(line => line.Id == "bucket_to_upper_dead_end");
+        var from = seed.Nodes.Single(node => node.Id == segment.FromNodeId);
+        var to = seed.Nodes.Single(node => node.Id == segment.ToNodeId);
+        var logicalLength = to.X - from.X;
+        var logical = RouteSegmentGeometry.CalculateLogicalDrawableRanges(segment, from, to, seed.Display!);
+        var projected = RouteSegmentGeometry.ProjectRanges(logical, logicalLength, logicalLength * scale);
+        var style = segment.Style!;
+
+        var fitted = RouteSegmentGeometry.FitViewFragmentRanges(projected, logicalLength * scale,
+            from, to, style, nodeScale: Math.Min(1, scale / 0.5), scale);
+
+        Assert.Equal(2, fitted.Count);
+        Assert.All(fitted, range => Assert.True(range.Length > 0));
+        Assert.True(projected[1].Start - projected[0].End < style.Thickness);
+        Assert.True(fitted[1].Start - fitted[0].End > style.ActiveThickness);
+        Assert.Equal((projected[0].End + projected[1].Start) / 2,
+            (fitted[0].End + fitted[1].Start) / 2, precision: 8);
     }
 
     [Fact]

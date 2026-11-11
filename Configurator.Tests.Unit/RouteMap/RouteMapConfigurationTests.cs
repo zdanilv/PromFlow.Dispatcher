@@ -727,6 +727,8 @@ public sealed class RouteMapConfigurationTests
     [Theory]
     [InlineData("endpoint")]
     [InlineData("signal")]
+    [InlineData("segment kind")]
+    [InlineData("node kind")]
     public async Task Manager_keeps_custom_topology_with_standard_ids(string customization)
     {
         using var scope = new TempConfigurationScope();
@@ -736,10 +738,20 @@ public sealed class RouteMapConfigurationTests
             var line = document.Segments.Single(item => item.Id == "active_bsu1_bsu2");
             (line.FromNodeId, line.ToNodeId) = (line.ToNodeId, line.FromNodeId);
         }
-        else
+        else if (customization == "signal")
         {
             var bsu2 = document.Nodes.Single(node => node.Id == "bsu_2");
             bsu2.Bindings.Single(binding => binding.Role == SignalBindingRole.TargetCommand).SignalId = "ROUTE.NODE.WASH.TARGET";
+        }
+        else if (customization == "segment kind")
+        {
+            var elbow = document.Segments.Single(item => item.Id == "bsu2_to_bucket");
+            elbow.Kind = RouteSegmentKind.Straight;
+            RouteSegmentActiveFragmentSynchronizer.Ensure(document, elbow);
+        }
+        else
+        {
+            document.Nodes.Single(node => node.Id == "bsu_2").Kind = RouteNodeKind.ServicePoint;
         }
         await scope.Storage.SaveActiveAsync(document);
         var original = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
