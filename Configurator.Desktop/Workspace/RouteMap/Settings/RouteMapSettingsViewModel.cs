@@ -23,6 +23,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     private readonly Subject<bool> _result = new();
     private readonly SerialDisposable _statusMappingSubscriptions = new();
     private readonly Dictionary<RouteMapConfigurationItem, string> _knownIds = new();
+    private readonly Dictionary<RouteSegmentConfiguration, RouteNodeConfiguration> _replacedEndpoints = new();
+    private readonly HashSet<RouteSegmentConfiguration> _segmentsWithChangedKind = [];
     private RouteMapConfigurationDocument _draft;
     private RouteChainConfiguration? _selectedChain;
     private RouteNodeConfiguration? _selectedNode;
@@ -59,6 +61,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         ApplyCommand = ReactiveCommand.Create(Apply);
         SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync);
         ReloadCommand = ReactiveCommand.CreateFromTask(ReloadAsync);
+        RestoreDefaultsCommand = ReactiveCommand.Create(RestoreDefaults);
         ImportCommand = ReactiveCommand.CreateFromTask(ImportAsync);
         ExportCommand = ReactiveCommand.CreateFromTask(ExportAsync);
         CloseCommand = ReactiveCommand.Create(() => _result.OnNext(false));
@@ -69,7 +72,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         AddNodeCommand = ReactiveCommand.Create(AddNode);
         DuplicateNodeCommand = ReactiveCommand.Create(DuplicateNode);
         DeleteNodeCommand = ReactiveCommand.Create(DeleteNode);
-        AddSegmentCommand = ReactiveCommand.Create(AddSegment);
+        AddSegmentCommand = ReactiveCommand.Create(() => AddSegment(RouteSegmentKind.Straight));
+        AddDeadEndCommand = ReactiveCommand.Create(() => AddSegment(RouteSegmentKind.DeadEnd));
         DuplicateSegmentCommand = ReactiveCommand.Create(DuplicateSegment);
         DeleteSegmentCommand = ReactiveCommand.Create(DeleteSegment);
         AddCardCommand = ReactiveCommand.Create(AddCard);
@@ -93,12 +97,24 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public IObservable<bool> Result => _result;
     public RouteMapConfigurationDocument Draft => _draft;
     public string ActiveFilePath => _manager.ActiveFilePath;
-    public IReadOnlyList<RouteNodeKind> NodeKinds { get; } = Enum.GetValues<RouteNodeKind>();
+    public IReadOnlyList<RouteNodeKind> NodeKinds { get; } = Enum.GetValues<RouteNodeKind>()
+        .Where(kind => kind != RouteNodeKind.TerminalAnchor).ToArray();
     public IReadOnlyList<RouteNodeMenuKind> NodeMenuKinds { get; } = Enum.GetValues<RouteNodeMenuKind>();
     public IReadOnlyList<RouteNodeLabelPlacement> NodeLabelPlacements { get; } = Enum.GetValues<RouteNodeLabelPlacement>();
     public IReadOnlyList<RouteObjectState> ObjectStates { get; } = Enum.GetValues<RouteObjectState>();
     public IReadOnlyList<EquipmentStatusCategory> EquipmentStatusCategories { get; } = Enum.GetValues<EquipmentStatusCategory>();
     public IReadOnlyList<RouteSegmentKind> SegmentKinds { get; } = Enum.GetValues<RouteSegmentKind>();
+    public IReadOnlyList<RouteMapEditorChoice<RouteSegmentKind>> SegmentKindChoices { get; } =
+    [
+        new(RouteSegmentKind.Straight, "Прямая"),
+        new(RouteSegmentKind.RoundedElbow90, "Поворот 90°"),
+        new(RouteSegmentKind.DeadEnd, "Тупик"),
+    ];
+    public IReadOnlyList<RouteMapEditorChoice<RouteTerminalSide>> TerminalSideChoices { get; } =
+    [
+        new(RouteTerminalSide.From, "У начала"),
+        new(RouteTerminalSide.To, "У конца"),
+    ];
     public IReadOnlyList<RouteElbowOrder> ElbowOrders { get; } = Enum.GetValues<RouteElbowOrder>();
     public IReadOnlyList<RouteLineCap> LineCaps { get; } = Enum.GetValues<RouteLineCap>();
     public IReadOnlyList<RouteCardVerticalAnchorKind> AnchorKinds { get; } = Enum.GetValues<RouteCardVerticalAnchorKind>();
@@ -115,11 +131,15 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         SignalBindingRole.TargetCommand,
         SignalBindingRole.LoaderCommand,
     ];
-    public IReadOnlyList<SignalBindingRole> SegmentBindingRoles { get; } =
+    private static readonly IReadOnlyList<SignalBindingRole> StandardSegmentBindingRoles =
     [
         SignalBindingRole.Visible, SignalBindingRole.Fault, SignalBindingRole.ActiveRoute,
         SignalBindingRole.Enabled,
     ];
+    private static readonly IReadOnlyList<SignalBindingRole> DecorativeSegmentBindingRoles =
+        [SignalBindingRole.Visible, SignalBindingRole.Fault, SignalBindingRole.Enabled];
+    public IReadOnlyList<SignalBindingRole> SegmentBindingRoles =>
+        CanEditSegmentActivity ? StandardSegmentBindingRoles : DecorativeSegmentBindingRoles;
     private static readonly IReadOnlyList<SignalBindingRole> PowerCardBindingRoles =
     [
         SignalBindingRole.Text, SignalBindingRole.Value, SignalBindingRole.Visible,
@@ -163,7 +183,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         SignalBindingRole.ManualModeOffFeedback or
         SignalBindingRole.EmergencyOffFeedback;
 
-    public IEnumerable<RouteNodeConfiguration> FilteredNodes => Filter(Draft.Nodes, NodeSearch, x => x.Title);
+    private IEnumerable<RouteNodeConfiguration> OrdinaryNodes => Draft.Nodes.Where(x => x.Kind != RouteNodeKind.TerminalAnchor);
+    public IEnumerable<RouteNodeConfiguration> FilteredNodes => Filter(OrdinaryNodes, NodeSearch, x => x.Title);
     public IEnumerable<RouteSegmentConfiguration> FilteredSegments => Filter(Draft.Segments, SegmentSearch, x => x.Title);
     public IEnumerable<EquipmentCardConfiguration> FilteredCards => Filter(Draft.Cards, CardSearch, x => x.Title);
     public IEnumerable<RoutePlaceholderRuleConfiguration> FilteredPlaceholderRules => Filter(Draft.PlaceholderRules, PlaceholderSearch, x => x.CardId);
@@ -179,8 +200,54 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         }
     }
 
-    public RouteNodeConfiguration? SelectedNode { get => _selectedNode; set => this.RaiseAndSetIfChanged(ref _selectedNode, value); }
-    public RouteSegmentConfiguration? SelectedSegment { get => _selectedSegment; set => this.RaiseAndSetIfChanged(ref _selectedSegment, value); }
+    public RouteNodeConfiguration? SelectedNode
+    {
+        get => _selectedNode;
+        set => this.RaiseAndSetIfChanged(ref _selectedNode, value?.Kind == RouteNodeKind.TerminalAnchor ? null : value);
+    }
+    public RouteSegmentConfiguration? SelectedSegment
+    {
+        get => _selectedSegment;
+        set
+        {
+            if (ReferenceEquals(_selectedSegment, value))
+                return;
+
+            this.RaiseAndSetIfChanged(ref _selectedSegment, value);
+            RaiseSegmentEditorProperties();
+        }
+    }
+    public RouteSegmentKind? SelectedSegmentKind
+    {
+        get => SelectedSegment?.Kind;
+        set
+        {
+            if (SelectedSegment is { } segment && value is { } kind && segment.Kind != kind)
+                ChangeSegmentKind(segment, kind);
+        }
+    }
+    public RouteTerminalSide? SelectedTerminalSide
+    {
+        get => IsDeadEnd ? SelectedSegment?.TerminalSide : null;
+        set
+        {
+            if (SelectedSegment is not { Kind: RouteSegmentKind.DeadEnd } segment ||
+                value is not (RouteTerminalSide.From or RouteTerminalSide.To) || segment.TerminalSide == value)
+                return;
+
+            (segment.FromNodeId, segment.ToNodeId) = (segment.ToNodeId, segment.FromNodeId);
+            segment.TerminalSide = value;
+            RaiseSegmentEditorProperties();
+        }
+    }
+    public bool IsDeadEnd => SelectedSegmentKind == RouteSegmentKind.DeadEnd;
+    public bool IsElbow => SelectedSegmentKind == RouteSegmentKind.RoundedElbow90;
+    public bool IsFromTerminalAnchor => SelectedTerminalSide == RouteTerminalSide.From;
+    public bool IsToTerminalAnchor => SelectedTerminalSide == RouteTerminalSide.To;
+    public bool CanEditSegmentActivity => !IsDeadEnd ||
+        SelectedSegment?.Bindings.Any(binding => binding.Role == SignalBindingRole.ActiveRoute) == true;
+    public RouteNodeConfiguration? SelectedTerminalAnchor =>
+        SelectedSegment is { Kind: RouteSegmentKind.DeadEnd } segment ? FindTerminalAnchor(segment) : null;
     public EquipmentCardConfiguration? SelectedCard
     {
         get => _selectedCard;
@@ -241,6 +308,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> DuplicateNodeCommand { get; }
     public ReactiveCommand<Unit, Unit> DeleteNodeCommand { get; }
     public ReactiveCommand<Unit, Unit> AddSegmentCommand { get; }
+    public ReactiveCommand<Unit, Unit> AddDeadEndCommand { get; }
+    public ReactiveCommand<Unit, Unit> RestoreDefaultsCommand { get; }
     public ReactiveCommand<Unit, Unit> DuplicateSegmentCommand { get; }
     public ReactiveCommand<Unit, Unit> DeleteSegmentCommand { get; }
     public ReactiveCommand<Unit, Unit> AddCardCommand { get; }
@@ -269,6 +338,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     internal void Apply()
     {
+        if (!ValidateEditedFragmentCounts())
+            return;
         EnsureDraftRequiredBindings();
         var result = _manager.Apply(Draft);
         HandleResult(result, "Настройки применены без записи файла.");
@@ -280,6 +351,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     internal async Task SaveAsync()
     {
+        if (!ValidateEditedFragmentCounts())
+            return;
         EnsureDraftRequiredBindings();
         var result = await _manager.SaveAndApplyAsync(Draft);
         HandleResult(result, $"Настройки сохранены: {ActiveFilePath}");
@@ -327,6 +400,13 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         catch (Exception ex) { ErrorMessage = ex.Message; }
     }
 
+    private void RestoreDefaults()
+    {
+        ReplaceDraft(_manager.CreateDefaultDraft());
+        ErrorMessage = null;
+        StatusMessage = "Стандартная карта загружена в черновик.";
+    }
+
     private async Task ImportAsync()
     {
         var path = await _filePicker.PickImportPathAsync();
@@ -360,13 +440,75 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private void AddChain() { var item = new RouteChainConfiguration { Id = UniqueId("chain", Draft.Chains.Select(x => x.Id)) }; Draft.Chains.Add(item); SelectedChain = item; }
     private void AddNode() { var item = new RouteNodeConfiguration { Id = UniqueId("node", Draft.Nodes.Select(x => x.Id)), Title = "Новый узел", X = 100, Y = 100 }; EnsureNodeBindings(item); Draft.Nodes.Add(item); SelectedNode = item; }
-    private void AddSegment() { var item = new RouteSegmentConfiguration { Id = UniqueId("segment", Draft.Segments.Select(x => x.Id)), FromNodeId = Draft.Nodes.FirstOrDefault()?.Id ?? string.Empty, ToNodeId = Draft.Nodes.Skip(1).FirstOrDefault()?.Id ?? string.Empty }; EnsureSegmentActiveBinding(item); RouteSegmentActiveFragmentSynchronizer.Ensure(Draft, item); Draft.Segments.Add(item); SelectedSegment = item; }
+    private void AddSegment(RouteSegmentKind kind)
+    {
+        var isDeadEnd = kind == RouteSegmentKind.DeadEnd;
+        var station = isDeadEnd ? SelectedNode ?? OrdinaryNodes.FirstOrDefault() : OrdinaryNodes.FirstOrDefault();
+        if (isDeadEnd && station is null)
+        {
+            ErrorMessage = "Сначала добавьте узел, к которому будет подключён тупик.";
+            return;
+        }
+
+        var item = new RouteSegmentConfiguration
+        {
+            Id = UniqueId("segment", RuntimeIds()),
+            Kind = kind,
+            FromNodeId = station?.Id ?? string.Empty,
+            ToNodeId = OrdinaryNodes.Skip(1).FirstOrDefault()?.Id ?? string.Empty,
+        };
+        if (isDeadEnd && station is not null)
+        {
+            item.Title = "ТУПИК";
+            item.TerminalSide = RouteTerminalSide.To;
+            SetTerminalEndpoint(item, CreateTerminalAnchor(item.Id, station.X + RouteMapSeed.UpperDeadEndLength, station.Y).Id);
+            SegmentSearch = string.Empty;
+        }
+
+        EnsureSegmentActiveBinding(item);
+        RouteSegmentActiveFragmentSynchronizer.Ensure(Draft, item);
+        Draft.Segments.Add(item);
+        SelectedSegment = item;
+        ErrorMessage = null;
+    }
     private void AddCard() { var item = new EquipmentCardConfiguration { Id = UniqueId("card", Draft.Cards.Select(x => x.Id)), Title = "Новая карточка", StartButtonKind = RouteCommandButtonKind.Momentary }; EnsureCardBindings(item); Draft.Cards.Add(item); SelectedCard = item; }
     private void AddPlaceholder() { var item = new RoutePlaceholderRuleConfiguration { Id = UniqueId("placeholder", Draft.PlaceholderRules.Select(x => x.Id)), CardId = Draft.Cards.FirstOrDefault()?.Id ?? string.Empty }; Draft.PlaceholderRules.Add(item); SelectedPlaceholderRule = item; }
 
     private void DuplicateChain() { if (SelectedChain is null) return; var item = Clone(x => x.Chains, SelectedChain); item.Id = UniqueId(SelectedChain.Id, Draft.Chains.Select(x => x.Id)); Draft.Chains.Add(item); SelectedChain = item; }
     private void DuplicateNode() { if (SelectedNode is null) return; var item = Clone(x => x.Nodes, SelectedNode); item.Id = UniqueId(SelectedNode.Id, Draft.Nodes.Select(x => x.Id)); RewriteNodeBindingIds(item); EnsureNodeBindings(item); Draft.Nodes.Add(item); SelectedNode = item; }
-    private void DuplicateSegment() { if (SelectedSegment is null) return; var item = Clone(x => x.Segments, SelectedSegment); item.Id = UniqueId(SelectedSegment.Id, Draft.Segments.Select(x => x.Id)); RewriteSegmentBindingIds(item); EnsureSegmentActiveBinding(item); RouteSegmentActiveFragmentSynchronizer.Ensure(Draft, item); Draft.Segments.Add(item); SelectedSegment = item; }
+    private void DuplicateSegment()
+    {
+        if (SelectedSegment is not { } source)
+            return;
+
+        var item = Clone(x => x.Segments, source);
+        item.Id = UniqueId(source.Id, RuntimeIds());
+        if (source.Kind == RouteSegmentKind.DeadEnd)
+        {
+            if (FindTerminalAnchor(source) is not { } anchor)
+            {
+                ErrorMessage = "Для дублирования тупика требуется его терминальный якорь.";
+                return;
+            }
+
+            var newAnchor = CreateTerminalAnchor(item.Id, anchor.X, anchor.Y);
+            SetTerminalEndpoint(item, newAnchor.Id);
+            item.State = RouteObjectState.Idle;
+            item.Bindings.Clear();
+            item.ActiveFragments.Clear();
+            SegmentSearch = string.Empty;
+        }
+        else
+        {
+            RewriteSegmentBindingIds(item);
+            EnsureSegmentActiveBinding(item);
+            RouteSegmentActiveFragmentSynchronizer.Ensure(Draft, item);
+        }
+
+        Draft.Segments.Add(item);
+        SelectedSegment = item;
+        ErrorMessage = null;
+    }
     private void DuplicateCard()
     {
         if (SelectedCard is not { } source)
@@ -395,10 +537,144 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     private void DuplicatePlaceholder() { if (SelectedPlaceholderRule is null) return; var item = Clone(x => x.PlaceholderRules, SelectedPlaceholderRule); item.Id = UniqueId(SelectedPlaceholderRule.Id, Draft.PlaceholderRules.Select(x => x.Id)); Draft.PlaceholderRules.Add(item); SelectedPlaceholderRule = item; }
 
     private void DeleteChain() { if (SelectedChain is null) return; var deps = Draft.Cards.Where(x => x.AttachedChainId == SelectedChain.Id).Select(x => $"карточка {x.Id}"); if (BlockDelete(deps)) return; Draft.Chains.Remove(SelectedChain); SelectedChain = Draft.Chains.FirstOrDefault(); }
-    private void DeleteNode() { if (SelectedNode is null) return; var id = SelectedNode.Id; var deps = Draft.Segments.Where(x => x.FromNodeId == id || x.ToNodeId == id).Select(x => $"линия {x.Id}").Concat(Draft.Chains.Where(x => x.NodeIds.Contains(id)).Select(x => $"цепочка {x.Id}")).Concat(Draft.Cards.Where(x => x.VerticalAnchorNodeId == id).Select(x => $"карточка {x.Id}")); if (BlockDelete(deps)) return; Draft.Nodes.Remove(SelectedNode); SelectedNode = Draft.Nodes.FirstOrDefault(); }
-    private void DeleteSegment() { if (SelectedSegment is null) return; var id = SelectedSegment.Id; var deps = Draft.Chains.Where(x => x.SegmentIds.Contains(id)).Select(x => $"цепочка {x.Id}"); if (BlockDelete(deps)) return; Draft.Segments.Remove(SelectedSegment); SelectedSegment = Draft.Segments.FirstOrDefault(); }
+    private void DeleteNode()
+    {
+        if (SelectedNode is not { } node || BlockDelete(NodeDependencies(node.Id)))
+            return;
+        Draft.Nodes.Remove(node);
+        SelectedNode = OrdinaryNodes.FirstOrDefault();
+    }
+
+    private void DeleteSegment()
+    {
+        if (SelectedSegment is not { } segment)
+            return;
+
+        var anchor = FindTerminalAnchor(segment);
+        var dependencies = SegmentDependencies(segment.Id);
+        if (anchor is not null)
+            dependencies = dependencies.Concat(NodeDependencies(anchor.Id, segment));
+        if (BlockDelete(dependencies))
+            return;
+
+        Draft.Segments.Remove(segment);
+        if (anchor is not null)
+            Draft.Nodes.Remove(anchor);
+        SelectedSegment = Draft.Segments.FirstOrDefault();
+        ErrorMessage = null;
+    }
     private void DeleteCard() { if (SelectedCard is null) return; var id = SelectedCard.Id; var deps = Draft.PlaceholderRules.Where(x => x.CardId == id).Select(x => $"заглушка {x.Id}"); if (BlockDelete(deps)) return; Draft.Cards.Remove(SelectedCard); SelectedCard = Draft.Cards.FirstOrDefault(); }
     private void DeletePlaceholder() { if (SelectedPlaceholderRule is null) return; Draft.PlaceholderRules.Remove(SelectedPlaceholderRule); SelectedPlaceholderRule = Draft.PlaceholderRules.FirstOrDefault(); }
+
+    private void ChangeSegmentKind(RouteSegmentConfiguration segment, RouteSegmentKind kind)
+    {
+        var becomesTerminal = kind == RouteSegmentKind.DeadEnd;
+        if (becomesTerminal || segment.Kind == RouteSegmentKind.DeadEnd)
+        {
+            var anchor = FindTerminalAnchor(segment);
+            var dependencies = SegmentDependencies(segment.Id);
+            if (anchor is not null)
+                dependencies = dependencies.Concat(NodeDependencies(anchor.Id, segment));
+            if (dependencies.Distinct().ToArray() is { Length: > 0 } references)
+            {
+                ErrorMessage = "Смена типа линии заблокирована. Сначала удалите ссылки: " + string.Join(", ", references);
+                this.RaisePropertyChanged(nameof(SelectedSegmentKind));
+                return;
+            }
+
+            if (becomesTerminal)
+            {
+                segment.TerminalSide ??= RouteTerminalSide.To;
+                var replacedNode = OrdinaryNodes.FirstOrDefault(node => node.Id == TerminalEndpointId(segment));
+                var stationId = segment.TerminalSide == RouteTerminalSide.From ? segment.ToNodeId : segment.FromNodeId;
+                var station = OrdinaryNodes.FirstOrDefault(node => node.Id == stationId);
+                if (station is null)
+                {
+                    ErrorMessage = "Укажите обычный узел на противоположном конце линии.";
+                    this.RaisePropertyChanged(nameof(SelectedSegmentKind));
+                    return;
+                }
+
+                if (replacedNode is not null && replacedNode != station)
+                    _replacedEndpoints[segment] = replacedNode;
+                var position = replacedNode is not null && (replacedNode.X, replacedNode.Y) != (station.X, station.Y)
+                    ? (replacedNode.X, replacedNode.Y)
+                    : (station.X + RouteMapSeed.UpperDeadEndLength, station.Y);
+                SetTerminalEndpoint(segment, CreateTerminalAnchor(segment.Id, position.Item1, position.Item2).Id);
+            }
+            else
+            {
+                _replacedEndpoints.Remove(segment, out var replacedNode);
+                SetTerminalEndpoint(segment, replacedNode is not null && Draft.Nodes.Contains(replacedNode)
+                    ? replacedNode.Id
+                    : string.Empty);
+                if (anchor is not null)
+                    Draft.Nodes.Remove(anchor);
+            }
+        }
+
+        segment.Kind = kind;
+        _segmentsWithChangedKind.Add(segment);
+        EnsureSegmentActiveBinding(segment);
+        ErrorMessage = null;
+        RaiseSegmentEditorProperties();
+    }
+
+    private RouteNodeConfiguration CreateTerminalAnchor(string segmentId, double x, double y)
+    {
+        var anchor = new RouteNodeConfiguration
+        {
+            Id = UniqueId(segmentId + "_anchor", RuntimeIds().Append(segmentId)),
+            Kind = RouteNodeKind.TerminalAnchor,
+            X = x,
+            Y = y,
+        };
+        Draft.Nodes.Add(anchor);
+        return anchor;
+    }
+
+    private RouteNodeConfiguration? FindTerminalAnchor(RouteSegmentConfiguration segment) =>
+        segment.Kind == RouteSegmentKind.DeadEnd
+            ? Draft.Nodes.FirstOrDefault(node => node.Kind == RouteNodeKind.TerminalAnchor && node.Id == TerminalEndpointId(segment))
+            : null;
+
+    private static string TerminalEndpointId(RouteSegmentConfiguration segment) =>
+        segment.TerminalSide == RouteTerminalSide.From ? segment.FromNodeId : segment.ToNodeId;
+
+    private static void SetTerminalEndpoint(RouteSegmentConfiguration segment, string id)
+    {
+        if (segment.TerminalSide == RouteTerminalSide.From)
+            segment.FromNodeId = id;
+        else
+            segment.ToNodeId = id;
+    }
+
+    private IEnumerable<string> RuntimeIds() => Draft.Nodes.Select(x => x.Id)
+        .Concat(Draft.Segments.Select(x => x.Id))
+        .Concat(Draft.Cards.Select(x => x.Id));
+
+    private IEnumerable<string> SegmentDependencies(string id) =>
+        Draft.Chains.Where(chain => chain.SegmentIds.Contains(id)).Select(chain => $"цепочка {chain.Id}");
+
+    private IEnumerable<string> NodeDependencies(string id, RouteSegmentConfiguration? owner = null) =>
+        Draft.Segments.Where(line => line != owner && (line.FromNodeId == id || line.ToNodeId == id)).Select(line => $"линия {line.Id}")
+            .Concat(Draft.Chains.Where(chain => chain.NodeIds.Contains(id)).Select(chain => $"цепочка {chain.Id}"))
+            .Concat(Draft.Cards.Where(card => card.VerticalAnchorNodeId == id).Select(card => $"карточка {card.Id}"));
+
+    private bool ValidateEditedFragmentCounts()
+    {
+        foreach (var segment in _segmentsWithChangedKind.Where(line => line.Kind != RouteSegmentKind.DeadEnd && line.ActiveFragments.Count > 0))
+        {
+            var count = RouteSegmentActiveFragmentSynchronizer.CalculateFragmentCount(Draft, segment);
+            if (count > 1 && segment.ActiveFragments.All(fragment => fragment.Index <= count))
+                continue;
+
+            ErrorMessage = $"Линия {segment.Id}: измените геометрию или настройки деления, чтобы сохранить существующие сигналы отрезков.";
+            StatusMessage = null;
+            return false;
+        }
+        return true;
+    }
 
     private bool BlockDelete(IEnumerable<string> dependencies)
     {
@@ -438,7 +714,13 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
             return;
         }
 
-        bindings.Add(new SignalBindingConfiguration { SignalId = "signal.new", Direction = SignalBindingDirection.Read, ValueType = SignalValueType.Bool });
+        bindings.Add(new SignalBindingConfiguration
+        {
+            Role = scope == "segment" && IsDeadEnd ? SignalBindingRole.Visible : SignalBindingRole.State,
+            SignalId = "signal.new",
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.Bool,
+        });
     }
 
     private void RemoveBinding(SignalBindingConfiguration binding)
@@ -808,6 +1090,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         document.TopBar.Emergency.PropertyChanged -= OnTopBarEmergencyPropertyChanged;
         foreach (var item in Items(document)) item.PropertyChanged -= OnItemPropertyChanged;
         _knownIds.Clear();
+        _replacedEndpoints.Clear();
+        _segmentsWithChangedKind.Clear();
     }
 
     private void OnTopBarEmergencyPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -819,7 +1103,19 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.OldItems is not null) foreach (RouteMapConfigurationItem item in e.OldItems) { item.PropertyChanged -= OnItemPropertyChanged; _knownIds.Remove(item); }
+        if (e.OldItems is not null)
+        {
+            foreach (RouteMapConfigurationItem item in e.OldItems)
+            {
+                item.PropertyChanged -= OnItemPropertyChanged;
+                _knownIds.Remove(item);
+                if (item is RouteSegmentConfiguration segment)
+                {
+                    _replacedEndpoints.Remove(segment);
+                    _segmentsWithChangedKind.Remove(segment);
+                }
+            }
+        }
         if (e.NewItems is not null) foreach (RouteMapConfigurationItem item in e.NewItems) AttachItem(item);
         RaiseFilteredCollections();
     }
@@ -906,7 +1202,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     private void SelectFirstItems()
     {
         SelectedChain = Draft.Chains.FirstOrDefault();
-        SelectedNode = Draft.Nodes.FirstOrDefault();
+        SelectedNode = OrdinaryNodes.FirstOrDefault();
         SelectedSegment = Draft.Segments.FirstOrDefault();
         SelectedCard = Draft.Cards.FirstOrDefault();
         SelectedPlaceholderRule = Draft.PlaceholderRules.FirstOrDefault();
@@ -918,6 +1214,19 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         this.RaisePropertyChanged(nameof(FilteredSegments));
         this.RaisePropertyChanged(nameof(FilteredCards));
         this.RaisePropertyChanged(nameof(FilteredPlaceholderRules));
+    }
+
+    private void RaiseSegmentEditorProperties()
+    {
+        this.RaisePropertyChanged(nameof(SelectedSegmentKind));
+        this.RaisePropertyChanged(nameof(SelectedTerminalSide));
+        this.RaisePropertyChanged(nameof(IsDeadEnd));
+        this.RaisePropertyChanged(nameof(IsElbow));
+        this.RaisePropertyChanged(nameof(IsFromTerminalAnchor));
+        this.RaisePropertyChanged(nameof(IsToTerminalAnchor));
+        this.RaisePropertyChanged(nameof(SelectedTerminalAnchor));
+        this.RaisePropertyChanged(nameof(CanEditSegmentActivity));
+        this.RaisePropertyChanged(nameof(SegmentBindingRoles));
     }
 
     private static IEnumerable<T> Filter<T>(IEnumerable<T> source, string search, Func<T, string?> extra) where T : RouteMapConfigurationItem =>
@@ -947,3 +1256,5 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         $"{error.Scope}{(string.IsNullOrWhiteSpace(error.ObjectId) ? string.Empty : $" '{error.ObjectId}'")}: {error.Message}";
 
 }
+
+public sealed record RouteMapEditorChoice<T>(T Value, string Label);

@@ -212,26 +212,68 @@
 
         <TabItem Header="Линии">
           <Grid ColumnDefinitions="300,*" ColumnSpacing="14" Margin="8">
-            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8"><TextBox PlaceholderText="Поиск линии" Text="{Binding SegmentSearch}"/><ListBox Grid.Row="1" ItemsSource="{Binding FilteredSegments}" SelectedItem="{Binding SelectedSegment}"><ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4"><TextBlock Text="{Binding Id}" FontWeight="SemiBold"/><TextBlock Text="{Binding Title}"/><TextBlock Text="{Binding ValidationMessage}" Foreground="#B43D3D" FontSize="11" TextWrapping="Wrap"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox><WrapPanel Grid.Row="2"><Button Classes="small" Content="Добавить" Command="{Binding AddSegmentCommand}"/><Button Classes="small" Content="Дублировать" Command="{Binding DuplicateSegmentCommand}"/><Button Classes="small" Content="Удалить" Command="{Binding DeleteSegmentCommand}"/></WrapPanel></Grid>
+            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8"><TextBox PlaceholderText="Поиск линии" Text="{Binding SegmentSearch}"/><ListBox Grid.Row="1" ItemsSource="{Binding FilteredSegments}" SelectedItem="{Binding SelectedSegment}"><ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4"><TextBlock Text="{Binding Id}" FontWeight="SemiBold"/><TextBlock Text="{Binding Title}"/><TextBlock Text="{Binding ValidationMessage}" Foreground="#B43D3D" FontSize="11" TextWrapping="Wrap"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox>
+              <WrapPanel Grid.Row="2">
+                <Button Classes="small" Content="Добавить" Command="{Binding AddSegmentCommand}"/>
+                <Button Classes="small" Content="Добавить тупик" Command="{Binding AddDeadEndCommand}"/>
+                <Button Classes="small" Content="Дублировать" Command="{Binding DuplicateSegmentCommand}"/>
+                <Button Classes="small" Content="Удалить" Command="{Binding DeleteSegmentCommand}"/>
+              </WrapPanel>
+            </Grid>
             <Border Grid.Column="1" Classes="editor"><ScrollViewer><StackPanel DataContext="{Binding SelectedSegment}">
               <TextBlock Classes="section" Text="Линия"/><UniformGrid Columns="3">
-                <StackPanel><TextBlock Classes="label" Text="ID"/><TextBox Classes="form" Text="{Binding Id}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="От узла"/><TextBox Classes="form" Text="{Binding FromNodeId}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="К узлу"/><TextBox Classes="form" Text="{Binding ToNodeId}"/></StackPanel>
-                <StackPanel><TextBlock Classes="label" Text="Тип"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.SegmentKinds, ElementName=Root}" SelectedItem="{Binding Kind}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Радиус дуги"/><TextBox Classes="form" Text="{Binding ArcRadius}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Порядок дуги"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.ElbowOrders, ElementName=Root}" SelectedItem="{Binding ElbowOrder}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="ID"/><TextBox Classes="form" Text="{Binding Id}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="От узла"/><TextBox Classes="form" Text="{Binding FromNodeId}" IsReadOnly="{Binding DataContext.IsFromTerminalAnchor, ElementName=Root}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="К узлу"/><TextBox Classes="form" Text="{Binding ToNodeId}" IsReadOnly="{Binding DataContext.IsToTerminalAnchor, ElementName=Root}"/></StackPanel>
+                <StackPanel>
+                  <TextBlock Classes="label" Text="Тип"/>
+                  <ComboBox x:Name="SegmentKindBox" Classes="form" ItemsSource="{Binding DataContext.SegmentKindChoices, ElementName=Root}"
+                            SelectedValueBinding="{Binding Value}" SelectedValue="{Binding DataContext.SelectedSegmentKind, ElementName=Root, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate></ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
                 <StackPanel><TextBlock Classes="label" Text="Состояние"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.ObjectStates, ElementName=Root}" SelectedItem="{Binding State}"/></StackPanel>
                 <StackPanel><TextBlock Classes="label" Text="Название"/><TextBox Classes="form" Text="{Binding Title}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Offset X"/><TextBox Classes="form" Text="{Binding LabelOffsetX}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Offset Y"/><TextBox Classes="form" Text="{Binding LabelOffsetY}"/></StackPanel>
-              </UniformGrid><WrapPanel><CheckBox Content="Видна" IsChecked="{Binding IsVisible}" Margin="0,0,18,0"/><CheckBox Content="Направленная" IsChecked="{Binding IsDirectional}"/></WrapPanel>
+              </UniformGrid>
+              <UniformGrid x:Name="ElbowFields" Columns="3" IsVisible="{Binding DataContext.IsElbow, ElementName=Root}">
+                <StackPanel><TextBlock Classes="label" Text="Радиус дуги"/><TextBox Classes="form" Text="{Binding ArcRadius}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Порядок дуги"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.ElbowOrders, ElementName=Root}" SelectedItem="{Binding ElbowOrder}"/></StackPanel>
+              </UniformGrid>
+              <StackPanel x:Name="TerminalFields" IsVisible="{Binding DataContext.IsDeadEnd, ElementName=Root}">
+                <TextBlock Classes="section" Text="Тупик"/>
+                <UniformGrid Columns="4">
+                  <StackPanel>
+                    <TextBlock Classes="label" Text="Сторона поперечины"/>
+                    <ComboBox x:Name="TerminalSideBox" Classes="form" ItemsSource="{Binding DataContext.TerminalSideChoices, ElementName=Root}"
+                              SelectedValueBinding="{Binding Value}" SelectedValue="{Binding DataContext.SelectedTerminalSide, ElementName=Root, Mode=TwoWay}">
+                      <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate></ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Длина поперечины"/><TextBox x:Name="TerminalCapLengthBox" Classes="form" PlaceholderText="Авто" Text="{Binding TerminalCapLength}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="X якоря"/><TextBox x:Name="TerminalAnchorXBox" Classes="form" Text="{Binding DataContext.SelectedTerminalAnchor.X, ElementName=Root, Mode=TwoWay}"/></StackPanel>
+                  <StackPanel><TextBlock Classes="label" Text="Y якоря"/><TextBox x:Name="TerminalAnchorYBox" Classes="form" Text="{Binding DataContext.SelectedTerminalAnchor.Y, ElementName=Root, Mode=TwoWay}"/></StackPanel>
+                </UniformGrid>
+                <TextBlock Classes="label" Text="Поперечина использует обычный цвет, толщину и края линии." TextWrapping="Wrap"/>
+              </StackPanel>
+              <WrapPanel><CheckBox Content="Видна" IsChecked="{Binding IsVisible}" Margin="0,0,18,0"/><CheckBox Content="Направленная" IsChecked="{Binding IsDirectional}"/></WrapPanel>
               <TextBlock Classes="section" Text="Стиль и фрагментация"/><UniformGrid Columns="4">
-                <StackPanel><TextBlock Classes="label" Text="Обычный цвет"/><TextBox Classes="form" Text="{Binding Style.NormalColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Активный цвет"/><TextBox Classes="form" Text="{Binding Style.ActiveColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Толщина"/><TextBox Classes="form" Text="{Binding Style.Thickness}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Активная толщина"/><TextBox Classes="form" Text="{Binding Style.ActiveThickness}"/></StackPanel>
-                <StackPanel><TextBlock Classes="label" Text="Фрагмент (пусто = общий)"/><TextBox Classes="form" Text="{Binding Style.FragmentLength}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Разрыв (пусто = общий)"/><TextBox Classes="form" Text="{Binding Style.FragmentGap}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Цвет подписи"/><TextBox Classes="form" Text="{Binding Style.LabelColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Размер подписи"/><TextBox Classes="form" Text="{Binding Style.LabelFontSize}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Обычный цвет"/><TextBox Classes="form" Text="{Binding Style.NormalColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Толщина"/><TextBox Classes="form" Text="{Binding Style.Thickness}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Цвет подписи"/><TextBox Classes="form" Text="{Binding Style.LabelColor}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Размер подписи"/><TextBox Classes="form" Text="{Binding Style.LabelFontSize}"/></StackPanel>
                 <StackPanel><TextBlock Classes="label" Text="Зазор от узлов"/><TextBox Classes="form" Text="{Binding Style.EndpointGap}"/></StackPanel><StackPanel><TextBlock Classes="label" Text="Края линии"/><ComboBox Classes="form" ItemsSource="{Binding DataContext.LineCaps, ElementName=Root}" SelectedItem="{Binding Style.LineCap}"/></StackPanel>
+              </UniformGrid>
+              <UniformGrid x:Name="SegmentActivityFields" Columns="4" IsVisible="{Binding DataContext.CanEditSegmentActivity, ElementName=Root}">
+                <StackPanel><TextBlock Classes="label" Text="Активный цвет линии"/><TextBox Classes="form" Text="{Binding Style.ActiveColor}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Активная толщина линии"/><TextBox Classes="form" Text="{Binding Style.ActiveThickness}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Фрагмент (пусто = общий)"/><TextBox Classes="form" Text="{Binding Style.FragmentLength}"/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Разрыв (пусто = общий)"/><TextBox Classes="form" Text="{Binding Style.FragmentGap}"/></StackPanel>
               </UniformGrid>
               <settings:SignalBindingsEditor Bindings="{Binding Bindings}"
                                              AllowedRoles="{Binding DataContext.SegmentBindingRoles, ElementName=Root}"
                                              AddCommand="{Binding DataContext.AddBindingCommand, ElementName=Root}"
                                              AddCommandParameter="segment"
                                              RemoveCommand="{Binding DataContext.RemoveBindingCommand, ElementName=Root}"/>
-              <TextBlock Classes="section" Text="Отрезки"/>
-              <ItemsControl ItemsSource="{Binding ActiveFragments}">
+              <TextBlock Classes="section" Text="Отрезки" IsVisible="{Binding DataContext.CanEditSegmentActivity, ElementName=Root}"/>
+              <ItemsControl ItemsSource="{Binding ActiveFragments}" IsVisible="{Binding DataContext.CanEditSegmentActivity, ElementName=Root}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
                     <Grid ColumnDefinitions="54,160,*,76,76" ColumnSpacing="10" Margin="0,0,0,6">
@@ -400,7 +442,7 @@
       </TabControl>
 
       <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" Margin="0,12,0,0">
-        <StackPanel Orientation="Horizontal"><Button Classes="small" Content="ПЕРЕЗАГРУЗИТЬ" Command="{Binding ReloadCommand}"/><Button Classes="small" Content="ИМПОРТ" Command="{Binding ImportCommand}"/><Button Classes="small" Content="ЭКСПОРТ" Command="{Binding ExportCommand}"/></StackPanel>
+        <StackPanel Orientation="Horizontal"><Button Classes="small" Content="ПЕРЕЗАГРУЗИТЬ" Command="{Binding ReloadCommand}"/><Button Classes="small" Content="СТАНДАРТНАЯ КАРТА" Command="{Binding RestoreDefaultsCommand}"/><Button Classes="small" Content="ИМПОРТ" Command="{Binding ImportCommand}"/><Button Classes="small" Content="ЭКСПОРТ" Command="{Binding ExportCommand}"/></StackPanel>
         <TextBlock Grid.Column="1" Text="Modbus-адреса не входят в этот профиль; редактируются только SignalId." HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#7A858F"/>
         <StackPanel Grid.Column="2" Orientation="Horizontal"><Button Classes="small" Content="ПРИМЕНИТЬ" Command="{Binding ApplyCommand}"/><Button Classes="small" Content="СОХРАНИТЬ" Command="{Binding SaveCommand}"/></StackPanel>
       </Grid>

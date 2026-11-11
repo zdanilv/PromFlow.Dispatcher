@@ -9,6 +9,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using DialogHostAvalonia;
@@ -51,6 +52,54 @@ namespace Configurator.Tests.RouteMap.Ui;
 public sealed partial class RouteMapSettingsDialogVisualTests
 {
     [AvaloniaFact]
+    public void Dead_end_fields_edit_the_internal_anchor_and_follow_line_kind()
+    {
+        using var fixture = new DialogFixture(1320, 780);
+        var tabs = fixture.Dialog.GetVisualDescendants().OfType<TabControl>().Single();
+        tabs.SelectedItem = tabs.Items.OfType<TabItem>().Single(tab => Equals(tab.Header, "Линии"));
+        Dispatcher.UIThread.RunJobs();
+
+        var terminalFields = fixture.Dialog.FindControl<StackPanel>("TerminalFields")!;
+        var elbowFields = fixture.Dialog.FindControl<UniformGrid>("ElbowFields")!;
+        var activityFields = fixture.Dialog.FindControl<UniformGrid>("SegmentActivityFields")!;
+        var kind = fixture.Dialog.FindControl<ComboBox>("SegmentKindBox")!;
+        var side = fixture.Dialog.FindControl<ComboBox>("TerminalSideBox")!;
+        Assert.Equal(RouteSegmentKind.DeadEnd, kind.SelectedValue);
+        Assert.True(terminalFields.IsVisible);
+        Assert.True(activityFields.IsVisible);
+        Assert.False(elbowFields.IsVisible);
+
+        var add = fixture.Dialog.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Добавить тупик"));
+        add.Command!.Execute(add.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        var line = fixture.ViewModel.SelectedSegment!;
+        var anchor = fixture.ViewModel.SelectedTerminalAnchor!;
+        Assert.Equal(RouteTerminalSide.To, side.SelectedValue);
+        Assert.False(activityFields.IsVisible);
+        Assert.Empty(line.Bindings);
+        Assert.DoesNotContain(anchor, fixture.ViewModel.FilteredNodes);
+
+        side.SelectedIndex = 0;
+        fixture.Dialog.FindControl<TextBox>("TerminalCapLengthBox")!.Text = "37";
+        fixture.Dialog.FindControl<TextBox>("TerminalAnchorXBox")!.Text = "420";
+        fixture.Dialog.FindControl<TextBox>("TerminalAnchorYBox")!.Text = "580";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(RouteTerminalSide.From, line.TerminalSide);
+        Assert.Equal(anchor.Id, line.FromNodeId);
+        Assert.Equal(37, line.TerminalCapLength);
+        Assert.Equal((420d, 580d), (anchor.X, anchor.Y));
+        Assert.Contains(terminalFields.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == "У начала");
+
+        kind.SelectedIndex = 1;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(RouteSegmentKind.RoundedElbow90, line.Kind);
+        Assert.False(terminalFields.IsVisible);
+        Assert.True(elbowFields.IsVisible);
+        Assert.True(activityFields.IsVisible);
+        Assert.DoesNotContain(anchor, fixture.ViewModel.Draft.Nodes);
+    }
+
+    [AvaloniaFact]
     public void RouteMap_dashboard_shows_admin_legend_and_selected_object_prefix()
     {
         var directory = Path.Combine(Path.GetTempPath(), "route-map-legend-ui-tests", Guid.NewGuid().ToString("N"));
@@ -91,7 +140,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
                 "Узел не в сети",
                 "Активная линия",
                 "Авария линии",
-                "Линия не в сети"
+                "Линия не в сети",
+                "Тупик"
             };
             var expectedGlyphKinds = new[]
             {
@@ -104,7 +154,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
                 RouteMapLegendGlyphKind.OfflineNode,
                 RouteMapLegendGlyphKind.ActiveSegment,
                 RouteMapLegendGlyphKind.FaultSegment,
-                RouteMapLegendGlyphKind.OfflineSegment
+                RouteMapLegendGlyphKind.OfflineSegment,
+                RouteMapLegendGlyphKind.DeadEnd
             };
 
             Assert.True(connectionStatus.IsVisible);
@@ -152,6 +203,96 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         finally
         {
             Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [AvaloniaFact]
+    public void Dashboard_keeps_the_route_card_and_last_legend_row_separate_during_resizes()
+    {
+        using var manager = new RouteMapConfigurationManager(
+            new RouteMapConfigurationStorage(Path.Combine(Path.GetTempPath(), $"route-map-{Guid.NewGuid():N}.json")),
+            new RouteMapConfigurationMapper(RouteMapSeed.Create()),
+            new RouteMapConfigurationValidator(),
+            new RouteMapConfigurationMigrator());
+        using var notifications = new NotificationsPanelViewModel(
+            new RouteMapSessionJournal(), new NoOpDialogService(), new NoOpBitWriter());
+        using var viewModel = CreateRouteMapDashboardViewModel(manager, notifications, ApplicationOptions.AdminWorkMode);
+        var dashboard = new RouteMapDashboardView { DataContext = viewModel };
+        var window = new Window { WindowDecorations = WindowDecorations.None, Content = dashboard, Width = 800, Height = 600 };
+        var map = dashboard.FindControl<RouteMapControl>("RouteMapCanvas")!;
+        var legend = dashboard.FindControl<Border>("RouteMapStateLegendOverlay")!;
+        var scroll = dashboard.FindControl<ScrollViewer>("RouteMapLegendScroll")!;
+        window.Show();
+        try
+        {
+            foreach (var size in RouteMapDeadEndVisualTests.WindowSizes)
+            {
+                window.Width = size.Width;
+                window.Height = size.Height;
+                scroll.ScrollToHome();
+                Dispatcher.UIThread.RunJobs();
+                var last = legend.GetVisualDescendants().OfType<RouteMapLegendGlyph>().Last();
+                Assert.Equal(RouteMapLegendGlyphKind.DeadEnd, last.Kind);
+                Assert.True(scroll.Viewport.Height >= last.Height,
+                    $"Legend viewport at {size}: {scroll.Viewport}, panel {legend.Bounds}, map {map.Bounds}.");
+                CaptureDashboard($"dashboard-{size.Width}x{size.Height}");
+
+                scroll.ScrollToEnd();
+                Dispatcher.UIThread.RunJobs();
+                var lastTop = last.TranslatePoint(default, scroll)!.Value.Y;
+                Assert.True(lastTop >= 0 && lastTop + last.Bounds.Height <= scroll.Viewport.Height + 1);
+                var legendBottomRight = legend.TranslatePoint(new Point(legend.Bounds.Width, legend.Bounds.Height), map)!.Value;
+                Assert.True(legendBottomRight.Y <= map.Bounds.Height);
+                var viewport = RouteMapViewportLayout.Create(map.Definition!, map.Bounds.Width, map.Bounds.Height);
+                var route = viewport.Transform.ToViewPoint(viewport.LogicalRouteBounds.X, viewport.LogicalRouteBounds.Y);
+                Assert.True(legendBottomRight.X < route.X || legendBottomRight.Y <= route.Y);
+                var nodes = map.Definition!.Nodes.ToDictionary(node => node.Id);
+                var bsuLink = map.Definition.Segments.Single(segment => segment.Id == "active_bsu1_bsu2");
+                var bsu1 = nodes[bsuLink.FromNodeId];
+                var bsu2 = nodes[bsuLink.ToNodeId];
+                var bsuPath = RouteSegmentGeometry.Create(bsuLink,
+                    viewport.Transform.ToViewPoint(bsu1.X, bsu1.Y), viewport.Transform.ToViewPoint(bsu2.X, bsu2.Y));
+                Assert.True(RouteSegmentGeometry.CalculateViewDrawableRanges(
+                        bsuPath, bsuLink, bsu1, bsu2, map.Definition.Display!, viewport.Transform.NodeScale).Count > 0,
+                    $"The BSU link was clipped at {size}, map {map.Bounds.Size}, scale {viewport.Transform.Scale}, body {bsuPath.Length}.");
+                foreach (var terminal in map.Definition.Segments.Where(segment => segment.Kind == RouteSegmentKind.DeadEnd))
+                {
+                    var style = terminal.Style!;
+                    Assert.True(RouteSegmentGeometry.TryCreateTerminalViewGeometry(terminal, nodes[terminal.FromNodeId], nodes[terminal.ToNodeId],
+                        style, viewport.Transform, viewport.MapViewBounds, out var start, out var end, out var cap));
+                    var capBounds = RouteSegmentGeometry.BoundsOf(cap.Start, cap.End).Inflate(style.Thickness * viewport.Transform.Scale / 2);
+                    var outward = terminal.TerminalSide == RouteTerminalSide.From ? start - end : end - start;
+                    var label = RouteMapControl.GetTerminalLabelOrigin(capBounds, outward, 42, 16);
+                    Assert.True(viewport.MapViewBounds.Contains(capBounds.Union(new Rect(label, new Size(42, 16)))));
+                }
+
+                var card = dashboard.GetVisualDescendants().OfType<EquipmentCardView>().Single();
+                var cardOrigin = card.TranslatePoint(default, map)!.Value;
+                Assert.True(card.Bounds.Width >= RouteMapAttachedCardLayout.MinimumCardWidth);
+                if (viewport.CardsBelow)
+                {
+                    Assert.True(cardOrigin.Y >= viewport.MapViewBounds.Bottom);
+                    Assert.True(cardOrigin.Y + card.Bounds.Height <= map.Bounds.Height);
+                }
+                else
+                    Assert.True(cardOrigin.X >= viewport.MapViewBounds.Right);
+                if (size.Width == 800)
+                    CaptureDashboard("dashboard-800x600-legend-scrolled");
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        void CaptureDashboard(string name)
+        {
+            if (string.IsNullOrEmpty(HeadlessTestApplication.ScreenshotDirectory))
+                return;
+
+            using var frame = new RenderTargetBitmap(PixelSize.FromSize(dashboard.Bounds.Size, 1));
+            frame.Render(dashboard);
+            RouteMapDeadEndVisualTests.SaveFrame(frame, name);
         }
     }
 

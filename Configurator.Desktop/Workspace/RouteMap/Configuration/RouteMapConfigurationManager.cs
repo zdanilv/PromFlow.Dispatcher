@@ -135,8 +135,10 @@ public sealed class RouteMapConfigurationManager : IDisposable
         CancellationToken cancellationToken = default)
     {
         var loaded = await _storage.LoadActiveAsync(cancellationToken);
-        return loaded is null ? _mapper.CreateSeedDocument() : Prepare(loaded).Document;
+        return loaded is null ? CreateDefaultDraft() : Prepare(loaded).Document;
     }
+
+    internal RouteMapConfigurationDocument CreateDefaultDraft() => _mapper.CreateSeedDocument();
 
     public async Task<RouteMapConfigurationDocument> ImportDraftAsync(
         string path,

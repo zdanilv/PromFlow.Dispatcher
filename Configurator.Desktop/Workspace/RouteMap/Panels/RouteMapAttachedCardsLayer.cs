@@ -107,10 +107,9 @@ public sealed class RouteMapAttachedCardsLayer : Panel
             return ArrangeAtOrigin(finalSize);
 
         var placeholderBounds = new List<(Rect Bounds, RoutePlaceholderRule Rule)>();
-        var transform = RouteMapViewportLayout.Create(
-            definition,
-            finalSize.Width,
-            finalSize.Height).Transform;
+        var viewport = RouteMapViewportLayout.Create(definition, finalSize.Width, finalSize.Height);
+        var transform = viewport.Transform;
+        var cardGap = (definition.Display ?? new RouteMapDisplaySettings()).CardColumnGap;
 
         var nodesById = definition.Nodes.ToDictionary(x => x.Id);
         var segmentsById = definition.Segments.ToDictionary(x => x.Id);
@@ -131,12 +130,10 @@ public sealed class RouteMapAttachedCardsLayer : Panel
             }
 
             var chainBounds = RouteMapBoundsCalculator.CalculateChainBounds(chain, nodesById, segmentsById);
-            var chainRight = CalculateChainRightView(chain, chainBounds, nodesById, transform);
-            var centerY = RouteMapAttachedCardLayout.ResolveAnchorCenterY(
-                chain,
-                chainBounds,
-                nodesById,
-                transform);
+            var chainRight = viewport.CardsBelow ? -cardGap : CalculateChainRightView(chain, chainBounds, nodesById, transform);
+            var centerY = viewport.CardsBelow
+                ? finalSize.Height - card.CardHeight / 2
+                : RouteMapAttachedCardLayout.ResolveAnchorCenterY(chain, chainBounds, nodesById, transform);
             var bounds = RouteMapAttachedCardLayout.CalculateBounds(
                 finalSize.Width,
                 finalSize.Height,
@@ -146,7 +143,7 @@ public sealed class RouteMapAttachedCardsLayer : Panel
                 card.CardHeight,
                 card.CardWidth,
                 card.MinimumCardWidth,
-                (definition.Display ?? new RouteMapDisplaySettings()).CardColumnGap);
+                cardGap);
 
             child.Measure(new Size(bounds.Width, finalSize.Height));
             bounds = RouteMapAttachedCardLayout.CalculateBounds(
@@ -158,7 +155,7 @@ public sealed class RouteMapAttachedCardsLayer : Panel
                 card.CardHeight,
                 card.CardWidth,
                 card.MinimumCardWidth,
-                (definition.Display ?? new RouteMapDisplaySettings()).CardColumnGap);
+                cardGap);
             child.Arrange(bounds);
 
             foreach (var rule in (definition.PlaceholderRules ?? []).Where(x => x.IsVisible && x.CardId == card.Id))
@@ -173,6 +170,7 @@ public sealed class RouteMapAttachedCardsLayer : Panel
                         rule.Gap,
                         rule.Placement,
                         rule.MaximumCount)
+                    .Where(placeholder => !viewport.CardsBelow || placeholder.Top >= viewport.MapViewBounds.Bottom)
                     .Select(x => (x, rule)));
             }
         }

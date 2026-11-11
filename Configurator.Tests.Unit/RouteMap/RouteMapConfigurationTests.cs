@@ -1226,6 +1226,162 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
+    public async Task Settings_dead_end_round_trips_through_export_import_save_and_reopen()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var exportPath = scope.Storage.ActiveFilePath + ".export.json";
+        using var editor = new RouteMapSettingsViewModel(manager, scope.Storage, new RouteMapTestFilePicker(exportPath));
+        var originalChain = editor.Draft.Chains.Single();
+        var wash = editor.FilteredNodes.Single(node => node.Id == "wash");
+        editor.SelectedNode = wash;
+
+        await editor.AddDeadEndCommand.Execute().FirstAsync();
+        var line = Assert.IsType<RouteSegmentConfiguration>(editor.SelectedSegment);
+        var anchor = Assert.IsType<RouteNodeConfiguration>(editor.SelectedTerminalAnchor);
+        Assert.Equal(RouteSegmentKind.DeadEnd, line.Kind);
+        Assert.Equal(RouteTerminalSide.To, line.TerminalSide);
+        Assert.Equal((wash.Id, anchor.Id), (line.FromNodeId, line.ToNodeId));
+        Assert.Equal(RouteNodeKind.TerminalAnchor, anchor.Kind);
+        Assert.Equal(RouteNodeMenuKind.None, anchor.MenuKind);
+        Assert.False(anchor.IsLoader || anchor.IsTarget);
+        Assert.Empty(anchor.Bindings);
+        Assert.Empty(line.Bindings);
+        Assert.Empty(line.ActiveFragments);
+        Assert.DoesNotContain(anchor, editor.FilteredNodes);
+        Assert.DoesNotContain(RouteNodeKind.TerminalAnchor, editor.NodeKinds);
+        Assert.DoesNotContain(SignalBindingRole.ActiveRoute, editor.SegmentBindingRoles);
+
+        editor.SelectedTerminalSide = RouteTerminalSide.From;
+        line.TerminalCapLength = 42;
+        line.Title = "ТУПИК ДЛЯ ПРОВЕРКИ";
+        line.LabelOffsetX = 6;
+        line.LabelOffsetY = 11;
+        line.IsVisible = false;
+        line.Style.NormalColor = "#234567";
+        line.Style.Thickness = 6;
+        line.Style.LineCap = RouteLineCap.Flat;
+        line.Style.LabelColor = "#345678";
+        line.Style.LabelFontSize = 14;
+        anchor.X += 35;
+        anchor.Y += 20;
+        Assert.Equal((anchor.Id, wash.Id), (line.FromNodeId, line.ToNodeId));
+        Assert.True(new RouteMapConfigurationValidator().Validate(editor.Draft).IsValid);
+        await editor.ExportCommand.Execute().FirstAsync();
+        Assert.True(File.Exists(exportPath));
+        Assert.Null(editor.ErrorMessage);
+
+        await editor.RestoreDefaultsCommand.Execute().FirstAsync();
+        Assert.DoesNotContain(editor.Draft.Segments, segment => segment.Id == line.Id);
+        await editor.ImportCommand.Execute().FirstAsync();
+        await editor.SaveCommand.Execute().FirstAsync();
+        Assert.Null(editor.ErrorMessage);
+
+        using var reopenedManager = scope.CreateManager();
+        Assert.Null(reopenedManager.LastLoadError);
+        using var reopened = new RouteMapSettingsViewModel(reopenedManager, scope.Storage, new NullFilePicker());
+        reopened.SelectedSegment = reopened.Draft.Segments.Single(segment => segment.Id == line.Id);
+        var saved = reopened.SelectedSegment;
+        Assert.Equal((line.TerminalSide, line.TerminalCapLength, line.Title), (saved.TerminalSide, saved.TerminalCapLength, saved.Title));
+        Assert.Equal((6d, 11d, false), (saved.LabelOffsetX, saved.LabelOffsetY, saved.IsVisible));
+        Assert.Equal(("#234567", 6d, RouteLineCap.Flat, "#345678", 14d),
+            (saved.Style.NormalColor, saved.Style.Thickness, saved.Style.LineCap, saved.Style.LabelColor, saved.Style.LabelFontSize));
+        Assert.Equal((anchor.X, anchor.Y), (reopened.SelectedTerminalAnchor!.X, reopened.SelectedTerminalAnchor.Y));
+        Assert.Equal(originalChain.NodeIds.ToArray(), reopened.Draft.Chains.Single().NodeIds.ToArray());
+        Assert.Equal(originalChain.SegmentIds.ToArray(), reopened.Draft.Chains.Single().SegmentIds.ToArray());
+        var standardNode = reopened.Draft.Nodes.Single(node => node.Id == "bsu_1").Style;
+        var standardLine = reopened.Draft.Segments.Single(segment => segment.Id == "wash_to_upper_dead_end").Style;
+        Assert.Equal(("#68717A", 0d, "#68717A", 13d),
+            (standardNode.FillColor, standardNode.InnerRadiusRatio, standardNode.LabelColor, standardNode.LabelFontSize));
+        Assert.Equal(("#68717A", "#68717A", 13d), (standardLine.NormalColor, standardLine.LabelColor, standardLine.LabelFontSize));
+        Assert.Empty(saved.Bindings);
+        saved.TerminalCapLength = 8;
+        await reopened.CloseCommand.Execute().FirstAsync();
+        Assert.Equal(42, (await reopenedManager.LoadActiveDraftAsync()).Segments.Single(segment => segment.Id == line.Id).TerminalCapLength);
+    }
+
+    [Fact]
+    public async Task Settings_duplicate_and_delete_dead_end_protect_chain_and_anchor_references()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var editor = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        var source = editor.Draft.Segments.Single(segment => segment.Id == "lower_dead_end_to_bsu1");
+        source.TerminalCapLength = 38;
+        editor.SelectedSegment = source;
+        var sourceAnchor = editor.SelectedTerminalAnchor!;
+        var signalIds = source.Bindings.Select(binding => binding.SignalId).ToArray();
+
+        await editor.DeleteSegmentCommand.Execute().FirstAsync();
+        Assert.Contains("chain.bucket_route", editor.ErrorMessage);
+        Assert.Contains(source, editor.Draft.Segments);
+        await editor.DuplicateSegmentCommand.Execute().FirstAsync();
+        var copy = editor.SelectedSegment!;
+        var copyAnchor = editor.SelectedTerminalAnchor!;
+        Assert.NotEqual(source.Id, copy.Id);
+        Assert.NotEqual(sourceAnchor.Id, copyAnchor.Id);
+        Assert.Equal((source.TerminalSide, source.TerminalCapLength), (copy.TerminalSide, copy.TerminalCapLength));
+        Assert.Empty(copy.Bindings);
+        Assert.Empty(copyAnchor.Bindings);
+        Assert.Equal(signalIds, source.Bindings.Select(binding => binding.SignalId));
+        Assert.Equal((sourceAnchor.X, sourceAnchor.Y), (copyAnchor.X, copyAnchor.Y));
+        copyAnchor.X += 10;
+        copy.Style.NormalColor = "#012345";
+        Assert.NotEqual(source.Style.NormalColor, copy.Style.NormalColor);
+        Assert.NotEqual(sourceAnchor.X, copyAnchor.X);
+        Assert.True(new RouteMapConfigurationValidator().Validate(editor.Draft).IsValid);
+
+        var chain = editor.Draft.Chains.Single();
+        chain.NodeIds.Add(copyAnchor.Id);
+        await editor.DeleteSegmentCommand.Execute().FirstAsync();
+        Assert.Contains(copy, editor.Draft.Segments);
+        Assert.Contains(copyAnchor, editor.Draft.Nodes);
+        chain.NodeIds.Remove(copyAnchor.Id);
+        var unaffectedNodes = editor.Draft.Nodes.Where(node => node != copyAnchor).ToArray();
+        var unaffectedSegments = editor.Draft.Segments.Where(segment => segment != copy).ToArray();
+        await editor.DeleteSegmentCommand.Execute().FirstAsync();
+        Assert.Equal(unaffectedNodes, editor.Draft.Nodes);
+        Assert.Equal(unaffectedSegments, editor.Draft.Segments);
+        Assert.True(new RouteMapConfigurationValidator().Validate(editor.Draft).IsValid);
+    }
+
+    [Fact]
+    public async Task Settings_kind_switch_preserves_endpoints_arc_parameters_and_signal_ids()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var editor = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        editor.SelectedSegment = editor.Draft.Segments.Single(segment => segment.Id == "bsu2_to_bucket");
+        await editor.DuplicateSegmentCommand.Execute().FirstAsync();
+        var line = editor.SelectedSegment!;
+        var endpoints = (line.FromNodeId, line.ToNodeId);
+        var fragments = line.ActiveFragments.Select(fragment => fragment.Binding.SignalId).ToArray();
+        var mainBinding = line.Bindings.Single(binding => binding.Role == SignalBindingRole.ActiveRoute).SignalId;
+        var radius = line.ArcRadius;
+
+        editor.SelectedSegmentKind = RouteSegmentKind.DeadEnd;
+        Assert.NotNull(editor.SelectedTerminalAnchor);
+        Assert.Equal(fragments, line.ActiveFragments.Select(fragment => fragment.Binding.SignalId));
+        line.TerminalCapLength = 32;
+        editor.SelectedSegmentKind = RouteSegmentKind.RoundedElbow90;
+        Assert.Equal(endpoints, (line.FromNodeId, line.ToNodeId));
+        Assert.Null(editor.SelectedTerminalAnchor);
+        Assert.Equal(radius, line.ArcRadius);
+        Assert.Equal(32, line.TerminalCapLength);
+        Assert.Equal(mainBinding, line.Bindings.Single(binding => binding.Role == SignalBindingRole.ActiveRoute).SignalId);
+        await editor.SaveCommand.Execute().FirstAsync();
+        Assert.Null(editor.ErrorMessage);
+        Assert.Equal(fragments, manager.CurrentDocument.Segments.Single(segment => segment.Id == line.Id)
+            .ActiveFragments.Select(fragment => fragment.Binding.SignalId));
+    }
+
+    private sealed class RouteMapTestFilePicker(string path) : IRouteMapSettingsFilePicker
+    {
+        public Task<string?> PickImportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(path);
+        public Task<string?> PickExportPathAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(path);
+    }
+
+    [Fact]
     public void Settings_add_node_and_card_create_required_command_bindings()
     {
         using var scope = new TempConfigurationScope();

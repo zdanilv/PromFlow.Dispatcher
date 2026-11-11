@@ -20,7 +20,7 @@
             <Grid Grid.Column="0">
                 <Border Background="#F2F4F5">
                     <Grid>
-                        <controls:RouteMapControl Definition="{Binding Definition}"
+                        <controls:RouteMapControl x:Name="RouteMapCanvas" Definition="{Binding Definition}"
                                                   RuntimeState="{Binding RuntimeState}"
                                                   SelectedObjectId="{Binding SelectedObjectId, Mode=TwoWay}"
                                                   NodeRoleStates="{Binding NodeRoleStates}"
@@ -30,34 +30,39 @@
                         <panels:RouteMapAttachedCardsLayer Definition="{Binding Definition}"
                                                            Cards="{Binding MapEquipmentCards}"
                                                            ClipToBounds="False"/>
-                        <StackPanel HorizontalAlignment="Left"
-                                    VerticalAlignment="Top"
-                                    Margin="16"
-                                    Spacing="8"
-                                    IsHitTestVisible="False">
+                        <Grid HorizontalAlignment="Left"
+                              Margin="16"
+                              RowDefinitions="Auto,*"
+                              RowSpacing="8">
                             <Border x:Name="ConnectionStatusOverlay"
                                     Padding="10,6"
                                     Background="#FFFFFF"
                                     BorderBrush="#DDE2E6"
                                     BorderThickness="1"
                                     CornerRadius="4"
+                                    IsHitTestVisible="False"
                                     IsVisible="{Binding IsConnectionStatusVisible}">
                                 <TextBlock Text="{Binding ConnectionStatusText}"
                                            Foreground="#9CA4AA"
                                            FontSize="12"/>
                             </Border>
                             <Border x:Name="RouteMapStateLegendOverlay"
+                                    Grid.Row="1"
+                                    VerticalAlignment="Top"
                                     Padding="10,8"
                                     Background="#FFFFFF"
                                     BorderBrush="#DDE2E6"
                                     BorderThickness="1"
                                     CornerRadius="4">
-                                <StackPanel Spacing="4">
+                                <Grid RowDefinitions="Auto,*" RowSpacing="14">
                                     <TextBlock Text="Обозначения"
                                                Foreground="#44505C"
                                                FontSize="16"
                                                FontWeight="SemiBold"/>
-                                    <StackPanel Spacing="3" Margin="0,10,0,0">
+                                    <ScrollViewer Grid.Row="1" x:Name="RouteMapLegendScroll"
+                                                  HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto">
+                                      <StackPanel Spacing="3">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="SelectedNode"/>
                                             <TextBlock Text="Выбранный узел" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
@@ -98,10 +103,15 @@
                                             <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="OfflineSegment"/>
                                             <TextBlock Text="Линия не в сети" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
                                         </StackPanel>
-                                    </StackPanel>
-                                </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <controls:RouteMapLegendGlyph Width="40" Height="30" Definition="{Binding Definition}" Kind="DeadEnd"/>
+                                            <TextBlock Text="Тупик" Foreground="#65717D" FontSize="14" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                      </StackPanel>
+                                    </ScrollViewer>
+                                </Grid>
                             </Border>
-                        </StackPanel>
+                        </Grid>
                         <Border x:Name="SelectedObjectOverlay"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Bottom"

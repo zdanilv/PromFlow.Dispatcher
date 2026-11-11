@@ -13,6 +13,11 @@ internal sealed record RouteMapViewportLayout(
     public const double DefaultCardHeight = 141;
     public const double CardGap = 18;
     public const double MapPadding = 18;
+    private const double CompactLegendInset = 110;
+    private const double CompactLabelReserve = 30;
+    private const double TerminalLabelRoom = 60;
+    public bool CardsBelow { get; init; }
+    public bool FitFragmentEndpoints { get; init; }
 
     public static RouteMapViewportLayout Create(
         RouteMapDefinition definition,
@@ -40,20 +45,49 @@ internal sealed record RouteMapViewportLayout(
         var reservedRight = attachedChains.Length == 0
             ? 0
             : cardWidth + display.CardColumnGap + rightOffset;
-        var mapWidth = double.IsFinite(viewWidth) ? Math.Max(1, viewWidth - reservedRight) : 1;
-        var mapHeight = double.IsFinite(viewHeight) ? Math.Max(1, viewHeight) : 1;
-        var mapViewBounds = new Rect(0, 0, mapWidth, mapHeight);
-        var transform = RouteMapTransform.CreateForLogicalCanvas(
-            logicalBounds,
-            definition.LogicalWidth,
-            definition.LogicalHeight,
-            mapViewBounds,
-            horizontalPadding: display.MapPadding,
-            verticalPadding: attachedChains.Length == 0
-                ? display.MapPadding
-                : Math.Max(display.MapPadding, cardHeight / 2));
+        var width = double.IsFinite(viewWidth) ? Math.Max(1, viewWidth) : 1;
+        var height = double.IsFinite(viewHeight) ? Math.Max(1, viewHeight) : 1;
+        var hasStandardTerminals = definition.Segments.Any(segment =>
+            segment.LabelAtTerminal && RouteMapSeed.IsStandardTerminal(segment));
+        var sideBounds = new Rect(0, 0, Math.Max(1, width - reservedRight), height);
+        var side = Fit(sideBounds, reservedRight, attachedChains.Length == 0
+            ? display.MapPadding
+            : Math.Max(display.MapPadding, cardHeight / 2));
 
-        return new RouteMapViewportLayout(transform, logicalBounds, mapViewBounds, reservedRight);
+        // Keep the right column whenever it gives the standard route at least as much space.
+        // Comparing scales makes the geometry continuous at the layout change.
+        var compactHeight = height - cardHeight - display.CardColumnGap - CompactLegendInset;
+        if (attachedChains.Length == 1 && compactHeight > display.MapPadding * 2 && hasStandardTerminals)
+        {
+            var compactBounds = new Rect(0, CompactLegendInset, width, compactHeight);
+            var compact = Fit(compactBounds, 0, display.MapPadding, CompactLabelReserve);
+            if (compact.Transform.Scale > side.Transform.Scale)
+                return compact with { CardsBelow = true };
+        }
+
+        return side;
+
+        RouteMapViewportLayout Fit(Rect bounds, double rightReserve, double verticalPadding, double labelReserve = 0)
+        {
+            var fitBounds = bounds.WithWidth(Math.Max(1, bounds.Width - labelReserve));
+            var transform = RouteMapTransform.CreateForLogicalCanvas(
+                logicalBounds, definition.LogicalWidth, definition.LogicalHeight, fitBounds,
+                horizontalPadding: display.MapPadding, verticalPadding: verticalPadding);
+            if (hasStandardTerminals)
+            {
+                // Below half scale the fixed-size station circles consume the short links.
+                var nodeScale = Math.Min(1, transform.Scale / 0.5);
+                var left = transform.ToViewPoint(logicalBounds.Left, logicalBounds.Top).X;
+                var right = transform.ToViewPoint(logicalBounds.Right, logicalBounds.Top).X;
+                var shiftLeft = Math.Clamp(TerminalLabelRoom - (bounds.Right - right), 0,
+                    Math.Max(0, left - bounds.Left - display.MapPadding));
+                transform = transform.WithViewMetrics(nodeScale, -shiftLeft);
+            }
+            return new RouteMapViewportLayout(transform, logicalBounds, bounds, rightReserve)
+            {
+                FitFragmentEndpoints = hasStandardTerminals,
+            };
+        }
     }
 }
 

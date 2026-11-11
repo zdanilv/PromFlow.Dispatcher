@@ -76,7 +76,7 @@ public sealed class RouteMapConfigurationMapper
         }).ToArray();
 
         var standardChain = chains.FirstOrDefault(chain => chain.Id == "chain.bucket_route" &&
-            chain.NodeIds.Contains("wash") && chain.SegmentIds.Contains("wash_to_upper_dead_end"));
+            chain.SegmentIds.Contains("wash_to_upper_dead_end"));
         var segments = document.Segments.Select(ToModel).Select(segment =>
             standardChain?.SegmentIds.Contains(segment.Id) == true && RouteMapSeed.IsStandardTerminal(segment)
                 ? segment with { LabelAtTerminal = true }

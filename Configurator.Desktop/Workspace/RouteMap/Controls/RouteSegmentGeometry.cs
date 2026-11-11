@@ -140,17 +140,24 @@ internal static class RouteSegmentGeometry
         out RouteTerminalCap cap)
     {
         cap = default;
-        if (segment.Kind != RouteSegmentKind.DeadEnd ||
-            segment.TerminalSide is not (RouteTerminalSide.From or RouteTerminalSide.To) ||
-            !double.IsFinite(style.Thickness) || style.Thickness <= 0)
+        return segment.Kind == RouteSegmentKind.DeadEnd &&
+            TryCreateTerminalCap(segment.TerminalSide, segment.TerminalCapLength, style.Thickness, start, end, out cap);
+    }
+
+    internal static bool TryCreateTerminalCap(
+        RouteTerminalSide? side, double? capLength, double thickness, Point start, Point end, out RouteTerminalCap cap)
+    {
+        cap = default;
+        if (side is not (RouteTerminalSide.From or RouteTerminalSide.To) ||
+            !double.IsFinite(thickness) || thickness <= 0)
             return false;
 
         var length = Distance(start, end);
-        var halfCapLength = (segment.TerminalCapLength ?? 7 * style.Thickness) / 2;
+        var halfCapLength = (capLength ?? 7 * thickness) / 2;
         if (!HasUsableLength(length) || !double.IsFinite(halfCapLength) || halfCapLength <= 0)
             return false;
 
-        var center = segment.TerminalSide == RouteTerminalSide.From ? start : end;
+        var center = side == RouteTerminalSide.From ? start : end;
         var arm = new Vector(-(end.Y - start.Y) / length, (end.X - start.X) / length) * halfCapLength;
         var capStart = center - arm;
         var capEnd = center + arm;
@@ -188,7 +195,7 @@ internal static class RouteSegmentGeometry
 
         // Station circles use a fixed DIP radius. Leave room for the short body when the map shrinks.
         var halfStroke = Math.Max(style.Thickness, TerminalActiveThickness(style)) * transform.Scale / 2;
-        var minimumLength = stationStyle.Radius + stationStyle.BorderThickness / 2 + halfStroke + 6;
+        var minimumLength = (stationStyle.Radius + stationStyle.BorderThickness / 2 + 6) * transform.NodeScale + halfStroke;
         cap = new RouteTerminalCap(
             transform.ToViewPoint(logicalCap.Start.X, logicalCap.Start.Y),
             transform.ToViewPoint(logicalCap.End.X, logicalCap.End.Y));
@@ -343,13 +350,14 @@ internal static class RouteSegmentGeometry
         RouteSegment segment,
         RouteNode from,
         RouteNode to,
-        RouteMapDisplaySettings display)
+        RouteMapDisplaySettings display,
+        double nodeScale = 1)
     {
         var style = segment.Style ?? new RouteSegmentStyle();
         return CalculateDrawableRanges(
             path.Length,
-            EndpointTrim(from, style),
-            EndpointTrim(to, style),
+            EndpointTrim(from, style) * nodeScale,
+            EndpointTrim(to, style) * nodeScale,
             style.FragmentLength ?? display.FragmentLength,
             style.FragmentGap ?? display.FragmentGap);
     }
@@ -361,12 +369,13 @@ internal static class RouteSegmentGeometry
         RouteMapDisplaySettings display,
         double viewLength,
         double scale,
-        IReadOnlyList<RoutePathRange> logicalRanges)
+        IReadOnlyList<RoutePathRange> logicalRanges,
+        double nodeScale = 1)
     {
         var nodeStyle = station.Style ?? new RouteNodeStyle();
-        var configuredTrim = nodeStyle.Radius + style.EndpointGap;
+        var configuredTrim = (nodeStyle.Radius + style.EndpointGap) * nodeScale;
         var halfStroke = Math.Max(style.Thickness, TerminalActiveThickness(style)) * scale / 2;
-        var minimumTrim = nodeStyle.Radius + nodeStyle.BorderThickness / 2;
+        var minimumTrim = (nodeStyle.Radius + nodeStyle.BorderThickness / 2) * nodeScale;
         if (style.LineCap == RouteLineCap.Round)
             minimumTrim += halfStroke;
 
@@ -385,8 +394,29 @@ internal static class RouteSegmentGeometry
             return CalculateDrawableRanges(viewLength, start, viewLength - end,
                 style.FragmentLength ?? display.FragmentLength, style.FragmentGap ?? display.FragmentGap);
 
-        // Project the configured fragments onto the drawable interval so their
-        // indexes stay stable while the station's radius and gap stay in DIPs.
+        return ProjectRangesToInterval(logicalRanges, start, end);
+    }
+
+    internal static IReadOnlyList<RoutePathRange> TrimViewEndpoints(
+        IReadOnlyList<RoutePathRange> ranges, double viewLength,
+        RouteNode from, RouteNode to, RouteSegmentStyle style, double nodeScale)
+    {
+        var start = EndpointTrim(from, style) * nodeScale;
+        var end = viewLength - EndpointTrim(to, style) * nodeScale;
+        return ranges.Select(range =>
+        {
+            var trimmedStart = Math.Max(start, range.Start);
+            return new RoutePathRange(trimmedStart, Math.Max(trimmedStart, Math.Min(end, range.End)));
+        }).ToArray();
+    }
+
+    private static IReadOnlyList<RoutePathRange> ProjectRangesToInterval(
+        IReadOnlyList<RoutePathRange> logicalRanges, double start, double end)
+    {
+        if (logicalRanges.Count == 0 || end <= start)
+            return [];
+
+        // Keep each signal attached to its fragment while fitting the visible interval.
         var logicalStart = logicalRanges[0].Start;
         var ratio = (end - start) / (logicalRanges[^1].End - logicalStart);
         var projected = new RoutePathRange[logicalRanges.Count];

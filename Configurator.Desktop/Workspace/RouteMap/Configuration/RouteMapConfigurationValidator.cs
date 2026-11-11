@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Configurator.Application.Services.Signals;
+using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Configuration;
@@ -543,9 +544,13 @@ public sealed class RouteMapConfigurationValidator
             Add(errors, "segment", segment.Id, nameof(segment.TerminalSide), "Укажите сторону единственного терминального якоря линии DeadEnd.");
         }
 
-        if (from is not null && to is not null)
-            ValidatePositive(errors, "segment", segment.Id, nameof(segment.ToNodeId),
-                double.Hypot(to.X - from.X, to.Y - from.Y));
+        if (from is not null && to is not null && fromIsAnchor != toIsAnchor &&
+            !RouteSegmentGeometry.TryCreateTerminalCap(segment.TerminalSide, segment.TerminalCapLength, segment.Style.Thickness,
+                new Avalonia.Point(from.X, from.Y), new Avalonia.Point(to.X, to.Y), out _))
+        {
+            Add(errors, "segment", segment.Id, nameof(segment.ToNodeId),
+                "Координаты концов и длина поперечины должны образовывать корректную геометрию тупика.");
+        }
     }
 
     private static void ValidateSegmentActiveFragments(

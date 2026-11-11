@@ -227,8 +227,11 @@ public sealed class RouteTopBarEmergencyButtonConfiguration : RouteTopBarButtonC
 
 public sealed class RouteSegmentConfiguration : RouteMapConfigurationItem
 {
-    public string FromNodeId { get; set; } = string.Empty;
-    public string ToNodeId { get; set; } = string.Empty;
+    private string _fromNodeId = string.Empty;
+    private string _toNodeId = string.Empty;
+
+    public string FromNodeId { get => _fromNodeId; set => this.RaiseAndSetIfChanged(ref _fromNodeId, value); }
+    public string ToNodeId { get => _toNodeId; set => this.RaiseAndSetIfChanged(ref _toNodeId, value); }
     public RouteObjectState State { get; set; } = RouteObjectState.Idle;
     public bool IsDirectional { get; set; }
     public RouteSegmentKind Kind { get; set; }

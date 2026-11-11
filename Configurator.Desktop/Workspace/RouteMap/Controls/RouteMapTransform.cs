@@ -14,6 +14,10 @@ public sealed class RouteMapTransform
     public double Scale { get; }
     public double OffsetX { get; }
     public double OffsetY { get; }
+    internal double NodeScale { get; private init; } = 1;
+
+    internal RouteMapTransform WithViewMetrics(double nodeScale, double horizontalShift) =>
+        new(Scale, OffsetX + horizontalShift, OffsetY) { NodeScale = nodeScale };
 
     public static RouteMapTransform Create(
         double logicalWidth,

@@ -205,7 +205,7 @@ public sealed class RouteMapControl : Control
             {
                 var station = segment.TerminalSide == RouteTerminalSide.From ? to : from;
                 viewRanges = RouteSegmentGeometry.CalculateTerminalViewDrawableRanges(
-                    segment, station, style, display, viewPath.Length, transform.Scale, logicalRanges);
+                    segment, station, style, display, viewPath.Length, transform.Scale, logicalRanges, transform.NodeScale);
                 style = style with
                 {
                     Thickness = style.Thickness * transform.Scale,
@@ -216,10 +216,15 @@ public sealed class RouteMapControl : Control
             {
                 var logicalPath = RouteSegmentGeometry.Create(segment, new Point(from.X, from.Y), new Point(to.X, to.Y));
                 viewRanges = RouteSegmentGeometry.ProjectRanges(logicalRanges, logicalPath.Length, viewPath.Length);
+                if (layout.FitFragmentEndpoints)
+                {
+                    viewRanges = RouteSegmentGeometry.TrimViewEndpoints(
+                        viewRanges, viewPath.Length, from, to, style, transform.NodeScale);
+                }
             }
             else
             {
-                viewRanges = RouteSegmentGeometry.CalculateViewDrawableRanges(viewPath, segment, from, to, display);
+                viewRanges = RouteSegmentGeometry.CalculateViewDrawableRanges(viewPath, segment, from, to, display, transform.NodeScale);
             }
 
             var baseState = state is RouteObjectState.ActiveRoute or RouteObjectState.Running
@@ -360,22 +365,27 @@ public sealed class RouteMapControl : Control
             var state = GetState(runtimeState, node.Id, node.State);
             var palette = (definition.Display ?? new RouteMapDisplaySettings()).Palette;
             var style = node.Style ?? new RouteNodeStyle();
-            var radius = RouteMapNodeMetrics.RadiusForNode(node);
+            var radius = RouteMapNodeMetrics.RadiusForNode(node) * transform.NodeScale;
             var brush = BrushForNode(node, state, GetRoleState(node.Id), palette);
 
-            context.DrawEllipse(brush, new Pen(RouteMapPalette.Brush(style.BorderColor), style.BorderThickness), center, radius, radius);
-            var innerBrush = state is RouteObjectState.Offline or RouteObjectState.Disabled
-                ? brush
-                : RouteMapPalette.Brush(style.InnerColor);
-            context.DrawEllipse(innerBrush, null, center, radius * style.InnerRadiusRatio, radius * style.InnerRadiusRatio);
+            context.DrawEllipse(brush, new Pen(RouteMapPalette.Brush(style.BorderColor), style.BorderThickness * transform.NodeScale), center, radius, radius);
+            if (style.InnerRadiusRatio > 0)
+            {
+                var innerBrush = state is RouteObjectState.Offline or RouteObjectState.Disabled
+                    ? brush
+                    : RouteMapPalette.Brush(style.InnerColor);
+                var innerRadius = radius * style.InnerRadiusRatio;
+                context.DrawEllipse(innerBrush, null, center, innerRadius, innerRadius);
+            }
 
             var objectRuntime = runtimeState.Find(node.Id);
             if (ShouldDrawActiveOutline(objectRuntime))
             {
-                var outlineRadius = radius + style.ActiveOutlineThickness / 2 + 1;
+                var outlineThickness = style.ActiveOutlineThickness * transform.NodeScale;
+                var outlineRadius = radius + outlineThickness / 2 + 1;
                 context.DrawEllipse(
                     null,
-                    new Pen(RouteMapPalette.Brush(style.ActiveOutlineColor), style.ActiveOutlineThickness),
+                    new Pen(RouteMapPalette.Brush(style.ActiveOutlineColor), outlineThickness),
                     center,
                     outlineRadius,
                     outlineRadius);
@@ -477,7 +487,7 @@ public sealed class RouteMapControl : Control
             var activePadding = ShouldDrawActiveOutline(runtimeState.Find(node.Id))
                 ? style.ActiveOutlineThickness + 2
                 : 0;
-            var radius = RouteMapNodeMetrics.RadiusForNode(node) + activePadding + radiusPadding;
+            var radius = (RouteMapNodeMetrics.RadiusForNode(node) + activePadding + radiusPadding) * transform.NodeScale;
             context.DrawEllipse(null, pen, center, radius, radius);
             return;
         }
@@ -670,7 +680,7 @@ internal static class RouteNodeLabelLayout
         double textHeight = 0)
     {
         var center = transform.ToViewPoint(node.X, node.Y);
-        var radius = RouteMapNodeMetrics.RadiusForNode(node);
+        var radius = RouteMapNodeMetrics.RadiusForNode(node) * transform.NodeScale;
         return node.LabelPlacement == RouteNodeLabelPlacement.Right
             ? new RouteNodeLabelPosition(
                 center.X + radius + node.LabelOffsetX,

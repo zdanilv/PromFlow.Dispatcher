@@ -16,7 +16,8 @@ public enum RouteMapLegendGlyphKind
     OfflineNode,
     ActiveSegment,
     FaultSegment,
-    OfflineSegment
+    OfflineSegment,
+    DeadEnd
 }
 
 public sealed class RouteMapLegendGlyph : Control
@@ -59,9 +60,15 @@ public sealed class RouteMapLegendGlyph : Control
 
         var display = Definition?.Display ?? new RouteMapDisplaySettings();
         var palette = display.Palette;
-        var nodeStyle = Definition?.Nodes.FirstOrDefault()?.Style ?? new RouteNodeStyle();
+        var nodeStyle = Definition?.Nodes.FirstOrDefault(node => node.Kind != RouteNodeKind.TerminalAnchor)?.Style ?? new RouteNodeStyle();
         var segmentStyle = Definition?.Segments.FirstOrDefault()?.Style ?? new RouteSegmentStyle();
         var scale = Math.Min(Bounds.Width / DesignWidth, Bounds.Height / DesignHeight);
+
+        if (Kind == RouteMapLegendGlyphKind.DeadEnd)
+        {
+            DrawDeadEnd(context, palette, scale);
+            return;
+        }
 
         if (Kind is RouteMapLegendGlyphKind.ActiveSegment
             or RouteMapLegendGlyphKind.FaultSegment
@@ -97,15 +104,14 @@ public sealed class RouteMapLegendGlyph : Control
             center,
             radius,
             radius);
-        var innerBrush = Kind == RouteMapLegendGlyphKind.OfflineNode
-            ? fill
-            : RouteMapPalette.Brush(style.InnerColor);
-        context.DrawEllipse(
-            innerBrush,
-            null,
-            center,
-            radius * style.InnerRadiusRatio,
-            radius * style.InnerRadiusRatio);
+        if (style.InnerRadiusRatio > 0)
+        {
+            var innerBrush = Kind == RouteMapLegendGlyphKind.OfflineNode
+                ? fill
+                : RouteMapPalette.Brush(style.InnerColor);
+            var innerRadius = radius * style.InnerRadiusRatio;
+            context.DrawEllipse(innerBrush, null, center, innerRadius, innerRadius);
+        }
 
         switch (Kind)
         {
@@ -135,6 +141,24 @@ public sealed class RouteMapLegendGlyph : Control
                     outlineRadius);
                 break;
         }
+    }
+
+    private void DrawDeadEnd(DrawingContext context, RouteMapPaletteSettings palette, double scale)
+    {
+        var terminal = Definition?.Segments.FirstOrDefault(segment => segment.Kind == RouteSegmentKind.DeadEnd);
+        var style = terminal?.Style ?? (terminal is null ? RouteMapSeed.StandardSegmentStyle : new RouteSegmentStyle());
+        var thickness = Math.Min(style.Thickness, DesignHeight / 2);
+        var capLength = Math.Min(terminal?.TerminalCapLength ?? 7 * style.Thickness, DesignHeight - 2 - thickness);
+        var start = new Point(3 * scale, 12 * scale);
+        var end = new Point(27 * scale, 12 * scale);
+        var scaledStyle = style with { Thickness = thickness * scale };
+        if (!RouteSegmentGeometry.TryCreateTerminalCap(
+                RouteTerminalSide.To, capLength * scale, scaledStyle.Thickness, start, end, out var cap))
+            return;
+
+        var pen = RouteMapPalette.TrackPenForState(RouteObjectState.Idle, palette, scaledStyle);
+        context.DrawLine(pen, start, end);
+        context.DrawLine(pen, cap.Start, cap.End);
     }
 
     private void DrawSegment(

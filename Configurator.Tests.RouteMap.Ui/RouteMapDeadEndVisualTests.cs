@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
@@ -18,47 +19,83 @@ namespace Configurator.Tests.RouteMap.Ui;
 [Collection("RouteMap Skia rendering")]
 public sealed class RouteMapDeadEndVisualTests
 {
-    [Fact]
-    public Task Seed_renders_wash_and_both_short_terminal_segments() => RunOnUiThread(() =>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(1.25)]
+    [InlineData(1.5)]
+    [InlineData(2)]
+    public Task Seed_renders_labels_roles_and_short_terminal_segments_during_resizes(double dpi) => RunOnUiThread(() =>
     {
-        const double dpi = 2;
         var seed = RouteMapSeed.Create();
-        var definition = seed with
+        var renderLabels = !string.IsNullOrEmpty(HeadlessTestApplication.ScreenshotDirectory);
+        // The standard headless test app uses stub glyphs. In screenshot runs both apps use Skia.
+        var definition = renderLabels ? seed : seed with
         {
             Nodes = seed.Nodes.Select(node => node with { Title = string.Empty }).ToArray(),
             Segments = seed.Segments.Select(segment => segment with { Title = null }).ToArray(),
         };
-        var map = new RouteMapControl { Definition = definition };
+        var map = new RouteMapControl
+        {
+            Definition = definition,
+            NodeRoleStates = definition.Nodes.ToDictionary(node => node.Id,
+                node => new RouteNodeRoleState(node.Id, node.IsLoader, node.IsTarget)),
+        };
         var window = new Window { WindowDecorations = WindowDecorations.None, Content = map, Width = 800, Height = 600 };
         window.Show();
         try
         {
             window.SetRenderScaling(dpi);
-            Dispatcher.UIThread.RunJobs();
             var nodes = definition.Nodes.ToDictionary(node => node.Id);
-            var layout = RouteMapViewportLayout.Create(definition, map.Bounds.Width, map.Bounds.Height);
-            var transform = layout.Transform;
-            using var frame = Assert.IsType<WriteableBitmap>(window.CaptureRenderedFrame());
-            using var pixels = frame.Lock();
-            var wash = nodes["wash"];
-            AssertPixel(pixels, dpi, transform.ToViewPoint(wash.X, wash.Y), Color.Parse(new RouteNodeStyle().InnerColor));
-
-            foreach (var segment in definition.Segments.Where(line => line.Kind == RouteSegmentKind.DeadEnd))
+            foreach (var size in WindowSizes)
             {
-                var from = nodes[segment.FromNodeId];
-                var to = nodes[segment.ToNodeId];
-                var style = segment.Style ?? new RouteSegmentStyle();
-                Assert.True(RouteSegmentGeometry.TryCreateTerminalViewGeometry(
-                    segment, from, to, style, transform, layout.MapViewBounds, out var start, out var end, out var cap));
-                var color = Color.Parse(style.NormalColor);
-                AssertPixel(pixels, dpi, cap.Start + (cap.End - cap.Start) * 0.2, color);
-                AssertPixel(pixels, dpi, cap.Start + (cap.End - cap.Start) * 0.8, color);
+                window.Width = size.Width;
+                window.Height = size.Height;
+                Dispatcher.UIThread.RunJobs();
+                var layout = RouteMapViewportLayout.Create(definition, map.Bounds.Width, map.Bounds.Height);
+                var transform = layout.Transform;
+                var pixelSize = PixelSize.FromSize(map.Bounds.Size, dpi);
+                var renderDpi = new Vector(96 * dpi, 96 * dpi);
+                using var frame = new RenderTargetBitmap(pixelSize, renderDpi);
+                frame.Render(map);
+                using var bitmap = new WriteableBitmap(pixelSize, renderDpi, frame.Format, frame.AlphaFormat);
+                using var pixels = bitmap.Lock();
+                frame.CopyPixels(pixels);
+                AssertPixel(pixels, dpi, new Point(1, 1), Color.Parse("#F7F8F8"));
+                foreach (var (id, color) in new[]
+                {
+                    ("wash", "#68717A"), ("bsu_2", "#68717A"),
+                    ("bsu_1", "#D99B22"), ("concrete_bucket", "#3A9D5D"),
+                })
+                {
+                    var node = nodes[id];
+                    AssertPixel(pixels, dpi, transform.ToViewPoint(node.X, node.Y), Color.Parse(color));
+                }
 
-                var path = RouteSegmentGeometry.Create(segment, start, end);
-                var station = segment.TerminalSide == RouteTerminalSide.From ? to : from;
-                var body = Assert.Single(RouteSegmentGeometry.CalculateTerminalViewDrawableRanges(
-                    segment, station, style, new RouteMapDisplaySettings(), path.Length, transform.Scale, []));
-                AssertPixel(pixels, dpi, path.PointAt(body.Start + body.Length / 2), color);
+                foreach (var segment in definition.Segments.Where(line => line.Kind == RouteSegmentKind.DeadEnd))
+                {
+                    var from = nodes[segment.FromNodeId];
+                    var to = nodes[segment.ToNodeId];
+                    var style = segment.Style!;
+                    Assert.True(RouteSegmentGeometry.TryCreateTerminalViewGeometry(
+                        segment, from, to, style, transform, layout.MapViewBounds, out var start, out var end, out var cap));
+                    var color = Color.Parse("#68717A");
+                    AssertPixel(pixels, dpi, cap.Start + (cap.End - cap.Start) * 0.2, color, tolerance: 55);
+                    AssertPixel(pixels, dpi, cap.Start + (cap.End - cap.Start) * 0.8, color, tolerance: 55);
+
+                    var path = RouteSegmentGeometry.Create(segment, start, end);
+                    var atStart = segment.TerminalSide == RouteTerminalSide.From;
+                    var body = Assert.Single(RouteSegmentGeometry.CalculateTerminalViewDrawableRanges(
+                        segment, atStart ? to : from, style, definition.Display!, path.Length, transform.Scale, [], transform.NodeScale));
+                    AssertPixel(pixels, dpi, path.PointAt(body.Start + body.Length / 2), color, tolerance: 55);
+                    var capBounds = RouteSegmentGeometry.BoundsOf(cap.Start, cap.End).Inflate(style.Thickness * transform.Scale / 2);
+                    var label = RouteMapControl.GetTerminalLabelOrigin(capBounds, atStart ? start - end : end - start, 42, 16);
+                    var labelBounds = new Rect(label, new Size(48, 18));
+                    Assert.True(layout.MapViewBounds.Contains(labelBounds),
+                        $"Label for {segment.Id} at {size}: {labelBounds}, viewport {layout.MapViewBounds}.");
+                    if (renderLabels)
+                        AssertTextInk(pixels, dpi, labelBounds);
+                }
+                SaveFrame(frame, $"map-{size.Width}x{size.Height}-{dpi * 100:0}");
             }
         }
         finally
@@ -85,6 +122,60 @@ public sealed class RouteMapDeadEndVisualTests
     [Fact]
     public Task Active_fragment_colors_only_its_part_of_the_body() => RunOnUiThread(AssertActiveFragment);
 
+    [Fact]
+    public Task Legend_uses_the_first_terminal_style_and_neutral_t_geometry() => RunOnUiThread(() =>
+    {
+        var seed = RouteMapSeed.Create();
+        var terminal = seed.Segments.First(segment => segment.Kind == RouteSegmentKind.DeadEnd);
+        var ordinary = seed.Segments.First(segment => segment.Kind == RouteSegmentKind.Straight);
+        var glyph = new RouteMapLegendGlyph
+        {
+            Kind = RouteMapLegendGlyphKind.DeadEnd,
+            Width = 40,
+            Height = 30,
+            Definition = seed with { Segments = [ordinary, terminal] },
+        };
+        var window = new Window
+        {
+            WindowDecorations = WindowDecorations.None,
+            Width = 40,
+            Height = 30,
+            Background = Brushes.White,
+            Content = glyph,
+        };
+        window.Show();
+        try
+        {
+            window.SetRenderScaling(2);
+            Dispatcher.UIThread.RunJobs();
+            using (var frame = Assert.IsType<WriteableBitmap>(window.CaptureRenderedFrame()))
+            using (var pixels = frame.Lock())
+            {
+                AssertPixel(pixels, 2, new Point(18, 15), Color.Parse("#68717A"));
+                AssertPixel(pixels, 2, new Point(33.75, 8), Color.Parse("#68717A"));
+                AssertPixel(pixels, 2, new Point(33.75, 22), Color.Parse("#68717A"));
+                AssertPixel(pixels, 2, new Point(18, 8), Colors.White);
+            }
+
+            var changed = terminal with
+            {
+                State = RouteObjectState.ActiveRoute,
+                Style = terminal.Style! with { NormalColor = "#235178", Thickness = 8, LineCap = RouteLineCap.Flat },
+            };
+            glyph.Definition = seed with { Segments = [ordinary, changed] };
+            using var editedFrame = Assert.IsType<WriteableBitmap>(window.CaptureRenderedFrame());
+            using var editedPixels = editedFrame.Lock();
+            var changedColor = Color.Parse("#235178");
+            AssertPixel(editedPixels, 2, new Point(18, 18.5), changedColor);
+            AssertPixel(editedPixels, 2, new Point(33.75, 8), changedColor);
+            AssertPixel(editedPixels, 2, new Point(2, 15), Colors.White);
+        }
+        finally
+        {
+            window.Close();
+        }
+    });
+
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<TestApplication>()
         .UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
@@ -92,7 +183,25 @@ public sealed class RouteMapDeadEndVisualTests
     private static async Task RunOnUiThread(Action check)
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(RouteMapDeadEndVisualTests));
-        await session.Dispatch(check, TestContext.Current.CancellationToken);
+        ExceptionDispatchInfo? failure = null;
+        await session.Dispatch(() =>
+        {
+            try { check(); }
+            catch (Exception ex) { failure = ExceptionDispatchInfo.Capture(ex); }
+        }, TestContext.Current.CancellationToken);
+        failure?.Throw();
+    }
+
+    internal static IReadOnlyList<Size> WindowSizes { get; } =
+        [new(800, 600), new(1024, 768), new(1142, 749), new(1280, 720), new(1366, 768), new(1920, 1080), new(800, 600)];
+
+    internal static void SaveFrame(Bitmap frame, string name)
+    {
+        if (HeadlessTestApplication.ScreenshotDirectory is not { Length: > 0 } directory)
+            return;
+
+        Directory.CreateDirectory(directory);
+        frame.Save(Path.Combine(directory, name + ".png"));
     }
 
     private static void AssertCapsDuringResizes(double dpi)
@@ -104,7 +213,7 @@ public sealed class RouteMapDeadEndVisualTests
         try
         {
             window.SetRenderScaling(dpi);
-            foreach (var size in new Size[] { new(800, 600), new(1024, 768), new(1142, 749), new(1280, 720), new(1366, 768), new(1920, 1080), new(800, 600) })
+            foreach (var size in WindowSizes)
             {
                 window.Width = size.Width;
                 window.Height = size.Height;
@@ -261,20 +370,43 @@ public sealed class RouteMapDeadEndVisualTests
         }
     }
 
-    private static void AssertPixel(ILockedFramebuffer pixels, double dpi, Point point, Color expected)
+    private static void AssertTextInk(ILockedFramebuffer pixels, double dpi, Rect bounds)
+    {
+        var x = (int)Math.Ceiling(bounds.Left * dpi);
+        var y = (int)Math.Ceiling(bounds.Top * dpi);
+        for (var row = y; row < bounds.Bottom * dpi; row++)
+        {
+            for (var column = x; column < bounds.Right * dpi; column++)
+            {
+                if (ReadPixel(pixels, column, row).R < 180)
+                    return;
+            }
+        }
+        Assert.Fail($"No text was rendered in {bounds} at {dpi} DPI scale.");
+    }
+
+    private static void AssertPixel(ILockedFramebuffer pixels, double dpi, Point point, Color expected, int tolerance = 0)
     {
         var x = (int)Math.Floor(point.X * dpi);
         var y = (int)Math.Floor(point.Y * dpi);
+        var color = ReadPixel(pixels, x, y);
+        Assert.True(Math.Abs(expected.R - color.R) <= tolerance &&
+                    Math.Abs(expected.G - color.G) <= tolerance &&
+                    Math.Abs(expected.B - color.B) <= tolerance,
+            $"Pixel {x}, {y} at {dpi} DPI scale: expected {expected}, got {color}.");
+    }
+
+    private static Color ReadPixel(ILockedFramebuffer pixels, int x, int y)
+    {
         Assert.InRange(x, 0, pixels.Size.Width - 1);
         Assert.InRange(y, 0, pixels.Size.Height - 1);
         var index = y * pixels.RowBytes + x * 4;
         var isBgra = pixels.Format == PixelFormat.Bgra8888;
         Assert.True(isBgra || pixels.Format == PixelFormat.Rgba8888);
-        var color = Color.FromRgb(
+        return Color.FromRgb(
             Marshal.ReadByte(pixels.Address, index + (isBgra ? 2 : 0)),
             Marshal.ReadByte(pixels.Address, index + 1),
             Marshal.ReadByte(pixels.Address, index + (isBgra ? 0 : 2)));
-        Assert.True(expected == color, $"Pixel {x}, {y} at {dpi} DPI scale: expected {expected}, got {color}.");
     }
 
     private static RouteMapDefinition CreateMap()

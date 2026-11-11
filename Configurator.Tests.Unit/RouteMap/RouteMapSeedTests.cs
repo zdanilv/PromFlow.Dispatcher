@@ -47,8 +47,8 @@ public sealed class RouteMapSeedTests
         Assert.Equal(RouteCardVerticalAnchorKind.Node, chain.AttachedCardVerticalAnchor.Kind);
         Assert.Equal("concrete_bucket", chain.AttachedCardVerticalAnchor.NodeId);
 
-        Assert.Equal(1200, definition.LogicalWidth);
-        Assert.Equal(800, definition.LogicalHeight);
+        Assert.Equal(760, definition.LogicalWidth);
+        Assert.Equal(550, definition.LogicalHeight);
 
         Assert.Empty(definition.Vehicles);
 

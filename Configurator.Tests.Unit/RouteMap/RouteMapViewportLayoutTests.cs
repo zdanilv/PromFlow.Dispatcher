@@ -93,7 +93,10 @@ public sealed class RouteMapViewportLayoutTests
 
     [Theory]
     [InlineData(800, 600)]
+    [InlineData(1024, 768)]
     [InlineData(1142, 749)]
+    [InlineData(1280, 720)]
+    [InlineData(1366, 768)]
     [InlineData(1920, 1080)]
     public void Seed_terminal_caps_and_labels_fit_inside_the_map_column(double width, double height)
     {
@@ -129,9 +132,24 @@ public sealed class RouteMapViewportLayoutTests
     }
 
     [Fact]
+    public void Standard_layout_keeps_route_scale_continuous_across_card_placement_changes()
+    {
+        var definition = RouteMapSeed.Create();
+        var previous = RouteMapViewportLayout.Create(definition, 400, 536);
+        Assert.True(previous.CardsBelow);
+        for (var width = 401; width <= 900; width++)
+        {
+            var current = RouteMapViewportLayout.Create(definition, width, 536);
+            Assert.InRange(current.Transform.Scale - previous.Transform.Scale, 0, 1 / definition.LogicalWidth + 1e-9);
+            previous = current;
+        }
+        Assert.False(previous.CardsBelow);
+    }
+
+    [Fact]
     public void Shorter_route_bounds_do_not_increase_scale_when_logical_canvas_is_unchanged()
     {
-        var compact = RouteMapSeed.Create();
+        var compact = RouteMapSeed.Create() with { LogicalWidth = 1200, LogicalHeight = 800 };
         var expanded = compact with
         {
             Nodes = compact.Nodes.Select(node => node.Id switch

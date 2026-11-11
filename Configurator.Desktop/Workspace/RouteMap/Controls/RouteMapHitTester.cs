@@ -47,7 +47,7 @@ public static class RouteMapHitTester
                 continue;
 
             var distance = Distance(viewPoint, transform.ToViewPoint(node.X, node.Y));
-            var hitRadius = RouteMapNodeMetrics.RadiusForNode(node) + hitPadding;
+            var hitRadius = (RouteMapNodeMetrics.RadiusForNode(node) + hitPadding) * transform.NodeScale;
             if (distance <= hitRadius)
                 return new RouteMapHitResult(node.Id, RouteMapHitKind.Node);
         }
