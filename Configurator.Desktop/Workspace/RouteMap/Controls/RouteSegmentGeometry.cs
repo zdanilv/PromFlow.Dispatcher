@@ -114,17 +114,73 @@ internal readonly record struct RoutePathRange(double Start, double End)
     public double Length => Math.Max(0, End - Start);
 }
 
+internal readonly record struct RouteTerminalCap(Point Start, Point End);
+
 internal static class RouteSegmentGeometry
 {
     public const double VisibleFragmentLength = 100;
     public const double FragmentGap = 6;
 
-    public static RouteSegmentPath Create(RouteSegment segment, Point start, Point end)
+    public static RouteSegmentPath Create(RouteSegment segment, Point start, Point end, double radiusScale = 1)
     {
-        if (segment.Kind == RouteSegmentKind.Straight)
+        if (segment.Kind == RouteSegmentKind.DeadEnd && !HasUsableLength(Distance(start, end)))
+            return new RouteSegmentPath([]);
+
+        if (segment.Kind is RouteSegmentKind.Straight or RouteSegmentKind.DeadEnd)
             return new RouteSegmentPath([new RouteLinePathPart(start, end)]);
 
-        return CreateRoundedElbow(start, end, segment.ArcRadius, segment.ElbowOrder);
+        return CreateRoundedElbow(start, end, segment.ArcRadius * radiusScale, segment.ElbowOrder);
+    }
+
+    public static bool TryCreateTerminalCap(
+        RouteSegment segment,
+        RouteSegmentStyle style,
+        Point start,
+        Point end,
+        out RouteTerminalCap cap)
+    {
+        cap = default;
+        if (segment.Kind != RouteSegmentKind.DeadEnd ||
+            segment.TerminalSide is not (RouteTerminalSide.From or RouteTerminalSide.To) ||
+            !double.IsFinite(style.Thickness) || style.Thickness <= 0)
+            return false;
+
+        var length = Distance(start, end);
+        var halfCapLength = (segment.TerminalCapLength ?? 7 * style.Thickness) / 2;
+        if (!HasUsableLength(length) || !double.IsFinite(halfCapLength) || halfCapLength <= 0)
+            return false;
+
+        var center = segment.TerminalSide == RouteTerminalSide.From ? start : end;
+        var arm = new Vector(-(end.Y - start.Y) / length, (end.X - start.X) / length) * halfCapLength;
+        var capStart = center - arm;
+        var capEnd = center + arm;
+        if (!HasUsableLength(Distance(capStart, capEnd)))
+            return false;
+
+        cap = new RouteTerminalCap(capStart, capEnd);
+        return true;
+    }
+
+    public static double TerminalActiveThickness(RouteSegmentStyle style) =>
+        double.IsFinite(style.ActiveThickness) && style.ActiveThickness > 0
+            ? style.ActiveThickness
+            : style.Thickness;
+
+    public static StreamGeometry CreateTerminalBodyClip(RouteSegment segment, Point start, Point end, double thickness)
+    {
+        var terminalAtStart = segment.TerminalSide == RouteTerminalSide.From;
+        var terminal = terminalAtStart ? start : end;
+        var station = terminalAtStart ? end : start;
+        var padding = (station - terminal) * (thickness / Distance(station, terminal));
+        var side = new Vector(-padding.Y, padding.X);
+        var geometry = new StreamGeometry();
+        using var context = geometry.Open();
+        context.BeginFigure(terminal - side, isFilled: true);
+        context.LineTo(terminal + side);
+        context.LineTo(station + padding + side);
+        context.LineTo(station + padding - side);
+        context.EndFigure(isClosed: true);
+        return geometry;
     }
 
     public static RouteSegmentPath CreateRoundedElbow(
@@ -173,7 +229,8 @@ internal static class RouteSegmentGeometry
         double fragmentLength = VisibleFragmentLength,
         double gap = FragmentGap)
     {
-        if (totalLength <= 0)
+        if (!double.IsFinite(totalLength) || totalLength <= 0 ||
+            !double.IsFinite(fragmentLength) || !double.IsFinite(gap))
             return Array.Empty<RoutePathRange>();
 
         var normalizedFragment = Math.Max(1, fragmentLength);
@@ -228,8 +285,8 @@ internal static class RouteSegmentGeometry
         var style = segment.Style ?? new RouteSegmentStyle();
         return CalculateDrawableRanges(
             path.Length,
-            RadiusForNode(from) + style.EndpointGap,
-            RadiusForNode(to) + style.EndpointGap,
+            EndpointTrim(from, style),
+            EndpointTrim(to, style),
             style.FragmentLength ?? display.FragmentLength,
             style.FragmentGap ?? display.FragmentGap);
     }
@@ -244,10 +301,56 @@ internal static class RouteSegmentGeometry
         var style = segment.Style ?? new RouteSegmentStyle();
         return CalculateDrawableRanges(
             path.Length,
-            RadiusForNode(from) + style.EndpointGap,
-            RadiusForNode(to) + style.EndpointGap,
+            EndpointTrim(from, style),
+            EndpointTrim(to, style),
             style.FragmentLength ?? display.FragmentLength,
             style.FragmentGap ?? display.FragmentGap);
+    }
+
+    public static IReadOnlyList<RoutePathRange> CalculateTerminalViewDrawableRanges(
+        RouteSegment segment,
+        RouteNode station,
+        RouteSegmentStyle style,
+        RouteMapDisplaySettings display,
+        double viewLength,
+        double scale,
+        IReadOnlyList<RoutePathRange> logicalRanges)
+    {
+        var nodeStyle = station.Style ?? new RouteNodeStyle();
+        var configuredTrim = nodeStyle.Radius + style.EndpointGap;
+        var halfStroke = Math.Max(style.Thickness, TerminalActiveThickness(style)) * scale / 2;
+        var minimumTrim = nodeStyle.Radius + nodeStyle.BorderThickness / 2;
+        if (style.LineCap == RouteLineCap.Round)
+            minimumTrim += halfStroke;
+
+        if (!HasUsableLength(viewLength) || !double.IsFinite(configuredTrim) ||
+            !double.IsFinite(minimumTrim) || viewLength <= minimumTrim)
+            return [];
+
+        // Use the configured gap where it fits. Short approaches may use the spare
+        // gap, while the stroke still stays outside the station's circle.
+        var stationTrim = Math.Clamp(viewLength - halfStroke, minimumTrim, Math.Max(minimumTrim, configuredTrim));
+        var terminalAtStart = segment.TerminalSide == RouteTerminalSide.From;
+        var start = terminalAtStart ? 0 : stationTrim;
+        var end = terminalAtStart ? viewLength - stationTrim : viewLength;
+
+        if (logicalRanges.Count == 0)
+            return CalculateDrawableRanges(viewLength, start, viewLength - end,
+                style.FragmentLength ?? display.FragmentLength, style.FragmentGap ?? display.FragmentGap);
+
+        // Project the configured fragments onto the drawable interval so their
+        // indexes stay stable while the station's radius and gap stay in DIPs.
+        var logicalStart = logicalRanges[0].Start;
+        var ratio = (end - start) / (logicalRanges[^1].End - logicalStart);
+        var projected = new RoutePathRange[logicalRanges.Count];
+        for (var i = 0; i < projected.Length; i++)
+        {
+            projected[i] = new RoutePathRange(
+                i == 0 ? start : start + (logicalRanges[i].Start - logicalStart) * ratio,
+                i == projected.Length - 1 ? end : start + (logicalRanges[i].End - logicalStart) * ratio);
+        }
+
+        return projected;
     }
 
     public static IReadOnlyList<RoutePathRange> ProjectRanges(
@@ -321,10 +424,13 @@ internal static class RouteSegmentGeometry
     {
         var dx = a.X - b.X;
         var dy = a.Y - b.Y;
-        return Math.Sqrt(dx * dx + dy * dy);
+        return double.Hypot(dx, dy);
     }
 
-    private static double RadiusForNode(RouteNode node) => (node.Style ?? new RouteNodeStyle()).Radius;
+    private static bool HasUsableLength(double length) => double.IsFinite(length) && length > 1e-8;
+
+    private static double EndpointTrim(RouteNode node, RouteSegmentStyle style) =>
+        node.Kind == RouteNodeKind.TerminalAnchor ? 0 : RouteMapNodeMetrics.RadiusForNode(node) + style.EndpointGap;
 
     private static void AddLine(ICollection<RoutePathPart> parts, Point start, Point end)
     {

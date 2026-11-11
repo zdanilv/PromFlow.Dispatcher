@@ -1,3 +1,4 @@
+using Avalonia;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Xunit;
@@ -6,6 +7,26 @@ namespace Configurator.Tests.Unit.RouteMap;
 
 public sealed class RouteMapHitTesterTests
 {
+    [Fact]
+    public void HitTest_ignores_terminal_anchor_and_both_cap_arms_but_still_selects_the_station()
+    {
+        var station = new RouteNode("station", "Station", 20, 40, RouteNodeKind.ServicePoint, RouteObjectState.Idle, []);
+        var anchor = station with { Id = "anchor", X = 100, Kind = RouteNodeKind.TerminalAnchor, MenuKind = RouteNodeMenuKind.SendAndReturn };
+        var segment = new RouteSegment("dead-end", station.Id, anchor.Id, RouteObjectState.Idle, false, [], RouteSegmentKind.DeadEnd)
+        {
+            TerminalSide = RouteTerminalSide.To,
+        };
+        var definition = new RouteMapDefinition(120, 80, [], [station, anchor], [segment], [], [], [], []);
+        var transform = RouteMapTransform.Create(120, 80, 240, 160);
+
+        foreach (var point in new[] { new Point(100, 40), new Point(100, 26), new Point(100, 54) })
+            Assert.Null(RouteMapHitTester.HitTest(definition, RouteMapRuntimeState.Empty, transform.ToViewPoint(point.X, point.Y), transform));
+
+        var stationHit = RouteMapHitTester.HitTest(
+            definition, RouteMapRuntimeState.Empty, transform.ToViewPoint(station.X, station.Y), transform);
+        Assert.Equal(new RouteMapHitResult(station.Id, RouteMapHitKind.Node), stationHit);
+    }
+
     [Fact]
     public void HitTest_selects_node_near_pointer()
     {

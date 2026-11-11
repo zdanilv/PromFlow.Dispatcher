@@ -1,0 +1,254 @@
+using System.Runtime.InteropServices;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Headless;
+using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Avalonia.Threading;
+using Configurator.Application.Services.Signals;
+using Configurator.Desktop.Workspace.RouteMap.Controls;
+using Configurator.Desktop.Workspace.RouteMap.Models;
+using Configurator.Desktop.Workspace.RouteMap.Services;
+using Xunit;
+
+namespace Configurator.Tests.RouteMap.Ui;
+
+[Collection("RouteMap Skia rendering")]
+public sealed class RouteMapDeadEndVisualTests
+{
+    [Theory]
+    [InlineData(1)]
+    [InlineData(1.25)]
+    [InlineData(1.5)]
+    [InlineData(2)]
+    public Task Caps_render_at_both_ends_without_clipping_during_resizes(double dpi) =>
+        RunOnUiThread(() => AssertCapsDuringResizes(dpi));
+
+    [Theory]
+    [InlineData(RouteObjectState.ActiveRoute)]
+    [InlineData(RouteObjectState.Fault)]
+    [InlineData(RouteObjectState.Offline)]
+    public Task Body_keeps_its_state_but_terminal_cap_and_anchor_do_not(RouteObjectState state) =>
+        RunOnUiThread(() => AssertBodyState(state));
+
+    [Fact]
+    public Task Active_fragment_colors_only_its_part_of_the_body() => RunOnUiThread(AssertActiveFragment);
+
+    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<TestApplication>()
+        .UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+
+    private static async Task RunOnUiThread(Action check)
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(RouteMapDeadEndVisualTests));
+        await session.Dispatch(check, TestContext.Current.CancellationToken);
+    }
+
+    private static void AssertCapsDuringResizes(double dpi)
+    {
+        var definition = CreateMap();
+        var map = new RouteMapControl { Definition = definition };
+        var window = new Window { WindowDecorations = WindowDecorations.None, Content = map, Width = 800, Height = 600 };
+        window.Show();
+        try
+        {
+            window.SetRenderScaling(dpi);
+            foreach (var size in new Size[] { new(800, 600), new(1024, 768), new(1142, 749), new(1280, 720), new(1366, 768), new(1920, 1080), new(800, 600) })
+            {
+                window.Width = size.Width;
+                window.Height = size.Height;
+                Dispatcher.UIThread.RunJobs();
+                Assert.InRange(Math.Abs(size.Width - map.Bounds.Width) * dpi, 0, 1);
+                Assert.InRange(Math.Abs(size.Height - map.Bounds.Height) * dpi, 0, 1);
+
+                var transform = RouteMapViewportLayout.Create(definition, map.Bounds.Width, map.Bounds.Height).Transform;
+                using var frame = Assert.IsType<WriteableBitmap>(window.CaptureRenderedFrame());
+                using var pixels = frame.Lock();
+                Assert.InRange(Math.Abs(size.Width * dpi - pixels.Size.Width), 0, 1);
+                Assert.InRange(Math.Abs(size.Height * dpi - pixels.Size.Height), 0, 1);
+
+                var color = Color.Parse(definition.Segments[0].Style!.NormalColor);
+                var background = Color.Parse(definition.Display!.Palette.Background);
+                var scale = transform.Scale;
+                var bottom = transform.ToViewPoint(100, 320);
+                var right = transform.ToViewPoint(370, 70);
+                // The lower cap is round with an explicit length, and the right cap is flat with the default length.
+                AssertCap(pixels, dpi, bottom, new Vector(1, 0), 30 * scale, 4 * scale, 4 * scale, color, background);
+                AssertCap(pixels, dpi, right, new Vector(0, 1), 28 * scale, 4 * scale, 0, color, background);
+                AssertPixel(pixels, dpi, bottom - new Vector(0, 5 * scale), color);
+                AssertPixel(pixels, dpi, right - new Vector(5 * scale, 0), color);
+                AssertPixel(pixels, dpi, bottom - new Vector(3 * scale, 10 * scale), color);
+                AssertPixel(pixels, dpi, bottom - new Vector(5 * scale, 10 * scale), background);
+                AssertPixel(pixels, dpi, right - new Vector(10 * scale, 3 * scale), color);
+                AssertPixel(pixels, dpi, right - new Vector(10 * scale, 5 * scale), background);
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    private static void AssertBodyState(RouteObjectState state)
+    {
+        var definition = CreateMap();
+        var lower = definition.Segments[0];
+        var anchor = definition.Nodes[1];
+        var map = new RouteMapControl
+        {
+            Definition = definition,
+            HoveredObjectId = anchor.Id,
+            SelectedObjectId = anchor.Id,
+            AreCommandsEnabled = true,
+            RuntimeState = RouteMapRuntimeState.Empty with
+            {
+                Objects = new Dictionary<string, RouteObjectRuntimeState>
+                {
+                    [lower.Id] = new(lower.Id, state, null, null, true, false, false),
+                    [anchor.Id] = new(anchor.Id, RouteObjectState.ActiveRoute, null, null, true, false, false, IsSignalActive: true),
+                },
+            },
+        };
+        var window = new Window { WindowDecorations = WindowDecorations.None, Content = map, Width = 800, Height = 600 };
+        window.Show();
+        try
+        {
+            var transform = RouteMapViewportLayout.Create(definition, map.Bounds.Width, map.Bounds.Height).Transform;
+            var bottom = transform.ToViewPoint(100, 320);
+            var body = transform.ToViewPoint(100, 280);
+            var palette = definition.Display!.Palette;
+            var style = lower.Style!;
+            var bodyColor = Color.Parse(state switch
+            {
+                RouteObjectState.ActiveRoute => style.ActiveColor,
+                RouteObjectState.Fault => palette.Fault,
+                _ => palette.Offline,
+            });
+            var capColor = Color.Parse(style.NormalColor);
+            var background = Color.Parse(palette.Background);
+            using var frame = Assert.IsType<WriteableBitmap>(window.CaptureRenderedFrame());
+            using var pixels = frame.Lock();
+            AssertPixel(pixels, 1, body, bodyColor);
+            AssertPixel(pixels, 1, bottom - new Vector(0, 6 * transform.Scale), bodyColor);
+            AssertPixel(pixels, 1, bottom, capColor);
+            AssertPixel(pixels, 1, bottom + new Vector(25 * transform.Scale, 0), capColor);
+            AssertPixel(pixels, 1, bottom + new Vector(0, 6 * transform.Scale), background);
+            AssertPixel(pixels, 1, bottom + new Vector(0, 14 * transform.Scale), background);
+
+            window.MouseMove(bottom);
+            window.MouseDown(bottom, MouseButton.Left);
+            window.MouseUp(bottom, MouseButton.Left);
+            Assert.Null(map.HoveredObjectId);
+            Assert.Null(map.SelectedObjectId);
+
+            var station = transform.ToViewPoint(100, 180);
+            window.MouseMove(station);
+            window.MouseDown(station, MouseButton.Left);
+            window.MouseUp(station, MouseButton.Left);
+            Assert.Equal(definition.Nodes[0].Id, map.HoveredObjectId);
+            Assert.Equal(definition.Nodes[0].Id, map.SelectedObjectId);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    private static void AssertActiveFragment()
+    {
+        var definition = CreateMap();
+        var activeRoute = new SignalBinding(SignalBindingRole.ActiveRoute, "route.lower.active", SignalBindingDirection.Read, SignalValueType.Bool);
+        var first = activeRoute with { Role = SignalBindingRole.ActiveRouteFragment, SignalId = "route.lower.fragment_1.active" };
+        var second = first with { SignalId = "route.lower.fragment_2.active" };
+        var style = definition.Segments[0].Style! with { FragmentLength = 40, FragmentGap = 24 };
+        var lower = definition.Segments[0] with
+        {
+            Style = style,
+            Bindings = [activeRoute],
+            ActiveFragments = [new(1, first), new(2, second)],
+        };
+        definition = definition with { Segments = [lower, definition.Segments[1]] };
+        var now = DateTimeOffset.UtcNow;
+        var signals = new Dictionary<string, SignalValue>
+        {
+            [activeRoute.SignalId] = new(activeRoute.SignalId, false, SignalValueType.Bool, now, true, false),
+            [first.SignalId] = new(first.SignalId, false, SignalValueType.Bool, now, true, false),
+            [second.SignalId] = new(second.SignalId, true, SignalValueType.Bool, now, true, false),
+        };
+        var map = new RouteMapControl { Definition = definition, RuntimeState = new RouteMapRuntimeMapper(definition).Map(signals) };
+        var window = new Window { WindowDecorations = WindowDecorations.None, Content = map, Width = 800, Height = 600 };
+        window.Show();
+        try
+        {
+            var transform = RouteMapViewportLayout.Create(definition, map.Bounds.Width, map.Bounds.Height).Transform;
+            using var frame = Assert.IsType<WriteableBitmap>(window.CaptureRenderedFrame());
+            using var pixels = frame.Lock();
+            AssertPixel(pixels, 1, transform.ToViewPoint(100, 220), Color.Parse(style.NormalColor));
+            AssertPixel(pixels, 1, transform.ToViewPoint(100, 248), Color.Parse(definition.Display!.Palette.Background));
+            AssertPixel(pixels, 1, transform.ToViewPoint(100, 280), Color.Parse(style.ActiveColor));
+            AssertPixel(pixels, 1, transform.ToViewPoint(100, 320), Color.Parse(style.NormalColor));
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    private static void AssertCap(
+        ILockedFramebuffer pixels, double dpi, Point center, Vector tangent,
+        double halfLength, double halfStroke, double endExtension, Color color, Color background)
+    {
+        var normal = new Vector(-tangent.Y, tangent.X);
+        foreach (var side in new[] { -1, 1 })
+        {
+            var arm = center + tangent * (side * halfLength * 0.75);
+            AssertPixel(pixels, dpi, arm + normal * (halfStroke - 2 / dpi), color);
+            AssertPixel(pixels, dpi, arm + normal * (halfStroke + 2 / dpi), background);
+            var tip = halfLength + endExtension;
+            AssertPixel(pixels, dpi, center + tangent * (side * (tip - 2 / dpi)), color);
+            AssertPixel(pixels, dpi, center + tangent * (side * (tip + 2 / dpi)), background);
+        }
+    }
+
+    private static void AssertPixel(ILockedFramebuffer pixels, double dpi, Point point, Color expected)
+    {
+        var x = (int)Math.Floor(point.X * dpi);
+        var y = (int)Math.Floor(point.Y * dpi);
+        Assert.InRange(x, 0, pixels.Size.Width - 1);
+        Assert.InRange(y, 0, pixels.Size.Height - 1);
+        var index = y * pixels.RowBytes + x * 4;
+        var isBgra = pixels.Format == PixelFormat.Bgra8888;
+        Assert.True(isBgra || pixels.Format == PixelFormat.Rgba8888);
+        var color = Color.FromRgb(
+            Marshal.ReadByte(pixels.Address, index + (isBgra ? 2 : 0)),
+            Marshal.ReadByte(pixels.Address, index + 1),
+            Marshal.ReadByte(pixels.Address, index + (isBgra ? 0 : 2)));
+        Assert.True(expected == color, $"Pixel {x}, {y} at {dpi} DPI scale: expected {expected}, got {color}.");
+    }
+
+    private static RouteMapDefinition CreateMap()
+    {
+        var lowerStation = new RouteNode("lower-station", "", 100, 180, RouteNodeKind.ServicePoint, RouteObjectState.Idle, []);
+        var lowerAnchor = lowerStation with { Id = "lower-anchor", Y = 320, Kind = RouteNodeKind.TerminalAnchor, MenuKind = RouteNodeMenuKind.SendAndReturn };
+        var rightStation = lowerStation with { Id = "right-station", X = 320, Y = 70 };
+        var rightAnchor = rightStation with { Id = "right-anchor", X = 370, Kind = RouteNodeKind.TerminalAnchor };
+        var style = new RouteSegmentStyle { NormalColor = "#316254", ActiveColor = "#193DAF", Thickness = 8, ActiveThickness = 16 };
+        var lower = new RouteSegment("lower", lowerStation.Id, lowerAnchor.Id, RouteObjectState.Idle, false, [], RouteSegmentKind.DeadEnd, Style: style)
+        {
+            TerminalSide = RouteTerminalSide.To,
+            TerminalCapLength = 60,
+        };
+        var right = lower with
+        {
+            Id = "right", FromNodeId = rightAnchor.Id, ToNodeId = rightStation.Id,
+            TerminalSide = RouteTerminalSide.From, TerminalCapLength = null, Style = style with { LineCap = RouteLineCap.Flat },
+        };
+        return new RouteMapDefinition(440, 330, [], [lowerStation, lowerAnchor, rightStation, rightAnchor], [lower, right],
+            [], [], [], [], new RouteMapDisplaySettings { MapPadding = 10 });
+    }
+}
+
+[CollectionDefinition("RouteMap Skia rendering", DisableParallelization = true)]
+public sealed class RouteMapSkiaRenderingCollection;

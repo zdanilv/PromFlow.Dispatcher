@@ -42,7 +42,8 @@ public static class RouteMapHitTester
 
         foreach (var node in definition.Nodes)
         {
-            if (!node.IsVisible || !IsVisible(runtimeState, node.Id) || !IsEnabled(runtimeState, node.Id))
+            if (node.Kind == RouteNodeKind.TerminalAnchor || !node.IsVisible ||
+                !IsVisible(runtimeState, node.Id) || !IsEnabled(runtimeState, node.Id))
                 continue;
 
             var distance = Distance(viewPoint, transform.ToViewPoint(node.X, node.Y));

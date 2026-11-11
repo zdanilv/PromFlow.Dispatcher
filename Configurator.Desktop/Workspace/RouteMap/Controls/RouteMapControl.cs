@@ -174,6 +174,7 @@ public sealed class RouteMapControl : Control
         RouteMapTransform transform)
     {
         var nodesById = definition.Nodes.ToDictionary(x => x.Id);
+        var display = definition.Display ?? new RouteMapDisplaySettings();
 
         foreach (var segment in definition.Segments)
         {
@@ -184,44 +185,77 @@ public sealed class RouteMapControl : Control
                 !nodesById.TryGetValue(segment.ToNodeId, out var to))
                 continue;
 
+            var isTerminal = segment.Kind == RouteSegmentKind.DeadEnd;
+            var style = segment.Style ?? new RouteSegmentStyle();
+            var cap = default(RouteTerminalCap);
+            if (isTerminal && !RouteSegmentGeometry.TryCreateTerminalCap(
+                    segment, style, new Point(from.X, from.Y), new Point(to.X, to.Y), out cap))
+                continue;
+
             var p1 = transform.ToViewPoint(from.X, from.Y);
             var p2 = transform.ToViewPoint(to.X, to.Y);
-            var viewPath = RouteSegmentGeometry.Create(
-                segment with { ArcRadius = segment.ArcRadius * transform.Scale },
-                p1,
-                p2);
-            var display = definition.Display ?? new RouteMapDisplaySettings();
-            var style = segment.Style ?? new RouteSegmentStyle();
+            var viewPath = RouteSegmentGeometry.Create(segment, p1, p2, transform.Scale);
             var state = GetState(runtimeState, segment.Id, segment.State);
             var runtime = runtimeState.Find(segment.Id);
-            var logicalPath = RouteSegmentGeometry.Create(
-                segment,
-                new Point(from.X, from.Y),
-                new Point(to.X, to.Y));
-            var logicalRanges = RouteSegmentGeometry.CalculateLogicalDrawableRanges(segment, from, to, display);
-            var viewRanges = segment.ActiveFragments is { Count: > 0 }
-                ? RouteSegmentGeometry.ProjectRanges(logicalRanges, logicalPath.Length, viewPath.Length)
-                : RouteSegmentGeometry.CalculateViewDrawableRanges(viewPath, segment, from, to, display);
-            if (viewRanges.Count == 0)
-                continue;
+            var hasFragments = segment.ActiveFragments is { Count: > 0 };
+            var logicalRanges = hasFragments
+                ? RouteSegmentGeometry.CalculateLogicalDrawableRanges(segment, from, to, display)
+                : Array.Empty<RoutePathRange>();
+            IReadOnlyList<RoutePathRange> viewRanges;
+            if (isTerminal)
+            {
+                var station = segment.TerminalSide == RouteTerminalSide.From ? to : from;
+                viewRanges = RouteSegmentGeometry.CalculateTerminalViewDrawableRanges(
+                    segment, station, style, display, viewPath.Length, transform.Scale, logicalRanges);
+                style = style with
+                {
+                    Thickness = style.Thickness * transform.Scale,
+                    ActiveThickness = RouteSegmentGeometry.TerminalActiveThickness(style) * transform.Scale,
+                };
+            }
+            else if (hasFragments)
+            {
+                var logicalPath = RouteSegmentGeometry.Create(segment, new Point(from.X, from.Y), new Point(to.X, to.Y));
+                viewRanges = RouteSegmentGeometry.ProjectRanges(logicalRanges, logicalPath.Length, viewPath.Length);
+            }
+            else
+            {
+                viewRanges = RouteSegmentGeometry.CalculateViewDrawableRanges(viewPath, segment, from, to, display);
+            }
 
             var baseState = state is RouteObjectState.ActiveRoute or RouteObjectState.Running
                 ? RouteObjectState.Idle
                 : state;
-            var basePen = RouteMapPalette.TrackPenForState(baseState, display.Palette, style);
-            foreach (var range in viewRanges)
-                context.DrawGeometry(null, basePen, RouteSegmentGeometry.CreateGeometry(viewPath, range));
-
-            if (state is RouteObjectState.Fault or RouteObjectState.Offline or RouteObjectState.Disabled)
-                continue;
+            var basePen = viewRanges.Count > 0
+                ? RouteMapPalette.TrackPenForState(baseState, display.Palette, style)
+                : null;
+            if (basePen is not null)
+            {
+                foreach (var range in viewRanges)
+                    context.DrawGeometry(null, basePen, RouteSegmentGeometry.CreateGeometry(viewPath, range));
+            }
 
             var activeRanges = ActiveSegmentRanges(state, runtime, viewRanges);
-            if (activeRanges.Count == 0)
-                continue;
+            if (activeRanges.Count > 0)
+            {
+                var activePen = RouteMapPalette.TrackPenForState(RouteObjectState.ActiveRoute, display.Palette, style);
+                // A wider round active stroke must not protrude behind the neutral bar.
+                using var clip = isTerminal && activePen.LineCap == PenLineCap.Round && activePen.Thickness > style.Thickness
+                    ? context.PushGeometryClip(RouteSegmentGeometry.CreateTerminalBodyClip(segment, p1, p2, activePen.Thickness))
+                    : default;
+                foreach (var range in activeRanges)
+                    context.DrawGeometry(null, activePen, RouteSegmentGeometry.CreateGeometry(viewPath, range));
+            }
 
-            var activePen = RouteMapPalette.TrackPenForState(RouteObjectState.ActiveRoute, display.Palette, style);
-            foreach (var range in activeRanges)
-                context.DrawGeometry(null, activePen, RouteSegmentGeometry.CreateGeometry(viewPath, range));
+            if (isTerminal)
+            {
+                var capPen = baseState == RouteObjectState.Idle && basePen is not null
+                    ? basePen
+                    : RouteMapPalette.TrackPenForState(RouteObjectState.Idle, display.Palette, style);
+                context.DrawLine(capPen,
+                    transform.ToViewPoint(cap.Start.X, cap.Start.Y),
+                    transform.ToViewPoint(cap.End.X, cap.End.Y));
+            }
         }
     }
 
@@ -266,9 +300,13 @@ public sealed class RouteMapControl : Control
                 continue;
 
             var path = RouteSegmentGeometry.Create(
-                segment with { ArcRadius = segment.ArcRadius * transform.Scale },
+                segment,
                 transform.ToViewPoint(from.X, from.Y),
-                transform.ToViewPoint(to.X, to.Y));
+                transform.ToViewPoint(to.X, to.Y),
+                transform.Scale);
+            if (path.Parts.Count == 0 && segment.Kind == RouteSegmentKind.DeadEnd)
+                continue;
+
             var anchor = path.Parts.OfType<RouteArcPathPart>().FirstOrDefault() is { } arc
                 ? arc.PointAt(arc.Length / 2)
                 : path.PointAt(path.Length / 2);
@@ -299,7 +337,7 @@ public sealed class RouteMapControl : Control
     {
         foreach (var node in definition.Nodes)
         {
-            if (!node.IsVisible || !IsRuntimeVisible(runtimeState, node.Id))
+            if (node.Kind == RouteNodeKind.TerminalAnchor || !node.IsVisible || !IsRuntimeVisible(runtimeState, node.Id))
                 continue;
 
             var center = transform.ToViewPoint(node.X, node.Y);
@@ -360,7 +398,8 @@ public sealed class RouteMapControl : Control
     {
         foreach (var node in definition.Nodes)
         {
-            if (string.IsNullOrWhiteSpace(node.Title) || !node.IsVisible || !IsRuntimeVisible(runtimeState, node.Id))
+            if (node.Kind == RouteNodeKind.TerminalAnchor || string.IsNullOrWhiteSpace(node.Title) ||
+                !node.IsVisible || !IsRuntimeVisible(runtimeState, node.Id))
                 continue;
 
             var style = node.Style ?? new RouteNodeStyle();
@@ -414,7 +453,8 @@ public sealed class RouteMapControl : Control
             return;
 
         var node = definition.Nodes.FirstOrDefault(x => x.Id == objectId);
-        if (node is not null && node.IsVisible && IsRuntimeVisible(runtimeState, node.Id) && IsRuntimeEnabled(runtimeState, node.Id))
+        if (node is not null && node.Kind != RouteNodeKind.TerminalAnchor && node.IsVisible &&
+            IsRuntimeVisible(runtimeState, node.Id) && IsRuntimeEnabled(runtimeState, node.Id))
         {
             var center = transform.ToViewPoint(node.X, node.Y);
             var style = node.Style ?? new RouteNodeStyle();
@@ -541,7 +581,7 @@ public sealed class RouteMapControl : Control
             return;
 
         var node = Definition.Nodes.FirstOrDefault(x => x.Id == objectId);
-        if (node is null || node.MenuKind == RouteNodeMenuKind.None ||
+        if (node is null || node.Kind == RouteNodeKind.TerminalAnchor || node.MenuKind == RouteNodeMenuKind.None ||
             !AreCommandsEnabled || !IsRuntimeEnabled(RuntimeState ?? RouteMapRuntimeState.Empty, node.Id))
             return;
 

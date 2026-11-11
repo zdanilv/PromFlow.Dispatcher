@@ -8,6 +8,97 @@ namespace Configurator.Tests.Unit.RouteMap;
 
 public sealed class RouteSegmentGeometryTests
 {
+    [Theory]
+    [InlineData(0, 100, false, -14, 0)]
+    [InlineData(100, 0, false, 0, 14)]
+    [InlineData(0, 100, true, -14, 0)]
+    [InlineData(100, 0, true, 0, 14)]
+    [InlineData(60, 80, false, -11.2, 8.4)]
+    [InlineData(60, 80, true, -11.2, 8.4)]
+    public void DeadEnd_builds_one_straight_body_and_a_symmetric_perpendicular_cap(
+        double x, double y, bool reversed, double armX, double armY)
+    {
+        var station = new Point(10, 20);
+        var terminal = new Point(station.X + x, station.Y + y);
+        var (start, end) = reversed ? (terminal, station) : (station, terminal);
+        var segment = DeadEnd(reversed);
+        var path = RouteSegmentGeometry.Create(segment, start, end);
+
+        Assert.IsType<RouteLinePathPart>(Assert.Single(path.Parts));
+        Assert.Equal(start, path.Start);
+        Assert.Equal(end, path.End);
+        Assert.True(RouteSegmentGeometry.TryCreateTerminalCap(segment, new RouteSegmentStyle(), start, end, out var cap));
+        var arm = new Vector(armX, armY) * (reversed ? -1 : 1);
+        AssertPoint(terminal - arm, cap.Start);
+        AssertPoint(terminal + arm, cap.End);
+        Assert.Equal(0, x * (cap.End.X - cap.Start.X) + y * (cap.End.Y - cap.Start.Y), precision: 8);
+    }
+
+    [Theory]
+    [InlineData(20, 1, false)]
+    [InlineData(30, 0.7, true)]
+    [InlineData(45, 0.55, false)]
+    [InlineData(60, 0.8, true)]
+    public void Short_DeadEnd_reaches_the_cap_and_clears_the_station(double length, double scale, bool reversed)
+    {
+        var segment = DeadEnd(reversed);
+        var station = new RouteNode("station", "", 0, 0, RouteNodeKind.ServicePoint, RouteObjectState.Idle, []);
+        var style = new RouteSegmentStyle();
+        var viewLength = length * scale;
+        var (start, end) = reversed ? (new Point(viewLength, 0), default(Point)) : (default, new Point(viewLength, 0));
+        var path = RouteSegmentGeometry.Create(segment, start, end);
+        var range = Assert.Single(RouteSegmentGeometry.CalculateTerminalViewDrawableRanges(
+            segment, station, style, new RouteMapDisplaySettings(), path.Length, scale, []));
+
+        var stationTrim = reversed ? path.Length - range.End : range.Start;
+        Assert.True(range.Length > 0);
+        Assert.True(stationTrim >= 15 + 1 + style.ActiveThickness * scale / 2);
+        Assert.True(stationTrim <= 15 + style.EndpointGap);
+        if (viewLength >= 15 + style.EndpointGap + style.ActiveThickness * scale / 2)
+            Assert.Equal(15 + style.EndpointGap, stationTrim, precision: 8);
+        AssertPoint(new Point(viewLength, 0), path.PointAt(reversed ? range.Start : range.End));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DeadEnd_fragment_projection_preserves_indexes_and_has_no_trim_at_the_cap(bool reversed)
+    {
+        var segment = DeadEnd(reversed);
+        var station = new RouteNode("station", "", 0, 0, RouteNodeKind.ServicePoint, RouteObjectState.Idle, []);
+        var anchor = station with { Id = "anchor", X = 350, Kind = RouteNodeKind.TerminalAnchor };
+        var (from, to) = reversed ? (anchor, station) : (station, anchor);
+        var display = new RouteMapDisplaySettings();
+        var logical = RouteSegmentGeometry.CalculateLogicalDrawableRanges(segment, from, to, display);
+        var projected = RouteSegmentGeometry.CalculateTerminalViewDrawableRanges(
+            segment, station, new RouteSegmentStyle(), display, viewLength: 175, scale: 0.5, logical);
+
+        Assert.Equal(3, logical.Count);
+        Assert.Equal(3, projected.Count);
+        Assert.Equal(reversed ? 0 : 21, projected[0].Start, precision: 8);
+        Assert.Equal(reversed ? 154 : 175, projected[^1].End, precision: 8);
+        Assert.True(projected[1].Start > projected[0].End);
+        Assert.True(projected[2].Start > projected[1].End);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 28, 4)]
+    [InlineData(1e-12, 0, 28, 4)]
+    [InlineData(double.NaN, 5, 28, 4)]
+    [InlineData(5, double.PositiveInfinity, 28, 4)]
+    [InlineData(20, 0, double.PositiveInfinity, 4)]
+    [InlineData(20, 0, double.NaN, 4)]
+    [InlineData(20, 0, 0, 4)]
+    [InlineData(20, 0, -28, 4)]
+    [InlineData(20, 0, 28, -4)]
+    [InlineData(20, 0, 28, double.NaN)]
+    public void DeadEnd_rejects_degenerate_coordinates_and_invalid_dimensions(double x, double y, double length, double thickness)
+    {
+        var segment = DeadEnd() with { TerminalCapLength = length };
+        Assert.False(RouteSegmentGeometry.TryCreateTerminalCap(
+            segment, new RouteSegmentStyle { Thickness = thickness }, default, new Point(x, y), out _));
+    }
+
     [Fact]
     public void Rounded_elbow_builds_tangent_lines_and_quarter_circle()
     {
@@ -209,6 +300,13 @@ public sealed class RouteSegmentGeometryTests
         Assert.Equal(PenLineCap.Round, round.LineCap);
         Assert.Equal(PenLineCap.Flat, flat.LineCap);
     }
+
+    private static RouteSegment DeadEnd(bool reversed = false) =>
+        new("dead-end", reversed ? "anchor" : "station", reversed ? "station" : "anchor",
+            RouteObjectState.Idle, false, [], RouteSegmentKind.DeadEnd, ArcRadius: 50)
+        {
+            TerminalSide = reversed ? RouteTerminalSide.From : RouteTerminalSide.To,
+        };
 
     private static void AssertPoint(Point expected, Point actual)
     {
