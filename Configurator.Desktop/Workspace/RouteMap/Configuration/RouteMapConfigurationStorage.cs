@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -173,6 +174,7 @@ public sealed class RouteMapConfigurationStorage
         {
             segment.Style ??= new RouteSegmentStyleConfiguration();
             segment.Bindings ??= [];
+            segment.ActiveFragments ??= [];
         }
         foreach (var card in document.Cards)
         {
@@ -207,6 +209,54 @@ public sealed class RouteMapConfigurationStorage
         };
         options.Converters.Add(new JsonStringEnumConverter<EquipmentStatusCategory>(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
         options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new RouteSegmentConfigurationConverter(new JsonSerializerOptions(options)));
         return options;
+    }
+
+    private sealed class RouteSegmentConfigurationConverter(JsonSerializerOptions segmentOptions)
+        : JsonConverter<RouteSegmentConfiguration>
+    {
+        public override RouteSegmentConfiguration Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            using var json = JsonDocument.ParseValue(ref reader);
+            var root = json.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new JsonException("Линия RouteMap должна быть объектом JSON.");
+
+            var terminalFields = root.EnumerateObject().Where(IsTerminalField).ToArray();
+            if (terminalFields.Length == 0)
+                return root.Deserialize<RouteSegmentConfiguration>(segmentOptions)!;
+
+            var kind = root.EnumerateObject().LastOrDefault(property =>
+                property.Name.Equals("kind", StringComparison.OrdinalIgnoreCase)).Value;
+            if (kind.ValueKind != JsonValueKind.Undefined && kind.Deserialize<RouteSegmentKind>(segmentOptions) == RouteSegmentKind.DeadEnd)
+                return root.Deserialize<RouteSegmentConfiguration>(segmentOptions)!;
+
+            // On older line kinds these names may have been used by vendor extension data.
+            var buffer = new ArrayBufferWriter<byte>();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                writer.WriteStartObject();
+                foreach (var property in root.EnumerateObject())
+                {
+                    if (!IsTerminalField(property))
+                        property.WriteTo(writer);
+                }
+                writer.WriteEndObject();
+            }
+
+            var segment = JsonSerializer.Deserialize<RouteSegmentConfiguration>(buffer.WrittenSpan, segmentOptions)!;
+            var extensionData = segment.ExtensionData ??= new();
+            foreach (var field in terminalFields)
+                extensionData[field.Name] = field.Value.Clone();
+            return segment;
+        }
+
+        public override void Write(Utf8JsonWriter writer, RouteSegmentConfiguration value, JsonSerializerOptions options) =>
+            JsonSerializer.Serialize(writer, value, segmentOptions);
+
+        private static bool IsTerminalField(JsonProperty property) =>
+            property.Name.Equals("terminalSide", StringComparison.OrdinalIgnoreCase) ||
+            property.Name.Equals("terminalCapLength", StringComparison.OrdinalIgnoreCase);
     }
 }

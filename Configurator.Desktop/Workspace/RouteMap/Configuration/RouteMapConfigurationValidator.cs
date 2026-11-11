@@ -83,6 +83,12 @@ public sealed class RouteMapConfigurationValidator
                 (nameof(node.Style.InnerColor), node.Style.InnerColor),
                 (nameof(node.Style.LabelColor), node.Style.LabelColor),
                 (nameof(node.Style.ActiveOutlineColor), node.Style.ActiveOutlineColor));
+            if (node.Kind == RouteNodeKind.TerminalAnchor)
+            {
+                ValidateTerminalAnchor(errors, document, node);
+                continue;
+            }
+
             ValidateBindings(errors, "node", node.Id, node.Bindings,
                 [SignalBindingRole.Visible, SignalBindingRole.Fault, SignalBindingRole.ActiveRoute,
                     SignalBindingRole.Enabled,
@@ -101,9 +107,9 @@ public sealed class RouteMapConfigurationValidator
 
         foreach (var segment in document.Segments)
         {
-            if (!nodes.ContainsKey(segment.FromNodeId))
+            if (!nodes.TryGetValue(segment.FromNodeId ?? string.Empty, out var from))
                 Add(errors, "segment", segment.Id, nameof(segment.FromNodeId), "Начальный узел не существует.");
-            if (!nodes.ContainsKey(segment.ToNodeId))
+            if (!nodes.TryGetValue(segment.ToNodeId ?? string.Empty, out var to))
                 Add(errors, "segment", segment.Id, nameof(segment.ToNodeId), "Конечный узел не существует.");
             if (segment.FromNodeId == segment.ToNodeId)
                 Add(errors, "segment", segment.Id, nameof(segment.ToNodeId), "Линия должна соединять разные узлы.");
@@ -122,10 +128,11 @@ public sealed class RouteMapConfigurationValidator
             ValidateBindings(errors, "segment", segment.Id, segment.Bindings,
                 [SignalBindingRole.Visible, SignalBindingRole.Fault, SignalBindingRole.ActiveRoute,
                     SignalBindingRole.Enabled]);
+            var isDeadEnd = segment.Kind == RouteSegmentKind.DeadEnd;
             var activeRouteBindings = segment.Bindings.Where(x => x.Role == SignalBindingRole.ActiveRoute).ToArray();
-            if (activeRouteBindings.Length != 1)
+            if (activeRouteBindings.Length > 1 || (activeRouteBindings.Length == 0 && !isDeadEnd))
                 Add(errors, "segment", segment.Id, nameof(segment.Bindings), "Линия должна иметь ровно один binding ActiveRoute.");
-            else
+            else if (activeRouteBindings.Length == 1)
             {
                 var activeRoute = activeRouteBindings[0];
                 if (activeRoute.Direction != SignalBindingDirection.Read)
@@ -133,11 +140,10 @@ public sealed class RouteMapConfigurationValidator
                 if (activeRoute.ValueType != Configurator.Application.Services.Signals.SignalValueType.Bool)
                     Add(errors, "segment", segment.Id, nameof(activeRoute.ValueType), "ActiveRoute должен иметь тип Bool.");
             }
+            ValidateTerminalSegment(errors, segment, from, to);
             ValidateSegmentActiveFragments(errors, document, segment);
 
-            if (segment.Kind == RouteSegmentKind.RoundedElbow90 &&
-                nodes.TryGetValue(segment.FromNodeId, out var from) &&
-                nodes.TryGetValue(segment.ToNodeId, out var to))
+            if (segment.Kind == RouteSegmentKind.RoundedElbow90 && from is not null && to is not null)
             {
                 var maximumRadius = Math.Min(Math.Abs(to.X - from.X), Math.Abs(to.Y - from.Y));
                 if (segment.ArcRadius > maximumRadius)
@@ -495,13 +501,64 @@ public sealed class RouteMapConfigurationValidator
             ValidateRequiredBinding(errors, "topBar", id, button.Bindings, offFeedbackRole.Value, SignalBindingDirection.Read);
     }
 
+    private static void ValidateTerminalAnchor(
+        ICollection<RouteMapConfigurationError> errors,
+        RouteMapConfigurationDocument document,
+        RouteNodeConfiguration node)
+    {
+        if (node.IsLoader)
+            Add(errors, "node", node.Id, nameof(node.IsLoader), "Терминальный якорь не может быть точкой возврата.");
+        if (node.IsTarget)
+            Add(errors, "node", node.Id, nameof(node.IsTarget), "Терминальный якорь не может быть точкой назначения.");
+        if (node.MenuKind != RouteNodeMenuKind.None)
+            Add(errors, "node", node.Id, nameof(node.MenuKind), "У терминального якоря не может быть меню.");
+        if (node.State != RouteObjectState.Idle)
+            Add(errors, "node", node.Id, nameof(node.State), "Терминальный якорь должен иметь нейтральное состояние Idle.");
+        if (node.Bindings.Count > 0)
+            Add(errors, "node", node.Id, nameof(node.Bindings), "У терминального якоря не может быть сигнальных привязок.");
+        if (document.Segments.Count(segment => segment.FromNodeId == node.Id || segment.ToNodeId == node.Id) != 1)
+            Add(errors, "node", node.Id, nameof(node.Id), "Терминальный якорь должен принадлежать ровно одной линии.");
+    }
+
+    private static void ValidateTerminalSegment(
+        ICollection<RouteMapConfigurationError> errors,
+        RouteSegmentConfiguration segment,
+        RouteNodeConfiguration? from,
+        RouteNodeConfiguration? to)
+    {
+        var fromIsAnchor = from?.Kind == RouteNodeKind.TerminalAnchor;
+        var toIsAnchor = to?.Kind == RouteNodeKind.TerminalAnchor;
+        if (segment.Kind != RouteSegmentKind.DeadEnd)
+        {
+            if (fromIsAnchor || toIsAnchor)
+                Add(errors, "segment", segment.Id, nameof(segment.Kind), "Терминальный якорь допускается только для линии DeadEnd.");
+            return;
+        }
+
+        ValidateNullablePositive(errors, "segment", segment.Id, nameof(segment.TerminalCapLength), segment.TerminalCapLength);
+        if (segment.TerminalSide is not (RouteTerminalSide.From or RouteTerminalSide.To) ||
+            fromIsAnchor != (segment.TerminalSide == RouteTerminalSide.From) ||
+            toIsAnchor != (segment.TerminalSide == RouteTerminalSide.To))
+        {
+            Add(errors, "segment", segment.Id, nameof(segment.TerminalSide), "Укажите сторону единственного терминального якоря линии DeadEnd.");
+        }
+
+        if (from is not null && to is not null)
+            ValidatePositive(errors, "segment", segment.Id, nameof(segment.ToNodeId),
+                double.Hypot(to.X - from.X, to.Y - from.Y));
+    }
+
     private static void ValidateSegmentActiveFragments(
         ICollection<RouteMapConfigurationError> errors,
         RouteMapConfigurationDocument document,
         RouteSegmentConfiguration segment)
     {
         var fragments = segment.ActiveFragments?.ToArray() ?? [];
-        var expectedCount = RouteSegmentActiveFragmentSynchronizer.CalculateFragmentCount(document, segment);
+        if (RouteSegmentActiveFragmentSynchronizer.CalculateFragmentCount(document, segment) is not { } expectedCount)
+        {
+            Add(errors, "segment", segment.Id, nameof(segment.ActiveFragments), "Длина линии и настройки деления задают слишком много отрезков.");
+            return;
+        }
         if (expectedCount <= 1)
         {
             if (fragments.Length > 0)
@@ -510,7 +567,11 @@ public sealed class RouteMapConfigurationValidator
         }
 
         if (fragments.Length != expectedCount)
+        {
             Add(errors, "segment", segment.Id, nameof(segment.ActiveFragments), $"Линия должна иметь {expectedCount} binding ActiveRouteFragment.");
+            if (segment.Kind == RouteSegmentKind.DeadEnd)
+                return;
+        }
 
         foreach (var duplicate in fragments.GroupBy(fragment => fragment.Index).Where(group => group.Count() > 1))
             Add(errors, "segment", segment.Id, nameof(RouteSegmentActiveFragmentConfiguration.Index), $"Индекс отрезка {duplicate.Key} указан несколько раз.");

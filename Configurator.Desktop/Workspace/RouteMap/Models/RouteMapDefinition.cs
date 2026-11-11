@@ -7,7 +7,8 @@ public enum RouteNodeKind
     Mixer,
     Conveyor,
     Sensor,
-    ServicePoint
+    ServicePoint,
+    TerminalAnchor
 }
 
 public enum RouteNodeMenuKind
@@ -26,7 +27,14 @@ public enum RouteNodeLabelPlacement
 public enum RouteSegmentKind
 {
     Straight,
-    RoundedElbow90
+    RoundedElbow90,
+    DeadEnd
+}
+
+public enum RouteTerminalSide
+{
+    From,
+    To
 }
 
 public enum RouteElbowOrder
@@ -323,7 +331,13 @@ public sealed record RouteSegment(
     double LabelOffsetY = 0,
     bool IsVisible = true,
     RouteSegmentStyle? Style = null,
-    IReadOnlyList<RouteSegmentActiveFragment>? ActiveFragments = null);
+    IReadOnlyList<RouteSegmentActiveFragment>? ActiveFragments = null)
+{
+    public RouteTerminalSide? TerminalSide { get; init; }
+
+    // Null uses the default cap length of seven times the line thickness.
+    public double? TerminalCapLength { get; init; }
+}
 
 public sealed record RouteSegmentActiveFragment(
     int Index,

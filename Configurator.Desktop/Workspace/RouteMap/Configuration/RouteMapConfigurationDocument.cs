@@ -40,7 +40,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 18;
+    public const int CurrentSchemaVersion = 19;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();
@@ -232,6 +232,10 @@ public sealed class RouteSegmentConfiguration : RouteMapConfigurationItem
     public RouteObjectState State { get; set; } = RouteObjectState.Idle;
     public bool IsDirectional { get; set; }
     public RouteSegmentKind Kind { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RouteTerminalSide? TerminalSide { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? TerminalCapLength { get; set; }
     public double ArcRadius { get; set; }
     public RouteElbowOrder ElbowOrder { get; set; }
     public string? Title { get; set; }

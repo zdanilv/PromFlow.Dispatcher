@@ -125,6 +125,11 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 18;
                     wasMigrated = true;
                     break;
+                case 18:
+                    // The terminal fields are optional. Keep the existing topology and bindings.
+                    document.SchemaVersion = 19;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }
@@ -563,7 +568,13 @@ internal static class RouteSegmentActiveFragmentSynchronizer
 
     public static void Ensure(RouteMapConfigurationDocument document, RouteSegmentConfiguration segment)
     {
-        var fragmentCount = CalculateFragmentCount(document, segment);
+        if (CalculateFragmentCount(document, segment) is not { } fragmentCount)
+            return;
+
+        // Terminal lines use the supplied fragment bindings. Leave count mismatches for validation.
+        if (segment.Kind == RouteSegmentKind.DeadEnd && segment.ActiveFragments.Count != (fragmentCount <= 1 ? 0 : fragmentCount))
+            return;
+
         if (fragmentCount <= 1)
         {
             segment.ActiveFragments.Clear();
@@ -591,12 +602,20 @@ internal static class RouteSegmentActiveFragmentSynchronizer
             segment.ActiveFragments.Add(fragment);
     }
 
-    public static int CalculateFragmentCount(RouteMapConfigurationDocument document, RouteSegmentConfiguration segment)
+    public static int? CalculateFragmentCount(RouteMapConfigurationDocument document, RouteSegmentConfiguration segment)
     {
         var from = document.Nodes.FirstOrDefault(node => node.Id == segment.FromNodeId);
         var to = document.Nodes.FirstOrDefault(node => node.Id == segment.ToNodeId);
         if (from is null || to is null)
             return 0;
+
+        if (segment.Kind == RouteSegmentKind.DeadEnd)
+        {
+            if (!segment.Bindings.Any(binding => binding.Role == SignalBindingRole.ActiveRoute))
+                return 0;
+
+            return CalculateTerminalFragmentCount(document, segment, from, to);
+        }
 
         var display = new RouteMapDisplaySettings
         {
@@ -609,6 +628,34 @@ internal static class RouteSegmentActiveFragmentSynchronizer
             ToModel(from),
             ToModel(to),
             display).Count;
+    }
+
+    private static int? CalculateTerminalFragmentCount(
+        RouteMapConfigurationDocument document,
+        RouteSegmentConfiguration segment,
+        RouteNodeConfiguration from,
+        RouteNodeConfiguration to)
+    {
+        var length = double.Hypot(to.X - from.X, to.Y - from.Y);
+        if (!double.IsFinite(length))
+            return 0;
+
+        var endpointGap = segment.Style.EndpointGap;
+        var startTrim = from.Kind == RouteNodeKind.TerminalAnchor ? 0 : Math.Max(0, from.Style.Radius + endpointGap);
+        var endTrim = to.Kind == RouteNodeKind.TerminalAnchor ? 0 : Math.Max(0, to.Style.Radius + endpointGap);
+        var drawableLength = length - startTrim - endTrim;
+        if (drawableLength <= 0)
+            return 0;
+
+        var fragmentLength = Math.Max(1, segment.Style.FragmentLength ?? document.Map.FragmentLength);
+        var gap = Math.Max(0, segment.Style.FragmentGap ?? document.Map.FragmentGap);
+        var remainingAfterTwo = drawableLength - (2 * fragmentLength + gap);
+        if (remainingAfterTwo < 0)
+            return 1;
+
+        // Match CalculateVisibleRanges without constructing ranges from untrusted coordinates.
+        var count = 2 + Math.Floor(remainingAfterTwo / (fragmentLength + gap));
+        return count <= int.MaxValue ? (int)count : null;
     }
 
     private static void NormalizeBinding(SignalBindingConfiguration binding, string segmentId, int index)

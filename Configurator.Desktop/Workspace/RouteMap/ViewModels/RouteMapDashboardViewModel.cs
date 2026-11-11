@@ -81,9 +81,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         MapEquipmentCards = new ObservableCollection<EquipmentCardViewModel>(
             Definition.MapEquipment.Select(CreateEquipmentCardViewModel));
         NotificationsPanel = notificationsPanel;
-        _nodeRoleStates = Definition.Nodes.ToDictionary(
-            x => x.Id,
-            x => new RouteNodeRoleState(x.Id, x.IsLoader, x.IsTarget));
+        _nodeRoleStates = CreateNodeRoleStates(Definition);
         ToggleNodeTargetCommand = ReactiveCommand.CreateFromTask<string>(ToggleNodeTargetAsync);
         ToggleNodeLoaderCommand = ReactiveCommand.CreateFromTask<string>(ToggleNodeLoaderAsync);
         ApplyEquipmentRouteSelections();
@@ -223,9 +221,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
                 : CreateEquipmentCardViewModel(card));
         }
 
-        NodeRoleStates = definition.Nodes.ToDictionary(
-            x => x.Id,
-            x => new RouteNodeRoleState(x.Id, x.IsLoader, x.IsTarget));
+        NodeRoleStates = CreateNodeRoleStates(definition);
         TopBar.ApplySettings(definition.TopBar, definition.Display?.Palette);
 
         if (!ContainsRuntimeObject(definition, SelectedObjectId))
@@ -235,6 +231,11 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         if (_lastSignals is not null)
             ApplyRuntime(MapSnapshot(_lastSignals, definition), isLiveSnapshot: false);
     }
+
+    private static IReadOnlyDictionary<string, RouteNodeRoleState> CreateNodeRoleStates(RouteMapDefinition definition) =>
+        definition.Nodes
+            .Where(node => node.Kind != RouteNodeKind.TerminalAnchor)
+            .ToDictionary(node => node.Id, node => new RouteNodeRoleState(node.Id, node.IsLoader, node.IsTarget));
 
     private RouteMapRuntimeState MapSnapshot(IReadOnlyDictionary<string, SignalValue> signals, RouteMapDefinition definition) =>
         _runtimeMapper is RouteMapRuntimeMapper mapper ? mapper.Map(signals, definition) : _runtimeMapper.Map(signals);

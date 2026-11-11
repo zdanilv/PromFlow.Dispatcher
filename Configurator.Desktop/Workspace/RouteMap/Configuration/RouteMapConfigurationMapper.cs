@@ -277,6 +277,8 @@ public sealed class RouteMapConfigurationMapper
             State = segment.State,
             IsDirectional = segment.IsDirectional,
             Kind = segment.Kind,
+            TerminalSide = segment.TerminalSide,
+            TerminalCapLength = segment.TerminalCapLength,
             ArcRadius = segment.ArcRadius,
             ElbowOrder = segment.ElbowOrder,
             Title = segment.Title,
@@ -348,7 +350,11 @@ public sealed class RouteMapConfigurationMapper
             segment.ActiveFragments
                 .OrderBy(fragment => fragment.Index)
                 .Select(ToModel)
-                .ToArray());
+                .ToArray())
+        {
+            TerminalSide = segment.TerminalSide,
+            TerminalCapLength = segment.TerminalCapLength,
+        };
     }
 
     private static RouteSegmentActiveFragment ToModel(RouteSegmentActiveFragmentConfiguration fragment) =>

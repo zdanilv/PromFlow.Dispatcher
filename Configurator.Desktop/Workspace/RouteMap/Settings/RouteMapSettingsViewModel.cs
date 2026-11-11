@@ -595,6 +595,9 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private static void EnsureNodeBindings(RouteNodeConfiguration node)
     {
+        if (node.Kind == RouteNodeKind.TerminalAnchor)
+            return;
+
         EnsureBinding(node.Bindings, SignalBindingRole.ActiveRoute, $"route.node.{node.Id}.active", SignalBindingDirection.Read);
         if (node.MenuKind is RouteNodeMenuKind.SendOnly or RouteNodeMenuKind.SendAndReturn)
         {
@@ -762,7 +765,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     private static void EnsureSegmentActiveBinding(RouteSegmentConfiguration segment)
     {
         RemoveBindings(segment.Bindings, SignalBindingRole.State);
-        if (segment.Bindings.Any(x => x.Role == SignalBindingRole.ActiveRoute))
+        if (segment.Kind == RouteSegmentKind.DeadEnd || segment.Bindings.Any(x => x.Role == SignalBindingRole.ActiveRoute))
             return;
 
         segment.Bindings.Add(new SignalBindingConfiguration

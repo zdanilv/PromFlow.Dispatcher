@@ -30,7 +30,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     public async Task Migrated_bucket_renders_all_mock_codes_and_keeps_route_and_power_independent()
     {
         using var fixture = new MigratedStatusFixture();
-        Assert.Equal(18, fixture.Manager.CurrentDocument.SchemaVersion);
+        Assert.Equal(19, fixture.Manager.CurrentDocument.SchemaVersion);
         Assert.True(File.Exists(fixture.Storage.ActiveFilePath + ".bak"));
         Assert.Equal("Кюбель Л.К.", fixture.Card.Title);
         var binding = fixture.Manager.CurrentDefinition.MapEquipment.Single().Bindings
@@ -111,7 +111,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         var commandTimeout = TimeSpan.FromSeconds(10);
         await editor.ImportCommand.Execute().ToTask().WaitAsync(commandTimeout);
         Assert.Same(published, fixture.Manager.CurrentDefinition);
-        Assert.Equal(18, editor.Draft.SchemaVersion);
+        Assert.Equal(19, editor.Draft.SchemaVersion);
 
         var dialog = new RouteMapSettingsDialog { DataContext = editor };
         var window = new Window { Width = 1320, Height = 780, Content = dialog };
@@ -233,11 +233,11 @@ public sealed partial class RouteMapSettingsDialogVisualTests
                 CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ru-RU");
                 using var reopened = fixture.OpenManager();
                 Assert.Null(reopened.LastLoadError);
-                Assert.Equal(18, reopened.CurrentDocument.SchemaVersion);
+                Assert.Equal(19, reopened.CurrentDocument.SchemaVersion);
                 var reopenedMapping = reopened.CurrentDefinition.MapEquipment.Single(card => card.Id == bucket.Id).StatusMapping!;
                 Assert.Equal(new EquipmentStatusEntry(42, "Подготовка ✓", "#FF126534",
                     EquipmentStatusCategory.Warning, false, false), reopenedMapping.Entries.Single(item => item.Code == 42));
-                Assert.Equal(18, (await reopened.ImportDraftAsync(export)).SchemaVersion);
+                Assert.Equal(19, (await reopened.ImportDraftAsync(export)).SchemaVersion);
                 Assert.Equal(3, reopened.CurrentDocument.Cards.Count);
             }
             finally

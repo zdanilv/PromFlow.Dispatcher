@@ -26,11 +26,11 @@ admin mode is preserved for the next user-mode launch.
 
 ## Definition And Schema
 
-The current user profile schema is version `17`:
+The current user profile schema is version `19`:
 
 ```json
 {
-  "schemaVersion": 17,
+  "schemaVersion": 19,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -43,6 +43,13 @@ The current user profile schema is version `17`:
 
 The profile does not serialize Avalonia types. Colors are strings, enums are strings,
 and margins/radii are custom DTOs.
+
+The `v18 → v19` migration preserves nodes, segments, coordinates, and bindings.
+A `deadEnd` segment connects a regular node to a `terminalAnchor`. Its
+`terminalSide` (`from` or `to`) identifies the anchor endpoint. The optional
+`terminalCapLength` specifies the cap length in logical units. An anchor belongs
+to one segment and has no roles or bindings. Segment bindings apply to its main
+track. Cap rendering and editing terminal elements are deferred to later stages.
 
 ## Objects
 

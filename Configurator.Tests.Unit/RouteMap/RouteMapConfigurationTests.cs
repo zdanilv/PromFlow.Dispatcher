@@ -24,6 +24,205 @@ namespace Configurator.Tests.Unit.RouteMap;
 
 public sealed class RouteMapConfigurationTests
 {
+    [Theory]
+    [InlineData(RouteTerminalSide.From, 28d, true)]
+    [InlineData(RouteTerminalSide.To, null, false)]
+    public async Task DeadEnd_round_trips_geometry_and_main_track_bindings(
+        RouteTerminalSide side, double? capLength, bool active)
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var editor = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        var (anchor, segment) = ConfigureTerminal(editor.Draft, side);
+        segment.TerminalCapLength = capLength;
+        segment.Title = "ТУПИК";
+        segment.LabelOffsetX = 17;
+        segment.Style.Thickness = 5;
+        segment.Style.NormalColor = "#68717A";
+        if (!active)
+        {
+            segment.Bindings.Clear();
+            segment.ActiveFragments.Clear();
+        }
+
+        var bindingIds = segment.Bindings.Select(binding => binding.SignalId).ToArray();
+        var anchorSignalIds = RouteMapSeed.Create().Nodes.Single(node => node.Id == anchor.Id)
+            .Bindings.Select(binding => binding.SignalId).ToArray();
+        await editor.SaveAsync();
+        Assert.Null(editor.ErrorMessage);
+
+        using var reopened = scope.CreateManager();
+        Assert.Null(reopened.LastLoadError);
+        var definition = reopened.CurrentDefinition;
+        var modelAnchor = definition.Nodes.Single(node => node.Id == anchor.Id);
+        Assert.Equal(RouteNodeKind.TerminalAnchor, modelAnchor.Kind);
+        Assert.Equal(RouteNodeMenuKind.None, modelAnchor.MenuKind);
+        Assert.Empty(modelAnchor.Bindings);
+        var model = definition.Segments.Single(line => line.Id == segment.Id);
+        Assert.Equal(RouteSegmentKind.DeadEnd, model.Kind);
+        Assert.Equal(side, model.TerminalSide);
+        Assert.Equal(capLength, model.TerminalCapLength);
+        Assert.Equal(bindingIds, model.Bindings.Select(binding => binding.SignalId));
+        Assert.Empty(model.ActiveFragments!);
+        Assert.Equal(segment.Title, model.Title);
+        Assert.Equal(segment.LabelOffsetX, model.LabelOffsetX);
+        Assert.Equal(5, model.Style!.Thickness);
+        Assert.Equal("#68717A", model.Style.NormalColor);
+
+        var inventory = RouteMapSignalInventory.Build(definition);
+        Assert.DoesNotContain(inventory, item => anchorSignalIds.Contains(item.SignalId));
+        Assert.All(bindingIds, id => Assert.Contains(inventory, item => item.SignalId == id));
+
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+        var storedNode = persisted["nodes"]!.AsArray().Single(node => (string?)node!["id"] == anchor.Id)!;
+        Assert.Equal("terminalAnchor", (string?)storedNode["kind"]);
+        var storedLine = persisted["segments"]!.AsArray().Single(line => (string?)line!["id"] == segment.Id)!;
+        Assert.Equal("deadEnd", (string?)storedLine["kind"]);
+        Assert.Equal(side == RouteTerminalSide.From ? "from" : "to", (string?)storedLine["terminalSide"]);
+        Assert.Equal(capLength, (double?)storedLine["terminalCapLength"]);
+        Assert.Equal(capLength.HasValue, storedLine.AsObject().ContainsKey("terminalCapLength"));
+
+        var mapped = scope.Mapper.ToDocument(definition).Segments.Single(line => line.Id == segment.Id);
+        Assert.Equal(side, mapped.TerminalSide);
+        Assert.Equal(capLength, mapped.TerminalCapLength);
+    }
+
+    [Fact]
+    public void DeadEnd_preserves_fragments_on_an_active_main_track_only()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var (_, segment) = ConfigureTerminal(document, RouteTerminalSide.To);
+        segment.TerminalCapLength = 1000;
+        var fragment = segment.ActiveFragments[0];
+        fragment.Binding.SignalId = "custom.fragment.active";
+        RouteSegmentActiveFragmentSynchronizer.Ensure(document, segment);
+
+        Assert.Equal(2, segment.ActiveFragments.Count);
+        Assert.Same(fragment, segment.ActiveFragments[0]);
+        Assert.Equal("custom.fragment.active", fragment.Binding.SignalId);
+        var validator = new RouteMapConfigurationValidator();
+        Assert.Empty(validator.Validate(document).Errors);
+
+        segment.Bindings.Remove(segment.Bindings.Single(binding => binding.Role == SignalBindingRole.ActiveRoute));
+        Assert.Contains(validator.Validate(document).Errors, error =>
+            error.ObjectId == segment.Id && error.Property == nameof(segment.ActiveFragments));
+        segment.ActiveFragments.Clear();
+        Assert.Empty(validator.Validate(document).Errors);
+    }
+
+    [Theory]
+    [InlineData(1e9)]
+    [InlineData(1e12)]
+    public void Validator_rejects_terminal_fragment_count_mismatch_without_generating_bindings(double anchorX)
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var (anchor, segment) = ConfigureTerminal(document, RouteTerminalSide.From);
+        anchor.X = anchorX;
+
+        RouteSegmentActiveFragmentSynchronizer.Ensure(document, segment);
+
+        Assert.Empty(segment.ActiveFragments);
+        Assert.Contains(new RouteMapConfigurationValidator().Validate(document).Errors, error =>
+            error.ObjectId == segment.Id && error.Property == nameof(segment.ActiveFragments));
+    }
+
+    [Fact]
+    public void Validator_checks_terminal_ownership_and_anchor_roles()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var (anchor, segment) = ConfigureTerminal(document, RouteTerminalSide.From);
+        segment.TerminalSide = RouteTerminalSide.To;
+        anchor.IsLoader = true;
+        anchor.IsTarget = true;
+        anchor.MenuKind = RouteNodeMenuKind.SendOnly;
+        anchor.State = RouteObjectState.ActiveRoute;
+        anchor.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.TargetCommand,
+            SignalId = "invalid.anchor.target",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Bool,
+        });
+        var otherLine = document.Segments.Single(line => line.Id == "active_bsu1_bsu2");
+        otherLine.FromNodeId = anchor.Id;
+
+        var errors = new RouteMapConfigurationValidator().Validate(document).Errors;
+        var anchorProperties = errors.Where(error => error.ObjectId == anchor.Id).Select(error => error.Property).ToArray();
+        Assert.All(new[] { nameof(anchor.Id), nameof(anchor.IsLoader), nameof(anchor.IsTarget), nameof(anchor.MenuKind), nameof(anchor.State), nameof(anchor.Bindings) },
+            property => Assert.Contains(property, anchorProperties));
+        Assert.Contains(errors, error => error.ObjectId == segment.Id && error.Property == nameof(segment.TerminalSide));
+        Assert.Contains(errors, error => error.ObjectId == otherLine.Id && error.Property == nameof(otherLine.Kind));
+    }
+
+    [Fact]
+    public void Validator_requires_a_terminal_side_and_a_station_at_the_other_end()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var (_, segment) = ConfigureTerminal(document, RouteTerminalSide.From);
+        var validator = new RouteMapConfigurationValidator();
+        segment.TerminalSide = null;
+        Assert.Contains(validator.Validate(document).Errors, error =>
+            error.ObjectId == segment.Id && error.Property == nameof(segment.TerminalSide));
+
+        segment.TerminalSide = RouteTerminalSide.From;
+        var secondAnchor = new RouteNodeConfiguration { Id = "second_anchor", Kind = RouteNodeKind.TerminalAnchor };
+        document.Nodes.Add(secondAnchor);
+        segment.ToNodeId = secondAnchor.Id;
+        Assert.Contains(validator.Validate(document).Errors, error =>
+            error.ObjectId == segment.Id && error.Property == nameof(segment.TerminalSide));
+
+        segment.ToNodeId = "missing_station";
+        Assert.Contains(validator.Validate(document).Errors, error =>
+            error.ObjectId == segment.Id && error.Property == nameof(segment.ToNodeId));
+    }
+
+    [Theory]
+    [InlineData(0d)]
+    [InlineData(-1d)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void Validator_rejects_invalid_terminal_geometry_and_active_binding(double length)
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var (anchor, segment) = ConfigureTerminal(document, RouteTerminalSide.From);
+        var station = document.Nodes.Single(node => node.Id == segment.ToNodeId);
+        (anchor.X, anchor.Y) = (station.X, station.Y);
+        segment.TerminalCapLength = length;
+        segment.Style.Thickness = length;
+        var active = segment.Bindings.Single(binding => binding.Role == SignalBindingRole.ActiveRoute);
+        active.Direction = SignalBindingDirection.ReadWrite;
+        active.ValueType = SignalValueType.UInt16;
+
+        var properties = new RouteMapConfigurationValidator().Validate(document).Errors
+            .Where(error => error.ObjectId == segment.Id).Select(error => error.Property).ToArray();
+        Assert.Contains(nameof(segment.ToNodeId), properties);
+        Assert.Contains(nameof(segment.TerminalCapLength), properties);
+        Assert.Contains(nameof(segment.Style.Thickness), properties);
+        Assert.Contains(nameof(active.Direction), properties);
+        Assert.Contains(nameof(active.ValueType), properties);
+    }
+
+    private static (RouteNodeConfiguration Anchor, RouteSegmentConfiguration Segment) ConfigureTerminal(
+        RouteMapConfigurationDocument document, RouteTerminalSide side)
+    {
+        var segment = document.Segments.Single(line => line.Id == (side == RouteTerminalSide.From
+            ? "lower_dead_end_to_bsu1"
+            : "bucket_to_upper_dead_end"));
+        var anchor = document.Nodes.Single(node => node.Id == (side == RouteTerminalSide.From
+            ? segment.FromNodeId
+            : segment.ToNodeId));
+        anchor.Kind = RouteNodeKind.TerminalAnchor;
+        anchor.Bindings.Clear();
+        segment.Kind = RouteSegmentKind.DeadEnd;
+        segment.TerminalSide = side;
+        return (anchor, segment);
+    }
+
     [Fact]
     public async Task Storage_round_trip_preserves_version_toggles_and_styles()
     {
@@ -234,7 +433,7 @@ public sealed class RouteMapConfigurationTests
         var secondMigration = migrator.Migrate(reopened);
 
         Assert.False(secondMigration.WasMigrated);
-        Assert.Equal(18, migrated.SchemaVersion);
+        Assert.Equal(19, migrated.SchemaVersion);
         var migratedBucket = migrated.Cards.Single(card => card.Id == "equip.bucket");
         Assert.Equal("Пользовательский кюбель", migratedBucket.Title);
         Assert.Equal(391, migratedBucket.Style.Width);
@@ -303,7 +502,7 @@ public sealed class RouteMapConfigurationTests
         using var manager = scope.CreateManager();
 
         Assert.Null(manager.LastLoadError);
-        Assert.Equal(18, manager.CurrentDocument.SchemaVersion);
+        Assert.Equal(19, manager.CurrentDocument.SchemaVersion);
         Assert.Equal(originalJson, await File.ReadAllTextAsync(scope.Path + ".bak"));
         var mapping = manager.CurrentDefinition.MapEquipment.Single(card => card.Id == "equip.bucket").StatusMapping!;
         Assert.Equal("Неизвестный статус", mapping.UnknownText);
@@ -321,7 +520,7 @@ public sealed class RouteMapConfigurationTests
 
         var persistedJson = await File.ReadAllTextAsync(scope.Path);
         var persisted = JsonNode.Parse(persistedJson)!;
-        original["schemaVersion"] = 18;
+        original["schemaVersion"] = 19;
         original["cards"]![0]!["statusMapping"] = persisted["cards"]![0]!["statusMapping"]!.DeepClone();
         Assert.True(JsonNode.DeepEquals(original, persisted));
 
@@ -346,26 +545,78 @@ public sealed class RouteMapConfigurationTests
         var migrator = new RouteMapConfigurationMigrator();
         Assert.True(migrator.Migrate(document).WasMigrated);
         Assert.False(migrator.Migrate(document).WasMigrated);
-        Assert.Equal(18, document.SchemaVersion);
+        Assert.Equal(19, document.SchemaVersion);
         Assert.Same(mapping, document.Cards.Single().StatusMapping);
         Assert.Equal("Свой статус", mapping.Entries[0].Text);
         Assert.Equal("#102030", mapping.Entries[0].Color);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Manager_backs_up_and_upgrades_valid_v18_without_rewriting_topology_or_bindings(bool valid)
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.SchemaVersion = 18;
+        var node = document.Nodes.Single(item => item.Id == "dead_end_lower");
+        node.Title = "Пользовательское окончание";
+        node.Y += 10;
+        var line = document.Segments.Single(item => item.Id == "lower_dead_end_to_bsu1");
+        line.Bindings.Single(binding => binding.Role == SignalBindingRole.ActiveRoute).SignalId = "custom.main.active";
+        line.ExtensionData = new()
+        {
+            ["vendorTag"] = JsonSerializer.SerializeToElement(new[] { 1, 2, 3 }),
+            ["terminalCapLength"] = JsonSerializer.SerializeToElement(new { units = "vendor" }),
+            ["TerminalSide"] = JsonSerializer.SerializeToElement("vendor"),
+        };
+        if (!valid)
+            line.FromNodeId = "missing";
+
+        await scope.Storage.SaveActiveAsync(document);
+        var original = await File.ReadAllTextAsync(scope.Path);
+        using var manager = scope.CreateManager();
+        if (!valid)
+        {
+            Assert.NotNull(manager.LastLoadError);
+            Assert.False(File.Exists(scope.Path + ".bak"));
+            Assert.Equal(original, await File.ReadAllTextAsync(scope.Path));
+            return;
+        }
+
+        Assert.Null(manager.LastLoadError);
+        Assert.Equal(19, manager.CurrentDocument.SchemaVersion);
+        var migratedLine = manager.CurrentDocument.Segments.Single(item => item.Id == line.Id);
+        Assert.Null(migratedLine.TerminalCapLength);
+        Assert.Equal("vendor", migratedLine.ExtensionData!["terminalCapLength"].GetProperty("units").GetString());
+        Assert.Equal("vendor", migratedLine.ExtensionData["TerminalSide"].GetString());
+        Assert.Equal(original, await File.ReadAllTextAsync(scope.Path + ".bak"));
+        var expected = JsonNode.Parse(original)!;
+        expected["schemaVersion"] = 19;
+        var persisted = await File.ReadAllTextAsync(scope.Path);
+        Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(persisted)));
+
+        using var reopened = scope.CreateManager();
+        Assert.Null(reopened.LastLoadError);
+        Assert.Equal(persisted, await File.ReadAllTextAsync(scope.Path));
+        Assert.Single(Directory.GetFiles(System.IO.Path.GetDirectoryName(scope.Path)!, "route-map.json.bak*"));
+    }
+
     [Fact]
-    public void Migrator_reaches_v18_from_all_older_versions()
+    public void Migrator_reaches_v19_from_all_older_versions()
     {
         using var scope = new TempConfigurationScope();
         var migrator = new RouteMapConfigurationMigrator();
         var validator = new RouteMapConfigurationValidator();
-        for (var version = 1; version <= 16; version++)
+        for (var version = 1; version <= 18; version++)
         {
             var document = scope.Mapper.CreateSeedDocument();
             document.SchemaVersion = version;
-            document.Cards.Single().StatusMapping = null;
+            if (version < 18)
+                document.Cards.Single().StatusMapping = null;
 
             Assert.True(migrator.Migrate(document).WasMigrated);
-            Assert.Equal(18, document.SchemaVersion);
+            Assert.Equal(19, document.SchemaVersion);
             Assert.Equal(6, document.Cards.Single().StatusMapping!.Entries.Count);
             Assert.Empty(validator.Validate(document).Errors);
         }
@@ -399,7 +650,7 @@ public sealed class RouteMapConfigurationTests
         using var manager = scope.CreateManager();
 
         Assert.Null(manager.LastLoadError);
-        Assert.Equal(18, manager.CurrentDocument.SchemaVersion);
+        Assert.Equal(19, manager.CurrentDocument.SchemaVersion);
         var card = Assert.Single(manager.CurrentDefinition.MapEquipment);
         Assert.Equal(bucket.Title, card.Title);
         Assert.Null(card.StatusMapping);
@@ -1026,7 +1277,7 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public async Task Settings_import_v17_edit_apply_save_and_export_v18_preserve_legacy_and_custom_data()
+    public async Task Settings_import_v17_edit_apply_save_and_export_v19_preserve_legacy_and_custom_data()
     {
         using var scope = new TempConfigurationScope();
         using var manager = scope.CreateManager();
@@ -1047,7 +1298,7 @@ public sealed class RouteMapConfigurationTests
         var published = manager.CurrentDefinition;
         await viewModel.ImportCommand.Execute().FirstAsync();
         Assert.Same(published, manager.CurrentDefinition);
-        Assert.Equal(18, viewModel.Draft.SchemaVersion);
+        Assert.Equal(19, viewModel.Draft.SchemaVersion);
         var mapping = viewModel.SelectedCard!.StatusMapping!;
         Assert.Equal(6, mapping.Entries.Count);
         Assert.Null(viewModel.Draft.Cards[1].StatusMapping);
@@ -1084,7 +1335,7 @@ public sealed class RouteMapConfigurationTests
         await viewModel.ExportCommand.Execute().FirstAsync();
         Assert.Null(viewModel.ErrorMessage);
         var exported = await manager.ImportDraftAsync(outputPath);
-        Assert.Equal(18, exported.SchemaVersion);
+        Assert.Equal(19, exported.SchemaVersion);
         Assert.Equal("Резервный статус", exported.Cards[0].StatusText);
         Assert.Equal(" Готово ✓ ", exported.Cards[0].StatusMapping!.Entries[0].Text);
         Assert.Null(exported.Cards[1].StatusMapping);
@@ -1877,6 +2128,35 @@ public sealed class RouteMapConfigurationTests
         Assert.True(viewModel.NodeRoleStates["bsu_1"].IsLoader);
         Assert.True(viewModel.HasCommandError);
         Assert.Contains("Write failed", viewModel.CommandErrorMessage);
+    }
+
+    [Fact]
+    public async Task Dashboard_ignores_role_commands_for_terminal_anchors()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var draft = manager.CreateDraft();
+        var (anchor, _) = ConfigureTerminal(draft, RouteTerminalSide.From);
+        Assert.True(manager.Apply(draft).IsSuccess);
+
+        var dispatcher = new CapturingDispatcher();
+        var journal = new RouteMapSessionJournal();
+        using var viewModel = new RouteMapDashboardViewModel(
+            manager,
+            new EmptySignalProvider(),
+            new RouteMapRuntimeMapper(manager),
+            dispatcher,
+            new RecordingSettingsDialogService(),
+            new NotificationsPanelViewModel(journal, new NoOpDialogService(), new NoOpBitWriter()),
+            journal,
+            new StaticOptionsMonitor(new ModbusOptions()));
+        await viewModel.ToggleNodeLoaderCommand.Execute(anchor.Id).FirstAsync();
+        await viewModel.ToggleNodeTargetCommand.Execute(anchor.Id).FirstAsync();
+
+        Assert.DoesNotContain(anchor.Id, viewModel.NodeRoleStates.Keys);
+        Assert.True(viewModel.NodeRoleStates["bsu_1"].IsLoader);
+        Assert.True(viewModel.NodeRoleStates["concrete_bucket"].IsTarget);
+        Assert.Empty(dispatcher.Requests);
     }
 
     [Fact]
