@@ -91,6 +91,32 @@ public sealed class RouteMapViewportLayoutTests
         Assert.Equal(1500 - layout.ReservedRightWidth, layout.MapViewBounds.Width);
     }
 
+    [Theory]
+    [InlineData(800, 600)]
+    [InlineData(1142, 749)]
+    [InlineData(1920, 1080)]
+    public void Seed_terminal_caps_and_labels_fit_inside_the_map_column(double width, double height)
+    {
+        var definition = RouteMapSeed.Create();
+        var layout = RouteMapViewportLayout.Create(definition, width, height);
+        var nodes = definition.Nodes.ToDictionary(node => node.Id);
+        foreach (var line in definition.Segments.Where(segment => segment.Kind == RouteSegmentKind.DeadEnd))
+        {
+            var style = line.Style ?? new RouteSegmentStyle();
+            Assert.True(RouteSegmentGeometry.TryCreateTerminalViewGeometry(line, nodes[line.FromNodeId], nodes[line.ToNodeId],
+                style, layout.Transform, layout.MapViewBounds, out var start, out var end, out var cap));
+            var bounds = RouteSegmentGeometry.BoundsOf(cap.Start, cap.End).Inflate(style.Thickness * layout.Transform.Scale / 2);
+            const double textWidth = 42;
+            const double textHeight = 14;
+            var lower = line.TerminalSide == RouteTerminalSide.From;
+            var label = RouteMapControl.GetTerminalLabelOrigin(bounds, lower ? start - end : end - start, textWidth, textHeight);
+
+            Assert.True(layout.MapViewBounds.Contains(bounds));
+            Assert.True(layout.MapViewBounds.Contains(new Rect(label, new Size(textWidth, textHeight))));
+            Assert.True(lower ? label.Y > bounds.Bottom : label.X > bounds.Right);
+        }
+    }
+
     [Fact]
     public void Create_keeps_top_anchor_clear_for_default_card_height()
     {

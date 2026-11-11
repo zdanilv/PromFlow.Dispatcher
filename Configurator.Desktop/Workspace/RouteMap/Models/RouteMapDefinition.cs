@@ -337,6 +337,8 @@ public sealed record RouteSegment(
 
     // Null uses the default cap length of seven times the line thickness.
     public double? TerminalCapLength { get; init; }
+
+    internal bool LabelAtTerminal { get; init; }
 }
 
 public sealed record RouteSegmentActiveFragment(

@@ -3,9 +3,12 @@ using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
 using System.Text.Json;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -14,6 +17,7 @@ using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
+using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Panels;
 using Configurator.Desktop.Workspace.RouteMap.Services;
@@ -27,10 +31,49 @@ namespace Configurator.Tests.RouteMap.Ui;
 public sealed partial class RouteMapSettingsDialogVisualTests
 {
     [AvaloniaFact]
+    public async Task Wash_flyout_offers_only_send_and_respects_connection_state()
+    {
+        using var fixture = new MigratedStatusFixture();
+        var snapshot = fixture.Mock.CreateSnapshot(0).ToDictionary();
+        SetSignal(snapshot, RouteMapSystemSignalIds.ConnectionConnected, false);
+        fixture.Publish(snapshot);
+        await fixture.Dashboard.ToggleNodeTargetCommand.Execute("wash").ToTask();
+        fixture.PressNode("wash");
+        Assert.Null(fixture.Map.ActiveNodeFlyout);
+        Assert.Empty(fixture.Commands.Requests);
+        Assert.False(fixture.Dashboard.NodeRoleStates["wash"].IsTarget);
+
+        SetSignal(snapshot, RouteMapSystemSignalIds.ConnectionConnected, true);
+        fixture.Publish(snapshot);
+        fixture.PressNode("wash");
+
+        Assert.Equal("wash", fixture.Map.SelectedObjectId);
+        var flyout = Assert.IsType<MenuFlyout>(fixture.Map.ActiveNodeFlyout);
+        Assert.True(flyout.IsOpen);
+        var send = Assert.IsType<MenuItem>(Assert.Single(flyout.ItemsSource!.Cast<object>()));
+        Assert.Equal("Отправить", send.Header);
+        Assert.Equal("wash", send.CommandParameter);
+        Assert.Same(fixture.Dashboard.ToggleNodeTargetCommand, send.Command);
+        Assert.True(send.IsEnabled);
+        send.Command!.Execute(send.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Collection(fixture.Commands.Requests,
+            request => Assert.Equal(("route.node.concrete_bucket.target", false), (request.SignalId, request.Value)),
+            request =>
+            {
+                Assert.Equal(("route.node.wash.target", true), (request.SignalId, request.Value));
+                Assert.Equal(ModbusWriteMode.Latched, request.RequiredWriteMode);
+            });
+        Assert.Equal("wash", Assert.Single(fixture.Dashboard.NodeRoleStates.Values, state => state.IsTarget).ObjectId);
+        Assert.True(fixture.Dashboard.NodeRoleStates["bsu_1"].IsLoader);
+    }
+
+    [AvaloniaFact]
     public async Task Migrated_bucket_renders_all_mock_codes_and_keeps_route_and_power_independent()
     {
         using var fixture = new MigratedStatusFixture();
-        Assert.Equal(19, fixture.Manager.CurrentDocument.SchemaVersion);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, fixture.Manager.CurrentDocument.SchemaVersion);
         Assert.True(File.Exists(fixture.Storage.ActiveFilePath + ".bak"));
         Assert.Equal("Кюбель Л.К.", fixture.Card.Title);
         var binding = fixture.Manager.CurrentDefinition.MapEquipment.Single().Bindings
@@ -111,7 +154,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         var commandTimeout = TimeSpan.FromSeconds(10);
         await editor.ImportCommand.Execute().ToTask().WaitAsync(commandTimeout);
         Assert.Same(published, fixture.Manager.CurrentDefinition);
-        Assert.Equal(19, editor.Draft.SchemaVersion);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, editor.Draft.SchemaVersion);
 
         var dialog = new RouteMapSettingsDialog { DataContext = editor };
         var window = new Window { Width = 1320, Height = 780, Content = dialog };
@@ -233,11 +276,11 @@ public sealed partial class RouteMapSettingsDialogVisualTests
                 CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ru-RU");
                 using var reopened = fixture.OpenManager();
                 Assert.Null(reopened.LastLoadError);
-                Assert.Equal(19, reopened.CurrentDocument.SchemaVersion);
+                Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, reopened.CurrentDocument.SchemaVersion);
                 var reopenedMapping = reopened.CurrentDefinition.MapEquipment.Single(card => card.Id == bucket.Id).StatusMapping!;
                 Assert.Equal(new EquipmentStatusEntry(42, "Подготовка ✓", "#FF126534",
                     EquipmentStatusCategory.Warning, false, false), reopenedMapping.Entries.Single(item => item.Code == 42));
-                Assert.Equal(19, (await reopened.ImportDraftAsync(export)).SchemaVersion);
+                Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, (await reopened.ImportDraftAsync(export)).SchemaVersion);
                 Assert.Equal(3, reopened.CurrentDocument.Cards.Count);
             }
             finally
@@ -548,6 +591,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         public ReplaySubject<IReadOnlyDictionary<string, SignalValue>> ModbusSignals { get; } = new(1);
         public int Subscriptions { get; private set; }
         public EquipmentCardViewModel Card => Dashboard.MapEquipmentCards.Single(card => card.Id == BucketId);
+        public RouteMapControl Map => _view.GetVisualDescendants().OfType<RouteMapControl>().Single();
         public EquipmentCardView CardView => _view.GetVisualDescendants().OfType<EquipmentCardView>()
             .Single(view => ReferenceEquals(view.DataContext, Card));
         public RouteObjectRuntimeState Runtime => Dashboard.RuntimeState.Find(BucketId)!;
@@ -559,6 +603,19 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             new(Storage, _mapper, new RouteMapConfigurationValidator(), new RouteMapConfigurationMigrator());
 
         public void SwitchToModbus() => _signalRuntime.SwitchSource(RouteMapSignalSource.Modbus);
+
+        public void PressNode(string id)
+        {
+            var map = Map;
+            var definition = Dashboard.Definition;
+            var node = definition.Nodes.Single(item => item.Id == id);
+            var transform = RouteMapViewportLayout.Create(definition, map.Bounds.Width, map.Bounds.Height).Transform;
+            var position = map.TranslatePoint(transform.ToViewPoint(node.X, node.Y), _window)!.Value;
+            _window.MouseMove(position);
+            _window.MouseDown(position, MouseButton.Left);
+            _window.MouseUp(position, MouseButton.Left);
+            Dispatcher.UIThread.RunJobs();
+        }
 
         public void Publish(IReadOnlyDictionary<string, SignalValue> snapshot)
         {

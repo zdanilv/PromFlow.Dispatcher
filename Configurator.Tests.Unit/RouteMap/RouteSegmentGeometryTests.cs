@@ -9,6 +9,31 @@ namespace Configurator.Tests.Unit.RouteMap;
 public sealed class RouteSegmentGeometryTests
 {
     [Theory]
+    [InlineData("lower_dead_end_to_bsu1", true)]
+    [InlineData("wash_to_upper_dead_end", false)]
+    public void Seed_dead_end_body_reaches_perpendicular_cap_in_compact_view(string id, bool horizontalCap)
+    {
+        var definition = RouteMapSeed.Create();
+        var layout = RouteMapViewportLayout.Create(definition, 800, 600);
+        var line = definition.Segments.Single(segment => segment.Id == id);
+        var from = definition.Nodes.Single(node => node.Id == line.FromNodeId);
+        var to = definition.Nodes.Single(node => node.Id == line.ToNodeId);
+        var style = line.Style ?? new RouteSegmentStyle();
+        Assert.True(RouteSegmentGeometry.TryCreateTerminalViewGeometry(
+            line, from, to, style, layout.Transform, layout.MapViewBounds, out var start, out var end, out var cap));
+        var station = horizontalCap ? to : from;
+        var length = RouteSegmentGeometry.Distance(start, end);
+        var body = Assert.Single(RouteSegmentGeometry.CalculateTerminalViewDrawableRanges(
+            line, station, style, new RouteMapDisplaySettings(), length, layout.Transform.Scale, []));
+
+        Assert.True(body.Length > 0);
+        Assert.Equal(horizontalCap ? 0 : length, horizontalCap ? body.Start : body.End, precision: 8);
+        Assert.Equal(horizontalCap ? cap.Start.Y : cap.Start.X, horizontalCap ? cap.End.Y : cap.End.X, precision: 8);
+        var center = new Point((cap.Start.X + cap.End.X) / 2, (cap.Start.Y + cap.End.Y) / 2);
+        AssertPoint(horizontalCap ? start : end, center);
+    }
+
+    [Theory]
     [InlineData(0, 100, false, -14, 0)]
     [InlineData(100, 0, false, 0, 14)]
     [InlineData(0, 100, true, -14, 0)]

@@ -6,6 +6,19 @@ namespace Configurator.Tests.Unit.RouteMap;
 public sealed class RouteNodeRoleStateTransitionsTests
 {
     [Fact]
+    public void ToggleTarget_selects_wash_exclusively_and_preserves_the_loader()
+    {
+        var stations = RouteMapSeed.Create().Nodes.Where(node => node.Kind != RouteNodeKind.TerminalAnchor);
+        var states = stations.ToDictionary(node => node.Id, node => new RouteNodeRoleState(node.Id, node.IsLoader, node.IsTarget));
+
+        var updated = RouteNodeRoleStateTransitions.ToggleTarget(states, "wash");
+
+        Assert.Equal("wash", Assert.Single(updated.Values, state => state.IsTarget).ObjectId);
+        Assert.Equal("bsu_1", Assert.Single(updated.Values, state => state.IsLoader).ObjectId);
+        Assert.DoesNotContain(RouteNodeRoleStateTransitions.ToggleTarget(updated, "wash").Values, state => state.IsTarget);
+    }
+
+    [Fact]
     public void ToggleLoader_leaves_only_one_loader_enabled()
     {
         var states = new Dictionary<string, RouteNodeRoleState>

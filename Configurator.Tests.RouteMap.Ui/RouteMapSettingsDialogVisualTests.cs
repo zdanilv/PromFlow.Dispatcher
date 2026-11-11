@@ -223,6 +223,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     public void Binding_rows_have_five_non_overlapping_columns(int tabIndex)
     {
         using var fixture = new DialogFixture(1320, 780);
+        if (tabIndex == 3)
+            fixture.ViewModel.SelectedNode = fixture.ViewModel.Draft.Nodes.Single(node => node.Id == "wash");
         fixture.SelectTab(tabIndex);
 
         var rows = fixture.Dialog.GetVisualDescendants()

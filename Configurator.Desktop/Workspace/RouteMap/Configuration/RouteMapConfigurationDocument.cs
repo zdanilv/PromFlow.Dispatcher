@@ -40,7 +40,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 19;
+    public const int CurrentSchemaVersion = 20;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();

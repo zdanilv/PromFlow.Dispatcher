@@ -161,6 +161,53 @@ internal static class RouteSegmentGeometry
         return true;
     }
 
+    public static bool TryCreateTerminalViewGeometry(
+        RouteSegment segment,
+        RouteNode from,
+        RouteNode to,
+        RouteSegmentStyle style,
+        RouteMapTransform transform,
+        Rect viewBounds,
+        out Point start,
+        out Point end,
+        out RouteTerminalCap cap)
+    {
+        start = transform.ToViewPoint(from.X, from.Y);
+        end = transform.ToViewPoint(to.X, to.Y);
+        cap = default;
+        if (!TryCreateTerminalCap(segment, style, new Point(from.X, from.Y), new Point(to.X, to.Y), out var logicalCap))
+            return false;
+
+        var terminalAtStart = segment.TerminalSide == RouteTerminalSide.From;
+        var station = terminalAtStart ? to : from;
+        var stationStyle = station.Style ?? new RouteNodeStyle();
+        Vector outward = terminalAtStart ? start - end : end - start;
+        var length = outward.Length;
+        if (!HasUsableLength(length))
+            return false;
+
+        // Station circles use a fixed DIP radius. Leave room for the short body when the map shrinks.
+        var halfStroke = Math.Max(style.Thickness, TerminalActiveThickness(style)) * transform.Scale / 2;
+        var minimumLength = stationStyle.Radius + stationStyle.BorderThickness / 2 + halfStroke + 6;
+        cap = new RouteTerminalCap(
+            transform.ToViewPoint(logicalCap.Start.X, logicalCap.Start.Y),
+            transform.ToViewPoint(logicalCap.End.X, logicalCap.End.Y));
+        var direction = outward / length;
+        var capBounds = BoundsOf(cap.Start, cap.End).Inflate(style.Thickness * transform.Scale / 2);
+        var horizontalRoom = direction.X >= 0 ? viewBounds.Right - capBounds.Right : capBounds.Left - viewBounds.Left;
+        var verticalRoom = direction.Y >= 0 ? viewBounds.Bottom - capBounds.Bottom : capBounds.Top - viewBounds.Top;
+        var extension = Math.Max(0, Math.Min(minimumLength - length, Math.Min(
+            direction.X == 0 ? double.PositiveInfinity : horizontalRoom / Math.Abs(direction.X),
+            direction.Y == 0 ? double.PositiveInfinity : verticalRoom / Math.Abs(direction.Y))));
+        var shift = direction * extension;
+        if (terminalAtStart)
+            start += shift;
+        else
+            end += shift;
+        cap = new RouteTerminalCap(cap.Start + shift, cap.End + shift);
+        return true;
+    }
+
     public static double TerminalActiveThickness(RouteSegmentStyle style) =>
         double.IsFinite(style.ActiveThickness) && style.ActiveThickness > 0
             ? style.ActiveThickness

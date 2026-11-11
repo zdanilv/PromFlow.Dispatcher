@@ -75,12 +75,19 @@ public sealed class RouteMapConfigurationMapper
                 card?.VerticalAnchor ?? RouteCardVerticalAnchor.ChainBoundsCenter);
         }).ToArray();
 
+        var standardChain = chains.FirstOrDefault(chain => chain.Id == "chain.bucket_route" &&
+            chain.NodeIds.Contains("wash") && chain.SegmentIds.Contains("wash_to_upper_dead_end"));
+        var segments = document.Segments.Select(ToModel).Select(segment =>
+            standardChain?.SegmentIds.Contains(segment.Id) == true && RouteMapSeed.IsStandardTerminal(segment)
+                ? segment with { LabelAtTerminal = true }
+                : segment).ToArray();
+
         return new RouteMapDefinition(
             document.Map.LogicalWidth,
             document.Map.LogicalHeight,
             chains,
             document.Nodes.Select(ToModel).ToArray(),
-            document.Segments.Select(ToModel).ToArray(),
+            segments,
             _seed.Vehicles,
             cards,
             _seed.Requests,
@@ -97,7 +104,7 @@ public sealed class RouteMapConfigurationMapper
             ToModel(document.TopBar));
     }
 
-    private static RouteNodeConfiguration ToConfiguration(RouteNode node)
+    internal static RouteNodeConfiguration ToConfiguration(RouteNode node)
     {
         var style = node.Style ?? new RouteNodeStyle();
         return new RouteNodeConfiguration
@@ -266,7 +273,7 @@ public sealed class RouteMapConfigurationMapper
         return ToModel(configuration);
     }
 
-    private static RouteSegmentConfiguration ToConfiguration(RouteSegment segment)
+    internal static RouteSegmentConfiguration ToConfiguration(RouteSegment segment)
     {
         var style = segment.Style ?? new RouteSegmentStyle();
         return new RouteSegmentConfiguration

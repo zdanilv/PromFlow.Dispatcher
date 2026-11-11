@@ -177,7 +177,7 @@ public sealed class RouteMapRuntimeMapperTests
         var provider = new MockSignalProvider(definition);
         var activeIds = new[]
         {
-            "route.node.dead_end_lower.active", "route.lower_dead_end_to_bsu1.active",
+            "route.lower_dead_end_to_bsu1.active",
             "route.node.bsu_1.active", "route.active_bsu1_bsu2.active",
             "route.node.bsu_2.active",
             "route.bsu2_to_bucket.fragment_1.active",
@@ -186,7 +186,7 @@ public sealed class RouteMapRuntimeMapperTests
             "route.node.concrete_bucket.active",
             "route.bucket_to_upper_dead_end.fragment_1.active",
             "route.bucket_to_upper_dead_end.fragment_2.active",
-            "route.node.dead_end_upper.active",
+            "route.node.wash.active",
         };
 
         for (var tick = 0; tick < activeIds.Length * 2; tick++)
@@ -196,6 +196,30 @@ public sealed class RouteMapRuntimeMapperTests
             Assert.Single(active);
             Assert.Equal(activeIds[tick % activeIds.Length], active[0]);
         }
+    }
+
+    [Theory]
+    [InlineData(true, false, true)]
+    [InlineData(false, false, null)]
+    [InlineData(true, true, null)]
+    public void Wash_uses_good_fresh_target_readback_and_its_own_activity(bool good, bool stale, bool? expectedTarget)
+    {
+        var mapper = new RouteMapRuntimeMapper(RouteMapSeed.Create());
+        var now = DateTimeOffset.UtcNow;
+        var snapshot = new Dictionary<string, SignalValue>
+        {
+            ["route.node.wash.target"] = new("route.node.wash.target", true, SignalValueType.Bool, now, good, stale),
+            ["route.node.wash.active"] = new("route.node.wash.active", true, SignalValueType.Bool, now, true, false),
+            ["route.node.dead_end_upper.active"] = new("route.node.dead_end_upper.active", true, SignalValueType.Bool, now, true, false),
+        };
+
+        var runtime = mapper.Map(snapshot);
+
+        Assert.Equal(expectedTarget, runtime.Find("wash")!.IsTarget);
+        Assert.True(runtime.Find("wash")!.IsSignalActive);
+        Assert.Equal(good && !stale, runtime.Find("wash")!.IsEnabled);
+        Assert.False(runtime.Find("dead_end_upper")!.IsSignalActive);
+        Assert.False(runtime.Find("wash_to_upper_dead_end")!.IsSignalActive);
     }
 
     [Fact]

@@ -130,6 +130,11 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 19;
                     wasMigrated = true;
                     break;
+                case 19:
+                    ApplyVersion20(document);
+                    document.SchemaVersion = 20;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }
@@ -497,6 +502,108 @@ public sealed class RouteMapConfigurationMigrator
                 card.StatusMapping = RouteMapConfigurationMapper.ToConfiguration(RouteMapSeed.CreateBucketStatusMapping(statusPalette));
         }
     }
+
+    private static void ApplyVersion20(RouteMapConfigurationDocument document)
+    {
+        if (!IsStandardMap(document))
+            return;
+
+        var chain = document.Chains.Single(item => item.Id == "chain.bucket_route");
+        var nodes = StandardNodeIds.Select(id => document.Nodes.Single(node => node.Id == id)).ToArray();
+        var segments = StandardSegmentIds.Select(id => document.Segments.Single(segment => segment.Id == id)).ToArray();
+        for (var index = 0; index < segments.Length; index++)
+        {
+            if (segments[index].FromNodeId != nodes[index].Id || segments[index].ToNodeId != nodes[index + 1].Id)
+                return;
+        }
+
+        var lower = nodes[0];
+        var bsu1 = nodes[1];
+        var bucket = nodes[3];
+        var upper = nodes[4];
+        var lowerLine = segments[0];
+        var bucketLine = segments[3];
+        var wash = RouteMapConfigurationMapper.ToConfiguration(RouteMapSeed.CreateWash(upper.X, upper.Y));
+        var upperLine = RouteMapConfigurationMapper.ToConfiguration(RouteMapSeed.CreateUpperDeadEnd());
+        var runtimeItems = document.Nodes.Cast<RouteMapConfigurationItem>().Concat(document.Segments).Concat(document.Cards);
+
+        // Leave custom links, terminal roles and reserved IDs alone.
+        if (!IsLegacyTerminal(lower) || !IsLegacyTerminal(upper) ||
+            lowerLine.Kind != RouteSegmentKind.Straight || bucketLine.Kind != RouteSegmentKind.Straight ||
+            lower.X != bsu1.X || lower.Y <= bsu1.Y || upper.Y != bucket.Y || upper.X <= bucket.X ||
+            runtimeItems.Any(item => item.Id == wash.Id || item.Id == upperLine.Id) ||
+            document.Segments.Any(line =>
+                (line != lowerLine && (line.FromNodeId == lower.Id || line.ToNodeId == lower.Id)) ||
+                (line != bucketLine && (line.FromNodeId == upper.Id || line.ToNodeId == upper.Id))) ||
+            document.Chains.Any(other => other != chain &&
+                (other.NodeIds.Contains(lower.Id) || other.NodeIds.Contains(upper.Id) ||
+                 other.SegmentIds.Contains(lowerLine.Id) || other.SegmentIds.Contains(bucketLine.Id))) ||
+            document.Cards.Any(card => card.VerticalAnchorKind == RouteCardVerticalAnchorKind.Node &&
+                (card.VerticalAnchorNodeId == lower.Id || card.VerticalAnchorNodeId == upper.Id)))
+            return;
+
+        // Keep vendor fields with reserved names and any existing fragment signals on custom endings.
+        var oldLowerLength = lower.Y - bsu1.Y;
+        if (lowerLine.ExtensionData?.Keys.Any(key =>
+                key.Equals("terminalSide", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("terminalCapLength", StringComparison.OrdinalIgnoreCase)) == true ||
+            lowerLine.ActiveFragments.Count != 0 ||
+            oldLowerLength - lower.Style.Radius - lowerLine.Style.EndpointGap < RouteMapSeed.LowerDeadEndLength ||
+            UsesWashSignal(document, wash))
+            return;
+
+        // Match the previous endpoint trim so the two existing fragment positions and IDs survive.
+        wash.Style.Radius = upper.Style.Radius;
+        upperLine.Style.NormalColor = bucketLine.Style.NormalColor;
+        upperLine.Style.Thickness = bucketLine.Style.Thickness;
+        upperLine.Style.EndpointGap = bucketLine.Style.EndpointGap;
+        upperLine.Style.LineCap = bucketLine.Style.LineCap;
+        upperLine.Style.LabelColor = bucketLine.Style.LabelColor;
+        upperLine.Style.LabelFontSize = bucketLine.Style.LabelFontSize;
+
+        lower.Y = bsu1.Y + RouteMapSeed.LowerDeadEndLength;
+        upper.X = wash.X + RouteMapSeed.UpperDeadEndLength;
+        foreach (var anchor in new[] { lower, upper })
+        {
+            anchor.Kind = RouteNodeKind.TerminalAnchor;
+            anchor.Bindings.Clear();
+        }
+
+        lowerLine.Kind = RouteSegmentKind.DeadEnd;
+        lowerLine.TerminalSide = RouteTerminalSide.From;
+        lowerLine.Title ??= lower.Title;
+        bucketLine.ToNodeId = wash.Id;
+        upperLine.Title = upper.Title;
+        document.Nodes.Insert(document.Nodes.IndexOf(upper), wash);
+        document.Segments.Add(upperLine);
+        chain.NodeIds.Insert(chain.NodeIds.Count - 1, wash.Id);
+        chain.SegmentIds.Add(upperLine.Id);
+    }
+
+    private static bool UsesWashSignal(RouteMapConfigurationDocument document, RouteNodeConfiguration wash)
+    {
+        var washSignals = wash.Bindings.Select(binding => binding.SignalId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return document.Nodes.SelectMany(node => node.Bindings)
+            .Concat(document.Segments.SelectMany(line => line.Bindings))
+            .Concat(document.Segments.SelectMany(line => line.ActiveFragments).Select(fragment => fragment.Binding))
+            .Concat(document.Cards.SelectMany(card => card.Bindings))
+            .Concat(document.TopBar.Reset.Bindings)
+            .Concat(document.TopBar.Emergency.Bindings)
+            .Select(binding => binding.SignalId)
+            .Concat(document.Cards.SelectMany(card => card.Parameters).Select(parameter => parameter.SignalId))
+            .Any(washSignals.Contains);
+    }
+
+    private static bool IsLegacyTerminal(RouteNodeConfiguration node) =>
+        node.Kind == RouteNodeKind.ServicePoint && node.MenuKind == RouteNodeMenuKind.None &&
+        !node.IsLoader && !node.IsTarget && node.IsVisible && node.State == RouteObjectState.Idle &&
+        node.Bindings.All(binding => binding.ExtensionData is null or { Count: 0 } &&
+            (binding.Role switch
+            {
+                SignalBindingRole.Fault => binding.SignalId == $"{node.Id}.fault",
+                SignalBindingRole.ActiveRoute => binding.SignalId == $"route.node.{node.Id}.active",
+                _ => false,
+            }));
 
     private static void EnsureTopBarButton(
         RouteTopBarButtonConfiguration button,

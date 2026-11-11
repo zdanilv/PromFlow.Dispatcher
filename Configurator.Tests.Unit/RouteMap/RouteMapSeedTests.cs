@@ -1,4 +1,5 @@
 using Avalonia;
+using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Xunit;
@@ -19,6 +20,7 @@ public sealed class RouteMapSeedTests
                 "bsu_1",
                 "bsu_2",
                 "concrete_bucket",
+                "wash",
                 "dead_end_upper",
             },
             definition.Nodes.Select(x => x.Id));
@@ -30,6 +32,7 @@ public sealed class RouteMapSeedTests
                 "active_bsu1_bsu2",
                 "bsu2_to_bucket",
                 "bucket_to_upper_dead_end",
+                "wash_to_upper_dead_end",
             },
             definition.Segments.Select(x => x.Id));
 
@@ -72,21 +75,21 @@ public sealed class RouteMapSeedTests
         Assert.DoesNotContain(mapEquipment.Bindings, x => x.Role == SignalBindingRole.StopOffFeedback);
 
         var nodesById = definition.Nodes.ToDictionary(x => x.Id);
-        Assert.Equal((240d, 500d), (nodesById["dead_end_lower"].X, nodesById["dead_end_lower"].Y));
+        Assert.Equal((240d, 438d), (nodesById["dead_end_lower"].X, nodesById["dead_end_lower"].Y));
         Assert.Equal((240d, 400d), (nodesById["bsu_1"].X, nodesById["bsu_1"].Y));
         Assert.Equal((240d, 300d), (nodesById["bsu_2"].X, nodesById["bsu_2"].Y));
         Assert.Equal((550d, 100d), (nodesById["concrete_bucket"].X, nodesById["concrete_bucket"].Y));
-        Assert.Equal((830d, 100d), (nodesById["dead_end_upper"].X, nodesById["dead_end_upper"].Y));
-        Assert.Equal(100, nodesById["dead_end_lower"].Y - nodesById["bsu_1"].Y);
+        Assert.Equal((830d, 100d), (nodesById["wash"].X, nodesById["wash"].Y));
+        Assert.Equal((872d, 100d), (nodesById["dead_end_upper"].X, nodesById["dead_end_upper"].Y));
         Assert.Equal(100, nodesById["bsu_1"].Y - nodesById["bsu_2"].Y);
-        foreach (var nodeId in new[] { "dead_end_lower", "bsu_1", "bsu_2" })
+        foreach (var nodeId in new[] { "bsu_1", "bsu_2" })
         {
             var node = nodesById[nodeId];
             Assert.Equal(RouteNodeLabelPlacement.Right, node.LabelPlacement);
             Assert.Equal(10, node.LabelOffsetX);
             Assert.Equal(0, node.LabelOffsetY);
         }
-        foreach (var nodeId in new[] { "concrete_bucket", "dead_end_upper" })
+        foreach (var nodeId in new[] { "concrete_bucket", "wash" })
         {
             var node = nodesById[nodeId];
             Assert.Equal(RouteNodeLabelPlacement.Below, node.LabelPlacement);
@@ -106,8 +109,26 @@ public sealed class RouteMapSeedTests
         Assert.DoesNotContain(nodesById["bsu_1"].Bindings, x => x.Role == SignalBindingRole.TargetOffFeedback);
         Assert.DoesNotContain(nodesById["bsu_1"].Bindings, x => x.Role == SignalBindingRole.LoaderOffFeedback);
         Assert.DoesNotContain(nodesById["concrete_bucket"].Bindings, x => x.Role == SignalBindingRole.TargetOffFeedback);
-        Assert.Equal(RouteNodeMenuKind.None, nodesById["dead_end_lower"].MenuKind);
-        Assert.Equal(RouteNodeMenuKind.None, nodesById["dead_end_upper"].MenuKind);
+        foreach (var id in new[] { "dead_end_lower", "dead_end_upper" })
+        {
+            var anchor = nodesById[id];
+            Assert.Equal(RouteNodeKind.TerminalAnchor, anchor.Kind);
+            Assert.Equal(RouteNodeMenuKind.None, anchor.MenuKind);
+            Assert.False(anchor.IsLoader);
+            Assert.False(anchor.IsTarget);
+            Assert.Empty(anchor.Bindings);
+        }
+        var wash = nodesById["wash"];
+        Assert.Equal("МОЙКА", wash.Title);
+        Assert.Equal(RouteNodeKind.ServicePoint, wash.Kind);
+        Assert.Equal(RouteNodeMenuKind.SendOnly, wash.MenuKind);
+        Assert.Equal(RouteObjectState.Idle, wash.State);
+        Assert.True(wash.IsVisible);
+        Assert.False(wash.IsLoader);
+        Assert.False(wash.IsTarget);
+        Assert.Collection(wash.Bindings,
+            binding => Assert.Equal(new SignalBinding(SignalBindingRole.TargetCommand, "route.node.wash.target", SignalBindingDirection.ReadWrite, SignalValueType.Bool), binding),
+            binding => Assert.Equal(new SignalBinding(SignalBindingRole.ActiveRoute, "route.node.wash.active", SignalBindingDirection.Read, SignalValueType.Bool), binding));
         Assert.NotNull(definition.TopBar);
         Assert.Equal("system.mode.automatic", definition.TopBar.Automatic.Binding.SignalId);
         Assert.Null(definition.TopBar.Automatic.OffFeedbackBinding);
@@ -116,7 +137,9 @@ public sealed class RouteMapSeedTests
         Assert.Equal("system.emergency", definition.TopBar.Emergency.Binding.SignalId);
         Assert.False(definition.TopBar.Emergency.OffFeedbackEnabled);
         Assert.Null(definition.TopBar.Emergency.OffFeedbackBinding);
-        foreach (var node in definition.Nodes)
+        var stations = definition.Nodes.Where(node => node.IsVisible && node.Kind != RouteNodeKind.TerminalAnchor).ToArray();
+        Assert.Equal(4, stations.Length);
+        foreach (var node in stations)
         {
             Assert.DoesNotContain(node.Bindings, x => x.Role == SignalBindingRole.State);
             var active = Assert.Single(node.Bindings, x => x.Role == SignalBindingRole.ActiveRoute);
@@ -131,7 +154,12 @@ public sealed class RouteMapSeedTests
         Assert.Equal(RouteElbowOrder.VerticalThenHorizontal, elbow.ElbowOrder);
         Assert.Equal(150, elbow.ArcRadius);
         Assert.Equal("ПОВОРОТ", elbow.Title);
-        Assert.All(definition.Segments, segment =>
+        for (var index = 0; index < definition.Segments.Count; index++)
+        {
+            Assert.Equal(chain.NodeIds[index], definition.Segments[index].FromNodeId);
+            Assert.Equal(chain.NodeIds[index + 1], definition.Segments[index].ToNodeId);
+        }
+        Assert.All(definition.Segments.Take(4), segment =>
         {
             Assert.DoesNotContain(segment.Bindings, x => x.Role == SignalBindingRole.State);
             var activeBinding = Assert.Single(segment.Bindings, x => x.Role == SignalBindingRole.ActiveRoute);
@@ -140,7 +168,22 @@ public sealed class RouteMapSeedTests
             Assert.Equal(Configurator.Application.Services.Signals.SignalValueType.Bool, activeBinding.ValueType);
             Assert.Equal(6, (segment.Style ?? new RouteSegmentStyle()).EndpointGap);
             Assert.Equal(RouteLineCap.Round, (segment.Style ?? new RouteSegmentStyle()).LineCap);
+            Assert.Equal($"{segment.Id}.fault", Assert.Single(segment.Bindings, binding => binding.Role == SignalBindingRole.Fault).SignalId);
         });
+        var deadEnds = definition.Segments.Where(line => line.Kind == RouteSegmentKind.DeadEnd).ToArray();
+        Assert.Collection(deadEnds,
+            line =>
+            {
+                Assert.Equal("lower_dead_end_to_bsu1", line.Id);
+                Assert.Equal(RouteTerminalSide.From, line.TerminalSide);
+            },
+            line =>
+            {
+                Assert.Equal("wash_to_upper_dead_end", line.Id);
+                Assert.Equal(RouteTerminalSide.To, line.TerminalSide);
+                Assert.Empty(line.Bindings);
+                Assert.Empty(line.ActiveFragments!);
+            });
         Assert.Empty(definition.Segments.Single(x => x.Id == "lower_dead_end_to_bsu1").ActiveFragments ?? []);
         Assert.Empty(definition.Segments.Single(x => x.Id == "active_bsu1_bsu2").ActiveFragments ?? []);
         Assert.Equal(

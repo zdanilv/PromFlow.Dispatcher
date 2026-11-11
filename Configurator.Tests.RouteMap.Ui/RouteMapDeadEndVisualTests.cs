@@ -18,6 +18,55 @@ namespace Configurator.Tests.RouteMap.Ui;
 [Collection("RouteMap Skia rendering")]
 public sealed class RouteMapDeadEndVisualTests
 {
+    [Fact]
+    public Task Seed_renders_wash_and_both_short_terminal_segments() => RunOnUiThread(() =>
+    {
+        const double dpi = 2;
+        var seed = RouteMapSeed.Create();
+        var definition = seed with
+        {
+            Nodes = seed.Nodes.Select(node => node with { Title = string.Empty }).ToArray(),
+            Segments = seed.Segments.Select(segment => segment with { Title = null }).ToArray(),
+        };
+        var map = new RouteMapControl { Definition = definition };
+        var window = new Window { WindowDecorations = WindowDecorations.None, Content = map, Width = 800, Height = 600 };
+        window.Show();
+        try
+        {
+            window.SetRenderScaling(dpi);
+            Dispatcher.UIThread.RunJobs();
+            var nodes = definition.Nodes.ToDictionary(node => node.Id);
+            var layout = RouteMapViewportLayout.Create(definition, map.Bounds.Width, map.Bounds.Height);
+            var transform = layout.Transform;
+            using var frame = Assert.IsType<WriteableBitmap>(window.CaptureRenderedFrame());
+            using var pixels = frame.Lock();
+            var wash = nodes["wash"];
+            AssertPixel(pixels, dpi, transform.ToViewPoint(wash.X, wash.Y), Color.Parse(new RouteNodeStyle().InnerColor));
+
+            foreach (var segment in definition.Segments.Where(line => line.Kind == RouteSegmentKind.DeadEnd))
+            {
+                var from = nodes[segment.FromNodeId];
+                var to = nodes[segment.ToNodeId];
+                var style = segment.Style ?? new RouteSegmentStyle();
+                Assert.True(RouteSegmentGeometry.TryCreateTerminalViewGeometry(
+                    segment, from, to, style, transform, layout.MapViewBounds, out var start, out var end, out var cap));
+                var color = Color.Parse(style.NormalColor);
+                AssertPixel(pixels, dpi, cap.Start + (cap.End - cap.Start) * 0.2, color);
+                AssertPixel(pixels, dpi, cap.Start + (cap.End - cap.Start) * 0.8, color);
+
+                var path = RouteSegmentGeometry.Create(segment, start, end);
+                var station = segment.TerminalSide == RouteTerminalSide.From ? to : from;
+                var body = Assert.Single(RouteSegmentGeometry.CalculateTerminalViewDrawableRanges(
+                    segment, station, style, new RouteMapDisplaySettings(), path.Length, transform.Scale, []));
+                AssertPixel(pixels, dpi, path.PointAt(body.Start + body.Length / 2), color);
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
+    });
+
     [Theory]
     [InlineData(1)]
     [InlineData(1.25)]

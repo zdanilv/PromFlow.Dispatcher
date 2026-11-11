@@ -5,6 +5,10 @@ namespace Configurator.Desktop.Workspace.RouteMap.Models;
 
 public static class RouteMapSeed
 {
+    internal const double LowerDeadEndLength = 38;
+    internal const double UpperDeadEndLength = 42;
+    internal const string WashTargetSignalId = "route.node.wash.target";
+
     public static RouteMapDefinition Create()
     {
         const string mainChainId = "chain.bucket_route";
@@ -14,15 +18,17 @@ public static class RouteMapSeed
 
         var nodes = new[]
         {
-            Node("dead_end_lower", "ТУПИК", 240, 500, RouteNodeKind.ServicePoint, 10, 0, RouteNodeLabelPlacement.Right, menuKind: RouteNodeMenuKind.None),
+            new RouteNode("dead_end_lower", "ТУПИК", 240, 400 + LowerDeadEndLength, RouteNodeKind.TerminalAnchor, RouteObjectState.Idle, []),
             Node("bsu_1", "БСУ 1", 240, 400, RouteNodeKind.Mixer, 10, 0, RouteNodeLabelPlacement.Right, isLoader: true, menuKind: RouteNodeMenuKind.SendAndReturn),
             Node("bsu_2", "БСУ 2", 240, 300, RouteNodeKind.Mixer, 10, 0, RouteNodeLabelPlacement.Right, menuKind: RouteNodeMenuKind.SendAndReturn),
             Node("concrete_bucket", "БЕТОНОУКЛ.", 550, 100, RouteNodeKind.ServicePoint, 0, 6, isTarget: true, menuKind: RouteNodeMenuKind.SendOnly),
-            Node("dead_end_upper", "ТУПИК", 830, 100, RouteNodeKind.ServicePoint, 0, 6, menuKind: RouteNodeMenuKind.None),
+            CreateWash(830, 100),
+            new RouteNode("dead_end_upper", "ТУПИК", 830 + UpperDeadEndLength, 100, RouteNodeKind.TerminalAnchor, RouteObjectState.Idle, []),
         };
 
         var segments = AddActiveFragments([
-            Segment("lower_dead_end_to_bsu1", "dead_end_lower", "bsu_1"),
+            Segment("lower_dead_end_to_bsu1", "dead_end_lower", "bsu_1", kind: RouteSegmentKind.DeadEnd, title: "ТУПИК")
+                with { TerminalSide = RouteTerminalSide.From, LabelAtTerminal = true },
             ActiveSegment("active_bsu1_bsu2", "bsu_1", "bsu_2"),
             Segment(
                 "bsu2_to_bucket",
@@ -34,7 +40,8 @@ public static class RouteMapSeed
                 title: "ПОВОРОТ",
                 labelOffsetX: 20,
                 labelOffsetY: 15),
-            Segment("bucket_to_upper_dead_end", "concrete_bucket", "dead_end_upper"),
+            Segment("bucket_to_upper_dead_end", "concrete_bucket", "wash"),
+            CreateUpperDeadEnd(),
         ], nodes, new RouteMapDisplaySettings());
 
         var chains = new[]
@@ -84,6 +91,28 @@ public static class RouteMapSeed
             templates,
             TopBar: CreateTopBar());
     }
+
+    internal static RouteNode CreateWash(double x, double y) => new(
+        "wash", "МОЙКА", x, y, RouteNodeKind.ServicePoint, RouteObjectState.Idle,
+        [
+            new(SignalBindingRole.TargetCommand, WashTargetSignalId, SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+            new(SignalBindingRole.ActiveRoute, "route.node.wash.active", SignalBindingDirection.Read, SignalValueType.Bool),
+        ],
+        LabelOffsetX: 0, LabelOffsetY: 6, MenuKind: RouteNodeMenuKind.SendOnly);
+
+    internal static RouteSegment CreateUpperDeadEnd() => new(
+        "wash_to_upper_dead_end", "wash", "dead_end_upper", RouteObjectState.Idle, false, [],
+        RouteSegmentKind.DeadEnd, Title: "ТУПИК", ActiveFragments: [])
+    {
+        TerminalSide = RouteTerminalSide.To,
+        LabelAtTerminal = true,
+    };
+
+    internal static bool IsStandardTerminal(RouteSegment segment) =>
+        segment.Kind == RouteSegmentKind.DeadEnd &&
+        (segment.Id, segment.FromNodeId, segment.ToNodeId, segment.TerminalSide) is
+            ("lower_dead_end_to_bsu1", "dead_end_lower", "bsu_1", RouteTerminalSide.From) or
+            ("wash_to_upper_dead_end", "wash", "dead_end_upper", RouteTerminalSide.To);
 
     internal static EquipmentStatusMapping CreateBucketStatusMapping(RouteMapPaletteSettings palette) => new(
         [

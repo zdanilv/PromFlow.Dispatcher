@@ -1,3 +1,4 @@
+using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 
@@ -5,15 +6,19 @@ namespace Configurator.Desktop.Workspace.RouteMap.Services;
 
 public static class RouteNodeRoleCommandWriter
 {
-    public static async Task DispatchTransitionAsync(
+    public static Task DispatchTransitionAsync(
         RouteMapDefinition definition,
         IReadOnlyDictionary<string, RouteNodeRoleState> previous,
         IReadOnlyDictionary<string, RouteNodeRoleState> current,
         IEquipmentCommandDispatcher dispatcher)
+        => DispatchTransitionAsync(CreateTransitionRequests(definition, previous, current), dispatcher);
+
+    internal static async Task DispatchTransitionAsync(
+        IReadOnlyList<SignalWriteRequest> requests,
+        IEquipmentCommandDispatcher dispatcher)
     {
-        var changes = CreateChanges(definition, previous, current);
-        await Task.WhenAll(changes.Where(x => !x.Value).Select(x => DispatchAsync(dispatcher, x)));
-        await Task.WhenAll(changes.Where(x => x.Value).Select(x => DispatchAsync(dispatcher, x)));
+        await Task.WhenAll(requests.Where(request => request.Value is false).Select(request => dispatcher.DispatchAsync(request)));
+        await Task.WhenAll(requests.Where(request => request.Value is true).Select(request => dispatcher.DispatchAsync(request)));
     }
 
     public static Task DispatchChangesAsync(
@@ -36,19 +41,18 @@ public static class RouteNodeRoleCommandWriter
             if (binding is null || binding.Direction == SignalBindingDirection.Read)
                 continue;
 
-            writes.Add(dispatcher.DispatchAsync(
-                new SignalWriteRequest(binding.SignalId, selector(after), binding.ValueType)));
+            writes.Add(dispatcher.DispatchAsync(CreateRequest(binding, selector(after))));
         }
 
         return Task.WhenAll(writes);
     }
 
-    private static IReadOnlyList<(SignalBinding Binding, bool Value)> CreateChanges(
+    internal static IReadOnlyList<SignalWriteRequest> CreateTransitionRequests(
         RouteMapDefinition definition,
         IReadOnlyDictionary<string, RouteNodeRoleState> previous,
         IReadOnlyDictionary<string, RouteNodeRoleState> current)
     {
-        var changes = new List<(SignalBinding Binding, bool Value)>();
+        var changes = new List<SignalWriteRequest>();
         foreach (var node in definition.Nodes)
         {
             if (!previous.TryGetValue(node.Id, out var before) || !current.TryGetValue(node.Id, out var after))
@@ -64,20 +68,20 @@ public static class RouteNodeRoleCommandWriter
         SignalBindingRole role,
         bool previous,
         bool current,
-        ICollection<(SignalBinding Binding, bool Value)> changes)
+        ICollection<SignalWriteRequest> changes)
     {
         if (previous == current)
             return;
         var binding = node.Bindings.FirstOrDefault(x => x.Role == role);
         if (binding is not null && binding.Direction != SignalBindingDirection.Read)
-            changes.Add((binding, current));
+            changes.Add(CreateRequest(binding, current));
     }
 
-    private static Task DispatchAsync(
-        IEquipmentCommandDispatcher dispatcher,
-        (SignalBinding Binding, bool Value) change) =>
-        dispatcher.DispatchAsync(new SignalWriteRequest(
-            change.Binding.SignalId,
-            change.Value,
-            change.Binding.ValueType));
+    private static SignalWriteRequest CreateRequest(SignalBinding binding, bool value) =>
+        new(binding.SignalId, value, binding.ValueType)
+        {
+            RequiredWriteMode = string.Equals(binding.SignalId, RouteMapSeed.WashTargetSignalId, StringComparison.OrdinalIgnoreCase)
+                ? ModbusWriteMode.Latched
+                : null,
+        };
 }

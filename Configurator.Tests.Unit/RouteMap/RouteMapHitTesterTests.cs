@@ -8,6 +8,20 @@ namespace Configurator.Tests.Unit.RouteMap;
 public sealed class RouteMapHitTesterTests
 {
     [Fact]
+    public void Seed_wash_is_selectable_and_terminal_ends_are_not()
+    {
+        var definition = RouteMapSeed.Create();
+        var transform = RouteMapViewportLayout.Create(definition, 1142, 749).Transform;
+        foreach (var id in new[] { "wash", "dead_end_lower", "dead_end_upper" })
+        {
+            var node = definition.Nodes.Single(item => item.Id == id);
+            var hit = RouteMapHitTester.HitTest(
+                definition, RouteMapRuntimeState.Empty, transform.ToViewPoint(node.X, node.Y), transform);
+            Assert.Equal(id == "wash" ? new RouteMapHitResult(id, RouteMapHitKind.Node) : null, hit);
+        }
+    }
+
+    [Fact]
     public void HitTest_ignores_terminal_anchor_and_both_cap_arms_but_still_selects_the_station()
     {
         var station = new RouteNode("station", "Station", 20, 40, RouteNodeKind.ServicePoint, RouteObjectState.Idle, []);

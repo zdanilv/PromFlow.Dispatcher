@@ -310,25 +310,54 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
 
     private async Task ToggleNodeTargetAsync(string objectId)
     {
-        await ToggleNodeRoleAsync(objectId, RouteNodeRoleStateTransitions.ToggleTarget);
+        await ToggleNodeRoleAsync(objectId, SignalBindingRole.TargetCommand, RouteNodeRoleStateTransitions.ToggleTarget);
     }
 
     private async Task ToggleNodeLoaderAsync(string objectId)
     {
-        await ToggleNodeRoleAsync(objectId, RouteNodeRoleStateTransitions.ToggleLoader);
+        await ToggleNodeRoleAsync(objectId, SignalBindingRole.LoaderCommand, RouteNodeRoleStateTransitions.ToggleLoader);
     }
 
     private async Task ToggleNodeRoleAsync(
         string objectId,
+        SignalBindingRole role,
         Func<IReadOnlyDictionary<string, RouteNodeRoleState>, string, IReadOnlyDictionary<string, RouteNodeRoleState>> transition)
     {
+        var node = Definition.Nodes.FirstOrDefault(item => item.Id == objectId);
+        if (!RuntimeState.IsConnectionAvailable ||
+            RuntimeState.Find(objectId) is { IsEnabled: false } or { IsVisible: false } ||
+            node is null || !node.IsVisible || node.Kind == RouteNodeKind.TerminalAnchor ||
+            node.MenuKind == RouteNodeMenuKind.None ||
+            (role == SignalBindingRole.LoaderCommand && node.MenuKind != RouteNodeMenuKind.SendAndReturn))
+            return;
+
         var previous = NodeRoleStates;
         var next = transition(previous, objectId);
+        var requests = RouteNodeRoleCommandWriter.CreateTransitionRequests(Definition, previous, next);
+        // Check both the reset and the selection before sending either.
+        if (_commandDispatcher is IRouteMapSignalRuntime { CurrentSource: RouteMapSignalSource.Modbus })
+        {
+            var points = _modbusOptions.CurrentValue.DataMap;
+            foreach (var request in requests)
+            {
+                var point = points.FirstOrDefault(item => string.Equals(item.Name, request.SignalId, StringComparison.OrdinalIgnoreCase));
+                if (point is null || !point.IsWritable || !SignalModbusTypeCompatibility.IsCompatible(request.ValueType, point.Type) ||
+                    (request.RequiredWriteMode is { } mode && (!point.IsReadable || point.WriteMode != mode)))
+                {
+                    CommandErrorMessage = $"Команда узла не отправлена: для '{request.SignalId}' нет совместимой записи в Modbus.DataMap.";
+                    return;
+                }
+            }
+
+            if (_lastSignals?.ContainsKey(RouteMapSystemSignalIds.ConnectionConnected) != true)
+                return;
+        }
+
         NodeRoleStates = next;
         ApplyEquipmentRouteSelections();
         try
         {
-            await RouteNodeRoleCommandWriter.DispatchTransitionAsync(Definition, previous, next, _commandDispatcher);
+            await RouteNodeRoleCommandWriter.DispatchTransitionAsync(requests, _commandDispatcher);
             CommandErrorMessage = null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

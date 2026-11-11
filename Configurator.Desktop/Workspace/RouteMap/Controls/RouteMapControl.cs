@@ -37,7 +37,7 @@ public sealed class RouteMapControl : Control
     public static readonly StyledProperty<bool> AreCommandsEnabledProperty =
         AvaloniaProperty.Register<RouteMapControl, bool>(nameof(AreCommandsEnabled), defaultValue: true);
 
-    private MenuFlyout? _activeNodeFlyout;
+    internal MenuFlyout? ActiveNodeFlyout { get; private set; }
 
     static RouteMapControl()
     {
@@ -107,15 +107,13 @@ public sealed class RouteMapControl : Control
             return;
 
         var runtimeState = RuntimeState ?? RouteMapRuntimeState.Empty;
-        var transform = RouteMapViewportLayout.Create(
-            Definition,
-            Bounds.Width,
-            Bounds.Height).Transform;
+        var layout = RouteMapViewportLayout.Create(Definition, Bounds.Width, Bounds.Height);
+        var transform = layout.Transform;
 
-        DrawSegments(context, Definition, runtimeState, transform);
+        DrawSegments(context, Definition, runtimeState, layout);
         DrawNodes(context, Definition, runtimeState, transform);
         DrawVehicles(context, Definition, runtimeState, transform);
-        DrawSegmentLabels(context, Definition, runtimeState, transform);
+        DrawSegmentLabels(context, Definition, runtimeState, layout);
         DrawLabels(context, Definition, runtimeState, transform);
         DrawSelection(context, Definition, runtimeState, transform);
     }
@@ -171,8 +169,9 @@ public sealed class RouteMapControl : Control
         DrawingContext context,
         RouteMapDefinition definition,
         RouteMapRuntimeState runtimeState,
-        RouteMapTransform transform)
+        RouteMapViewportLayout layout)
     {
+        var transform = layout.Transform;
         var nodesById = definition.Nodes.ToDictionary(x => x.Id);
         var display = definition.Display ?? new RouteMapDisplaySettings();
 
@@ -188,12 +187,12 @@ public sealed class RouteMapControl : Control
             var isTerminal = segment.Kind == RouteSegmentKind.DeadEnd;
             var style = segment.Style ?? new RouteSegmentStyle();
             var cap = default(RouteTerminalCap);
-            if (isTerminal && !RouteSegmentGeometry.TryCreateTerminalCap(
-                    segment, style, new Point(from.X, from.Y), new Point(to.X, to.Y), out cap))
-                continue;
-
             var p1 = transform.ToViewPoint(from.X, from.Y);
             var p2 = transform.ToViewPoint(to.X, to.Y);
+            if (isTerminal && !RouteSegmentGeometry.TryCreateTerminalViewGeometry(
+                    segment, from, to, style, transform, layout.MapViewBounds, out p1, out p2, out cap))
+                continue;
+
             var viewPath = RouteSegmentGeometry.Create(segment, p1, p2, transform.Scale);
             var state = GetState(runtimeState, segment.Id, segment.State);
             var runtime = runtimeState.Find(segment.Id);
@@ -252,9 +251,7 @@ public sealed class RouteMapControl : Control
                 var capPen = baseState == RouteObjectState.Idle && basePen is not null
                     ? basePen
                     : RouteMapPalette.TrackPenForState(RouteObjectState.Idle, display.Palette, style);
-                context.DrawLine(capPen,
-                    transform.ToViewPoint(cap.Start.X, cap.Start.Y),
-                    transform.ToViewPoint(cap.End.X, cap.End.Y));
+                context.DrawLine(capPen, cap.Start, cap.End);
             }
         }
     }
@@ -287,8 +284,9 @@ public sealed class RouteMapControl : Control
         DrawingContext context,
         RouteMapDefinition definition,
         RouteMapRuntimeState runtimeState,
-        RouteMapTransform transform)
+        RouteMapViewportLayout layout)
     {
+        var transform = layout.Transform;
         var nodesById = definition.Nodes.ToDictionary(x => x.Id);
 
         foreach (var segment in definition.Segments)
@@ -299,18 +297,6 @@ public sealed class RouteMapControl : Control
                 !nodesById.TryGetValue(segment.ToNodeId, out var to))
                 continue;
 
-            var path = RouteSegmentGeometry.Create(
-                segment,
-                transform.ToViewPoint(from.X, from.Y),
-                transform.ToViewPoint(to.X, to.Y),
-                transform.Scale);
-            if (path.Parts.Count == 0 && segment.Kind == RouteSegmentKind.DeadEnd)
-                continue;
-
-            var anchor = path.Parts.OfType<RouteArcPathPart>().FirstOrDefault() is { } arc
-                ? arc.PointAt(arc.Length / 2)
-                : path.PointAt(path.Length / 2);
-
             var style = segment.Style ?? new RouteSegmentStyle();
             var state = GetState(runtimeState, segment.Id, segment.State);
             var palette = (definition.Display ?? new RouteMapDisplaySettings()).Palette;
@@ -320,13 +306,43 @@ public sealed class RouteMapControl : Control
                 RouteObjectState.Disabled => RouteMapPalette.Brush(palette.Disabled),
                 _ => RouteMapPalette.Brush(style.LabelColor),
             };
-            DrawText(
-                context,
-                segment.Title,
-                new Point(anchor.X + segment.LabelOffsetX, anchor.Y + segment.LabelOffsetY),
-                labelBrush,
-                style.LabelFontSize);
+            var text = CreateFormattedText(segment.Title, labelBrush, style.LabelFontSize);
+            var offset = new Vector(segment.LabelOffsetX, segment.LabelOffsetY);
+            if (segment.Kind == RouteSegmentKind.DeadEnd && segment.LabelAtTerminal)
+            {
+                if (!RouteSegmentGeometry.TryCreateTerminalViewGeometry(
+                        segment, from, to, style, transform, layout.MapViewBounds, out var start, out var end, out var cap))
+                    continue;
+
+                var outward = segment.TerminalSide == RouteTerminalSide.From ? start - end : end - start;
+                var capBounds = RouteSegmentGeometry.BoundsOf(cap.Start, cap.End).Inflate(style.Thickness * transform.Scale / 2);
+                context.DrawText(text, GetTerminalLabelOrigin(capBounds, outward, text.Width, text.Height) + offset);
+                continue;
+            }
+
+            var path = RouteSegmentGeometry.Create(
+                segment,
+                transform.ToViewPoint(from.X, from.Y),
+                transform.ToViewPoint(to.X, to.Y),
+                transform.Scale);
+            if (path.Parts.Count == 0 && segment.Kind == RouteSegmentKind.DeadEnd)
+                continue;
+            var anchor = path.Parts.OfType<RouteArcPathPart>().FirstOrDefault() is { } arc
+                ? arc.PointAt(arc.Length / 2)
+                : path.PointAt(path.Length / 2);
+            context.DrawText(text, anchor + offset);
         }
+    }
+
+    internal static Point GetTerminalLabelOrigin(Rect capBounds, Vector outward, double textWidth, double textHeight)
+    {
+        const double gap = 6;
+        if (Math.Abs(outward.X) >= Math.Abs(outward.Y))
+            return new Point(outward.X >= 0 ? capBounds.Right + gap : capBounds.Left - gap - textWidth,
+                capBounds.Center.Y - textHeight / 2);
+
+        return new Point(capBounds.Center.X - textWidth / 2,
+            outward.Y >= 0 ? capBounds.Bottom + gap : capBounds.Top - gap - textHeight);
     }
 
     private void DrawNodes(
@@ -602,7 +618,7 @@ public sealed class RouteMapControl : Control
             ItemsSource = items,
         };
 
-        _activeNodeFlyout = flyout;
+        ActiveNodeFlyout = flyout;
         flyout.ShowAt(this, showAtPointer: true);
     }
 
@@ -624,8 +640,8 @@ public sealed class RouteMapControl : Control
 
     private void HideActiveNodeFlyout()
     {
-        _activeNodeFlyout?.Hide();
-        _activeNodeFlyout = null;
+        ActiveNodeFlyout?.Hide();
+        ActiveNodeFlyout = null;
     }
 }
 
