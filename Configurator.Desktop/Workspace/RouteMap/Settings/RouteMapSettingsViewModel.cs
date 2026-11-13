@@ -172,6 +172,11 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public IReadOnlyList<SignalBindingDirection> SignalBindingDirections { get; } = Enum.GetValues<SignalBindingDirection>();
     public IReadOnlyList<SignalValueType> SignalValueTypes { get; } = Enum.GetValues<SignalValueType>();
     public IReadOnlyList<SignalBindingRole> EquipmentParameterRoles { get; } = [SignalBindingRole.EquipmentParameter];
+    public IReadOnlyList<RouteMapEditorChoice<EquipmentParameterVisibility>> EquipmentParameterVisibilityChoices { get; } =
+    [
+        new(EquipmentParameterVisibility.User, "Для пользователя"),
+        new(EquipmentParameterVisibility.Admin, "Только для администратора"),
+    ];
 
     private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
         SignalBindingRole.State or

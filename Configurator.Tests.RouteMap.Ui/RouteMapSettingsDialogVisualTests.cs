@@ -1,5 +1,7 @@
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using System.Reactive.Threading.Tasks;
+using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
@@ -1298,6 +1300,196 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         Assert.InRange(cells[^1].TranslatePoint(default, tableScroll)!.Value.X, 0,
             tableScroll.Viewport.Width - cells[^1].Bounds.Width + 1);
     }
+
+    // UI-01, UI-02, UI-03, UI-05
+    [AvaloniaFact]
+    public void Card_settings_parameter_visibility_selection_follows_each_row_and_card()
+    {
+        using var fixture = new DialogFixture(1320, 780);
+        fixture.SelectTab(5);
+        var dialog = fixture.Dialog;
+        var editor = fixture.ViewModel;
+        var card = editor.SelectedCard!;
+        var add = dialog.GetVisualDescendants().OfType<Button>()
+            .Single(button => Equals(button.Content, "Добавить настройку"));
+
+        add.Command!.Execute(add.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+
+        var first = Assert.Single(card.Parameters);
+        var firstBox = ParameterVisibilityBox(dialog, first);
+        Assert.Equal(EquipmentParameterVisibility.User, first.Visibility);
+        Assert.Equal(EquipmentParameterVisibility.User, firstBox.SelectedValue);
+        Assert.Equal("Для пользователя", Assert.IsType<RouteMapEditorChoice<EquipmentParameterVisibility>>(firstBox.SelectedItem).Label);
+        Assert.Equal(
+            new[]
+            {
+                new RouteMapEditorChoice<EquipmentParameterVisibility>(EquipmentParameterVisibility.User, "Для пользователя"),
+                new RouteMapEditorChoice<EquipmentParameterVisibility>(EquipmentParameterVisibility.Admin, "Только для администратора"),
+            },
+            firstBox.Items.Cast<RouteMapEditorChoice<EquipmentParameterVisibility>>());
+        firstBox.SetCurrentValue(SelectingItemsControl.SelectedIndexProperty, 1);
+        Assert.Equal(EquipmentParameterVisibility.Admin, first.Visibility);
+        firstBox.SetCurrentValue(SelectingItemsControl.SelectedIndexProperty, 0);
+        Assert.Equal(EquipmentParameterVisibility.User, first.Visibility);
+        firstBox.SetCurrentValue(SelectingItemsControl.SelectedIndexProperty, 1);
+
+        add.Command.Execute(add.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        var second = card.Parameters[1];
+        second.SignalId = "equip.bucket.parameter2";
+        Assert.Equal(EquipmentParameterVisibility.User, ParameterVisibilityBox(dialog, second).SelectedValue);
+        Assert.Equal(EquipmentParameterVisibility.Admin, ParameterVisibilityBox(dialog, first).SelectedValue);
+
+        editor.AddCardCommand.Execute().Subscribe();
+        var otherCard = editor.SelectedCard!;
+        add.Command.Execute(add.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        var otherParameter = Assert.Single(otherCard.Parameters);
+        Assert.Equal(EquipmentParameterVisibility.User, ParameterVisibilityBox(dialog, otherParameter).SelectedValue);
+        var cardList = dialog.GetVisualDescendants().OfType<ListBox>().Single(list => list.Items.Contains(card));
+        cardList.SetCurrentValue(SelectingItemsControl.SelectedItemProperty, card);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(card, editor.SelectedCard);
+        Assert.Equal(EquipmentParameterVisibility.Admin, ParameterVisibilityBox(dialog, first).SelectedValue);
+        Assert.Equal(EquipmentParameterVisibility.User, ParameterVisibilityBox(dialog, second).SelectedValue);
+        var remove = dialog.GetVisualDescendants().OfType<Button>()
+            .Single(button => ReferenceEquals(button.CommandParameter, second));
+        remove.Command!.Execute(remove.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(first, Assert.Single(card.Parameters));
+        Assert.Equal(EquipmentParameterVisibility.Admin, ParameterVisibilityBox(dialog, first).SelectedValue);
+
+        cardList.SetCurrentValue(SelectingItemsControl.SelectedItemProperty, otherCard);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(otherCard, editor.SelectedCard);
+        Assert.Equal(EquipmentParameterVisibility.User, ParameterVisibilityBox(dialog, otherParameter).SelectedValue);
+    }
+
+    // UI-04
+    [AvaloniaFact]
+    public async Task Card_settings_parameter_visibility_applies_saves_and_reloads_the_setpoint()
+    {
+        using var fixture = new DialogFixture(1320, 780);
+        fixture.SelectTab(5);
+        var editor = fixture.ViewModel;
+        var dialog = fixture.Dialog;
+        var filter = new EquipmentCardParameterConfiguration
+        {
+            Title = "Фильтер",
+            SignalId = "equip.bucket.parameter2",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.UInt16,
+            SavedValue = "5000",
+            PendingAutoDispatch = true,
+            LastDispatchError = null,
+        };
+        var speed = new EquipmentCardParameterConfiguration
+        {
+            Title = "Скорость",
+            SignalId = "equip.bucket.speed",
+            SavedValue = "10",
+            LastDispatchError = "Нет связи",
+        };
+        editor.SelectedCard!.Parameters.Add(filter);
+        editor.SelectedCard.Parameters.Add(speed);
+        await editor.SaveCommand.Execute().ToTask().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Null(editor.ErrorMessage);
+        var originalJson = await File.ReadAllTextAsync(editor.ActiveFilePath);
+        var original = fixture.Manager.CurrentDefinition.MapEquipment.Single().Parameters;
+
+        Dispatcher.UIThread.RunJobs();
+        ParameterVisibilityBox(dialog, filter).SetCurrentValue(SelectingItemsControl.SelectedIndexProperty, 1);
+        Assert.Equal(EquipmentParameterVisibility.Admin, filter.Visibility);
+        var apply = dialog.GetVisualDescendants().OfType<Button>()
+            .Single(button => Equals(button.Content, "ПРИМЕНИТЬ"));
+        apply.Command!.Execute(apply.CommandParameter);
+
+        Assert.Null(editor.ErrorMessage);
+        var applied = fixture.Manager.CurrentDefinition.MapEquipment.Single().Parameters;
+        Assert.Equal(original[0] with { Visibility = EquipmentParameterVisibility.Admin }, applied[0]);
+        Assert.Equal(original[1], applied[1]);
+        Assert.Equal(originalJson, await File.ReadAllTextAsync(editor.ActiveFilePath));
+
+        await editor.SaveCommand.Execute().ToTask().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Null(editor.ErrorMessage);
+        var expectedJson = JsonNode.Parse(originalJson)!;
+        expectedJson["cards"]![0]!["parameters"]![0]!["visibility"] = "admin";
+        Assert.True(JsonNode.DeepEquals(expectedJson, JsonNode.Parse(await File.ReadAllTextAsync(editor.ActiveFilePath))));
+
+        ParameterVisibilityBox(dialog, filter).SetCurrentValue(SelectingItemsControl.SelectedIndexProperty, 0);
+        await editor.ReloadCommand.Execute().ToTask().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Null(editor.ErrorMessage);
+        var reloadedCard = Assert.Single(editor.Draft.Cards);
+        var cardList = dialog.GetVisualDescendants().OfType<ListBox>().Single(list => list.Items.Contains(reloadedCard));
+        cardList.SetCurrentValue(SelectingItemsControl.SelectedItemProperty, reloadedCard);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(reloadedCard, editor.SelectedCard);
+        var reloaded = reloadedCard.Parameters;
+        Assert.Equal(EquipmentParameterVisibility.Admin, ParameterVisibilityBox(dialog, reloaded[0]).SelectedValue);
+        Assert.Equal(EquipmentParameterVisibility.User, ParameterVisibilityBox(dialog, reloaded[1]).SelectedValue);
+        Assert.Equal("equip.bucket.parameter2", reloaded[0].SignalId);
+        Assert.Equal(SignalBindingDirection.ReadWrite, reloaded[0].Direction);
+        Assert.Equal(SignalValueType.UInt16, reloaded[0].ValueType);
+        Assert.Equal("5000", reloaded[0].SavedValue);
+        Assert.True(reloaded[0].PendingAutoDispatch);
+        Assert.Null(reloaded[0].LastDispatchError);
+    }
+
+    // UI-06
+    [AvaloniaFact]
+    public void Card_settings_parameter_visibility_column_scrolls_into_view_with_long_fields()
+    {
+        using var fixture = new DialogFixture(1060, 780);
+        fixture.Dialog.Width = 1060;
+        fixture.SelectTab(5);
+        var parameter = new EquipmentCardParameterConfiguration
+        {
+            Title = "Сохранённая скорость оборудования с длинным названием",
+            SignalId = "equip.bucket.parameter.with.long.signal.identifier.for.headless.layout",
+            Visibility = EquipmentParameterVisibility.Admin,
+        };
+        fixture.ViewModel.SelectedCard!.Parameters.Add(parameter);
+        Dispatcher.UIThread.RunJobs();
+
+        var scroll = fixture.Dialog.FindControl<ScrollViewer>("EquipmentParametersScroll")!;
+        var visibility = ParameterVisibilityBox(fixture.Dialog, parameter);
+        var row = Assert.IsType<Grid>(visibility.Parent);
+        var header = scroll.GetVisualDescendants().OfType<TextBlock>().Single(text => text.Text == "Отображать для");
+        var headings = Assert.IsType<Grid>(header.Parent).Children.OfType<TextBlock>().ToArray();
+        Assert.Equal(new[] { "Действие", "Название", "Role", "SignalId", "Direction", "ValueType", "Отображать для" },
+            headings.Select(text => text.Text));
+        Assert.Equal(7, row.Children.Count);
+        Assert.Equal(parameter.Title, Assert.IsType<TextBox>(row.Children[1]).Text);
+        Assert.Equal(parameter.SignalId, Assert.IsType<TextBox>(row.Children[3]).Text);
+        Assert.All(row.Children.Zip(row.Children.Skip(1)),
+            cells => Assert.True(cells.First.Bounds.Right <= cells.Second.Bounds.Left));
+        Assert.All(headings.Zip(row.Children), cells =>
+        {
+            Assert.Equal(cells.First.Bounds.Left, cells.Second.Bounds.Left, precision: 1);
+            Assert.True(cells.Second.Bounds.Width > 0);
+            Assert.InRange(cells.Second.Bounds.Right, 0, row.Bounds.Width);
+        });
+
+        Assert.True(scroll.Extent.Width > scroll.Viewport.Width);
+        visibility.BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(scroll.Offset.X > 0);
+        Assert.InRange(visibility.TranslatePoint(default, scroll)!.Value.X, 0,
+            scroll.Viewport.Width - visibility.Bounds.Width + 1);
+        var label = visibility.GetVisualDescendants().OfType<TextBlock>()
+            .Single(text => text.IsVisible && text.Text == "Только для администратора");
+        Assert.True(label.Bounds.Width >= label.DesiredSize.Width - 1);
+
+        row.Children[0].BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        Assert.InRange(scroll.Offset.X, 0, 1);
+    }
+
+    private static ComboBox ParameterVisibilityBox(RouteMapSettingsDialog dialog, EquipmentCardParameterConfiguration parameter) =>
+        dialog.GetVisualDescendants().OfType<ComboBox>()
+            .Single(box => ReferenceEquals(box.DataContext, parameter) && Grid.GetColumn(box) == 6);
 
     [AvaloniaFact]
     public void Card_settings_add_parameter_and_signal_mapping_includes_it()

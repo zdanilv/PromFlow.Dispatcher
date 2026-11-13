@@ -383,10 +383,10 @@
                 </StackPanel>
               </StackPanel>
               <TextBlock Classes="section" Text="Настройки оборудования"/>
-              <ScrollViewer HorizontalScrollBarVisibility="Auto"
+              <ScrollViewer x:Name="EquipmentParametersScroll" HorizontalScrollBarVisibility="Auto"
                             VerticalScrollBarVisibility="Disabled">
-                <StackPanel MinWidth="960">
-                  <Grid ColumnDefinitions="Auto,180,170,280,130,130"
+                <StackPanel MinWidth="1242">
+                  <Grid ColumnDefinitions="86,180,170,280,130,130,230"
                         ColumnSpacing="6"
                         Margin="0,0,0,4">
                     <TextBlock Text="Действие" Foreground="#66717C"/>
@@ -395,11 +395,12 @@
                     <TextBlock Grid.Column="3" Text="SignalId" Foreground="#66717C"/>
                     <TextBlock Grid.Column="4" Text="Direction" Foreground="#66717C"/>
                     <TextBlock Grid.Column="5" Text="ValueType" Foreground="#66717C"/>
+                    <TextBlock Grid.Column="6" Text="Отображать для" Foreground="#66717C"/>
                   </Grid>
                   <ItemsControl ItemsSource="{Binding Parameters}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate>
-                        <Grid ColumnDefinitions="Auto,180,170,280,130,130"
+                        <Grid ColumnDefinitions="86,180,170,280,130,130,230"
                               ColumnSpacing="6"
                               Margin="0,2">
                           <Button Content="Удалить"
@@ -416,6 +417,14 @@
                           <ComboBox Grid.Column="5"
                                     ItemsSource="{Binding DataContext.SignalValueTypes, ElementName=Root}"
                                     SelectedItem="{Binding ValueType}"/>
+                          <ComboBox Grid.Column="6" HorizontalAlignment="Stretch"
+                                    ItemsSource="{Binding DataContext.EquipmentParameterVisibilityChoices, ElementName=Root}"
+                                    SelectedValueBinding="{Binding Value}" SelectedValue="{Binding Visibility, Mode=TwoWay}"
+                                    AutomationProperties.Name="Отображать для">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
                         </Grid>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
