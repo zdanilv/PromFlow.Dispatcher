@@ -207,8 +207,9 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
 
     private void ApplyDefinition(RouteMapDefinition definition)
     {
-        // A table edit must keep in-flight command and readback state on an otherwise unchanged card.
-        var existingCards = _lastSignals is not null && Definition.Display?.Palette == definition.Display?.Palette
+        // Status and parameter visibility edits keep in-flight command and readback state.
+        var hasLiveSnapshot = _lastSignals is not null;
+        var existingCards = Definition.Display?.Palette == definition.Display?.Palette
             ? MapEquipmentCards.ToDictionary(card => card.Id)
             : null;
         Definition = definition;
@@ -216,7 +217,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         foreach (var card in definition.MapEquipment)
         {
             var viewModel = existingCards?.GetValueOrDefault(card.Id);
-            MapEquipmentCards.Add(viewModel is not null && viewModel.TryUpdateStatusMapping(card)
+            MapEquipmentCards.Add(viewModel is not null &&
+                                  viewModel.TryUpdateDefinitionWhileCommandPending(card, hasLiveSnapshot)
                 ? viewModel
                 : CreateEquipmentCardViewModel(card));
         }

@@ -511,6 +511,111 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         Assert.Single(fixture.Commands.Requests);
     }
 
+    [AvaloniaTheory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task Applying_and_saving_parameter_visibility_keeps_stop_pending_without_dispatching(
+        bool hasStatusMapping, bool publishSnapshotFirst)
+    {
+        using var fixture = new MigratedStatusFixture();
+        using var store = new RouteMapEquipmentParameterValueStore(fixture.Manager);
+        const string parameterId = "equip.bucket.parameter2";
+        const string stopId = "equip.bucket.stop";
+        var draft = fixture.Manager.CreateDraft();
+        var configuration = draft.Cards.Single();
+        if (!hasStatusMapping)
+            configuration.StatusMapping = null;
+        configuration.Parameters.Add(new()
+        {
+            Title = "Фильтер",
+            SignalId = parameterId,
+            ValueType = SignalValueType.UInt16,
+            SavedValue = "5000",
+            PendingAutoDispatch = true,
+        });
+        Assert.True(fixture.Manager.Apply(draft).IsSuccess);
+        Dispatcher.UIThread.RunJobs();
+
+        var snapshot = fixture.Mock.CreateSnapshot(3).ToDictionary();
+        SetSignal(snapshot, stopId, false);
+        if (publishSnapshotFirst)
+            fixture.Publish(snapshot);
+        var autoDispatchAttempts = fixture.Parameters.Attempts;
+        var card = fixture.Card;
+        card.RequestStopChange(true);
+        Assert.True(card.IsStopPending);
+        Assert.Equal(stopId, Assert.Single(fixture.Commands.Requests).SignalId);
+
+        draft = fixture.Manager.CreateDraft();
+        draft.Cards.Single().Parameters.Single().Visibility = EquipmentParameterVisibility.Admin;
+        Assert.True(fixture.Manager.Apply(draft).IsSuccess);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(card, fixture.Card);
+        Assert.True(card.IsStopPending);
+        Assert.False(card.CanStop);
+
+        Assert.True((await fixture.Manager.SaveAndApplyAsync(draft)).IsSuccess);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(card, fixture.Card);
+        Assert.True(card.IsStopPending);
+        Assert.False(card.CanStop);
+        card.RequestStopChange(true);
+        Assert.Single(fixture.Commands.Requests);
+        Assert.Equal(autoDispatchAttempts, fixture.Parameters.Attempts);
+        var pending = Assert.Single(store.GetPending()).Parameter;
+        Assert.Equal((parameterId, EquipmentParameterVisibility.Admin, "5000"),
+            (pending.Binding.SignalId, pending.Visibility, pending.SavedValue));
+
+        SetSignal(snapshot, stopId, true);
+        fixture.Signals.OnNext(snapshot);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(card.IsStopChecked);
+        Assert.False(card.IsStopPending);
+        Assert.Single(fixture.Commands.Requests);
+        Assert.Equal(autoDispatchAttempts + (publishSnapshotFirst ? 0 : 1), fixture.Parameters.Attempts);
+    }
+
+    [AvaloniaFact]
+    public async Task Applying_parameter_visibility_keeps_start_busy_until_the_original_pulse_completes()
+    {
+        var pulse = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var fixture = new MigratedStatusFixture(startCompletion: pulse.Task);
+        var draft = fixture.Manager.CreateDraft();
+        draft.Cards.Single().Parameters.Add(new()
+        {
+            Title = "Фильтер",
+            SignalId = "equip.bucket.parameter2",
+        });
+        Assert.True(fixture.Manager.Apply(draft).IsSuccess);
+        Dispatcher.UIThread.RunJobs();
+        fixture.Publish(fixture.Mock.CreateSnapshot(3));
+        var card = fixture.Card;
+        var start = card.StartCommand.Execute().ToTask();
+        try
+        {
+            Assert.True(card.IsStartBusy);
+            draft = fixture.Manager.CreateDraft();
+            draft.Cards.Single().Parameters.Single().Visibility = EquipmentParameterVisibility.Admin;
+            Assert.True(fixture.Manager.Apply(draft).IsSuccess);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Same(card, fixture.Card);
+            Assert.True(card.IsStartBusy);
+            Assert.False(card.CanStart);
+            await card.StartCommand.Execute().ToTask().WaitAsync(TimeSpan.FromSeconds(10));
+            var request = Assert.Single(fixture.Commands.Requests);
+            Assert.Equal("equip.bucket.start", request.SignalId);
+            Assert.Equal(ModbusWriteMode.Pulse, request.RequiredWriteMode);
+        }
+        finally
+        {
+            pulse.SetResult();
+            await start.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        Assert.False(card.IsStartBusy);
+    }
+
     [AvaloniaFact]
     public void Migrated_palette_with_historical_trailing_newline_renders_unknown_status()
     {
@@ -555,7 +660,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         private readonly Window _window;
         private bool _dashboardDisposed;
 
-        public MigratedStatusFixture()
+        public MigratedStatusFixture(Task? startCompletion = null)
         {
             Storage = new RouteMapConfigurationStorage(Path.Combine(_directory, "route-map.json"));
             var historical = _mapper.CreateSeedDocument();
@@ -581,6 +686,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
                 Subscriptions++;
                 return Signals;
             }));
+            Commands = new RecordingStatusCommandDispatcher(startCompletion);
             _signalRuntime = new RouteMapSignalRuntime(provider, Commands, new TestSignalProvider(ModbusSignals),
                 Commands, RouteMapSignalSource.Mock);
             Dashboard = new RouteMapDashboardViewModel(Manager, _signalRuntime, new RouteMapRuntimeMapper(Manager),
@@ -598,7 +704,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         public RouteMapConfigurationManager Manager { get; }
         public MockSignalProvider Mock { get; }
         public RouteMapDashboardViewModel Dashboard { get; }
-        public NoOpCommandDispatcher Commands { get; } = new();
+        public RecordingStatusCommandDispatcher Commands { get; }
         public RecordingParameterDispatcher Parameters { get; } = new();
         public Subject<IReadOnlyDictionary<string, SignalValue>> Signals { get; } = new();
         public ReplaySubject<IReadOnlyDictionary<string, SignalValue>> ModbusSignals { get; } = new(1);
@@ -678,6 +784,19 @@ public sealed partial class RouteMapSettingsDialogVisualTests
 
         private static SignalBindingConfiguration BoolBinding(SignalBindingRole role, string id) =>
             new() { Role = role, SignalId = id, Direction = SignalBindingDirection.Read, ValueType = SignalValueType.Bool };
+    }
+
+    private sealed class RecordingStatusCommandDispatcher(Task? startCompletion) : IEquipmentCommandDispatcher
+    {
+        public List<SignalWriteRequest> Requests { get; } = [];
+
+        public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return request.SignalId == "equip.bucket.start" && startCompletion is not null
+                ? startCompletion
+                : Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingParameterDispatcher : IEquipmentParameterAutoDispatcher

@@ -441,12 +441,21 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     public void ApplyRuntime(RouteObjectRuntimeState? runtimeState, bool isConnectionAvailable = true)
         => ApplyRuntime(runtimeState, isConnectionAvailable, isLiveSnapshot: true);
 
-    internal bool TryUpdateStatusMapping(EquipmentCommandCard card)
+    internal bool TryUpdateDefinitionWhileCommandPending(EquipmentCommandCard card, bool hasLiveSnapshot)
     {
-        if ((!IsStopPending && !IsStartBusy) || (_card.StatusMapping is null && card.StatusMapping is null) ||
-            !_card.Bindings.SequenceEqual(card.Bindings) || !_card.Parameters.SequenceEqual(card.Parameters) ||
+        if ((!IsStopPending && !IsStartBusy) || !_card.Bindings.SequenceEqual(card.Bindings) ||
+            (!hasLiveSnapshot && _card.StatusMapping != card.StatusMapping) ||
+            _card.Parameters.Count != card.Parameters.Count ||
             _card != card with { Bindings = _card.Bindings, Parameters = _card.Parameters, StatusMapping = _card.StatusMapping })
             return false;
+
+        for (var index = 0; index < _card.Parameters.Count; index++)
+        {
+            var current = _card.Parameters[index];
+            var updated = card.Parameters[index];
+            if (current != updated && current != updated with { Visibility = current.Visibility })
+                return false;
+        }
 
         _card = card;
         return true;

@@ -26,11 +26,11 @@ admin mode is preserved for the next user-mode launch.
 
 ## Definition And Schema
 
-The current user profile schema is version `19`:
+The current user profile schema is version `21`:
 
 ```json
 {
-  "schemaVersion": 19,
+  "schemaVersion": 21,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -50,6 +50,12 @@ A `deadEnd` segment connects a regular node to a `terminalAnchor`. Its
 `terminalCapLength` specifies the cap length in logical units. An anchor belongs
 to one segment and has no roles or bindings. Segment bindings apply to its main
 track. Cap rendering and editing terminal elements are deferred to later stages.
+
+The `v20 → v21` migration adds `visibility: "user"` to parameters where the field
+is absent. It preserves explicit valid visibility values, existing setpoints, and
+additional JSON fields. The manager backs up the active profile before saving the
+migrated file atomically. Explicit invalid visibility values cause a load or validation
+error. Reopening a v21 profile skips migration.
 
 ## Objects
 
@@ -113,9 +119,9 @@ an active `system.reset` Pulse command, and `Emergency` remains available.
 `true` disables the matching button and, for historical Toggle cards, clears checked
 without writing back to PLC. Other `*OffFeedback` roles and `State` remain legacy.
 
-The `Н` button in the card header opens a modal equipment-parameters dialog. Parameters
-are stored on the card as `EquipmentParameter`: `Title`, `SignalId`, `Direction`, and
-`ValueType`. Its availability is independent from both the card `Enabled` binding and
+The `Н` button in the card header opens a modal equipment-parameters dialog. Each
+`EquipmentCardParameter` has a title, a signal binding with the `EquipmentParameter`
+role, and a `Visibility` setting. The button stays available regardless of the card `Enabled` binding and
 connection state in both modes. Editable parameters also persist a local setpoint,
 pending-auto-dispatch flag, and last dispatch error in `route-map.json`. On open, `Read`
 uses the latest good runtime snapshot while `Write`/`ReadWrite` use a saved setpoint when
@@ -127,6 +133,19 @@ Modbus mapping or dispatch. The first Modbus reconnect dispatches each pending v
 both success and failure clear pending, and failures remain visible until a manual save
 retries. Online save uses normal mapping validation and `SignalWriteRequest` dispatch
 without closing the dialog.
+
+The `cards[].parameters[].visibility` field controls which rows appear in the
+operator dialog for the current `Application.WorkMode`.
+
+| JSON value | Editor label | `user` dialog | `admin` dialog |
+|---|---|---|---|
+| `user` (`EquipmentParameterVisibility.User`) | Для пользователя | Visible | Visible |
+| `admin` (`EquipmentParameterVisibility.Admin`) | Только для администратора | Hidden | Visible |
+
+The dialog filters parameters before creating rows and preserves their order.
+`Сохранить` processes visible editable rows. With no visible rows, the dialog
+displays «Для текущего режима нет доступных настроек оборудования.», disables
+`Сохранить`, and keeps `Закрыть` available.
 
 ## Right Panel
 
@@ -165,11 +184,17 @@ pulse duration.
 
 The `Карточки` tab lets admins configure equipment parameters: add/remove rows, edit the
 title, the single allowed role `EquipmentParameter`, `SignalId`, `Direction`, and
-`ValueType`. These parameters remain domain `SignalId` values and automatically appear in
-`SignalId ↔ Modbus`; physical addresses are configured only there through
-`Modbus.DataMap`. New parameters default to `Word`; old `UInt16` configs remain valid
-and compatible. Changing `SignalId`, `Direction`, or `ValueType` clears the stored
-setpoint metadata; duplicating a card does not copy it.
+`ValueType`. In «Настройки оборудования», the «Отображать для» column sets each
+row's visibility. The editor shows all rows, new parameters default to `user`,
+and duplicating a card copies each row's visibility. New parameters default to
+`Word`, and existing `UInt16` configs remain valid. Changing `SignalId`, `Direction`,
+or `ValueType` clears stored setpoint metadata, and a duplicate starts without it.
+
+Changing only `Visibility` preserves the signal binding, `SavedValue`,
+`PendingAutoDispatch`, and `LastDispatchError`. The full definition, the
+`SignalId ↔ Modbus` inventory, and `EquipmentParameterAutoDispatcher` use both
+visibility categories. Physical addresses are configured in `Modbus.DataMap`, and
+the PLC remains the authority for control.
 
 Validation covers schema version, ID uniqueness, references, binding roles, required
 commands, card parameters, geometry, colors, fragment bindings, placeholder rules, and

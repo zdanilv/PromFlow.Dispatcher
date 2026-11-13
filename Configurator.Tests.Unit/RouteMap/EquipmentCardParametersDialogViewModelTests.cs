@@ -316,6 +316,27 @@ public sealed class EquipmentCardParametersDialogViewModelTests
     }
 
     [Fact]
+    public async Task Online_save_records_write_error_only_for_the_visible_parameter()
+    {
+        const string error = "Тайм-аут записи";
+        var dispatcher = new CapturingDispatcher(new TimeoutException(error));
+        var store = new RecordingValueStore();
+        var mixed = MixedVisibilityCard();
+        var card = Card(mixed.Parameters[0], mixed.Parameters[1]);
+        using var viewModel = new EquipmentCardParametersDialogViewModel(
+            card, null, dispatcher, valueStore: store, isAdminMode: false);
+        var row = Assert.Single(viewModel.Parameters);
+        row.ValueText = "11";
+
+        await viewModel.SaveCommand.Execute().FirstAsync();
+
+        Assert.Equal(row.SignalId, Assert.Single(dispatcher.Requests).SignalId);
+        Assert.Equal(new EquipmentParameterSetpoint(row.SignalId, "11"), Assert.Single(store.Saved));
+        Assert.Equal((card.Id, row.SignalId, error), Assert.Single(store.Completions));
+        Assert.Contains(error, viewModel.ErrorMessage);
+    }
+
+    [Fact]
     public async Task Save_offline_persists_editable_values_without_mapping_or_dispatching()
     {
         var dispatcher = new CapturingDispatcher();
