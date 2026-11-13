@@ -1,7 +1,10 @@
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia;
+using Avalonia.Automation.Peers;
+using Avalonia.Automation.Provider;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
@@ -10,12 +13,14 @@ using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Configurator.Application.Services;
+using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Dialogs;
 using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Panels;
+using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
@@ -28,9 +33,14 @@ namespace Configurator.Tests.RouteMap.Ui;
 
 public sealed class EquipmentCardParametersDialogTests
 {
+    private const string BucketId = "equip.bucket";
+    private const string OtherCardId = "equip.other";
     private const string UserSignalId = "test.parameter.user.1";
-    private const string AdminSignalId = "test.parameter.admin.1";
+    private const string AdminSignalId = "equip.bucket.parameter2";
     private const string ReadSignalId = "test.parameter.user.2";
+    private const string NewSignalId = "test.parameter.new";
+    private const string NewTitle = "Новая настройка";
+    private const string EmptyMessage = "Для текущего режима нет доступных настроек оборудования.";
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(10);
 
     // UI-07, UI-08
@@ -53,9 +63,11 @@ public sealed class EquipmentCardParametersDialogTests
         Assert.Equal(isAdminMode, texts.Contains($"{UserSignalId} • UInt16"));
         Assert.Equal(isAdminMode, texts.Contains($"{AdminSignalId} • UInt16"));
         Assert.Equal(isAdminMode, FindButton(dialog, "Добавить").IsEffectivelyVisible);
+        Assert.False(dialog.FindControl<Border>("NewParameterForm")!.IsEffectivelyVisible);
         Assert.DoesNotContain("Новый параметр", texts);
         Assert.Equal(isAdminMode ? 3 : 2, ParameterList(dialog).Items.Count);
         Assert.True(FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
+        fixture.CaptureFrame($"equipment-settings-{workMode}");
 
         await fixture.CloseAsync(dialog);
         Assert.Same(definition, fixture.Manager.CurrentDefinition);
@@ -66,16 +78,23 @@ public sealed class EquipmentCardParametersDialogTests
 
     [AvaloniaTheory]
     [InlineData(0)]
+    [InlineData(1)]
     [InlineData(16)]
     public async Task Admin_can_open_and_cancel_the_form_with_keyboard_in_a_scrollable_dialog(int parameterCount)
     {
         using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode, parameterCount: parameterCount);
+        var originalJson = fixture.ReadJson();
         var dialog = fixture.Open();
+        var vm = ViewModel(dialog);
         var add = FindButton(dialog, "Добавить");
         var title = dialog.FindControl<TextBox>("NewParameterTitleBox")!;
         var form = dialog.FindControl<Border>("NewParameterForm")!;
         var scroll = dialog.FindControl<ScrollViewer>("ParametersScrollViewer")!;
-        Assert.Equal(parameterCount == 0, VisibleTexts(dialog).Contains("Для текущего режима нет доступных настроек оборудования."));
+        Assert.Equal(parameterCount == 0, VisibleTexts(dialog).Contains(EmptyMessage));
+        Assert.Equal(parameterCount > 0, VisibleTexts(dialog).Contains("Скорость"));
+        Assert.True(add.IsEffectivelyVisible);
+        Assert.True(add.IsEffectivelyEnabled);
+        Assert.False(form.IsEffectivelyVisible);
         Assert.Equal(parameterCount > 0, FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
         add.BringIntoView();
         Dispatcher.UIThread.RunJobs();
@@ -85,28 +104,49 @@ public sealed class EquipmentCardParametersDialogTests
         Assert.True(form.IsEffectivelyVisible);
         Assert.True(title.IsFocused);
         Assert.False(add.IsEffectivelyEnabled);
+        Assert.False(FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
+        Assert.All(form.GetVisualDescendants().OfType<InputElement>()
+            .Where(field => field is TextBox or ComboBox), field => Assert.True(field.IsEffectivelyEnabled));
+        SetDraft(dialog, NewTitle, NewSignalId);
+        await vm.AddCommand.Execute().ToTask().WaitAsync(TestTimeout);
+        Assert.Equal(NewSignalId, vm.NewParameterSignalId);
         var labels = VisibleTexts(form);
         Assert.All(new[] { "Новый параметр", "Название", "SignalId", "Направление", "Тип значения", "Отображать для" },
             label => Assert.Contains(label, labels));
-        Assert.True(scroll.Extent.Height > scroll.Viewport.Height);
+        if (parameterCount != 1)
+            Assert.True(scroll.Extent.Height > scroll.Viewport.Height);
         Assert.Equal(scroll.Extent.Width, scroll.Viewport.Width, precision: 1);
+        fixture.CaptureFrame($"equipment-settings-add-{parameterCount}-rows");
         var cancel = FindButton(dialog, "Отмена");
         cancel.BringIntoView();
         Assert.True(cancel.Focus());
+        if (parameterCount > 1)
+            fixture.CaptureFrame("equipment-settings-add-actions");
         fixture.PressSpace();
         Assert.False(form.IsEffectivelyVisible);
         Assert.True(add.IsEffectivelyEnabled);
         Assert.Equal(parameterCount > 0, FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
+        Assert.Null(vm.NewParameterTitle);
+        Assert.Null(vm.NewParameterSignalId);
+        Assert.Equal(parameterCount, vm.Parameters.Count);
         Assert.Equal(parameterCount, fixture.Manager.CurrentDocument.Cards.Single().Parameters.Count);
+        Assert.Equal(originalJson, fixture.ReadJson());
+        Assert.Empty(fixture.Store.Additions);
+        Assert.Empty(fixture.Dispatcher.Requests);
         await fixture.CloseAsync(dialog);
     }
 
-    [AvaloniaFact]
-    public async Task Admin_creates_bool_inline_and_can_save_explicit_false_after_reopening()
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Admin_creates_bool_inline_and_can_save_explicit_false_after_reopening(bool offline)
     {
-        using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode, offline: true, parameterCount: 0);
+        using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode, offline: offline, parameterCount: 0);
         var dialog = fixture.Open();
-        var viewModel = Assert.IsType<EquipmentCardParametersDialogViewModel>(dialog.DataContext);
+        var viewModel = ViewModel(dialog);
+        Assert.True(viewModel.HasNoParameters);
+        Assert.Contains(EmptyMessage, VisibleTexts(dialog));
+        Assert.False(FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
         fixture.Click(FindButton(dialog, "Добавить"));
         var form = dialog.FindControl<Border>("NewParameterForm")!;
         var fields = form.GetVisualDescendants().OfType<ComboBox>().ToArray();
@@ -134,6 +174,9 @@ public sealed class EquipmentCardParametersDialogTests
         Dispatcher.UIThread.RunJobs();
         Assert.False(form.IsEffectivelyVisible);
         Assert.Contains("Настройка добавлена", VisibleTexts(dialog));
+        Assert.Contains("Разрешение", VisibleTexts(dialog));
+        Assert.DoesNotContain(EmptyMessage, VisibleTexts(dialog));
+        Assert.False(viewModel.HasNoParameters);
         Assert.Equal("test.parameter.bool", Assert.Single(viewModel.Parameters).SignalId);
         Assert.True(FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
         var persisted = Assert.Single(fixture.Storage.LoadActive()!.Cards.Single().Parameters);
@@ -141,6 +184,10 @@ public sealed class EquipmentCardParametersDialogTests
             EquipmentParameterVisibility.Admin, null, false, null),
             (persisted.Role, persisted.Direction, persisted.ValueType, persisted.Visibility,
                 persisted.SavedValue, persisted.PendingAutoDispatch, persisted.LastDispatchError));
+        Assert.Empty(fixture.Store.Saves);
+        Assert.Empty(fixture.Store.GetPending());
+        Assert.Empty(fixture.Dispatcher.Requests);
+        await SaveOperatorDialogAsync(dialog);
         Assert.Empty(fixture.Store.Saves);
         Assert.Empty(fixture.Dispatcher.Requests);
         await fixture.CloseAsync(dialog);
@@ -154,14 +201,364 @@ public sealed class EquipmentCardParametersDialogTests
         var boolChoice = Assert.Single(dialog.GetVisualDescendants().OfType<ComboBox>(),
             box => box.DataContext is EquipmentCardParameterRow && box.IsEffectivelyVisible);
         Assert.Equal(-1, boolChoice.SelectedIndex);
-        await SaveOperatorDialogAsync(fixture, dialog);
+        await SaveOperatorDialogAsync(dialog);
         Assert.Empty(fixture.Store.Saves);
         boolChoice.SetCurrentValue(SelectingItemsControl.SelectedIndexProperty, 0);
-        await SaveOperatorDialogAsync(fixture, dialog);
+        await SaveOperatorDialogAsync(dialog);
         var save = Assert.Single(fixture.Store.Saves);
-        Assert.True(save.Pending);
+        Assert.Equal(offline, save.Pending);
         Assert.Equal(new EquipmentParameterSetpoint("test.parameter.bool", "false"), Assert.Single(save.Values));
+        var saved = fixture.Parameter("test.parameter.bool");
+        Assert.Equal(("false", offline, null), (saved.SavedValue, saved.PendingAutoDispatch, saved.LastDispatchError));
+        if (offline)
+        {
+            Assert.Empty(fixture.Dispatcher.Requests);
+            Assert.Equal("test.parameter.bool", Assert.Single(fixture.Store.GetPending()).Parameter.Binding.SignalId);
+        }
+        else
+        {
+            var request = Assert.Single(fixture.Dispatcher.Requests);
+            Assert.Equal(("test.parameter.bool", false, SignalValueType.Bool),
+                (request.SignalId, Assert.IsType<bool>(request.Value), request.ValueType));
+            Assert.Empty(fixture.Store.GetPending());
+        }
+        await fixture.CloseAsync(dialog);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(SignalBindingDirection.Read, SignalValueType.UInt16, false)]
+    [InlineData(SignalBindingDirection.ReadWrite, SignalValueType.Word, true)]
+    [InlineData(SignalBindingDirection.ReadWrite, SignalValueType.Bool, false)]
+    [InlineData(SignalBindingDirection.ReadWrite, SignalValueType.String, false)]
+    [InlineData(SignalBindingDirection.ReadWrite, SignalValueType.Float32, false)]
+    [InlineData(SignalBindingDirection.ReadWrite, SignalValueType.Int16, false)]
+    [InlineData(SignalBindingDirection.ReadWrite, SignalValueType.Int32, false)]
+    [InlineData(SignalBindingDirection.ReadWrite, SignalValueType.Dword, false)]
+    [InlineData(SignalBindingDirection.ReadWrite, SignalValueType.Date, false)]
+    public async Task Creation_keeps_existing_parameters_and_updates_json_runtime_and_open_dialog(
+        SignalBindingDirection direction, SignalValueType type, bool offline)
+    {
+        using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode, offline: offline, pendingError: null);
+        var originalJson = JsonNode.Parse(fixture.ReadJson())!;
+        var originalParameters = ParametersInJson(originalJson);
+        var originalRuntime = fixture.Manager.CurrentDefinition.MapEquipment.Single().Parameters;
+        var pending = Assert.Single(fixture.Store.GetPending());
+        Assert.Equal((AdminSignalId, SignalValueType.UInt16, "5000", true, null),
+            (pending.Parameter.Binding.SignalId, pending.Parameter.Binding.ValueType, pending.Parameter.SavedValue,
+                pending.Parameter.PendingAutoDispatch, pending.Parameter.LastDispatchError));
+        var publications = new List<(RouteMapDefinition Definition, RouteMapConfigurationDocument Document, string Json)>();
+        using var subscription = fixture.Manager.DefinitionChanges.Skip(1).Subscribe(definition =>
+            publications.Add((definition, fixture.Manager.CurrentDocument, fixture.ReadJson())));
+        var dialog = fixture.Open();
+        fixture.Click(FindButton(dialog, "Добавить"));
+        SetDraft(dialog, $" {NewTitle} ", $" {NewSignalId} ", direction, type);
+        Assert.Empty(fixture.Store.Additions);
         Assert.Empty(fixture.Dispatcher.Requests);
+        Assert.True(JsonNode.DeepEquals(originalJson, JsonNode.Parse(fixture.ReadJson())));
+
+        await ClickCreateAsync(fixture, dialog);
+
+        Assert.Equal((BucketId, new NewEquipmentCardParameterDefinition(
+            NewTitle, NewSignalId, direction, type, EquipmentParameterVisibility.User)), Assert.Single(fixture.Store.Additions));
+        Assert.Null(ViewModel(dialog).CreateErrorMessage);
+        Assert.False(dialog.FindControl<Border>("NewParameterForm")!.IsEffectivelyVisible);
+        Assert.Contains(NewTitle, VisibleTexts(dialog));
+        Assert.True(FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
+        var publication = Assert.Single(publications);
+        Assert.Same(fixture.Manager.CurrentDefinition, publication.Definition);
+        Assert.Same(fixture.Manager.CurrentDocument, publication.Document);
+        Assert.Equal(fixture.ReadJson(), publication.Json);
+        var expected = new EquipmentCardParameter(NewTitle,
+            new(SignalBindingRole.EquipmentParameter, NewSignalId, direction, type)) { RequiresExplicitSetpoint = true };
+        Assert.Equal(originalRuntime.Append(expected), publication.Definition.MapEquipment.Single().Parameters);
+        Assert.Equal(originalRuntime.Select(parameter => parameter.Binding.SignalId).Append(NewSignalId),
+            ViewModel(dialog).Parameters.Select(row => row.SignalId));
+        Assert.Equal(pending, Assert.Single(fixture.Store.GetPending()));
+        Assert.Empty(fixture.Dispatcher.Requests);
+        Assert.Empty(fixture.Store.Saves);
+
+        var persistedJson = JsonNode.Parse(publication.Json)!;
+        Assert.Equal((int?)originalJson["schemaVersion"], (int?)persistedJson["schemaVersion"]);
+        var persistedParameters = ParametersInJson(persistedJson);
+        var addedJson = persistedParameters.Last()!.AsObject();
+        Assert.True(JsonNode.DeepEquals(JsonSerializer.SerializeToNode(new
+        {
+            title = NewTitle,
+            signalId = NewSignalId,
+            role = "equipmentParameter",
+            direction = JsonNamingPolicy.CamelCase.ConvertName(direction.ToString()),
+            valueType = JsonNamingPolicy.CamelCase.ConvertName(type.ToString()),
+            visibility = "user",
+            savedValue = (string?)null,
+            pendingAutoDispatch = false,
+            lastDispatchError = (string?)null,
+            requiresExplicitSetpoint = true,
+        }), addedJson));
+        persistedParameters.RemoveAt(persistedParameters.Count - 1);
+        Assert.Equal(3, originalParameters.Count);
+        Assert.True(JsonNode.DeepEquals(originalJson, persistedJson));
+        foreach (var document in new[] { publication.Document, fixture.Storage.LoadActive()! })
+        {
+            var parameter = Assert.Single(document.Cards.Single().Parameters, item => item.SignalId == NewSignalId);
+            Assert.Equal((expected.Title, expected.Binding.Role, direction, type, expected.Visibility, null, false, null),
+                (parameter.Title, parameter.Role, parameter.Direction, parameter.ValueType, parameter.Visibility,
+                    parameter.SavedValue, parameter.PendingAutoDispatch, parameter.LastDispatchError));
+        }
+
+        await fixture.CloseAsync(dialog);
+        using var reloaded = fixture.CreateManager();
+        Assert.Null(reloaded.LastLoadError);
+        dialog = fixture.Open(manager: reloaded);
+        Assert.Contains(NewTitle, VisibleTexts(dialog));
+        Assert.Equal(expected, reloaded.CurrentDefinition.MapEquipment.Single().Parameters[^1]);
+        await fixture.CloseAsync(dialog);
+    }
+
+    [AvaloniaFact]
+    public async Task Closing_with_a_draft_preserves_only_the_created_parameter()
+    {
+        using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode, includeOtherCard: true);
+        var originalJson = JsonNode.Parse(fixture.ReadJson())!;
+        var dialog = fixture.Open(cardId: OtherCardId);
+        fixture.Click(FindButton(dialog, "Добавить"));
+        SetDraft(dialog, NewTitle, NewSignalId);
+        await ClickCreateAsync(fixture, dialog);
+        Assert.Equal(OtherCardId, Assert.Single(fixture.Store.Additions).CardId);
+        Assert.Equal(NewSignalId, Assert.Single(ViewModel(dialog).Parameters).SignalId);
+        var committedJson = fixture.ReadJson();
+        var committedDocument = JsonNode.Parse(committedJson)!;
+        Assert.True(JsonNode.DeepEquals(ParametersInJson(originalJson), ParametersInJson(committedDocument)));
+        Assert.Equal(NewSignalId, (string?)Assert.Single(ParametersInJson(committedDocument, OtherCardId))!["signalId"]);
+
+        fixture.Click(FindButton(dialog, "Добавить"));
+        SetDraft(dialog, "Незавершённая настройка", "test.parameter.discard");
+        var vm = ViewModel(dialog);
+        await fixture.CloseAsync(dialog);
+        Assert.Null(vm.NewParameterTitle);
+        Assert.Null(vm.NewParameterSignalId);
+        Assert.Equal(committedJson, fixture.ReadJson());
+        Assert.Empty(fixture.Dispatcher.Requests);
+
+        dialog = fixture.Open(cardId: OtherCardId);
+        Assert.Equal(NewSignalId, Assert.Single(ViewModel(dialog).Parameters).SignalId);
+        Assert.Contains(NewTitle, VisibleTexts(dialog));
+        await fixture.CloseAsync(dialog);
+    }
+
+    [AvaloniaTheory]
+    [InlineData("", NewSignalId, "Название", 0)]
+    [InlineData("   ", NewSignalId, "Название", 0)]
+    [InlineData(NewTitle, "", "SignalId", 0)]
+    [InlineData(NewTitle, "   ", "SignalId", 0)]
+    [InlineData(NewTitle, AdminSignalId, "уже существует", 1)]
+    [InlineData(NewTitle, "EQUIP.BUCKET.PARAMETER2", "уже существует", 1)]
+    public async Task Invalid_or_duplicate_input_keeps_the_draft_and_can_be_corrected(
+        string title, string signalId, string message, int storeCalls)
+    {
+        using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode);
+        var dialog = fixture.Open();
+        var originalJson = fixture.ReadJson();
+        var originalDefinition = fixture.Manager.CurrentDefinition;
+        var originalDocument = fixture.Manager.CurrentDocument;
+        var vm = ViewModel(dialog);
+        fixture.Click(FindButton(dialog, "Добавить"));
+        SetDraft(dialog, title, signalId);
+        await ClickCreateAsync(fixture, dialog);
+        Assert.Equal(storeCalls, fixture.Store.Additions.Count);
+        AssertDraftError(dialog, title, signalId, message, expectedRows: 3);
+        Assert.Equal(originalJson, fixture.ReadJson());
+        Assert.Same(originalDefinition, fixture.Manager.CurrentDefinition);
+        Assert.Same(originalDocument, fixture.Manager.CurrentDocument);
+        if (signalId == "EQUIP.BUCKET.PARAMETER2")
+            fixture.CaptureFrame("equipment-settings-duplicate-error");
+
+        SetDraft(dialog, NewTitle, NewSignalId);
+        await ClickCreateAsync(fixture, dialog);
+        Assert.Null(vm.CreateErrorMessage);
+        Assert.Equal(NewSignalId, vm.Parameters[^1].SignalId);
+        Assert.Empty(fixture.Dispatcher.Requests);
+        await fixture.CloseAsync(dialog);
+    }
+
+    [AvaloniaFact]
+    public async Task File_write_failure_keeps_the_active_profile_and_form_until_retry()
+    {
+        using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode);
+        var dialog = fixture.Open();
+        var originalJson = fixture.ReadJson();
+        var originalDefinition = fixture.Manager.CurrentDefinition;
+        var originalDocument = fixture.Manager.CurrentDocument;
+        var publications = new List<RouteMapDefinition>();
+        using var subscription = fixture.Manager.DefinitionChanges.Skip(1).Subscribe(publications.Add);
+        fixture.Click(FindButton(dialog, "Добавить"));
+        SetDraft(dialog, NewTitle, NewSignalId);
+
+        // A directory at the temporary file path prevents the real storage write.
+        var blockedPath = fixture.Storage.ActiveFilePath + ".tmp";
+        Directory.CreateDirectory(blockedPath);
+        try
+        {
+            await ClickCreateAsync(fixture, dialog);
+            AssertDraftError(dialog, NewTitle, NewSignalId, "Не удалось сохранить RouteMap", expectedRows: 3);
+            Assert.Equal(originalJson, fixture.ReadJson());
+            Assert.Equal(3, fixture.Storage.LoadActive()!.Cards.Single().Parameters.Count);
+            Assert.Same(originalDefinition, fixture.Manager.CurrentDefinition);
+            Assert.Same(originalDocument, fixture.Manager.CurrentDocument);
+            Assert.Empty(publications);
+        }
+        finally
+        {
+            Directory.Delete(blockedPath);
+        }
+
+        await ClickCreateAsync(fixture, dialog);
+        Assert.Null(ViewModel(dialog).CreateErrorMessage);
+        Assert.Equal(NewSignalId, ViewModel(dialog).Parameters[^1].SignalId);
+        Assert.Equal(NewTitle, fixture.Parameter(NewSignalId).Title);
+        Assert.Same(fixture.Manager.CurrentDefinition, Assert.Single(publications));
+        Assert.Empty(fixture.Dispatcher.Requests);
+        await fixture.CloseAsync(dialog);
+    }
+
+    [AvaloniaFact]
+    public async Task User_cannot_create_through_the_store_with_an_active_profile()
+    {
+        using var fixture = new DialogFixture(ApplicationOptions.UserWorkMode);
+        var originalJson = fixture.ReadJson();
+        var originalDocument = fixture.Manager.CurrentDocument;
+        var originalDefinition = fixture.Manager.CurrentDefinition;
+        var dialog = fixture.Open();
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fixture.Store.AddAsync(BucketId, new(NewTitle, NewSignalId, SignalBindingDirection.ReadWrite,
+                SignalValueType.Word, EquipmentParameterVisibility.User)));
+
+        Assert.Contains("администратор", error.Message);
+        Assert.Equal(originalJson, fixture.ReadJson());
+        Assert.Same(originalDocument, fixture.Manager.CurrentDocument);
+        Assert.Same(originalDefinition, fixture.Manager.CurrentDefinition);
+        Assert.Equal(new[] { UserSignalId, ReadSignalId }, ViewModel(dialog).Parameters.Select(row => row.SignalId));
+        Assert.Empty(fixture.Dispatcher.Requests);
+        await fixture.CloseAsync(dialog);
+    }
+
+    [AvaloniaFact]
+    public async Task Unmapped_definition_can_be_created_but_its_value_requires_modbus_mapping()
+    {
+        var modbus = new ModbusOptions();
+        using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode, parameterCount: 0, modbus: modbus);
+        var dialog = fixture.Open();
+        fixture.Click(FindButton(dialog, "Добавить"));
+        SetDraft(dialog, NewTitle, NewSignalId);
+        await ClickCreateAsync(fixture, dialog);
+        Assert.Null(ViewModel(dialog).CreateErrorMessage);
+        Assert.Empty(modbus.DataMap);
+        Assert.Empty(fixture.Dispatcher.Requests);
+
+        var beforeSave = fixture.ReadJson();
+        var row = Assert.Single(ViewModel(dialog).Parameters);
+        Assert.Single(dialog.GetVisualDescendants().OfType<TextBox>(), box => ReferenceEquals(box.DataContext, row))
+            .SetCurrentValue(TextBox.TextProperty, "42");
+        var save = ViewModel(dialog).SaveCommand.FirstAsync().ToTask();
+        InvokeButton(dialog, "Сохранить");
+        await save.WaitAsync(TestTimeout);
+        Assert.Contains($"SignalId {NewSignalId} не настроен", row.ValidationMessage);
+        Assert.Contains(row.ValidationMessage, VisibleTexts(dialog));
+        Assert.Equal(beforeSave, fixture.ReadJson());
+        Assert.Empty(fixture.Store.Saves);
+        Assert.Empty(fixture.Dispatcher.Requests);
+        Assert.Empty(modbus.DataMap);
+        await fixture.CloseAsync(dialog);
+    }
+
+    [AvaloniaFact]
+    public async Task Double_create_while_a_setpoint_save_holds_the_gate_preserves_both_changes()
+    {
+        using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode, offline: true, pendingError: null);
+        var dialog = fixture.Open();
+        var vm = ViewModel(dialog);
+        fixture.Click(FindButton(dialog, "Добавить"));
+        SetDraft(dialog, NewTitle, NewSignalId);
+        var saveReachedPublication = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var releaseSave = new ManualResetEventSlim();
+        using var subscription = fixture.Manager.DefinitionChanges.Skip(1).Take(1).Subscribe(_ =>
+        {
+            // The manager still holds its write gate while publishing the saved setpoint.
+            saveReachedPublication.SetResult();
+            if (!releaseSave.Wait(TestTimeout))
+                throw new TimeoutException("Setpoint publication did not resume.");
+        });
+        using var values = new RouteMapEquipmentParameterValueStore(fixture.Manager);
+        var save = Task.Run(() => values.SaveAsync(BucketId, [new(AdminSignalId, "6000")], pendingAutoDispatch: true));
+        Task? created = null;
+        try
+        {
+            await saveReachedPublication.Task.WaitAsync(TestTimeout);
+            created = vm.CreateCommand.FirstAsync().ToTask();
+            var create = FindButton(dialog, "Создать");
+            fixture.Click(create);
+            Assert.True(vm.IsCreatingParameter);
+            Assert.False(create.IsEffectivelyEnabled);
+            Assert.False(FindButton(dialog, "Закрыть").IsEffectivelyEnabled);
+            Assert.False(FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
+            Assert.Equal(3, vm.Parameters.Count);
+            Assert.DoesNotContain(ParametersInJson(JsonNode.Parse(fixture.ReadJson())!),
+                parameter => (string?)parameter!["signalId"] == NewSignalId);
+            fixture.Click(create);
+            Assert.Single(fixture.Store.Additions);
+        }
+        finally
+        {
+            releaseSave.Set();
+            await save.WaitAsync(TestTimeout);
+            if (fixture.Store.Additions.Count != 0 && created is not null)
+                await created.WaitAsync(TestTimeout);
+        }
+
+        Assert.False(vm.IsAddingParameter);
+        Assert.False(vm.IsCreatingParameter);
+        Assert.Null(vm.CreateErrorMessage);
+        Assert.Single(vm.Parameters, row => row.SignalId == NewSignalId);
+        var existing = fixture.Parameter(AdminSignalId);
+        var added = fixture.Parameter(NewSignalId);
+        Assert.Equal(("6000", true, null), (existing.SavedValue, existing.PendingAutoDispatch, existing.LastDispatchError));
+        Assert.Equal((null, false), (added.SavedValue, added.PendingAutoDispatch));
+        Assert.Equal(new[] { UserSignalId, AdminSignalId, ReadSignalId, NewSignalId },
+            ParametersInJson(JsonNode.Parse(fixture.ReadJson())!).Select(parameter => (string?)parameter!["signalId"]));
+        Assert.Equal("6000", Assert.Single(fixture.Store.GetPending()).Parameter.SavedValue);
+        Assert.Empty(fixture.Dispatcher.Requests);
+        await fixture.CloseAsync(dialog);
+    }
+
+    [AvaloniaFact]
+    public async Task Creation_from_an_open_dialog_preserves_newer_changes_from_the_editor()
+    {
+        using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode, pendingError: null);
+        var dialog = fixture.Open();
+        fixture.Click(FindButton(dialog, "Добавить"));
+        SetDraft(dialog, NewTitle, NewSignalId);
+
+        using var editor = new RouteMapSettingsViewModel(fixture.Manager, fixture.Storage, new NullFilePicker());
+        editor.Draft.Cards.Single().Title = "Имя карточки из редактора";
+        editor.Draft.Cards.Single().Parameters.Single(item => item.SignalId == ReadSignalId).Title = "Имя параметра из редактора";
+        await editor.SaveCommand.Execute().ToTask().WaitAsync(TestTimeout);
+        Assert.Null(editor.ErrorMessage);
+        var latestJson = JsonNode.Parse(fixture.ReadJson());
+
+        await ClickCreateAsync(fixture, dialog);
+        Assert.Null(ViewModel(dialog).CreateErrorMessage);
+        var jsonAfterCreation = JsonNode.Parse(fixture.ReadJson())!;
+        var rows = ParametersInJson(jsonAfterCreation);
+        Assert.Equal(NewSignalId, (string?)rows.Last()!["signalId"]);
+        rows.RemoveAt(rows.Count - 1);
+        Assert.True(JsonNode.DeepEquals(latestJson, jsonAfterCreation));
+        Assert.Contains(NewTitle, VisibleTexts(dialog));
+        Assert.Empty(fixture.Dispatcher.Requests);
+        await fixture.CloseAsync(dialog);
+
+        dialog = fixture.Open();
+        Assert.Contains("Имя карточки из редактора", VisibleTexts(dialog));
+        Assert.Contains("Имя параметра из редактора", VisibleTexts(dialog));
+        Assert.Contains(NewTitle, VisibleTexts(dialog));
         await fixture.CloseAsync(dialog);
     }
 
@@ -227,7 +624,7 @@ public sealed class EquipmentCardParametersDialogTests
         input.SetCurrentValue(TextBox.TextProperty, "42");
         Assert.Equal("42", viewModel.Parameters[0].ValueText);
 
-        await SaveOperatorDialogAsync(fixture, dialog);
+        await SaveOperatorDialogAsync(dialog);
         var save = Assert.Single(fixture.Store.Saves);
         Assert.Equal(offline, save.Pending);
         Assert.Equal(new EquipmentParameterSetpoint(UserSignalId, "42"), Assert.Single(save.Values));
@@ -260,7 +657,7 @@ public sealed class EquipmentCardParametersDialogTests
         Assert.Single(fixture.Store.Saves);
 
         adminViewModel.Parameters[1].ValueText = "5001";
-        await SaveOperatorDialogAsync(fixture, adminDialog);
+        await SaveOperatorDialogAsync(adminDialog);
         Assert.Equal(new[] { new EquipmentParameterSetpoint(UserSignalId, "42"), new EquipmentParameterSetpoint(AdminSignalId, "5001") },
             fixture.Store.Saves[1].Values);
         Assert.Equal(offline ? [] : new[] { UserSignalId, UserSignalId, AdminSignalId },
@@ -304,13 +701,52 @@ public sealed class EquipmentCardParametersDialogTests
         }
     }
 
-    private static async Task SaveOperatorDialogAsync(DialogFixture fixture, EquipmentCardParametersDialogView dialog)
+    private static async Task SaveOperatorDialogAsync(EquipmentCardParametersDialogView dialog)
     {
         var viewModel = Assert.IsType<EquipmentCardParametersDialogViewModel>(dialog.DataContext);
         var saveCompleted = viewModel.SaveCommand.FirstAsync().ToTask();
-        fixture.Click(FindButton(dialog, "Сохранить"));
+        InvokeButton(dialog, "Сохранить");
         await saveCompleted.WaitAsync(TestTimeout);
         Assert.Null(viewModel.ErrorMessage);
+    }
+
+    private static EquipmentCardParametersDialogViewModel ViewModel(Control dialog) =>
+        Assert.IsType<EquipmentCardParametersDialogViewModel>(dialog.DataContext);
+
+    private static JsonArray ParametersInJson(JsonNode document, string cardId = BucketId) =>
+        document["cards"]!.AsArray().Single(card => (string?)card!["id"] == cardId)!["parameters"]!.AsArray();
+
+    private static void SetDraft(EquipmentCardParametersDialogView dialog, string title, string signalId,
+        SignalBindingDirection direction = SignalBindingDirection.ReadWrite, SignalValueType type = SignalValueType.Word)
+    {
+        dialog.FindControl<TextBox>("NewParameterTitleBox")!.SetCurrentValue(TextBox.TextProperty, title);
+        dialog.FindControl<TextBox>("NewParameterSignalIdBox")!.SetCurrentValue(TextBox.TextProperty, signalId);
+        var choices = dialog.FindControl<Border>("NewParameterForm")!.GetVisualDescendants().OfType<ComboBox>().ToArray();
+        choices[0].SetCurrentValue(SelectingItemsControl.SelectedItemProperty, direction);
+        choices[1].SetCurrentValue(SelectingItemsControl.SelectedItemProperty, type);
+    }
+
+    private static async Task ClickCreateAsync(DialogFixture fixture, EquipmentCardParametersDialogView dialog)
+    {
+        var created = ViewModel(dialog).CreateCommand.FirstAsync().ToTask();
+        fixture.Click(FindButton(dialog, "Создать"));
+        await created.WaitAsync(TestTimeout);
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    private static void AssertDraftError(EquipmentCardParametersDialogView dialog,
+        string title, string signalId, string message, int expectedRows)
+    {
+        var vm = ViewModel(dialog);
+        Assert.True(dialog.FindControl<Border>("NewParameterForm")!.IsEffectivelyVisible);
+        Assert.Equal(title, dialog.FindControl<TextBox>("NewParameterTitleBox")!.Text ?? "");
+        Assert.Equal(signalId, dialog.FindControl<TextBox>("NewParameterSignalIdBox")!.Text ?? "");
+        Assert.Contains(message, vm.CreateErrorMessage);
+        Assert.Contains(vm.CreateErrorMessage, VisibleTexts(dialog));
+        Assert.Equal(expectedRows, vm.Parameters.Count);
+        Assert.Null(vm.StatusMessage);
+        Assert.True(FindButton(dialog, "Создать").IsEffectivelyEnabled);
+        Assert.False(FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
     }
 
     private static string?[] VisibleTexts(Control dialog) => dialog.GetVisualDescendants().OfType<TextBlock>()
@@ -320,6 +756,13 @@ public sealed class EquipmentCardParametersDialogTests
 
     private static Button FindButton(Control dialog, string content) =>
         Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), button => Equals(button.Content, content));
+
+    private static void InvokeButton(Control dialog, string content)
+    {
+        var button = FindButton(dialog, content);
+        Assert.True(button.IsEffectivelyEnabled);
+        Assert.IsAssignableFrom<IInvokeProvider>(ControlAutomationPeer.CreatePeerForElement(button)).Invoke();
+    }
 
     private static ItemsControl ParameterList(Control dialog) =>
         Assert.Single(dialog.GetVisualDescendants().OfType<ItemsControl>(), items => items.GetType() == typeof(ItemsControl));
@@ -333,16 +776,26 @@ public sealed class EquipmentCardParametersDialogTests
         private readonly Window _window;
         private readonly string _workMode;
         private readonly bool _offline;
+        private readonly RouteMapSignalRuntime? _signalRuntime;
 
         public DialogFixture(string workMode, bool allAdmin = false, bool offline = false,
-            bool adminInitiallyVisible = false, int parameterCount = 3)
+            bool adminInitiallyVisible = false, int parameterCount = 3, string? pendingError = "Предыдущая ошибка",
+            bool includeOtherCard = false, ModbusOptions? modbus = null)
         {
             _workMode = workMode;
             _offline = offline;
             Storage = new RouteMapConfigurationStorage(Path.Combine(_directory, "route-map.json"));
             var mapper = new RouteMapConfigurationMapper(RouteMapSeed.Create());
             var document = mapper.CreateSeedDocument();
-            var bucket = Assert.Single(document.Cards, card => card.Id == "equip.bucket");
+            var bucket = Assert.Single(document.Cards, card => card.Id == BucketId);
+            if (includeOtherCard)
+            {
+                var other = Storage.Clone(document).Cards.Single();
+                other.Id = OtherCardId;
+                other.Title = "Другая карточка";
+                other.AttachedChainId = null;
+                document.Cards.Add(other);
+            }
             bucket.Parameters.Add(new EquipmentCardParameterConfiguration
             {
                 Title = "Скорость",
@@ -359,7 +812,7 @@ public sealed class EquipmentCardParametersDialogTests
                 Visibility = adminInitiallyVisible ? EquipmentParameterVisibility.User : EquipmentParameterVisibility.Admin,
                 SavedValue = "5000",
                 PendingAutoDispatch = true,
-                LastDispatchError = "Предыдущая ошибка",
+                LastDispatchError = pendingError,
             });
             bucket.Parameters.Add(new EquipmentCardParameterConfiguration
             {
@@ -369,8 +822,8 @@ public sealed class EquipmentCardParametersDialogTests
                 ValueType = SignalValueType.UInt16,
                 Visibility = allAdmin ? EquipmentParameterVisibility.Admin : EquipmentParameterVisibility.User,
             });
-            if (parameterCount == 0)
-                bucket.Parameters.Clear();
+            while (bucket.Parameters.Count > parameterCount)
+                bucket.Parameters.RemoveAt(bucket.Parameters.Count - 1);
             for (var index = bucket.Parameters.Count; index < parameterCount; index++)
             {
                 bucket.Parameters.Add(new EquipmentCardParameterConfiguration
@@ -381,13 +834,19 @@ public sealed class EquipmentCardParametersDialogTests
                 });
             }
             Storage.SaveActive(document);
-            Manager = new RouteMapConfigurationManager(
-                Storage, mapper, new RouteMapConfigurationValidator(), new RouteMapConfigurationMigrator());
+            Manager = CreateManager();
             Assert.Null(Manager.LastLoadError);
             Store = new RecordingValueStore(Manager, Options.Create(new ApplicationOptions { WorkMode = workMode }));
+            IEquipmentParameterWriteValidator validator = NoopEquipmentParameterWriteValidator.Instance;
+            if (modbus is not null)
+            {
+                var signals = new EmptySignalProvider();
+                _signalRuntime = new RouteMapSignalRuntime(signals, Dispatcher, signals, Dispatcher, RouteMapSignalSource.Modbus);
+                validator = new EquipmentParameterWriteValidator(_signalRuntime, new StaticModbusOptions(modbus));
+            }
             _services = new ServiceCollection()
                 .AddSingleton<IEquipmentCommandDispatcher>(Dispatcher)
-                .AddSingleton<IEquipmentParameterWriteValidator>(NoopEquipmentParameterWriteValidator.Instance)
+                .AddSingleton<IEquipmentParameterWriteValidator>(validator)
                 .AddSingleton<IEquipmentParameterValueStore>(Store)
                 .AddSingleton<IEquipmentCardParameterDefinitionStore>(Store)
                 .AddTransient<EquipmentCardParametersDialogView>()
@@ -397,6 +856,7 @@ public sealed class EquipmentCardParametersDialogTests
             {
                 Identifier = DialogHostIds.Root,
                 IsMultipleDialogsEnabled = true,
+                DisableOpeningAnimation = true,
             };
             _window = new Window { Width = 700, Height = 480, Content = _host };
             _window.Show();
@@ -408,11 +868,22 @@ public sealed class EquipmentCardParametersDialogTests
         public RecordingValueStore Store { get; }
         public RecordingDispatcher Dispatcher { get; } = new();
 
-        public EquipmentCardParametersDialogView Open(string? workMode = null)
+        public RouteMapConfigurationManager CreateManager() => new(Storage,
+            new RouteMapConfigurationMapper(RouteMapSeed.Create()), new RouteMapConfigurationValidator(),
+            new RouteMapConfigurationMigrator());
+
+        public string ReadJson() => File.ReadAllText(Storage.ActiveFilePath);
+
+        public EquipmentCardParameterConfiguration Parameter(string signalId) =>
+            Assert.Single(Storage.LoadActive()!.Cards.Single(card => card.Id == BucketId).Parameters,
+                parameter => parameter.SignalId == signalId);
+
+        public EquipmentCardParametersDialogView Open(string? workMode = null, string cardId = BucketId,
+            RouteMapConfigurationManager? manager = null)
         {
             var dialogService = new EquipmentCardParametersDialogService(
                 _services, new DialogCoordinator(), Options.Create(new ApplicationOptions { WorkMode = workMode ?? _workMode }));
-            var card = Manager.CurrentDefinition.MapEquipment.Single();
+            var card = (manager ?? Manager).CurrentDefinition.MapEquipment.Single(card => card.Id == cardId);
             var cardViewModel = new EquipmentCardViewModel(card, Dispatcher, parametersDialogService: dialogService);
             cardViewModel.ApplyRuntime(new RouteObjectRuntimeState(
                 card.Id, _offline ? RouteObjectState.Offline : RouteObjectState.Idle, card.StatusText, ValueText: null,
@@ -429,9 +900,9 @@ public sealed class EquipmentCardParametersDialogTests
 
         public async Task CloseAsync(EquipmentCardParametersDialogView dialog)
         {
-            var viewModel = Assert.IsType<EquipmentCardParametersDialogViewModel>(dialog.DataContext);
+            var viewModel = ViewModel(dialog);
             var closed = viewModel.Result.FirstAsync().ToTask();
-            Click(FindButton(dialog, "Закрыть"));
+            InvokeButton(dialog, "Закрыть");
             Assert.False(await closed.WaitAsync(TestTimeout));
             Assert.False(_host.IsOpen);
         }
@@ -455,6 +926,18 @@ public sealed class EquipmentCardParametersDialogTests
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
         }
 
+        public void CaptureFrame(string name)
+        {
+            if (HeadlessTestApplication.ScreenshotDirectory is not { Length: > 0 } directory)
+                return;
+
+            Directory.CreateDirectory(directory);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            using var frame = Assert.IsType<Avalonia.Media.Imaging.WriteableBitmap>(_window.CaptureRenderedFrame());
+            frame.Save(Path.Combine(directory, name + ".png"));
+        }
+
         public void Dispose()
         {
             if (_host.IsOpen)
@@ -462,6 +945,7 @@ public sealed class EquipmentCardParametersDialogTests
             _window.Close();
             Avalonia.Application.Current!.Styles.Remove(_hostStyles);
             _services.Dispose();
+            _signalRuntime?.Dispose();
             Store.Dispose();
             Manager.Dispose();
             Directory.Delete(_directory, recursive: true);
@@ -473,6 +957,7 @@ public sealed class EquipmentCardParametersDialogTests
     {
         private readonly RouteMapEquipmentParameterValueStore _store = new(manager, options);
         public List<(EquipmentParameterSetpoint[] Values, bool Pending)> Saves { get; } = [];
+        public List<(string CardId, NewEquipmentCardParameterDefinition Definition)> Additions { get; } = [];
 
         public Task SaveAsync(string cardId, IReadOnlyCollection<EquipmentParameterSetpoint> values,
             bool pendingAutoDispatch, CancellationToken cancellationToken = default)
@@ -484,13 +969,30 @@ public sealed class EquipmentCardParametersDialogTests
         public IReadOnlyList<PendingEquipmentParameter> GetPending() => _store.GetPending();
 
         public Task<EquipmentCardParameter> AddAsync(string cardId, NewEquipmentCardParameterDefinition definition,
-            CancellationToken cancellationToken = default) => _store.AddAsync(cardId, definition, cancellationToken);
+            CancellationToken cancellationToken = default)
+        {
+            Additions.Add((cardId, definition));
+            return _store.AddAsync(cardId, definition, cancellationToken);
+        }
 
         public Task CompleteDispatchAsync(string cardId, string signalId, string expectedSavedValue,
             string? errorMessage, CancellationToken cancellationToken = default) =>
             _store.CompleteDispatchAsync(cardId, signalId, expectedSavedValue, errorMessage, cancellationToken);
 
         public void Dispose() => _store.Dispose();
+    }
+
+    private sealed class StaticModbusOptions(ModbusOptions options) : IOptionsMonitor<ModbusOptions>
+    {
+        public ModbusOptions CurrentValue => options;
+        public ModbusOptions Get(string? name) => options;
+        public IDisposable? OnChange(Action<ModbusOptions, string?> listener) => null;
+    }
+
+    private sealed class EmptySignalProvider : ISignalValueProvider
+    {
+        public IObservable<IReadOnlyDictionary<string, SignalValue>> Observe() =>
+            Observable.Never<IReadOnlyDictionary<string, SignalValue>>();
     }
 
     private sealed class NullFilePicker : IRouteMapSettingsFilePicker
