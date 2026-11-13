@@ -138,6 +138,8 @@ internal static class Program
                     services.AddSingleton<RouteMapConfigurationMigrator>();
                     services.AddSingleton<RouteMapConfigurationManager>();
                     services.AddSingleton<IEquipmentParameterValueStore, RouteMapEquipmentParameterValueStore>();
+                    services.AddSingleton<IEquipmentCardParameterDefinitionStore>(sp =>
+                        (RouteMapEquipmentParameterValueStore)sp.GetRequiredService<IEquipmentParameterValueStore>());
                     services.AddSingleton<IRouteMapSettingsFilePicker, RouteMapSettingsFilePicker>();
                     services.AddSingleton<IModbusTcpProfileFilePicker, ModbusTcpProfileFilePicker>();
                     services.AddSingleton<IModbusTcpProfileTransferService, ModbusTcpProfileTransferService>();

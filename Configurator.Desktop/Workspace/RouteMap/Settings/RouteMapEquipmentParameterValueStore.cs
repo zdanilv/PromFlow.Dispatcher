@@ -1,12 +1,73 @@
+using Configurator.Application.Services;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
+using Microsoft.Extensions.Options;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Settings;
 
 public sealed class RouteMapEquipmentParameterValueStore(
-    RouteMapConfigurationManager configurationManager) : IEquipmentParameterValueStore, IDisposable
+    RouteMapConfigurationManager configurationManager,
+    IOptions<ApplicationOptions> applicationOptions)
+    : IEquipmentParameterValueStore, IEquipmentCardParameterDefinitionStore, IDisposable
 {
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private bool _disposed;
+
+    public RouteMapEquipmentParameterValueStore(RouteMapConfigurationManager configurationManager)
+        : this(configurationManager, Options.Create(new ApplicationOptions { WorkMode = ApplicationOptions.UserWorkMode }))
+    {
+    }
+
+    public async Task<EquipmentCardParameter> AddAsync(
+        string cardId,
+        NewEquipmentCardParameterDefinition definition,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!applicationOptions.Value.IsAdminMode)
+            throw new InvalidOperationException("Добавлять настройки оборудования может только администратор.");
+
+        ArgumentNullException.ThrowIfNull(definition);
+        if (string.IsNullOrWhiteSpace(cardId))
+            throw new InvalidOperationException("Идентификатор карточки обязателен.");
+        if (string.IsNullOrWhiteSpace(definition.Title))
+            throw new InvalidOperationException("Название настройки оборудования обязательно.");
+        if (string.IsNullOrWhiteSpace(definition.SignalId))
+            throw new InvalidOperationException("SignalId настройки оборудования обязателен.");
+        if (!Enum.IsDefined(definition.Direction))
+            throw new InvalidOperationException("Недопустимое направление (Direction) настройки оборудования.");
+        if (!Enum.IsDefined(definition.ValueType))
+            throw new InvalidOperationException("Недопустимый тип (ValueType) настройки оборудования.");
+        if (!Enum.IsDefined(definition.Visibility))
+            throw new InvalidOperationException("Недопустимая видимость (Visibility) настройки оборудования.");
+
+        var signalId = definition.SignalId.Trim();
+        var applied = await configurationManager.UpdateAsync(document =>
+        {
+            if (configurationManager.LastLoadError is { } loadError)
+                throw new InvalidOperationException(loadError);
+
+            var card = FindCard(document, cardId);
+            if (card.Parameters.Any(parameter =>
+                    string.Equals(parameter.SignalId, signalId, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException(
+                    $"Настройка оборудования с SignalId '{signalId}' уже существует в карточке '{cardId}'.");
+            }
+
+            card.Parameters.Add(new EquipmentCardParameterConfiguration
+            {
+                Title = definition.Title.Trim(),
+                SignalId = signalId,
+                Role = SignalBindingRole.EquipmentParameter,
+                Direction = definition.Direction,
+                ValueType = definition.ValueType,
+                Visibility = definition.Visibility,
+            });
+        }, cancellationToken);
+
+        return applied.MapEquipment.Single(card => card.Id == cardId)
+            .Parameters.Single(parameter => parameter.Binding.SignalId == signalId);
+    }
 
     public async Task SaveAsync(
         string cardId,
@@ -59,28 +120,14 @@ public sealed class RouteMapEquipmentParameterValueStore(
             parameter.LastDispatchError = errorMessage;
         }, cancellationToken);
 
-    public void Dispose() => _gate.Dispose();
+    public void Dispose() => _disposed = true;
 
-    private async Task UpdateAsync(
+    private Task UpdateAsync(
         Action<RouteMapConfigurationDocument> update,
         CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            var draft = configurationManager.CreateDraft();
-            update(draft);
-            var result = await configurationManager.SaveAndApplyAsync(draft, cancellationToken);
-            if (!result.IsSuccess)
-            {
-                var details = result.ErrorMessage ?? string.Join("; ", result.Errors.Select(error => error.Message));
-                throw new InvalidOperationException($"Не удалось сохранить RouteMap: {details}");
-            }
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return configurationManager.UpdateAsync(update, cancellationToken);
     }
 
     private static EquipmentCardConfiguration FindCard(RouteMapConfigurationDocument document, string cardId) =>

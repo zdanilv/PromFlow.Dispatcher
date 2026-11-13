@@ -2,6 +2,7 @@ using System.Reactive.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Media;
+using Configurator.Application.Services;
 using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
@@ -11,6 +12,7 @@ using Configurator.Application.Services.OpcUa.Browsing;
 using Configurator.Application.Services.OpcUa.Tags;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
+using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Dialogs.HelpDialog;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
@@ -1090,6 +1092,243 @@ public sealed class RouteMapConfigurationTests
         Assert.False(parameter.PendingAutoDispatch);
         Assert.Equal("PLC недоступен", parameter.LastDispatchError);
     }
+
+    [Theory]
+    [InlineData(SignalBindingDirection.Read, SignalValueType.UInt16, EquipmentParameterVisibility.User)]
+    [InlineData(SignalBindingDirection.Write, SignalValueType.Bool, EquipmentParameterVisibility.Admin)]
+    [InlineData(SignalBindingDirection.ReadWrite, SignalValueType.Word, EquipmentParameterVisibility.Admin)]
+    public async Task Parameter_definition_round_trips_in_selected_card_without_touching_setpoints(
+        SignalBindingDirection direction, SignalValueType type, EquipmentParameterVisibility visibility)
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var draft = manager.CreateDraft();
+        AddParametersWithMixedVisibility(draft);
+        var bucket = draft.Cards.Single();
+        bucket.Parameters[0].ExtensionData = new() { ["custom"] = JsonSerializer.SerializeToElement("keep") };
+        var other = scope.Storage.Clone(draft).Cards.Single();
+        other.Id = "equip.other";
+        other.Title = "Другая карточка";
+        other.AttachedChainId = null;
+        other.Parameters.Clear();
+        draft.Cards.Add(other);
+        var saved = await manager.SaveAndApplyAsync(draft);
+        Assert.True(saved.IsSuccess, saved.ErrorMessage ?? string.Join("; ", saved.Errors.Select(error => error.Message)));
+        var previous = manager.CurrentDefinition.MapEquipment.Single(card => card.Id == bucket.Id).Parameters;
+
+        using var store = CreateDefinitionStore(manager);
+        IEquipmentCardParameterDefinitionStore definitions = store;
+        var published = new List<RouteMapDefinition>();
+        using var subscription = manager.DefinitionChanges.Skip(1).Subscribe(published.Add);
+        var added = await definitions.AddAsync("equip.other", new(
+            "  Уровень ", " EQUIP.BUCKET.PARAMETER2 ", direction, type, visibility));
+
+        Assert.Equal(new EquipmentCardParameter("Уровень",
+            new(SignalBindingRole.EquipmentParameter, "EQUIP.BUCKET.PARAMETER2", direction, type),
+            Visibility: visibility), added);
+        Assert.Same(added, Assert.Single(Assert.Single(published).MapEquipment.Single(card => card.Id == "equip.other").Parameters));
+        Assert.Equal("equip.bucket", Assert.Single(store.GetPending()).CardId);
+
+        using var restarted = scope.CreateManager();
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, restarted.CurrentDocument.SchemaVersion);
+        Assert.Equal(added, Assert.Single(restarted.CurrentDefinition.MapEquipment.Single(card => card.Id == "equip.other").Parameters));
+        Assert.Equal(previous, restarted.CurrentDefinition.MapEquipment.Single(card => card.Id == bucket.Id).Parameters);
+        Assert.Equal("keep", restarted.CurrentDocument.Cards.Single(card => card.Id == bucket.Id)
+            .Parameters[0].ExtensionData!["custom"].GetString());
+    }
+
+    [Theory]
+    [InlineData("equip.bucket", " ", "valid", SignalBindingDirection.ReadWrite, SignalValueType.Word, EquipmentParameterVisibility.User, "Название")]
+    [InlineData("equip.bucket", "Параметр", null, SignalBindingDirection.ReadWrite, SignalValueType.Word, EquipmentParameterVisibility.User, "SignalId")]
+    [InlineData("equip.bucket", "Параметр", "valid", (SignalBindingDirection)99, SignalValueType.Word, EquipmentParameterVisibility.User, "Direction")]
+    [InlineData("equip.bucket", "Параметр", "valid", SignalBindingDirection.ReadWrite, (SignalValueType)99, EquipmentParameterVisibility.User, "ValueType")]
+    [InlineData("equip.bucket", "Параметр", "valid", SignalBindingDirection.ReadWrite, SignalValueType.Word, (EquipmentParameterVisibility)99, "Visibility")]
+    [InlineData(" ", "Параметр", "valid", SignalBindingDirection.ReadWrite, SignalValueType.Word, EquipmentParameterVisibility.User, "Идентификатор")]
+    [InlineData("EQUIP.BUCKET", "Параметр", "valid", SignalBindingDirection.ReadWrite, SignalValueType.Word, EquipmentParameterVisibility.User, "не найдена")]
+    public async Task Invalid_parameter_definition_does_not_publish_or_save(
+        string cardId, string title, string? signalId, SignalBindingDirection direction,
+        SignalValueType type, EquipmentParameterVisibility visibility, string message)
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var store = CreateDefinitionStore(manager);
+        var original = manager.CurrentDefinition;
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.AddAsync(cardId, new(title, signalId!, direction, type, visibility)));
+
+        Assert.Contains(message, error.Message);
+        Assert.Same(original, manager.CurrentDefinition);
+        Assert.False(File.Exists(scope.Path));
+    }
+
+    [Fact]
+    public async Task Parameter_definition_creation_is_denied_in_user_mode()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var store = CreateDefinitionStore(manager, " USER ");
+        IEquipmentCardParameterDefinitionStore definitions = store;
+        var original = manager.CurrentDefinition;
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            definitions.AddAsync("equip.bucket", NewParameter()));
+
+        Assert.Contains("администратор", error.Message);
+        Assert.Same(original, manager.CurrentDefinition);
+        Assert.False(File.Exists(scope.Path));
+    }
+
+    [Fact]
+    public async Task New_writable_parameter_does_not_send_a_default_value_on_auto_dispatch()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var store = CreateDefinitionStore(manager);
+        var provider = new EmptySignalProvider();
+        var dispatcher = new CapturingDispatcher();
+        using var runtime = new RouteMapSignalRuntime(provider, dispatcher, provider, dispatcher, RouteMapSignalSource.Modbus);
+        var autoDispatcher = new EquipmentParameterAutoDispatcher(
+            store, runtime, NoopEquipmentParameterWriteValidator.Instance, runtime);
+
+        var added = await store.AddAsync("equip.bucket", NewParameter() with { ValueType = SignalValueType.Bool });
+        await autoDispatcher.DispatchPendingAsync();
+
+        Assert.Empty(dispatcher.Requests);
+        Assert.Empty(store.GetPending());
+        Assert.Null(added.SavedValue);
+        Assert.False(added.PendingAutoDispatch);
+        Assert.Null(added.LastDispatchError);
+    }
+
+    [Fact]
+    public async Task Concurrent_parameter_additions_and_value_updates_preserve_existing_setpoints()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var draft = manager.CreateDraft();
+        AddParametersWithMixedVisibility(draft);
+        Assert.True((await manager.SaveAndApplyAsync(draft)).IsSuccess);
+        using var store = CreateDefinitionStore(manager);
+        // A second instance shares the same manager and therefore the same write gate.
+        using var valueStore = new RouteMapEquipmentParameterValueStore(manager);
+        var first = store.AddAsync("equip.bucket", NewParameter());
+        var duplicate = Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.AddAsync("equip.bucket", NewParameter() with { SignalId = " EQUIP.BUCKET.NEW " }));
+        var save = valueStore.SaveAsync("equip.bucket", [new("equip.bucket.parameter2", "6000")], true);
+        var complete = valueStore.CompleteDispatchAsync("equip.bucket", "equip.bucket.speed", "10", "Отказ PLC");
+
+        await Task.WhenAll(first, duplicate, save, complete);
+
+        Assert.Contains("уже существует", (await duplicate).Message);
+        using var restarted = scope.CreateManager();
+        var parameters = restarted.CurrentDefinition.MapEquipment.Single().Parameters;
+        Assert.Equal(new[] { "equip.bucket.parameter2", "equip.bucket.speed", "equip.bucket.new" },
+            parameters.Select(parameter => parameter.Binding.SignalId));
+        Assert.Equal(("6000", true, null),
+            (parameters[0].SavedValue, parameters[0].PendingAutoDispatch, parameters[0].LastDispatchError));
+        Assert.Equal(("10", false, "Отказ PLC"),
+            (parameters[1].SavedValue, parameters[1].PendingAutoDispatch, parameters[1].LastDispatchError));
+        Assert.Equal(await first, parameters[2]);
+    }
+
+    [Fact]
+    public async Task Parameter_addition_survives_an_attempt_to_save_or_apply_a_stale_editor_draft()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var editor = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        using var store = CreateDefinitionStore(manager);
+        editor.Draft.Cards.Single().Title = "Старая правка";
+        var added = await store.AddAsync("equip.bucket", NewParameter());
+
+        editor.Apply();
+        Assert.Contains("изменилась", editor.ErrorMessage);
+        await editor.SaveAsync();
+        Assert.Contains("изменилась", editor.ErrorMessage);
+        var export = await manager.ExportDraftAsync(scope.Path, editor.Draft);
+        Assert.False(export.IsSuccess);
+        Assert.Contains("другой путь", export.ErrorMessage);
+        Assert.Equal(added, Assert.Single(scope.Mapper.ToDefinition(scope.Storage.Load(scope.Path)).MapEquipment
+            .Single().Parameters));
+        Assert.Equal(added, Assert.Single(manager.CurrentDefinition.MapEquipment.Single().Parameters));
+        Assert.NotEqual("Старая правка", manager.CurrentDocument.Cards.Single().Title);
+
+        await editor.ReloadCommand.Execute().FirstAsync();
+        editor.Draft.Cards.Single().Title = "Новая правка";
+        await editor.SaveAsync();
+        Assert.Null(editor.ErrorMessage);
+        using var restarted = scope.CreateManager();
+        Assert.Equal("Новая правка", restarted.CurrentDocument.Cards.Single().Title);
+        Assert.Equal(added, Assert.Single(restarted.CurrentDefinition.MapEquipment.Single().Parameters));
+    }
+
+    [Fact]
+    public async Task Failed_parameter_definition_save_keeps_active_profile_and_can_be_retried()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        Assert.True((await manager.SaveAndApplyAsync(manager.CreateDraft())).IsSuccess);
+        var bytes = await File.ReadAllBytesAsync(scope.Path);
+        var original = manager.CurrentDefinition;
+        using var store = CreateDefinitionStore(manager);
+
+        await using (File.Open(scope.Path + ".tmp", FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+        {
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                store.AddAsync("equip.bucket", NewParameter()));
+            Assert.Contains("Не удалось сохранить RouteMap", error.Message);
+        }
+
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(scope.Path));
+        Assert.Same(original, manager.CurrentDefinition);
+        Assert.Equal(await store.AddAsync("equip.bucket", NewParameter()),
+            Assert.Single(manager.CurrentDefinition.MapEquipment.Single().Parameters));
+    }
+
+    [Fact]
+    public async Task Unreadable_active_profile_is_not_overwritten_when_adding_a_parameter()
+    {
+        using var scope = new TempConfigurationScope();
+        const string incompatibleProfile = """{"schemaVersion":999,"custom":"keep"}""";
+        await File.WriteAllTextAsync(scope.Path, incompatibleProfile);
+        using var manager = scope.CreateManager();
+        using var store = CreateDefinitionStore(manager);
+        var original = manager.CurrentDefinition;
+        Assert.NotNull(manager.LastLoadError);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.AddAsync("equip.bucket", NewParameter()));
+
+        Assert.Equal(manager.LastLoadError, error.Message);
+        Assert.Same(original, manager.CurrentDefinition);
+        Assert.Equal(incompatibleProfile, await File.ReadAllTextAsync(scope.Path));
+    }
+
+    [Fact]
+    public async Task Cancelled_parameter_definition_does_not_save_or_block_the_next_call()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var store = CreateDefinitionStore(manager);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            store.AddAsync("equip.bucket", NewParameter(), cancellation.Token));
+
+        Assert.False(File.Exists(scope.Path));
+        Assert.Equal(await store.AddAsync("equip.bucket", NewParameter()),
+            Assert.Single(manager.CurrentDefinition.MapEquipment.Single().Parameters));
+    }
+
+    private static RouteMapEquipmentParameterValueStore CreateDefinitionStore(
+        RouteMapConfigurationManager manager, string workMode = ApplicationOptions.AdminWorkMode) =>
+        new(manager, Options.Create(new ApplicationOptions { WorkMode = workMode }));
+
+    private static NewEquipmentCardParameterDefinition NewParameter() =>
+        new("Настройка", "equip.bucket.new", SignalBindingDirection.ReadWrite,
+            SignalValueType.Word, EquipmentParameterVisibility.User);
 
     [Fact]
     public void Migrator_updates_v2_visual_defaults_and_preserves_custom_active_binding()

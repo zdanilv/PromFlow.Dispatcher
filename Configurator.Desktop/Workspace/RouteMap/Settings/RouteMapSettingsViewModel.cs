@@ -26,6 +26,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     private readonly Dictionary<RouteSegmentConfiguration, RouteNodeConfiguration> _replacedEndpoints = new();
     private readonly HashSet<RouteSegmentConfiguration> _segmentsWithChangedKind = [];
     private RouteMapConfigurationDocument _draft;
+    private RouteMapConfigurationDocument _draftSource;
     private RouteChainConfiguration? _selectedChain;
     private RouteNodeConfiguration? _selectedNode;
     private RouteSegmentConfiguration? _selectedSegment;
@@ -51,7 +52,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         _filePicker = filePicker;
         _signalRuntime = signalRuntime;
         _appConfigService = appConfigService;
-        _draft = manager.CreateDraft();
+        _draft = manager.CreateDraft(out _draftSource);
         _useMockSimulation = signalRuntime?.CurrentSource != RouteMapSignalSource.Modbus;
         if (_signalRuntime is not null)
         {
@@ -346,10 +347,11 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         if (!ValidateEditedFragmentCounts())
             return;
         EnsureDraftRequiredBindings();
-        var result = _manager.Apply(Draft);
+        var result = _manager.Apply(Draft, _draftSource);
         HandleResult(result, "Настройки применены без записи файла.");
         if (result.IsSuccess)
         {
+            _draftSource = result.AppliedDocument!;
             ApplySignalSource();
         }
     }
@@ -359,13 +361,14 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         if (!ValidateEditedFragmentCounts())
             return;
         EnsureDraftRequiredBindings();
-        var result = await _manager.SaveAndApplyAsync(Draft);
+        var result = await _manager.SaveAndApplyAsync(Draft, _draftSource);
         HandleResult(result, $"Настройки сохранены: {ActiveFilePath}");
         if (!result.IsSuccess)
         {
             return;
         }
 
+        _draftSource = result.AppliedDocument!;
         try
         {
             if (_appConfigService is not null)
@@ -401,7 +404,14 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private async Task ReloadAsync()
     {
-        try { ReplaceDraft(await _manager.LoadActiveDraftAsync()); StatusMessage = "Активный JSON загружен в черновик."; ErrorMessage = null; }
+        try
+        {
+            var (draft, source) = await _manager.ReloadEditorDraftAsync();
+            _draftSource = source;
+            ReplaceDraft(draft);
+            StatusMessage = "Активный JSON загружен в черновик.";
+            ErrorMessage = null;
+        }
         catch (Exception ex) { ErrorMessage = ex.Message; }
     }
 

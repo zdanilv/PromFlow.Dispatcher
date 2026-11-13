@@ -9,6 +9,8 @@ public sealed record RouteMapConfigurationOperationResult(
     string? ErrorMessage = null)
 {
     public static RouteMapConfigurationOperationResult Success { get; } = new(true, []);
+
+    internal RouteMapConfigurationDocument? AppliedDocument { get; init; }
 }
 
 public sealed class RouteMapConfigurationManager : IDisposable
@@ -18,6 +20,7 @@ public sealed class RouteMapConfigurationManager : IDisposable
     private readonly RouteMapConfigurationValidator _validator;
     private readonly RouteMapConfigurationMigrator _migrator;
     private readonly BehaviorSubject<RouteMapDefinition> _definitionSubject;
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
 
     public RouteMapConfigurationManager(
         RouteMapConfigurationStorage storage,
@@ -69,7 +72,13 @@ public sealed class RouteMapConfigurationManager : IDisposable
     public string? LastLoadError { get; private set; }
     public IObservable<RouteMapDefinition> DefinitionChanges => _definitionSubject;
 
-    public RouteMapConfigurationDocument CreateDraft() => _storage.Clone(CurrentDocument);
+    public RouteMapConfigurationDocument CreateDraft() => CreateDraft(out _);
+
+    internal RouteMapConfigurationDocument CreateDraft(out RouteMapConfigurationDocument source)
+    {
+        source = CurrentDocument;
+        return _storage.Clone(source);
+    }
 
     public RouteMapConfigurationOperationResult Validate(RouteMapConfigurationDocument document)
     {
@@ -86,31 +95,101 @@ public sealed class RouteMapConfigurationManager : IDisposable
         }
     }
 
-    public RouteMapConfigurationOperationResult Apply(RouteMapConfigurationDocument document)
+    public RouteMapConfigurationOperationResult Apply(RouteMapConfigurationDocument document) =>
+        Apply(document, expectedDocument: null);
+
+    internal RouteMapConfigurationOperationResult Apply(
+        RouteMapConfigurationDocument document,
+        RouteMapConfigurationDocument? expectedDocument)
     {
+        if (!_writeGate.Wait(0))
+            return new(false, [], "Конфигурация RouteMap сохраняется. Повторите применение после завершения записи.");
+
         try
         {
+            if (HasConflict(expectedDocument))
+                return DraftConflict();
+
             var prepared = Prepare(document).Document;
             var validation = _validator.Validate(prepared);
             if (!validation.IsValid)
                 return new RouteMapConfigurationOperationResult(false, validation.Errors);
 
             var definition = _mapper.ToDefinition(prepared);
-            Publish(prepared, definition);
-            return RouteMapConfigurationOperationResult.Success;
+            return Publish(prepared, definition);
         }
         catch (Exception ex)
         {
             return new RouteMapConfigurationOperationResult(false, [], ex.Message);
         }
+        finally
+        {
+            _writeGate.Release();
+        }
     }
 
-    public async Task<RouteMapConfigurationOperationResult> SaveAndApplyAsync(
+    public Task<RouteMapConfigurationOperationResult> SaveAndApplyAsync(
         RouteMapConfigurationDocument document,
+        CancellationToken cancellationToken = default) =>
+        SaveAndApplyAsync(document, expectedDocument: null, cancellationToken);
+
+    internal async Task<RouteMapConfigurationOperationResult> SaveAndApplyAsync(
+        RouteMapConfigurationDocument document,
+        RouteMapConfigurationDocument? expectedDocument,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            await _writeGate.WaitAsync(cancellationToken);
+            try
+            {
+                return HasConflict(expectedDocument)
+                    ? DraftConflict()
+                    : await SaveAndApplyCoreAsync(document, cancellationToken);
+            }
+            finally
+            {
+                _writeGate.Release();
+            }
+        }
+        catch (Exception ex)
+        {
+            return new(false, [], ex.Message);
+        }
+    }
+
+    internal async Task<RouteMapDefinition> UpdateAsync(
+        Action<RouteMapConfigurationDocument> update,
+        CancellationToken cancellationToken)
+    {
+        await _writeGate.WaitAsync(cancellationToken);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var draft = CreateDraft();
+            update(draft);
+            var result = await SaveAndApplyCoreAsync(draft, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                var details = result.ErrorMessage ?? string.Join("; ", result.Errors.Select(error => error.Message));
+                throw new InvalidOperationException($"Не удалось сохранить RouteMap: {details}");
+            }
+
+            return CurrentDefinition;
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    private async Task<RouteMapConfigurationOperationResult> SaveAndApplyCoreAsync(
+        RouteMapConfigurationDocument document,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             var migration = Prepare(document);
             var prepared = migration.Document;
             var validation = _validator.Validate(prepared);
@@ -122,10 +201,9 @@ public sealed class RouteMapConfigurationManager : IDisposable
                 _storage.BackupActive();
             await _storage.SaveActiveAsync(prepared, cancellationToken);
             LastLoadError = null;
-            Publish(prepared, definition);
-            return RouteMapConfigurationOperationResult.Success;
+            return Publish(prepared, definition);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return new RouteMapConfigurationOperationResult(false, [], ex.Message);
         }
@@ -136,6 +214,20 @@ public sealed class RouteMapConfigurationManager : IDisposable
     {
         var loaded = await _storage.LoadActiveAsync(cancellationToken);
         return loaded is null ? CreateDefaultDraft() : Prepare(loaded).Document;
+    }
+
+    internal async Task<(RouteMapConfigurationDocument Draft, RouteMapConfigurationDocument Source)>
+        ReloadEditorDraftAsync()
+    {
+        await _writeGate.WaitAsync();
+        try
+        {
+            return (await LoadActiveDraftAsync(), CurrentDocument);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
     }
 
     internal RouteMapConfigurationDocument CreateDefaultDraft() => _mapper.CreateSeedDocument();
@@ -155,6 +247,12 @@ public sealed class RouteMapConfigurationManager : IDisposable
     {
         try
         {
+            var pathComparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (string.Equals(Path.GetFullPath(path), Path.GetFullPath(ActiveFilePath), pathComparison))
+                return new(false, [], "Активный профиль RouteMap изменяется через «Сохранить». Выберите другой путь для экспорта.");
+
             var prepared = Prepare(document).Document;
             var validation = _validator.Validate(prepared);
             if (!validation.IsValid)
@@ -169,14 +267,28 @@ public sealed class RouteMapConfigurationManager : IDisposable
         }
     }
 
-    public void Dispose() => _definitionSubject.Dispose();
-
-    private void Publish(RouteMapConfigurationDocument document, RouteMapDefinition definition)
+    public void Dispose()
     {
-        CurrentDocument = _storage.Clone(document);
+        _definitionSubject.Dispose();
+        _writeGate.Dispose();
+    }
+
+    private RouteMapConfigurationOperationResult Publish(
+        RouteMapConfigurationDocument document,
+        RouteMapDefinition definition)
+    {
+        // Prepare already detached this document from the caller's draft.
+        CurrentDocument = document;
         CurrentDefinition = definition;
         _definitionSubject.OnNext(definition);
+        return RouteMapConfigurationOperationResult.Success with { AppliedDocument = document };
     }
+
+    private bool HasConflict(RouteMapConfigurationDocument? expectedDocument) =>
+        expectedDocument is not null && !ReferenceEquals(expectedDocument, CurrentDocument);
+
+    private static RouteMapConfigurationOperationResult DraftConflict() =>
+        new(false, [], "Конфигурация RouteMap изменилась. Загрузите актуальный черновик и повторите правки.");
 
     private RouteMapConfigurationMigrationResult Prepare(RouteMapConfigurationDocument document) =>
         _migrator.Migrate(_storage.Clone(document));

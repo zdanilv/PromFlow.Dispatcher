@@ -445,7 +445,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     {
         if ((!IsStopPending && !IsStartBusy) || !_card.Bindings.SequenceEqual(card.Bindings) ||
             (!hasLiveSnapshot && _card.StatusMapping != card.StatusMapping) ||
-            _card.Parameters.Count != card.Parameters.Count ||
+            _card.Parameters.Count > card.Parameters.Count ||
             _card != card with { Bindings = _card.Bindings, Parameters = _card.Parameters, StatusMapping = _card.StatusMapping })
             return false;
 
@@ -456,6 +456,11 @@ public sealed class EquipmentCardViewModel : ViewModelBase
             if (current != updated && current != updated with { Visibility = current.Visibility })
                 return false;
         }
+
+        // A new definition has no setpoint and can be appended while a command is pending.
+        if (card.Parameters.Skip(_card.Parameters.Count).Any(parameter =>
+                parameter.SavedValue is not null || parameter.PendingAutoDispatch || parameter.LastDispatchError is not null))
+            return false;
 
         _card = card;
         return true;

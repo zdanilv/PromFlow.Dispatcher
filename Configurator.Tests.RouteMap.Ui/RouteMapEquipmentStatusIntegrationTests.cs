@@ -577,6 +577,41 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
+    public async Task Adding_parameter_does_not_dispatch_or_release_pending_stop()
+    {
+        using var fixture = new MigratedStatusFixture();
+        using var store = new RouteMapEquipmentParameterValueStore(
+            fixture.Manager, Options.Create(new ApplicationOptions()));
+        var snapshot = fixture.Mock.CreateSnapshot(3).ToDictionary();
+        const string stopId = "equip.bucket.stop";
+        SetSignal(snapshot, stopId, false);
+        fixture.Publish(snapshot);
+        var autoDispatchAttempts = fixture.Parameters.Attempts;
+        var card = fixture.Card;
+        card.RequestStopChange(true);
+        Assert.True(card.IsStopPending);
+        Assert.Equal(stopId, Assert.Single(fixture.Commands.Requests).SignalId);
+
+        var added = await store.AddAsync(card.Id, new("Настройка", "equip.bucket.new",
+            SignalBindingDirection.ReadWrite, SignalValueType.Bool, EquipmentParameterVisibility.User));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(card, fixture.Card);
+        Assert.True(card.IsStopPending);
+        Assert.False(card.CanStop);
+        Assert.Equal(added, Assert.Single(fixture.Manager.CurrentDefinition.MapEquipment.Single().Parameters));
+        Assert.Empty(store.GetPending());
+        card.RequestStopChange(true);
+        Assert.Single(fixture.Commands.Requests);
+        Assert.Equal(autoDispatchAttempts, fixture.Parameters.Attempts);
+
+        SetSignal(snapshot, stopId, true);
+        fixture.Publish(snapshot);
+        Assert.True(card.IsStopChecked);
+        Assert.False(card.IsStopPending);
+    }
+
+    [AvaloniaFact]
     public async Task Applying_parameter_visibility_keeps_start_busy_until_the_original_pulse_completes()
     {
         var pulse = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
