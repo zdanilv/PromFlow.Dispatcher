@@ -1109,7 +1109,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         Assert.Contains("equip.bucket.enabled • Bool", texts);
         Assert.Contains("Закрыть", buttons);
         Assert.Contains("Сохранить", buttons);
-        Assert.Single(dialog.GetVisualDescendants().OfType<TextBox>(), textBox => textBox.IsVisible);
+        Assert.Single(dialog.GetVisualDescendants().OfType<TextBox>(), textBox => textBox.IsEffectivelyVisible);
         Assert.Single(dialog.GetVisualDescendants().OfType<ToggleSwitch>(), toggle => toggle.IsVisible);
 
         dialogWindow.Close();

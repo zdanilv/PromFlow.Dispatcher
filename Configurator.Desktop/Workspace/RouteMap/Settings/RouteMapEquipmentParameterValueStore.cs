@@ -62,6 +62,7 @@ public sealed class RouteMapEquipmentParameterValueStore(
                 Direction = definition.Direction,
                 ValueType = definition.ValueType,
                 Visibility = definition.Visibility,
+                RequiresExplicitSetpoint = true,
             });
         }, cancellationToken);
 

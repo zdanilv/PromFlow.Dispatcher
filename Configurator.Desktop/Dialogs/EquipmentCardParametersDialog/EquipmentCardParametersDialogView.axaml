@@ -45,64 +45,143 @@
       </StackPanel>
 
       <ScrollViewer Grid.Row="1"
+                    x:Name="ParametersScrollViewer"
                     VerticalScrollBarVisibility="Auto"
                     HorizontalScrollBarVisibility="Disabled"
                     MaxHeight="300">
-        <ItemsControl ItemsSource="{Binding Parameters}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="dialog:EquipmentCardParameterRow">
-              <Grid RowDefinitions="Auto,Auto,Auto"
-                    ColumnDefinitions="*,240"
-                    ColumnSpacing="14"
-                    Margin="0,0,0,10">
-                <StackPanel VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Title}"
-                             Foreground="#2F3943"
+        <StackPanel Spacing="8">
+          <ItemsControl ItemsSource="{Binding Parameters}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="dialog:EquipmentCardParameterRow">
+                <Grid RowDefinitions="Auto,Auto,Auto"
+                      ColumnDefinitions="*,240"
+                      ColumnSpacing="14"
+                      Margin="0,0,0,10">
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}"
+                               Foreground="#2F3943"
+                               TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding SignalCaption}"
+                               Classes="caption"
+                               TextWrapping="Wrap"
+                               IsVisible="{Binding ShowTechnicalDetails}"/>
+                  </StackPanel>
+                  <TextBox Grid.Column="1"
+                           Classes="parameter-input"
+                           Text="{Binding ValueText, Mode=TwoWay}"
+                           IsReadOnly="{Binding IsReadOnly}"
+                           IsVisible="{Binding UsesTextInput}"/>
+                  <ToggleSwitch Grid.Column="1"
+                                Classes="parameter-bool"
+                                IsChecked="{Binding BoolValue, Mode=TwoWay}"
+                                IsEnabled="{Binding CanEdit}"
+                                IsVisible="{Binding UsesBoolToggle}"
+                                OnContent="Вкл"
+                                OffContent="Выкл"/>
+                  <ComboBox Grid.Column="1"
+                            HorizontalAlignment="Stretch"
+                            IsVisible="{Binding UsesExplicitBoolInput}"
+                            PlaceholderText="Не задано"
+                            ItemsSource="{Binding BoolChoices}"
+                            DisplayMemberBinding="{ReflectionBinding Label}"
+                            SelectedValueBinding="{ReflectionBinding Value}"
+                            SelectedValue="{Binding ExplicitBoolValue, Mode=TwoWay}"
+                            AutomationProperties.Name="{Binding Title}"/>
+                  <TextBlock Grid.Row="1"
+                             Grid.Column="1"
+                             Text="{Binding ValidationMessage}"
+                             IsVisible="{Binding HasValidationError}"
+                             Foreground="#B43D3D"
+                             FontSize="12"
                              TextWrapping="Wrap"/>
-                  <TextBlock Text="{Binding SignalCaption}"
-                             Classes="caption"
-                             TextWrapping="Wrap"
-                             IsVisible="{Binding ShowTechnicalDetails}"/>
-                </StackPanel>
+                  <TextBlock Grid.Row="2"
+                             Grid.Column="1"
+                             Text="{Binding DispatchError}"
+                             IsVisible="{Binding HasDispatchError}"
+                             Foreground="#B36B00"
+                             FontSize="12"
+                             TextWrapping="Wrap"/>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock Text="{Binding EmptyStateMessage}"
+                     IsVisible="{Binding HasNoParameters}"
+                     Foreground="#2F3943"
+                     TextWrapping="Wrap"/>
+          <Button Classes="dialog-action"
+                  Margin="0"
+                  Content="Добавить"
+                  IsVisible="{Binding CanAddParameter}"
+                  Click="FocusNewParameterTitle"
+                  Command="{Binding AddCommand}"/>
+          <Border x:Name="NewParameterForm"
+                  IsVisible="{Binding IsAddingParameter}"
+                  IsEnabled="{Binding !IsCreatingParameter}"
+                  BorderBrush="#C8D0D7"
+                  BorderThickness="1"
+                  CornerRadius="6"
+                  Padding="12">
+            <StackPanel Spacing="8">
+              <TextBlock Text="Новый параметр" FontWeight="SemiBold" Foreground="#2F3943"/>
+              <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                    ColumnDefinitions="Auto,*"
+                    RowSpacing="6"
+                    ColumnSpacing="12">
+                <TextBlock Text="Название" VerticalAlignment="Center"/>
                 <TextBox Grid.Column="1"
-                         Classes="parameter-input"
-                         Text="{Binding ValueText, Mode=TwoWay}"
-                         IsReadOnly="{Binding IsReadOnly}"
-                         IsVisible="{Binding UsesTextInput}"/>
-                <ToggleSwitch Grid.Column="1"
-                              Classes="parameter-bool"
-                              IsChecked="{Binding BoolValue, Mode=TwoWay}"
-                              IsEnabled="{Binding CanEdit}"
-                              IsVisible="{Binding IsBool}"
-                              OnContent="Вкл"
-                              OffContent="Выкл"/>
-                <TextBlock Grid.Row="1"
-                           Grid.Column="1"
-                           Text="{Binding ValidationMessage}"
-                           IsVisible="{Binding HasValidationError}"
-                           Foreground="#B43D3D"
-                           FontSize="12"
-                           TextWrapping="Wrap"/>
-                <TextBlock Grid.Row="2"
-                           Grid.Column="1"
-                           Text="{Binding DispatchError}"
-                           IsVisible="{Binding HasDispatchError}"
-                           Foreground="#B36B00"
-                           FontSize="12"
-                           TextWrapping="Wrap"/>
+                         x:Name="NewParameterTitleBox"
+                         Text="{Binding NewParameterTitle, Mode=TwoWay}"
+                         AutomationProperties.Name="Название"/>
+                <TextBlock Grid.Row="1" Text="SignalId" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="1"
+                         Grid.Column="1"
+                         x:Name="NewParameterSignalIdBox"
+                         Text="{Binding NewParameterSignalId, Mode=TwoWay}"
+                         PlaceholderText="{Binding SignalIdPlaceholder}"
+                         AutomationProperties.Name="SignalId"/>
+                <TextBlock Grid.Row="2" Text="Направление" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="2"
+                          Grid.Column="1"
+                          HorizontalAlignment="Stretch"
+                          ItemsSource="{Binding DirectionChoices}"
+                          SelectedItem="{Binding NewParameterDirection, Mode=TwoWay}"
+                          AutomationProperties.Name="Направление"/>
+                <TextBlock Grid.Row="3" Text="Тип значения" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="3"
+                          Grid.Column="1"
+                          HorizontalAlignment="Stretch"
+                          ItemsSource="{Binding ValueTypeChoices}"
+                          SelectedItem="{Binding NewParameterValueType, Mode=TwoWay}"
+                          AutomationProperties.Name="Тип значения"/>
+                <TextBlock Grid.Row="4" Text="Отображать для" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="4"
+                          Grid.Column="1"
+                          HorizontalAlignment="Stretch"
+                          ItemsSource="{Binding VisibilityChoices}"
+                          DisplayMemberBinding="{ReflectionBinding Label}"
+                          SelectedValueBinding="{ReflectionBinding Value}"
+                          SelectedValue="{Binding NewParameterVisibility, Mode=TwoWay}"
+                          AutomationProperties.Name="Отображать для"/>
               </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Classes="dialog-action" Content="Отмена" Command="{Binding CancelAddCommand}"/>
+                <Button Classes="dialog-action" Content="Создать" Command="{Binding CreateCommand}"/>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </StackPanel>
       </ScrollViewer>
 
-      <TextBlock Grid.Row="1"
-                 Text="{Binding EmptyStateMessage}"
-                 IsVisible="{Binding HasNoParameters}"
-                 Foreground="#2F3943"
-                 TextWrapping="Wrap"/>
-
       <StackPanel Grid.Row="2">
+        <TextBlock x:Name="CreateErrorText"
+                   Text="{Binding CreateErrorMessage}"
+                   IsVisible="{Binding HasCreateError}"
+                   Foreground="#B43D3D"
+                   MaxHeight="54"
+                   TextTrimming="CharacterEllipsis"
+                   TextWrapping="Wrap"
+                   ToolTip.Tip="{Binding CreateErrorMessage}"/>
         <TextBlock Text="{Binding ErrorMessage}"
                    IsVisible="{Binding HasError}"
                    Foreground="#B43D3D"

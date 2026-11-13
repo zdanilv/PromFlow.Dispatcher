@@ -367,6 +367,8 @@ public sealed record EquipmentCardParameter(
     string? LastDispatchError = null,
     EquipmentParameterVisibility Visibility = EquipmentParameterVisibility.User)
 {
+    public bool RequiresExplicitSetpoint { get; init; }
+
     internal static bool IsVisible(EquipmentParameterVisibility visibility, bool isAdminMode) =>
         isAdminMode || visibility == EquipmentParameterVisibility.User;
 }

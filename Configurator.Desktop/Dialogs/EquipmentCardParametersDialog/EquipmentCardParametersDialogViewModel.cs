@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Globalization;
 using System.Reactive;
 using System.Reactive.Linq;
@@ -16,11 +17,22 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
     private readonly IEquipmentCommandDispatcher _dispatcher;
     private readonly IEquipmentParameterWriteValidator _writeValidator;
     private readonly IEquipmentParameterValueStore _valueStore;
+    private readonly IEquipmentCardParameterDefinitionStore? _definitionStore;
     private readonly EquipmentCommandCard _card;
+    private readonly IReadOnlyDictionary<string, SignalValue>? _signals;
     private readonly bool _isConnectionAvailable;
     private readonly Subject<bool> _result = new();
     private string? _errorMessage;
     private string? _statusMessage;
+    private string? _createErrorMessage;
+    private bool _isAddingParameter;
+    private bool _isCreatingParameter;
+    private bool _isSavingValues;
+    private string? _newParameterTitle;
+    private string? _newParameterSignalId;
+    private SignalBindingDirection _newParameterDirection = SignalBindingDirection.ReadWrite;
+    private SignalValueType _newParameterValueType = SignalValueType.Word;
+    private EquipmentParameterVisibility _newParameterVisibility = EquipmentParameterVisibility.User;
     private bool _disposed;
 
     public EquipmentCardParametersDialogViewModel(
@@ -31,13 +43,17 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
         bool showTechnicalDetails = true,
         bool isConnectionAvailable = true,
         IEquipmentParameterValueStore? valueStore = null,
-        bool isAdminMode = true)
+        bool isAdminMode = true,
+        IEquipmentCardParameterDefinitionStore? definitionStore = null)
     {
         _card = card;
+        _signals = signals;
         _dispatcher = dispatcher;
         _writeValidator = writeValidator ?? NoopEquipmentParameterWriteValidator.Instance;
         _valueStore = valueStore ?? NoopEquipmentParameterValueStore.Instance;
+        _definitionStore = definitionStore;
         _isConnectionAvailable = isConnectionAvailable;
+        IsAdminMode = isAdminMode;
         ShowTechnicalDetails = showTechnicalDetails;
         Title = card.Title;
         var visibleParameters = card.Parameters.Where(parameter =>
@@ -46,24 +62,92 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
             Parameters.Add(new EquipmentCardParameterRow(parameter, signals, showTechnicalDetails));
 
         Parameters.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(HasNoParameters));
-        var canSave = Observable.FromEventPattern<NotifyCollectionChangedEventHandler, NotifyCollectionChangedEventArgs>(
+        var hasParameters = Observable.FromEventPattern<NotifyCollectionChangedEventHandler, NotifyCollectionChangedEventArgs>(
                 handler => Parameters.CollectionChanged += handler,
                 handler => Parameters.CollectionChanged -= handler)
             .Select(_ => !HasNoParameters)
-            .StartWith(!HasNoParameters)
-            .DistinctUntilChanged();
-        SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync, canSave);
-        CloseCommand = ReactiveCommand.Create(Close);
+            .StartWith(!HasNoParameters);
+        var propertyChanges = Observable.FromEventPattern<PropertyChangedEventHandler, PropertyChangedEventArgs>(
+            handler => PropertyChanged += handler,
+            handler => PropertyChanged -= handler);
+        var isAdding = propertyChanges.Where(change => change.EventArgs.PropertyName == nameof(IsAddingParameter))
+            .Select(_ => IsAddingParameter).StartWith(IsAddingParameter);
+        var isCreating = propertyChanges.Where(change => change.EventArgs.PropertyName == nameof(IsCreatingParameter))
+            .Select(_ => IsCreatingParameter).StartWith(IsCreatingParameter);
+        SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync,
+            hasParameters.CombineLatest(isAdding, isCreating, (hasRows, adding, creating) => hasRows && !adding && !creating));
+        AddCommand = ReactiveCommand.Create(OpenAddForm,
+            isAdding.CombineLatest(isCreating, SaveCommand.IsExecuting,
+                (adding, creating, saving) => CanAddParameter && !adding && !creating && !saving));
+        var canEditDraft = isAdding.CombineLatest(isCreating, (adding, creating) => CanAddParameter && adding && !creating);
+        CreateCommand = ReactiveCommand.CreateFromTask(CreateParameterAsync, canEditDraft);
+        CancelAddCommand = ReactiveCommand.Create(CancelAdd, canEditDraft);
+        CloseCommand = ReactiveCommand.Create(Close, isCreating.Select(creating => !creating));
     }
 
     public string Title { get; }
     public bool ShowTechnicalDetails { get; }
+    public bool IsAdminMode { get; }
+    public bool CanAddParameter => IsAdminMode && _definitionStore is not null;
+    public string SignalIdPlaceholder => $"{_card.Id}.parameter…";
+    public IReadOnlyList<SignalBindingDirection> DirectionChoices { get; } = Enum.GetValues<SignalBindingDirection>();
+    public IReadOnlyList<SignalValueType> ValueTypeChoices { get; } = Enum.GetValues<SignalValueType>();
+    public IReadOnlyList<RouteMapEditorChoice<EquipmentParameterVisibility>> VisibilityChoices { get; } =
+    [
+        new(EquipmentParameterVisibility.User, "Для пользователя"),
+        new(EquipmentParameterVisibility.Admin, "Только для администратора"),
+    ];
     public ObservableCollection<EquipmentCardParameterRow> Parameters { get; } = [];
     public bool HasNoParameters => Parameters.Count == 0;
     public string EmptyStateMessage => "Для текущего режима нет доступных настроек оборудования.";
     public IObservable<bool> Result => _result;
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
     public ReactiveCommand<Unit, Unit> CloseCommand { get; }
+    public ReactiveCommand<Unit, Unit> AddCommand { get; }
+    public ReactiveCommand<Unit, Unit> CreateCommand { get; }
+    public ReactiveCommand<Unit, Unit> CancelAddCommand { get; }
+
+    public bool IsAddingParameter
+    {
+        get => _isAddingParameter;
+        private set => this.RaiseAndSetIfChanged(ref _isAddingParameter, value);
+    }
+
+    public bool IsCreatingParameter
+    {
+        get => _isCreatingParameter;
+        private set => this.RaiseAndSetIfChanged(ref _isCreatingParameter, value);
+    }
+
+    public string? NewParameterTitle
+    {
+        get => _newParameterTitle;
+        set => this.RaiseAndSetIfChanged(ref _newParameterTitle, value);
+    }
+
+    public string? NewParameterSignalId
+    {
+        get => _newParameterSignalId;
+        set => this.RaiseAndSetIfChanged(ref _newParameterSignalId, value);
+    }
+
+    public SignalBindingDirection NewParameterDirection
+    {
+        get => _newParameterDirection;
+        set => this.RaiseAndSetIfChanged(ref _newParameterDirection, value);
+    }
+
+    public SignalValueType NewParameterValueType
+    {
+        get => _newParameterValueType;
+        set => this.RaiseAndSetIfChanged(ref _newParameterValueType, value);
+    }
+
+    public EquipmentParameterVisibility NewParameterVisibility
+    {
+        get => _newParameterVisibility;
+        set => this.RaiseAndSetIfChanged(ref _newParameterVisibility, value);
+    }
 
     public string? ErrorMessage
     {
@@ -76,6 +160,18 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
     }
 
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
+
+    public string? CreateErrorMessage
+    {
+        get => _createErrorMessage;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _createErrorMessage, value);
+            this.RaisePropertyChanged(nameof(HasCreateError));
+        }
+    }
+
+    public bool HasCreateError => !string.IsNullOrWhiteSpace(CreateErrorMessage);
 
     public string? StatusMessage
     {
@@ -92,7 +188,110 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
         _result.Dispose();
     }
 
+    private void OpenAddForm()
+    {
+        if (_disposed || !CanAddParameter || IsAddingParameter || IsCreatingParameter || _isSavingValues)
+            return;
+
+        ErrorMessage = null;
+        StatusMessage = null;
+        IsAddingParameter = true;
+    }
+
+    private void ClearDraft()
+    {
+        IsAddingParameter = false;
+        CreateErrorMessage = null;
+        NewParameterTitle = null;
+        NewParameterSignalId = null;
+        NewParameterDirection = SignalBindingDirection.ReadWrite;
+        NewParameterValueType = SignalValueType.Word;
+        NewParameterVisibility = EquipmentParameterVisibility.User;
+    }
+
+    private void CancelAdd()
+    {
+        if (!IsAddingParameter || IsCreatingParameter)
+            return;
+
+        ClearDraft();
+    }
+
+    private async Task CreateParameterAsync()
+    {
+        if (_disposed || !IsAdminMode || _definitionStore is null || !IsAddingParameter || IsCreatingParameter)
+            return;
+
+        CreateErrorMessage = null;
+        if (string.IsNullOrWhiteSpace(NewParameterTitle))
+        {
+            CreateErrorMessage = "Название настройки оборудования обязательно.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(NewParameterSignalId))
+        {
+            CreateErrorMessage = "SignalId настройки оборудования обязателен.";
+            return;
+        }
+
+        if (!Enum.IsDefined(NewParameterDirection) || !Enum.IsDefined(NewParameterValueType) ||
+            !Enum.IsDefined(NewParameterVisibility))
+        {
+            CreateErrorMessage = "Проверьте направление, тип значения и видимость параметра.";
+            return;
+        }
+
+        var definition = new NewEquipmentCardParameterDefinition(
+            NewParameterTitle.Trim(), NewParameterSignalId.Trim(), NewParameterDirection,
+            NewParameterValueType, NewParameterVisibility);
+        IsCreatingParameter = true;
+        try
+        {
+            var parameter = await _definitionStore.AddAsync(_card.Id, definition);
+            if (_disposed)
+                return;
+
+            if (EquipmentCardParameter.IsVisible(parameter.Visibility, IsAdminMode))
+                Parameters.Add(new EquipmentCardParameterRow(parameter, _signals, ShowTechnicalDetails));
+
+            ClearDraft();
+            StatusMessage = "Настройка добавлена";
+        }
+        catch (OperationCanceledException)
+        {
+            if (!_disposed)
+                CreateErrorMessage = "Создание настройки отменено.";
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed)
+                CreateErrorMessage = $"Не удалось добавить настройку: {ex.Message}";
+        }
+        finally
+        {
+            if (!_disposed)
+                IsCreatingParameter = false;
+        }
+    }
+
     private async Task SaveAsync()
+    {
+        if (_disposed || IsAddingParameter || IsCreatingParameter || _isSavingValues)
+            return;
+
+        _isSavingValues = true;
+        try
+        {
+            await SaveValuesAsync();
+        }
+        finally
+        {
+            _isSavingValues = false;
+        }
+    }
+
+    private async Task SaveValuesAsync()
     {
         ErrorMessage = null;
         StatusMessage = null;
@@ -101,7 +300,7 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
         foreach (var parameter in Parameters)
         {
             parameter.ValidationMessage = null;
-            if (!parameter.CanEdit)
+            if (!parameter.CanEdit || !parameter.HasSetpoint)
                 continue;
 
             if (parameter.TryCreateRequest(out var request, out var validationMessage))
@@ -128,7 +327,9 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
 
         if (requests.Count == 0)
         {
-            StatusMessage = "Нет редактируемых параметров.";
+            StatusMessage = Parameters.Any(parameter => parameter.CanEdit)
+                ? "Нет заданных значений для сохранения."
+                : "Нет редактируемых параметров.";
             return;
         }
 
@@ -179,7 +380,14 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
         }
     }
 
-    private void Close() => _result.OnNext(false);
+    private void Close()
+    {
+        if (_disposed || IsCreatingParameter)
+            return;
+
+        CancelAdd();
+        _result.OnNext(false);
+    }
 }
 
 internal sealed class NoopEquipmentParameterValueStore : IEquipmentParameterValueStore
@@ -204,8 +412,11 @@ internal sealed class NoopEquipmentParameterValueStore : IEquipmentParameterValu
 
 public sealed class EquipmentCardParameterRow : ReactiveObject
 {
+    private readonly bool _requiresSetpointInput;
     private string _valueText;
     private bool _boolValue;
+    private bool? _explicitBoolValue;
+    private bool _hasEditedText;
     private string? _validationMessage;
 
     public EquipmentCardParameterRow(
@@ -217,7 +428,9 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
         Binding = parameter.Binding;
         ShowTechnicalDetails = showTechnicalDetails;
         DispatchError = parameter.LastDispatchError;
-        _valueText = InitialValue(parameter, signals);
+        // A live value is not a setpoint for a newly defined parameter, including after reopening the dialog.
+        _requiresSetpointInput = parameter.RequiresExplicitSetpoint && CanEdit && parameter.SavedValue is null;
+        _valueText = _requiresSetpointInput ? string.Empty : InitialValue(parameter, signals);
         _boolValue = InitialBoolValue(parameter, signals);
     }
 
@@ -229,8 +442,14 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
     public string SignalCaption => $"{SignalId} • {ValueType}";
     public bool ShowTechnicalDetails { get; }
     public bool IsBool => ValueType == SignalValueType.Bool;
+    public bool UsesBoolToggle => IsBool && !_requiresSetpointInput;
+    public bool UsesExplicitBoolInput => IsBool && _requiresSetpointInput;
+    public IReadOnlyList<RouteMapEditorChoice<bool>> BoolChoices => ExplicitBoolChoices;
+    private static readonly IReadOnlyList<RouteMapEditorChoice<bool>> ExplicitBoolChoices =
+        [new(false, "Выкл"), new(true, "Вкл")];
     public bool UsesTextInput => !IsBool;
     public bool CanEdit => Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite;
+    internal bool HasSetpoint => !_requiresSetpointInput || (IsBool ? ExplicitBoolValue.HasValue : _hasEditedText);
     public bool IsReadOnly => !CanEdit;
     public string? DispatchError { get; }
     public bool HasDispatchError => !string.IsNullOrWhiteSpace(DispatchError);
@@ -240,7 +459,10 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
         get => _valueText;
         set
         {
-            this.RaiseAndSetIfChanged(ref _valueText, value);
+            var text = value ?? string.Empty;
+            if (text != _valueText)
+                _hasEditedText = true;
+            this.RaiseAndSetIfChanged(ref _valueText, text);
             ValidationMessage = null;
         }
     }
@@ -251,6 +473,16 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
         set
         {
             this.RaiseAndSetIfChanged(ref _boolValue, value);
+            ValidationMessage = null;
+        }
+    }
+
+    public bool? ExplicitBoolValue
+    {
+        get => _explicitBoolValue;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _explicitBoolValue, value);
             ValidationMessage = null;
         }
     }
@@ -270,7 +502,7 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
     public bool TryCreateRequest(out SignalWriteRequest request, out string? validationMessage)
     {
         request = new SignalWriteRequest(SignalId, null, ValueType);
-        if (!CanEdit)
+        if (!CanEdit || !HasSetpoint)
         {
             validationMessage = null;
             return false;
@@ -278,7 +510,8 @@ public sealed class EquipmentCardParameterRow : ReactiveObject
 
         if (ValueType == SignalValueType.Bool)
         {
-            request = new SignalWriteRequest(SignalId, BoolValue, ValueType);
+            var boolValue = UsesExplicitBoolInput ? ExplicitBoolValue.GetValueOrDefault() : BoolValue;
+            request = new SignalWriteRequest(SignalId, boolValue, ValueType);
             validationMessage = null;
             return true;
         }

@@ -52,7 +52,9 @@ public sealed class EquipmentCardParametersDialogTests
         Assert.Equal(isAdminMode, texts.Contains("Фильтер"));
         Assert.Equal(isAdminMode, texts.Contains($"{UserSignalId} • UInt16"));
         Assert.Equal(isAdminMode, texts.Contains($"{AdminSignalId} • UInt16"));
-        Assert.Equal(isAdminMode ? 3 : 2, Assert.Single(dialog.GetVisualDescendants().OfType<ItemsControl>()).Items.Count);
+        Assert.Equal(isAdminMode, FindButton(dialog, "Добавить").IsEffectivelyVisible);
+        Assert.DoesNotContain("Новый параметр", texts);
+        Assert.Equal(isAdminMode ? 3 : 2, ParameterList(dialog).Items.Count);
         Assert.True(FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
 
         await fixture.CloseAsync(dialog);
@@ -60,6 +62,107 @@ public sealed class EquipmentCardParametersDialogTests
         Assert.Same(document, fixture.Manager.CurrentDocument);
         Assert.Equal(originalJson, File.ReadAllText(fixture.Storage.ActiveFilePath));
         Assert.Empty(fixture.Dispatcher.Requests);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(0)]
+    [InlineData(16)]
+    public async Task Admin_can_open_and_cancel_the_form_with_keyboard_in_a_scrollable_dialog(int parameterCount)
+    {
+        using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode, parameterCount: parameterCount);
+        var dialog = fixture.Open();
+        var add = FindButton(dialog, "Добавить");
+        var title = dialog.FindControl<TextBox>("NewParameterTitleBox")!;
+        var form = dialog.FindControl<Border>("NewParameterForm")!;
+        var scroll = dialog.FindControl<ScrollViewer>("ParametersScrollViewer")!;
+        Assert.Equal(parameterCount == 0, VisibleTexts(dialog).Contains("Для текущего режима нет доступных настроек оборудования."));
+        Assert.Equal(parameterCount > 0, FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
+        add.BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(add.Focus());
+        fixture.PressSpace();
+
+        Assert.True(form.IsEffectivelyVisible);
+        Assert.True(title.IsFocused);
+        Assert.False(add.IsEffectivelyEnabled);
+        var labels = VisibleTexts(form);
+        Assert.All(new[] { "Новый параметр", "Название", "SignalId", "Направление", "Тип значения", "Отображать для" },
+            label => Assert.Contains(label, labels));
+        Assert.True(scroll.Extent.Height > scroll.Viewport.Height);
+        Assert.Equal(scroll.Extent.Width, scroll.Viewport.Width, precision: 1);
+        var cancel = FindButton(dialog, "Отмена");
+        cancel.BringIntoView();
+        Assert.True(cancel.Focus());
+        fixture.PressSpace();
+        Assert.False(form.IsEffectivelyVisible);
+        Assert.True(add.IsEffectivelyEnabled);
+        Assert.Equal(parameterCount > 0, FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
+        Assert.Equal(parameterCount, fixture.Manager.CurrentDocument.Cards.Single().Parameters.Count);
+        await fixture.CloseAsync(dialog);
+    }
+
+    [AvaloniaFact]
+    public async Task Admin_creates_bool_inline_and_can_save_explicit_false_after_reopening()
+    {
+        using var fixture = new DialogFixture(ApplicationOptions.AdminWorkMode, offline: true, parameterCount: 0);
+        var dialog = fixture.Open();
+        var viewModel = Assert.IsType<EquipmentCardParametersDialogViewModel>(dialog.DataContext);
+        fixture.Click(FindButton(dialog, "Добавить"));
+        var form = dialog.FindControl<Border>("NewParameterForm")!;
+        var fields = form.GetVisualDescendants().OfType<ComboBox>().ToArray();
+        Assert.Equal(SignalBindingDirection.ReadWrite, fields[0].SelectedItem);
+        Assert.Equal(SignalValueType.Word, fields[1].SelectedItem);
+        Assert.Equal(EquipmentParameterVisibility.User, fields[2].SelectedValue);
+        fields[0].SetCurrentValue(SelectingItemsControl.SelectedItemProperty, SignalBindingDirection.Write);
+        fields[1].SetCurrentValue(SelectingItemsControl.SelectedItemProperty, SignalValueType.Bool);
+        fields[2].SetCurrentValue(SelectingItemsControl.SelectedIndexProperty, 1);
+        Assert.False(FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
+
+        var create = FindButton(dialog, "Создать");
+        fixture.Click(create);
+        Assert.Contains("Название настройки оборудования обязательно.", VisibleTexts(dialog));
+        var error = dialog.FindControl<TextBlock>("CreateErrorText")!;
+        var scroll = dialog.FindControl<ScrollViewer>("ParametersScrollViewer")!;
+        Assert.True(error.TranslatePoint(default, dialog)!.Value.Y >=
+            scroll.TranslatePoint(new Point(0, scroll.Bounds.Height), dialog)!.Value.Y);
+        Assert.True(form.IsEffectivelyVisible);
+        dialog.FindControl<TextBox>("NewParameterTitleBox")!.SetCurrentValue(TextBox.TextProperty, "Разрешение");
+        dialog.FindControl<TextBox>("NewParameterSignalIdBox")!.SetCurrentValue(TextBox.TextProperty, "test.parameter.bool");
+        var created = viewModel.CreateCommand.FirstAsync().ToTask();
+        fixture.Click(create);
+        await created.WaitAsync(TestTimeout);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(form.IsEffectivelyVisible);
+        Assert.Contains("Настройка добавлена", VisibleTexts(dialog));
+        Assert.Equal("test.parameter.bool", Assert.Single(viewModel.Parameters).SignalId);
+        Assert.True(FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
+        var persisted = Assert.Single(fixture.Storage.LoadActive()!.Cards.Single().Parameters);
+        Assert.Equal((SignalBindingRole.EquipmentParameter, SignalBindingDirection.Write, SignalValueType.Bool,
+            EquipmentParameterVisibility.Admin, null, false, null),
+            (persisted.Role, persisted.Direction, persisted.ValueType, persisted.Visibility,
+                persisted.SavedValue, persisted.PendingAutoDispatch, persisted.LastDispatchError));
+        Assert.Empty(fixture.Store.Saves);
+        Assert.Empty(fixture.Dispatcher.Requests);
+        await fixture.CloseAsync(dialog);
+
+        dialog = fixture.Open(ApplicationOptions.UserWorkMode);
+        Assert.Empty(Assert.IsType<EquipmentCardParametersDialogViewModel>(dialog.DataContext).Parameters);
+        Assert.False(FindButton(dialog, "Добавить").IsEffectivelyVisible);
+        await fixture.CloseAsync(dialog);
+
+        dialog = fixture.Open();
+        var boolChoice = Assert.Single(dialog.GetVisualDescendants().OfType<ComboBox>(),
+            box => box.DataContext is EquipmentCardParameterRow && box.IsEffectivelyVisible);
+        Assert.Equal(-1, boolChoice.SelectedIndex);
+        await SaveOperatorDialogAsync(fixture, dialog);
+        Assert.Empty(fixture.Store.Saves);
+        boolChoice.SetCurrentValue(SelectingItemsControl.SelectedIndexProperty, 0);
+        await SaveOperatorDialogAsync(fixture, dialog);
+        var save = Assert.Single(fixture.Store.Saves);
+        Assert.True(save.Pending);
+        Assert.Equal(new EquipmentParameterSetpoint("test.parameter.bool", "false"), Assert.Single(save.Values));
+        Assert.Empty(fixture.Dispatcher.Requests);
+        await fixture.CloseAsync(dialog);
     }
 
     // UI-09
@@ -74,7 +177,7 @@ public sealed class EquipmentCardParametersDialogTests
         Assert.Contains("Кюбель Л.К.", texts);
         Assert.Contains("Настройки оборудования", texts);
         Assert.Contains("Для текущего режима нет доступных настроек оборудования.", texts);
-        Assert.Empty(Assert.Single(dialog.GetVisualDescendants().OfType<ItemsControl>()).Items);
+        Assert.Empty(ParameterList(dialog).Items);
         Assert.False(FindButton(dialog, "Сохранить").IsEffectivelyEnabled);
         Assert.True(FindButton(dialog, "Закрыть").IsEffectivelyEnabled);
 
@@ -218,6 +321,9 @@ public sealed class EquipmentCardParametersDialogTests
     private static Button FindButton(Control dialog, string content) =>
         Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), button => Equals(button.Content, content));
 
+    private static ItemsControl ParameterList(Control dialog) =>
+        Assert.Single(dialog.GetVisualDescendants().OfType<ItemsControl>(), items => items.GetType() == typeof(ItemsControl));
+
     private sealed class DialogFixture : IDisposable
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), $"equipment-dialog-{Guid.NewGuid():N}");
@@ -228,7 +334,8 @@ public sealed class EquipmentCardParametersDialogTests
         private readonly string _workMode;
         private readonly bool _offline;
 
-        public DialogFixture(string workMode, bool allAdmin = false, bool offline = false, bool adminInitiallyVisible = false)
+        public DialogFixture(string workMode, bool allAdmin = false, bool offline = false,
+            bool adminInitiallyVisible = false, int parameterCount = 3)
         {
             _workMode = workMode;
             _offline = offline;
@@ -262,15 +369,27 @@ public sealed class EquipmentCardParametersDialogTests
                 ValueType = SignalValueType.UInt16,
                 Visibility = allAdmin ? EquipmentParameterVisibility.Admin : EquipmentParameterVisibility.User,
             });
+            if (parameterCount == 0)
+                bucket.Parameters.Clear();
+            for (var index = bucket.Parameters.Count; index < parameterCount; index++)
+            {
+                bucket.Parameters.Add(new EquipmentCardParameterConfiguration
+                {
+                    Title = $"Параметр {index}",
+                    SignalId = $"test.parameter.extra.{index}",
+                    Direction = SignalBindingDirection.Read,
+                });
+            }
             Storage.SaveActive(document);
             Manager = new RouteMapConfigurationManager(
                 Storage, mapper, new RouteMapConfigurationValidator(), new RouteMapConfigurationMigrator());
             Assert.Null(Manager.LastLoadError);
-            Store = new RecordingValueStore(Manager);
+            Store = new RecordingValueStore(Manager, Options.Create(new ApplicationOptions { WorkMode = workMode }));
             _services = new ServiceCollection()
                 .AddSingleton<IEquipmentCommandDispatcher>(Dispatcher)
                 .AddSingleton<IEquipmentParameterWriteValidator>(NoopEquipmentParameterWriteValidator.Instance)
                 .AddSingleton<IEquipmentParameterValueStore>(Store)
+                .AddSingleton<IEquipmentCardParameterDefinitionStore>(Store)
                 .AddTransient<EquipmentCardParametersDialogView>()
                 .BuildServiceProvider();
             Avalonia.Application.Current!.Styles.Add(_hostStyles);
@@ -319,11 +438,20 @@ public sealed class EquipmentCardParametersDialogTests
 
         public void Click(Button button)
         {
+            button.BringIntoView();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
             var center = new Point(button.Bounds.Width / 2, button.Bounds.Height / 2);
             var point = button.TranslatePoint(center, _window)!.Value;
             _window.MouseMove(point, RawInputModifiers.None);
             _window.MouseDown(point, MouseButton.Left, RawInputModifiers.None);
             _window.MouseUp(point, MouseButton.Left, RawInputModifiers.None);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        }
+
+        public void PressSpace()
+        {
+            _window.KeyPress(Key.Space, RawInputModifiers.None, PhysicalKey.None, null);
+            _window.KeyRelease(Key.Space, RawInputModifiers.None, PhysicalKey.None, null);
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
         }
 
@@ -340,9 +468,10 @@ public sealed class EquipmentCardParametersDialogTests
         }
     }
 
-    private sealed class RecordingValueStore(RouteMapConfigurationManager manager) : IEquipmentParameterValueStore, IDisposable
+    private sealed class RecordingValueStore(RouteMapConfigurationManager manager, IOptions<ApplicationOptions> options)
+        : IEquipmentParameterValueStore, IEquipmentCardParameterDefinitionStore, IDisposable
     {
-        private readonly RouteMapEquipmentParameterValueStore _store = new(manager);
+        private readonly RouteMapEquipmentParameterValueStore _store = new(manager, options);
         public List<(EquipmentParameterSetpoint[] Values, bool Pending)> Saves { get; } = [];
 
         public Task SaveAsync(string cardId, IReadOnlyCollection<EquipmentParameterSetpoint> values,
@@ -353,6 +482,9 @@ public sealed class EquipmentCardParametersDialogTests
         }
 
         public IReadOnlyList<PendingEquipmentParameter> GetPending() => _store.GetPending();
+
+        public Task<EquipmentCardParameter> AddAsync(string cardId, NewEquipmentCardParameterDefinition definition,
+            CancellationToken cancellationToken = default) => _store.AddAsync(cardId, definition, cancellationToken);
 
         public Task CompleteDispatchAsync(string cardId, string signalId, string expectedSavedValue,
             string? errorMessage, CancellationToken cancellationToken = default) =>

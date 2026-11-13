@@ -554,6 +554,9 @@ public sealed class EquipmentCardParameterConfiguration : ReactiveObject
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool RequiresExplicitSetpoint { get; set; }
+
     public string Title
     {
         get => _title;

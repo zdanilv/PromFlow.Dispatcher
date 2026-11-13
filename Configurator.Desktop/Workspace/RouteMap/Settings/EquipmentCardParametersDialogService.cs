@@ -29,7 +29,8 @@ public sealed class EquipmentCardParametersDialogService(
             showTechnicalDetails: isAdminMode,
             isConnectionAvailable: isConnectionAvailable,
             valueStore: serviceProvider.GetRequiredService<IEquipmentParameterValueStore>(),
-            isAdminMode: isAdminMode);
+            isAdminMode: isAdminMode,
+            definitionStore: serviceProvider.GetRequiredService<IEquipmentCardParameterDefinitionStore>());
         var view = serviceProvider.GetRequiredService<EquipmentCardParametersDialogView>();
         view.DataContext = viewModel;
         try

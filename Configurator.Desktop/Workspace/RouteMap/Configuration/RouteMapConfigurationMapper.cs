@@ -468,6 +468,7 @@ public sealed class RouteMapConfigurationMapper
         ValueType = parameter.Binding.ValueType,
         Visibility = parameter.Visibility,
         SavedValue = parameter.SavedValue,
+        RequiresExplicitSetpoint = parameter.RequiresExplicitSetpoint,
         PendingAutoDispatch = parameter.PendingAutoDispatch,
         LastDispatchError = parameter.LastDispatchError,
     };
@@ -482,7 +483,10 @@ public sealed class RouteMapConfigurationMapper
         parameter.SavedValue,
         parameter.PendingAutoDispatch,
         parameter.LastDispatchError,
-        parameter.Visibility);
+        parameter.Visibility)
+    {
+        RequiresExplicitSetpoint = parameter.RequiresExplicitSetpoint,
+    };
 
     private static EquipmentCardStyleConfiguration ToConfiguration(EquipmentCardStyle style)
     {

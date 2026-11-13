@@ -15,6 +15,212 @@ namespace Configurator.Tests.Unit.RouteMap;
 
 public sealed class EquipmentCardParametersDialogViewModelTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Add_is_available_only_to_admin_and_cancel_discards_the_single_draft(bool isAdminMode)
+    {
+        var definitions = new RecordingDefinitionStore();
+        using var vm = new EquipmentCardParametersDialogViewModel(
+            MixedVisibilityCard(), null, new CapturingDispatcher(), isAdminMode: isAdminMode, definitionStore: definitions);
+
+        Assert.Equal(isAdminMode, await vm.AddCommand.CanExecute.FirstAsync());
+        await vm.AddCommand.Execute().FirstAsync();
+        Assert.Equal(isAdminMode, vm.IsAddingParameter);
+        Assert.Equal(isAdminMode, await vm.CreateCommand.CanExecute.FirstAsync());
+        Assert.Equal(!isAdminMode, await vm.SaveCommand.CanExecute.FirstAsync());
+        if (isAdminMode)
+        {
+            Assert.Equal((SignalBindingDirection.ReadWrite, SignalValueType.Word, EquipmentParameterVisibility.User),
+                (vm.NewParameterDirection, vm.NewParameterValueType, vm.NewParameterVisibility));
+            vm.NewParameterTitle = "Черновик";
+            Assert.False(await vm.AddCommand.CanExecute.FirstAsync());
+            await vm.AddCommand.Execute().FirstAsync();
+            Assert.Equal("Черновик", vm.NewParameterTitle);
+            await vm.CancelAddCommand.Execute().FirstAsync();
+            Assert.False(vm.IsAddingParameter);
+            Assert.Null(vm.NewParameterTitle);
+            Assert.True(await vm.SaveCommand.CanExecute.FirstAsync());
+            await vm.AddCommand.Execute().FirstAsync();
+            vm.NewParameterSignalId = "card.draft";
+            var result = vm.Result.FirstAsync().ToTask();
+            await vm.CloseCommand.Execute().FirstAsync();
+            Assert.False(await result);
+            Assert.False(vm.IsAddingParameter);
+            Assert.Null(vm.NewParameterSignalId);
+        }
+        else
+        {
+            await vm.CreateCommand.Execute().FirstAsync();
+        }
+
+        Assert.Empty(definitions.Calls);
+    }
+
+    [Theory]
+    [InlineData(SignalBindingDirection.Read)]
+    [InlineData(SignalBindingDirection.Write)]
+    [InlineData(SignalBindingDirection.ReadWrite)]
+    public async Task Creation_waits_for_confirmation_and_appends_the_returned_row_without_dispatch(
+        SignalBindingDirection direction)
+    {
+        var completion = new TaskCompletionSource<EquipmentCardParameter>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var definitions = new RecordingDefinitionStore(_ => completion.Task);
+        var dispatcher = new CapturingDispatcher();
+        var values = new RecordingValueStore();
+        var card = MixedVisibilityCard();
+        using var vm = new EquipmentCardParametersDialogViewModel(
+            card, null, dispatcher, isConnectionAvailable: false, valueStore: values, definitionStore: definitions);
+        await OpenDraftAsync(vm);
+        vm.NewParameterDirection = direction;
+        vm.NewParameterVisibility = EquipmentParameterVisibility.Admin;
+
+        var creating = vm.CreateCommand.Execute().FirstAsync().ToTask();
+        Assert.True(vm.IsCreatingParameter);
+        Assert.False(await vm.CreateCommand.CanExecute.FirstAsync());
+        Assert.False(await vm.CloseCommand.CanExecute.FirstAsync());
+        Assert.False(await vm.CancelAddCommand.CanExecute.FirstAsync());
+        Assert.False(await vm.SaveCommand.CanExecute.FirstAsync());
+        await vm.CreateCommand.Execute().FirstAsync();
+        await vm.SaveCommand.Execute().FirstAsync();
+        Assert.Equal(ExpectedVisibleIds(true), vm.Parameters.Select(row => row.SignalId));
+        Assert.Equal(("card", new NewEquipmentCardParameterDefinition(
+            "Новая настройка", "card.new", direction, SignalValueType.Word, EquipmentParameterVisibility.Admin)),
+            Assert.Single(definitions.Calls));
+
+        completion.SetResult(Parameter("Подтверждённое название", "card.new", direction, SignalValueType.Word)
+            with { Visibility = EquipmentParameterVisibility.Admin, RequiresExplicitSetpoint = true });
+        await creating;
+        Assert.False(vm.IsAddingParameter);
+        Assert.False(vm.IsCreatingParameter);
+        Assert.Equal("Настройка добавлена", vm.StatusMessage);
+        Assert.Equal(ExpectedVisibleIds(true).Append("card.new"), vm.Parameters.Select(row => row.SignalId));
+        Assert.Equal("Подтверждённое название", vm.Parameters[^1].Title);
+        Assert.Equal(direction != SignalBindingDirection.Read, vm.Parameters[^1].CanEdit);
+        Assert.Equal(3, card.Parameters.Count);
+        Assert.True(await vm.SaveCommand.CanExecute.FirstAsync());
+        Assert.Empty(dispatcher.Requests);
+        Assert.Empty(values.Saved);
+
+        if (direction == SignalBindingDirection.Read)
+        {
+            vm.Parameters[^1].ValueText = "12";
+            await vm.SaveCommand.Execute().FirstAsync();
+            Assert.DoesNotContain(values.Saved, value => value.SignalId == "card.new");
+        }
+    }
+
+    [Fact]
+    public async Task Create_displays_validation_and_preserves_the_draft_for_retry_after_store_error()
+    {
+        var fail = true;
+        var definitions = new RecordingDefinitionStore(definition =>
+            fail ? Task.FromException<EquipmentCardParameter>(new IOException("Ошибка тестовой записи"))
+                : Task.FromResult(RecordingDefinitionStore.Confirm(definition)));
+        using var vm = new EquipmentCardParametersDialogViewModel(
+            Card(), null, new CapturingDispatcher(), definitionStore: definitions);
+        Assert.True(vm.HasNoParameters);
+        Assert.False(await vm.SaveCommand.CanExecute.FirstAsync());
+        await OpenDraftAsync(vm);
+
+        vm.NewParameterTitle = " ";
+        await vm.CreateCommand.Execute().FirstAsync();
+        Assert.Contains("Название", vm.CreateErrorMessage);
+        vm.NewParameterTitle = "Название";
+        vm.NewParameterSignalId = " ";
+        await vm.CreateCommand.Execute().FirstAsync();
+        Assert.Contains("SignalId", vm.CreateErrorMessage);
+        vm.NewParameterSignalId = "card.new";
+        vm.NewParameterDirection = (SignalBindingDirection)100;
+        await vm.CreateCommand.Execute().FirstAsync();
+        Assert.Contains("направление", vm.CreateErrorMessage);
+        Assert.Empty(definitions.Calls);
+
+        vm.NewParameterDirection = SignalBindingDirection.ReadWrite;
+        await vm.CreateCommand.Execute().FirstAsync();
+        Assert.True(vm.IsAddingParameter);
+        Assert.False(vm.IsCreatingParameter);
+        Assert.True(vm.HasNoParameters);
+        Assert.Contains("Ошибка тестовой записи", vm.CreateErrorMessage);
+        Assert.Equal("Название", vm.NewParameterTitle);
+        Assert.Equal("card.new", vm.NewParameterSignalId);
+        Assert.True(await vm.CreateCommand.CanExecute.FirstAsync());
+
+        fail = false;
+        await vm.CreateCommand.Execute().FirstAsync();
+        Assert.Null(vm.CreateErrorMessage);
+        Assert.Equal(2, definitions.Calls.Count);
+        Assert.Equal("card.new", Assert.Single(vm.Parameters).SignalId);
+        Assert.False(vm.HasNoParameters);
+        Assert.True(await vm.SaveCommand.CanExecute.FirstAsync());
+    }
+
+    [Theory]
+    [InlineData(false, SignalValueType.Bool)]
+    [InlineData(true, SignalValueType.Bool)]
+    [InlineData(false, SignalValueType.Word)]
+    [InlineData(true, SignalValueType.String)]
+    public async Task Save_skips_unset_new_values_and_accepts_explicit_values_with_existing_setpoints(
+        bool offline, SignalValueType valueType)
+    {
+        var dispatcher = new CapturingDispatcher();
+        var values = new RecordingValueStore();
+        var signals = new Dictionary<string, SignalValue>
+        {
+            ["card.new"] = new("card.new", (ushort)55, SignalValueType.Word, DateTimeOffset.Now,
+                IsQualityGood: true, IsStale: false),
+        };
+        var card = Card(Parameter("Существующая", "card.old", SignalBindingDirection.Write, SignalValueType.Word, "42"));
+        using var vm = new EquipmentCardParametersDialogViewModel(
+            card, signals, dispatcher, isConnectionAvailable: !offline, valueStore: values,
+            definitionStore: new RecordingDefinitionStore());
+        await OpenDraftAsync(vm);
+        vm.NewParameterValueType = valueType;
+        await vm.CreateCommand.Execute().FirstAsync();
+        var row = vm.Parameters[^1];
+        Assert.Empty(row.ValueText);
+        Assert.Null(row.ExplicitBoolValue);
+
+        await vm.SaveCommand.Execute().FirstAsync();
+        Assert.Null(vm.ErrorMessage);
+        Assert.Equal(new EquipmentParameterSetpoint("card.old", "42"), Assert.Single(values.Saved));
+        Assert.DoesNotContain(dispatcher.Requests, request => request.SignalId == "card.new");
+        values.Saved.Clear();
+        dispatcher.Requests.Clear();
+
+        var savedValue = valueType switch
+        {
+            SignalValueType.Bool => "false",
+            SignalValueType.Word => "0",
+            _ => "",
+        };
+        if (valueType == SignalValueType.Bool)
+            row.ExplicitBoolValue = false;
+        else
+        {
+            if (valueType == SignalValueType.String)
+                row.ValueText = "Введённый текст";
+            row.ValueText = savedValue;
+        }
+        await vm.SaveCommand.Execute().FirstAsync();
+        Assert.Null(vm.ErrorMessage);
+        Assert.Equal(new[] { new EquipmentParameterSetpoint("card.old", "42"),
+            new EquipmentParameterSetpoint("card.new", savedValue) }, values.Saved);
+        Assert.Equal(offline, values.LastPendingAutoDispatch);
+        if (offline)
+            Assert.Empty(dispatcher.Requests);
+        else
+            Assert.Equal(valueType == SignalValueType.Bool ? (object)false : (ushort)0,
+                Assert.Single(dispatcher.Requests, request => request.SignalId == "card.new").Value);
+    }
+
+    private static async Task OpenDraftAsync(EquipmentCardParametersDialogViewModel vm)
+    {
+        await vm.AddCommand.Execute().FirstAsync();
+        vm.NewParameterTitle = " Новая настройка ";
+        vm.NewParameterSignalId = " card.new ";
+    }
+
     // DLG-01, DLG-02
     [Theory]
     [InlineData(false)]
@@ -574,6 +780,24 @@ public sealed class EquipmentCardParametersDialogViewModelTests
                 throw exception;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class RecordingDefinitionStore(
+        Func<NewEquipmentCardParameterDefinition, Task<EquipmentCardParameter>>? add = null)
+        : IEquipmentCardParameterDefinitionStore
+    {
+        public List<(string CardId, NewEquipmentCardParameterDefinition Definition)> Calls { get; } = [];
+
+        public Task<EquipmentCardParameter> AddAsync(string cardId, NewEquipmentCardParameterDefinition definition,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Add((cardId, definition));
+            return add?.Invoke(definition) ?? Task.FromResult(Confirm(definition));
+        }
+
+        public static EquipmentCardParameter Confirm(NewEquipmentCardParameterDefinition definition) =>
+            Parameter(definition.Title, definition.SignalId, definition.Direction, definition.ValueType)
+                with { Visibility = definition.Visibility, RequiresExplicitSetpoint = true };
     }
 
     private sealed class RecordingValueStore : IEquipmentParameterValueStore

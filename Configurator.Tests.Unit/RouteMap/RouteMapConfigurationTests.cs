@@ -1125,7 +1125,7 @@ public sealed class RouteMapConfigurationTests
 
         Assert.Equal(new EquipmentCardParameter("Уровень",
             new(SignalBindingRole.EquipmentParameter, "EQUIP.BUCKET.PARAMETER2", direction, type),
-            Visibility: visibility), added);
+            Visibility: visibility) { RequiresExplicitSetpoint = true }, added);
         Assert.Same(added, Assert.Single(Assert.Single(published).MapEquipment.Single(card => card.Id == "equip.other").Parameters));
         Assert.Equal("equip.bucket", Assert.Single(store.GetPending()).CardId);
 
