@@ -1,4 +1,5 @@
 using System.Reactive.Linq;
+using System.Reactive.Threading.Tasks;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -6,6 +7,7 @@ using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
+using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -13,6 +15,172 @@ namespace Configurator.Tests.Unit.RouteMap;
 
 public sealed class EquipmentCardParametersDialogViewModelTests
 {
+    // DLG-01, DLG-02
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Visibility_filters_dialog_rows_in_card_order(bool isAdminMode)
+    {
+        var card = MixedVisibilityCard();
+        var original = card.Parameters.ToArray();
+        using var viewModel = new EquipmentCardParametersDialogViewModel(
+            card, null, new CapturingDispatcher(), isAdminMode: isAdminMode);
+
+        Assert.Equal(ExpectedVisibleIds(isAdminMode), viewModel.Parameters.Select(row => row.SignalId));
+        Assert.Equal(original, card.Parameters);
+    }
+
+    // DLG-03, DLG-05
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Parameters_without_explicit_visibility_are_user_parameters_in_both_modes(bool isAdminMode)
+    {
+        var card = Card(
+            Parameter("Первый", "card.first", SignalBindingDirection.Read, SignalValueType.UInt16),
+            Parameter("Второй", "card.second", SignalBindingDirection.Write, SignalValueType.Bool));
+        using var viewModel = new EquipmentCardParametersDialogViewModel(
+            card, null, new CapturingDispatcher(), isAdminMode: isAdminMode);
+
+        Assert.All(card.Parameters, parameter => Assert.Equal(EquipmentParameterVisibility.User, parameter.Visibility));
+        Assert.Equal(new[] { "card.first", "card.second" }, viewModel.Parameters.Select(row => row.SignalId));
+    }
+
+    // DLG-04
+    [Fact]
+    public async Task All_admin_parameters_in_user_mode_leave_an_empty_dialog_that_can_close()
+    {
+        var dispatcher = new CapturingDispatcher();
+        var store = new RecordingValueStore();
+        var card = Card(MixedVisibilityCard().Parameters[1]);
+        using var viewModel = new EquipmentCardParametersDialogViewModel(
+            card, null, dispatcher, valueStore: store, isAdminMode: false);
+        var result = viewModel.Result.FirstAsync().ToTask();
+
+        Assert.Empty(viewModel.Parameters);
+        Assert.True(viewModel.HasNoParameters);
+        Assert.Equal("Для текущего режима нет доступных настроек оборудования.", viewModel.EmptyStateMessage);
+        Assert.False(await viewModel.SaveCommand.CanExecute.FirstAsync());
+        Assert.True(await viewModel.CloseCommand.CanExecute.FirstAsync());
+
+        await viewModel.CloseCommand.Execute().FirstAsync();
+        Assert.False(await result);
+        Assert.Empty(store.Saved);
+        Assert.Empty(dispatcher.Requests);
+    }
+
+    // DLG-06
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Direction_controls_editing_independently_of_visibility(bool isAdminMode)
+    {
+        var card = Card(
+            Parameter("Read", "card.read", SignalBindingDirection.Read, SignalValueType.Bool),
+            Parameter("Write", "card.write", SignalBindingDirection.Write, SignalValueType.String),
+            Parameter("ReadWrite", "card.readwrite", SignalBindingDirection.ReadWrite, SignalValueType.UInt16),
+            Parameter("Admin Read", "card.admin.read", SignalBindingDirection.Read, SignalValueType.Date)
+                with { Visibility = EquipmentParameterVisibility.Admin },
+            MixedVisibilityCard().Parameters[1]);
+        using var viewModel = new EquipmentCardParametersDialogViewModel(
+            card, null, new CapturingDispatcher(), isAdminMode: isAdminMode);
+
+        (string Id, bool CanEdit)[] expected =
+            [("card.read", false), ("card.write", true), ("card.readwrite", true)];
+        if (isAdminMode)
+            expected = [.. expected, ("card.admin.read", false), ("parameter.admin.1", true)];
+        Assert.Equal(expected, viewModel.Parameters.Select(row => (row.SignalId, row.CanEdit)));
+    }
+
+    // DLG-07, DLG-08, DLG-09, DLG-10
+    [Theory]
+    [InlineData(false, true, "20")]
+    [InlineData(true, true, "20")]
+    [InlineData(false, true, "некорректное число")]
+    [InlineData(false, false, "20")]
+    [InlineData(true, false, "20")]
+    public async Task Save_only_processes_visible_editable_parameters(
+        bool isAdminMode, bool isConnectionAvailable, string adminSavedValue)
+    {
+        var dispatcher = new CapturingDispatcher();
+        var store = new RecordingValueStore();
+        var validator = new RecordingWriteValidator();
+        var card = MixedVisibilityCard(adminSavedValue);
+        var original = card.Parameters.ToArray();
+        using var viewModel = new EquipmentCardParametersDialogViewModel(
+            card, null, dispatcher, validator, isConnectionAvailable: isConnectionAvailable,
+            valueStore: store, isAdminMode: isAdminMode);
+        var visibleIds = ExpectedVisibleIds(isAdminMode);
+        Assert.Equal(visibleIds, viewModel.Parameters.Select(row => row.SignalId));
+        Assert.True(await viewModel.SaveCommand.CanExecute.FirstAsync());
+        foreach (var row in viewModel.Parameters)
+            row.ValueText = row.SignalId switch
+            {
+                "parameter.user.1" => "11",
+                "parameter.admin.1" => "21",
+                "parameter.user.2" => "31",
+                _ => throw new InvalidOperationException(row.SignalId)
+            };
+
+        await viewModel.SaveCommand.Execute().FirstAsync();
+
+        var expectedOnlineIds = isConnectionAvailable ? visibleIds : [];
+        EquipmentParameterSetpoint[] expectedSetpoints = isAdminMode
+            ? [new("parameter.user.1", "11"), new("parameter.admin.1", "21"), new("parameter.user.2", "31")]
+            : [new("parameter.user.1", "11"), new("parameter.user.2", "31")];
+        Assert.Null(viewModel.ErrorMessage);
+        Assert.Equal(expectedSetpoints, store.Saved);
+        Assert.Equal(!isConnectionAvailable, store.LastPendingAutoDispatch);
+        Assert.Equal(expectedOnlineIds, validator.SignalIds);
+        Assert.Equal(expectedOnlineIds, dispatcher.Requests.Select(request => request.SignalId));
+        Assert.Equal(expectedOnlineIds, store.Completions.Select(completion => completion.SignalId));
+        Assert.Equal(original, card.Parameters);
+    }
+
+    // DLG-11
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Disabled_card_opens_filtered_settings_with_or_without_connection(bool isConnectionAvailable)
+    {
+        var dispatcher = new CapturingDispatcher();
+        var dialog = new UserParametersDialogStub(dispatcher);
+        var card = MixedVisibilityCard();
+        var cardViewModel = new EquipmentCardViewModel(card, dispatcher, parametersDialogService: dialog);
+        cardViewModel.ApplyRuntime(new RouteObjectRuntimeState(
+            card.Id, isConnectionAvailable ? RouteObjectState.Disabled : RouteObjectState.Offline,
+            card.StatusText, ValueText: null, IsVisible: true, CanStart: false, CanStop: false, IsEnabled: false),
+            isConnectionAvailable: isConnectionAvailable);
+
+        Assert.False(cardViewModel.IsEnabled);
+        Assert.True(cardViewModel.IsParametersButtonEnabled);
+        Assert.True(await cardViewModel.OpenParametersCommand.CanExecute.FirstAsync());
+        await cardViewModel.OpenParametersCommand.Execute().FirstAsync();
+
+        Assert.Equal((card, isConnectionAvailable), Assert.Single(dialog.Opened));
+        Assert.Equal(ExpectedVisibleIds(isAdminMode: false), dialog.VisibleIds);
+        Assert.Empty(dispatcher.Requests);
+    }
+
+    // DLG-13
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public void Technical_caption_flag_is_independent_of_visibility(bool isAdminMode, bool showTechnicalDetails)
+    {
+        using var viewModel = new EquipmentCardParametersDialogViewModel(
+            MixedVisibilityCard(), null, new CapturingDispatcher(),
+            showTechnicalDetails: showTechnicalDetails, isAdminMode: isAdminMode);
+
+        Assert.Equal(ExpectedVisibleIds(isAdminMode), viewModel.Parameters.Select(row => row.SignalId));
+        Assert.All(viewModel.Parameters, row =>
+        {
+            Assert.Equal(showTechnicalDetails, row.ShowTechnicalDetails);
+            Assert.Equal($"{row.SignalId} • UInt16", row.SignalCaption);
+        });
+    }
+
     [Fact]
     public void Constructor_uses_latest_good_values_for_readable_parameters()
     {
@@ -36,6 +204,7 @@ public sealed class EquipmentCardParametersDialogViewModelTests
         Assert.False(viewModel.Parameters[1].IsReadOnly);
     }
 
+    // DLG-12
     [Fact]
     public async Task Save_sends_only_editable_parameters_and_does_not_close_dialog()
     {
@@ -51,7 +220,7 @@ public sealed class EquipmentCardParametersDialogViewModelTests
             Parameter("Float32", "card.float32", SignalBindingDirection.Write, SignalValueType.Float32),
             Parameter("String", "card.string", SignalBindingDirection.ReadWrite, SignalValueType.String),
             Parameter("Date", "card.date", SignalBindingDirection.Write, SignalValueType.Date));
-        var viewModel = new EquipmentCardParametersDialogViewModel(card, null, dispatcher);
+        using var viewModel = new EquipmentCardParametersDialogViewModel(card, null, dispatcher, isAdminMode: false);
         var wasClosed = false;
         using var subscription = viewModel.Result.Subscribe(_ => wasClosed = true);
 
@@ -65,6 +234,8 @@ public sealed class EquipmentCardParametersDialogViewModelTests
         viewModel.Parameters.Single(x => x.SignalId == "card.string").ValueText = "текст";
         viewModel.Parameters.Single(x => x.SignalId == "card.date").ValueText = "2026-06-30 12:34:56";
 
+        Assert.True(viewModel.Parameters.Single(row => row.SignalId == "card.bool").IsBool);
+        Assert.All(viewModel.Parameters.Where(row => row.SignalId != "card.bool"), row => Assert.True(row.UsesTextInput));
         await viewModel.SaveCommand.Execute().FirstAsync();
 
         Assert.False(wasClosed);
@@ -86,6 +257,7 @@ public sealed class EquipmentCardParametersDialogViewModelTests
             });
     }
 
+    // DLG-12
     [Fact]
     public async Task Save_marks_invalid_numeric_values_without_dispatching()
     {
@@ -97,7 +269,7 @@ public sealed class EquipmentCardParametersDialogViewModelTests
             Parameter("Dword", "card.dword", SignalBindingDirection.Write, SignalValueType.Dword),
             Parameter("Float32", "card.float32", SignalBindingDirection.Write, SignalValueType.Float32),
             Parameter("Date", "card.date", SignalBindingDirection.Write, SignalValueType.Date));
-        var viewModel = new EquipmentCardParametersDialogViewModel(card, null, dispatcher);
+        using var viewModel = new EquipmentCardParametersDialogViewModel(card, null, dispatcher, isAdminMode: false);
         viewModel.Parameters.Single(x => x.SignalId == "card.int16").ValueText = "40000";
         viewModel.Parameters.Single(x => x.SignalId == "card.uint16").ValueText = "-1";
         viewModel.Parameters.Single(x => x.SignalId == "card.int32").ValueText = "hello";
@@ -223,7 +395,7 @@ public sealed class EquipmentCardParametersDialogViewModelTests
     }
 
     [Fact]
-    public async Task Auto_dispatch_sends_pending_value_once_and_records_dispatch_result()
+    public async Task Auto_dispatch_sends_pending_admin_value_once_and_records_dispatch_result()
     {
         var runtime = new RuntimeSource(RouteMapSignalSource.Modbus);
         var dispatcher = new CapturingDispatcher();
@@ -234,7 +406,7 @@ public sealed class EquipmentCardParametersDialogViewModelTests
             SignalBindingDirection.Write,
             SignalValueType.Float32,
             savedValue: "1.5",
-            pending: true);
+            pending: true) with { Visibility = EquipmentParameterVisibility.Admin };
         store.Pending.Add(new PendingEquipmentParameter("card", parameter));
         var autoDispatcher = new EquipmentParameterAutoDispatcher(store, dispatcher, new StaticWriteValidator(null), runtime);
 
@@ -316,6 +488,18 @@ public sealed class EquipmentCardParametersDialogViewModelTests
         Assert.Null(validator.Validate(new SignalWriteRequest("ok.string", "hello", SignalValueType.String)));
         Assert.Contains("Length", validator.Validate(new SignalWriteRequest("short.string", "hello", SignalValueType.String)));
     }
+
+    private static EquipmentCommandCard MixedVisibilityCard(string adminSavedValue = "20") =>
+        Card(
+            Parameter("Первый", "parameter.user.1", SignalBindingDirection.ReadWrite, SignalValueType.UInt16, savedValue: "10"),
+            Parameter("Скрытый", "parameter.admin.1", SignalBindingDirection.ReadWrite, SignalValueType.UInt16,
+                savedValue: adminSavedValue, pending: true, error: "Предыдущая ошибка отправки")
+                with { Visibility = EquipmentParameterVisibility.Admin },
+            Parameter("Третий", "parameter.user.2", SignalBindingDirection.ReadWrite, SignalValueType.UInt16, savedValue: "30"));
+
+    private static string[] ExpectedVisibleIds(bool isAdminMode) => isAdminMode
+        ? ["parameter.user.1", "parameter.admin.1", "parameter.user.2"]
+        : ["parameter.user.1", "parameter.user.2"];
 
     private static EquipmentCommandCard Card(params EquipmentCardParameter[] parameters) =>
         new(
@@ -410,6 +594,36 @@ public sealed class EquipmentCardParametersDialogViewModelTests
     private sealed class StaticWriteValidator(string? message) : IEquipmentParameterWriteValidator
     {
         public string? Validate(SignalWriteRequest request) => message;
+    }
+
+    private sealed class RecordingWriteValidator : IEquipmentParameterWriteValidator
+    {
+        public List<string> SignalIds { get; } = [];
+
+        public string? Validate(SignalWriteRequest request)
+        {
+            SignalIds.Add(request.SignalId);
+            return null;
+        }
+    }
+
+    private sealed class UserParametersDialogStub(IEquipmentCommandDispatcher dispatcher) : IEquipmentCardParametersDialogService
+    {
+        public List<(EquipmentCommandCard Card, bool IsConnectionAvailable)> Opened { get; } = [];
+        public string[] VisibleIds { get; private set; } = [];
+
+        public Task ShowAsync(
+            EquipmentCommandCard card,
+            IReadOnlyDictionary<string, SignalValue>? signals,
+            bool isConnectionAvailable = true,
+            CancellationToken cancellationToken = default)
+        {
+            Opened.Add((card, isConnectionAvailable));
+            using var viewModel = new EquipmentCardParametersDialogViewModel(
+                card, signals, dispatcher, isConnectionAvailable: isConnectionAvailable, isAdminMode: false);
+            VisibleIds = viewModel.Parameters.Select(row => row.SignalId).ToArray();
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RuntimeSource(RouteMapSignalSource source) : IRouteMapSignalRuntime

@@ -20,14 +20,16 @@ public sealed class EquipmentCardParametersDialogService(
         CancellationToken cancellationToken = default)
     {
         var snapshot = signals ?? new Dictionary<string, SignalValue>(StringComparer.Ordinal);
+        var isAdminMode = applicationOptions.Value.IsAdminMode;
         var viewModel = new EquipmentCardParametersDialogViewModel(
             card,
             snapshot,
             serviceProvider.GetRequiredService<IEquipmentCommandDispatcher>(),
             serviceProvider.GetRequiredService<IEquipmentParameterWriteValidator>(),
-            applicationOptions.Value.IsAdminMode,
-            isConnectionAvailable,
-            serviceProvider.GetRequiredService<IEquipmentParameterValueStore>());
+            showTechnicalDetails: isAdminMode,
+            isConnectionAvailable: isConnectionAvailable,
+            valueStore: serviceProvider.GetRequiredService<IEquipmentParameterValueStore>(),
+            isAdminMode: isAdminMode);
         var view = serviceProvider.GetRequiredService<EquipmentCardParametersDialogView>();
         view.DataContext = viewModel;
         try

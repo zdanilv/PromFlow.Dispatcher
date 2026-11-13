@@ -96,6 +96,12 @@
         </ItemsControl>
       </ScrollViewer>
 
+      <TextBlock Grid.Row="1"
+                 Text="{Binding EmptyStateMessage}"
+                 IsVisible="{Binding HasNoParameters}"
+                 Foreground="#2F3943"
+                 TextWrapping="Wrap"/>
+
       <StackPanel Grid.Row="2">
         <TextBlock Text="{Binding ErrorMessage}"
                    IsVisible="{Binding HasError}"

@@ -365,7 +365,11 @@ public sealed record EquipmentCardParameter(
     string? SavedValue = null,
     bool PendingAutoDispatch = false,
     string? LastDispatchError = null,
-    EquipmentParameterVisibility Visibility = EquipmentParameterVisibility.User);
+    EquipmentParameterVisibility Visibility = EquipmentParameterVisibility.User)
+{
+    internal static bool IsVisible(EquipmentParameterVisibility visibility, bool isAdminMode) =>
+        isAdminMode || visibility == EquipmentParameterVisibility.User;
+}
 
 public enum EquipmentStatusCategory
 {

@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Globalization;
 using System.Reactive;
+using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -28,7 +30,8 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
         IEquipmentParameterWriteValidator? writeValidator = null,
         bool showTechnicalDetails = true,
         bool isConnectionAvailable = true,
-        IEquipmentParameterValueStore? valueStore = null)
+        IEquipmentParameterValueStore? valueStore = null,
+        bool isAdminMode = true)
     {
         _card = card;
         _dispatcher = dispatcher;
@@ -37,16 +40,27 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
         _isConnectionAvailable = isConnectionAvailable;
         ShowTechnicalDetails = showTechnicalDetails;
         Title = card.Title;
-        foreach (var parameter in card.Parameters)
+        var visibleParameters = card.Parameters.Where(parameter =>
+            EquipmentCardParameter.IsVisible(parameter.Visibility, isAdminMode));
+        foreach (var parameter in visibleParameters)
             Parameters.Add(new EquipmentCardParameterRow(parameter, signals, showTechnicalDetails));
 
-        SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync);
+        Parameters.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(HasNoParameters));
+        var canSave = Observable.FromEventPattern<NotifyCollectionChangedEventHandler, NotifyCollectionChangedEventArgs>(
+                handler => Parameters.CollectionChanged += handler,
+                handler => Parameters.CollectionChanged -= handler)
+            .Select(_ => !HasNoParameters)
+            .StartWith(!HasNoParameters)
+            .DistinctUntilChanged();
+        SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync, canSave);
         CloseCommand = ReactiveCommand.Create(Close);
     }
 
     public string Title { get; }
     public bool ShowTechnicalDetails { get; }
     public ObservableCollection<EquipmentCardParameterRow> Parameters { get; } = [];
+    public bool HasNoParameters => Parameters.Count == 0;
+    public string EmptyStateMessage => "Для текущего режима нет доступных настроек оборудования.";
     public IObservable<bool> Result => _result;
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
     public ReactiveCommand<Unit, Unit> CloseCommand { get; }
