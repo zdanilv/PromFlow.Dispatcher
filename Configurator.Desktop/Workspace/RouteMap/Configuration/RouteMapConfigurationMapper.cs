@@ -466,6 +466,7 @@ public sealed class RouteMapConfigurationMapper
         SignalId = parameter.Binding.SignalId,
         Direction = parameter.Binding.Direction,
         ValueType = parameter.Binding.ValueType,
+        Visibility = parameter.Visibility,
         SavedValue = parameter.SavedValue,
         PendingAutoDispatch = parameter.PendingAutoDispatch,
         LastDispatchError = parameter.LastDispatchError,
@@ -480,7 +481,8 @@ public sealed class RouteMapConfigurationMapper
             parameter.ValueType),
         parameter.SavedValue,
         parameter.PendingAutoDispatch,
-        parameter.LastDispatchError);
+        parameter.LastDispatchError,
+        parameter.Visibility);
 
     private static EquipmentCardStyleConfiguration ToConfiguration(EquipmentCardStyle style)
     {

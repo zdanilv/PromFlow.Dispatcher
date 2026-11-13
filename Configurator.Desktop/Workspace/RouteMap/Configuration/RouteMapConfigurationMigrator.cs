@@ -135,6 +135,11 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 20;
                     wasMigrated = true;
                     break;
+                case 20:
+                    // Parameter visibility already defaults to User when omitted from JSON.
+                    document.SchemaVersion = 21;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }

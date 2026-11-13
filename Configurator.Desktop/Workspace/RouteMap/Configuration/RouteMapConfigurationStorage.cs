@@ -208,9 +208,29 @@ public sealed class RouteMapConfigurationStorage
             ReadCommentHandling = JsonCommentHandling.Skip,
         };
         options.Converters.Add(new JsonStringEnumConverter<EquipmentStatusCategory>(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
+        options.Converters.Add(new EquipmentParameterVisibilityConverter());
         options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new RouteSegmentConfigurationConverter(new JsonSerializerOptions(options)));
         return options;
+    }
+
+    private sealed class EquipmentParameterVisibilityConverter : JsonConverter<EquipmentParameterVisibility>
+    {
+        public override EquipmentParameterVisibility Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            (reader.TokenType == JsonTokenType.String ? reader.GetString() : null) switch
+            {
+                "user" => EquipmentParameterVisibility.User,
+                "admin" => EquipmentParameterVisibility.Admin,
+                _ => throw new JsonException("Допустимые значения visibility: 'user' и 'admin'."),
+            };
+
+        public override void Write(Utf8JsonWriter writer, EquipmentParameterVisibility value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value switch
+            {
+                EquipmentParameterVisibility.User => "user",
+                EquipmentParameterVisibility.Admin => "admin",
+                _ => throw new JsonException($"Недопустимое значение EquipmentParameterVisibility: {value}."),
+            });
     }
 
     private sealed class RouteSegmentConfigurationConverter(JsonSerializerOptions segmentOptions)

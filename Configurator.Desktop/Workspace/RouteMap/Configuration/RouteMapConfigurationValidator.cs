@@ -314,6 +314,7 @@ public sealed class RouteMapConfigurationValidator
             ValidateEnum(errors, "card", card.Id, nameof(parameter.Role), parameter.Role);
             ValidateEnum(errors, "card", card.Id, nameof(parameter.Direction), parameter.Direction);
             ValidateEnum(errors, "card", card.Id, nameof(parameter.ValueType), parameter.ValueType);
+            ValidateEnum(errors, "card", card.Id, nameof(parameter.Visibility), parameter.Visibility);
         }
 
         foreach (var duplicate in parameters

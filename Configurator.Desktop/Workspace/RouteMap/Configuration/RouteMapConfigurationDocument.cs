@@ -40,7 +40,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 20;
+    public const int CurrentSchemaVersion = 21;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();
@@ -527,12 +527,29 @@ public sealed class EquipmentCardParameterConfiguration : ReactiveObject
 {
     private string _title = "Параметр";
     private SignalBindingRole _role = SignalBindingRole.EquipmentParameter;
-    private string _signalId = string.Empty;
-    private SignalBindingDirection _direction = SignalBindingDirection.ReadWrite;
-    private SignalValueType _valueType = SignalValueType.Word;
+    private string _signalId;
+    private SignalBindingDirection _direction;
+    private SignalValueType _valueType;
+    private EquipmentParameterVisibility _visibility = EquipmentParameterVisibility.User;
     private string? _savedValue;
     private bool _pendingAutoDispatch;
     private string? _lastDispatchError;
+
+    public EquipmentCardParameterConfiguration() : this(string.Empty)
+    {
+    }
+
+    // Load binding fields without clearing the setpoint, regardless of their order in JSON.
+    [JsonConstructor]
+    private EquipmentCardParameterConfiguration(
+        string signalId = "",
+        SignalBindingDirection direction = SignalBindingDirection.ReadWrite,
+        SignalValueType valueType = SignalValueType.Word)
+    {
+        _signalId = signalId;
+        _direction = direction;
+        _valueType = valueType;
+    }
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
@@ -586,6 +603,12 @@ public sealed class EquipmentCardParameterConfiguration : ReactiveObject
             this.RaiseAndSetIfChanged(ref _valueType, value);
             ClearSavedSetpoint();
         }
+    }
+
+    public EquipmentParameterVisibility Visibility
+    {
+        get => _visibility;
+        set => this.RaiseAndSetIfChanged(ref _visibility, value);
     }
 
     public string? SavedValue

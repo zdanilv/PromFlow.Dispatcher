@@ -353,12 +353,19 @@ public sealed record RouteVehicle(
     RouteObjectState State,
     IReadOnlyList<SignalBinding> Bindings);
 
+public enum EquipmentParameterVisibility
+{
+    User,
+    Admin
+}
+
 public sealed record EquipmentCardParameter(
     string Title,
     SignalBinding Binding,
     string? SavedValue = null,
     bool PendingAutoDispatch = false,
-    string? LastDispatchError = null);
+    string? LastDispatchError = null,
+    EquipmentParameterVisibility Visibility = EquipmentParameterVisibility.User);
 
 public enum EquipmentStatusCategory
 {

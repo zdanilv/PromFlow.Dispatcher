@@ -646,7 +646,8 @@ public sealed class RouteMapConfigurationTests
         var validator = new RouteMapConfigurationValidator();
         for (var version = 1; version < RouteMapConfigurationDocument.CurrentSchemaVersion; version++)
         {
-            var document = CreateLegacyTopology(scope, version);
+            var document = version < 20 ? CreateLegacyTopology(scope, version) : scope.Mapper.CreateSeedDocument();
+            document.SchemaVersion = version;
             if (version < 18)
                 document.Cards.Single().StatusMapping = null;
 
@@ -691,7 +692,7 @@ public sealed class RouteMapConfigurationTests
         using var manager = scope.CreateManager();
 
         Assert.Null(manager.LastLoadError);
-        Assert.Equal(20, manager.CurrentDocument.SchemaVersion);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, manager.CurrentDocument.SchemaVersion);
         Assert.True(new RouteMapConfigurationValidator().Validate(manager.CurrentDocument).IsValid);
         Assert.Equal(RouteMapSeed.Create().Chains.Single().NodeIds, manager.CurrentDefinition.Chains.Single(chain => chain.Id == "chain.bucket_route").NodeIds);
         Assert.Equal(RouteMapSeed.Create().Chains.Single().SegmentIds, manager.CurrentDefinition.Chains.Single(chain => chain.Id == "chain.bucket_route").SegmentIds);
@@ -1843,6 +1844,291 @@ public sealed class RouteMapConfigurationTests
         Assert.Contains(roundTrip.Cards.Single().Parameters, x => x.ValueType == SignalValueType.Date);
         Assert.Contains(roundTrip.Cards.Single().Parameters, x => x.ValueType == SignalValueType.Dword);
         Assert.Contains(roundTrip.Cards.Single().Parameters, x => x.ValueType == SignalValueType.Word);
+    }
+
+    // CFG-01, CFG-02, CFG-13, CFG-15
+    [Fact]
+    public async Task Manager_migrates_v20_parameter_visibility_and_preserves_the_profile()
+    {
+        using var scope = new TempConfigurationScope();
+        await scope.Storage.SaveActiveAsync(scope.Mapper.CreateSeedDocument());
+        var expected = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+        expected["schemaVersion"] = 20;
+        var parameters = expected["cards"]![0]!["parameters"]!.AsArray();
+        // Put setpoint fields before the binding fields to exercise order-independent loading.
+        var filter = JsonNode.Parse("""
+            {
+                "savedValue": "5000",
+                "pendingAutoDispatch": true,
+                "lastDispatchError": null,
+                "title": "Фильтер",
+                "role": "equipmentParameter",
+                "signalId": "equip.bucket.parameter2",
+                "direction": "readWrite",
+                "valueType": "uInt16",
+                "vendorParameter": { "tag": "filter", "enabled": true }
+            }
+            """)!;
+        parameters.Add(filter);
+        parameters.Add(JsonNode.Parse("""
+            {
+                "title": "Скорость",
+                "role": "equipmentParameter",
+                "signalId": "equip.bucket.speed",
+                "direction": "readWrite",
+                "valueType": "word",
+                "visibility": "admin",
+                "savedValue": "10",
+                "pendingAutoDispatch": false,
+                "lastDispatchError": "Нет связи"
+            }
+            """));
+        var original = expected.ToJsonString();
+        await File.WriteAllTextAsync(scope.Path, original);
+        var loadedV20 = scope.Storage.Load(scope.Path);
+        Assert.Equal(20, loadedV20.SchemaVersion);
+        Assert.Equal(EquipmentParameterVisibility.User, loadedV20.Cards.Single().Parameters[0].Visibility);
+
+        using var manager = scope.CreateManager();
+
+        Assert.Null(manager.LastLoadError);
+        Assert.Equal(21, manager.CurrentDocument.SchemaVersion);
+        var migrated = manager.CurrentDefinition.MapEquipment.Single().Parameters;
+        Assert.Equal("equip.bucket.parameter2", migrated[0].Binding.SignalId);
+        Assert.Equal(EquipmentParameterVisibility.User, migrated[0].Visibility);
+        Assert.Equal("5000", migrated[0].SavedValue);
+        Assert.True(migrated[0].PendingAutoDispatch);
+        Assert.Null(migrated[0].LastDispatchError);
+        Assert.Equal(EquipmentParameterVisibility.Admin, migrated[1].Visibility);
+        Assert.Equal(original, await File.ReadAllTextAsync(scope.Path + ".bak"));
+
+        expected["schemaVersion"] = 21;
+        filter["visibility"] = "user";
+        var persisted = await File.ReadAllTextAsync(scope.Path);
+        Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(persisted)));
+
+        using var reopened = scope.CreateManager();
+        Assert.Null(reopened.LastLoadError);
+        Assert.Equal(persisted, await File.ReadAllTextAsync(scope.Path));
+        Assert.Single(Directory.GetFiles(System.IO.Path.GetDirectoryName(scope.Path)!, "route-map.json.bak*"));
+        var migration = new RouteMapConfigurationMigrator().Migrate(reopened.CurrentDocument);
+        Assert.False(migration.WasMigrated);
+    }
+
+    // CFG-03, CFG-04, CFG-05
+    [Fact]
+    public async Task Parameter_visibility_round_trips_through_v21_json_and_mapper()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        AddParametersWithMixedVisibility(document);
+
+        await scope.Storage.SaveActiveAsync(document);
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+        Assert.Equal(21, json["schemaVersion"]!.GetValue<int>());
+        var parameters = json["cards"]![0]!["parameters"]!.AsArray();
+        Assert.Equal(new[] { "user", "admin" }, parameters.Select(x => x!["visibility"]!.GetValue<string>()));
+        var loaded = await scope.Storage.LoadAsync(scope.Path);
+        var definition = scope.Mapper.ToDefinition(loaded);
+
+        AssertMixedParameterVisibility(loaded);
+        Assert.Equal(new[] { EquipmentParameterVisibility.User, EquipmentParameterVisibility.Admin },
+            definition.MapEquipment.Single().Parameters.Select(x => x.Visibility));
+        AssertMixedParameterVisibility(scope.Mapper.ToDocument(definition));
+    }
+
+    // CFG-06, CFG-07, CFG-08
+    [Fact]
+    public async Task Parameter_visibility_is_preserved_by_manager_operations()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var draft = manager.CreateDraft();
+        AddParametersWithMixedVisibility(draft);
+
+        Assert.True(manager.Apply(draft).IsSuccess);
+        Assert.False(File.Exists(scope.Path));
+        Assert.Equal(new[] { EquipmentParameterVisibility.User, EquipmentParameterVisibility.Admin },
+            manager.CurrentDefinition.MapEquipment.Single().Parameters.Select(x => x.Visibility));
+        var clone = manager.CreateDraft();
+        AssertMixedParameterVisibility(clone);
+        clone.Cards.Single().Parameters[1].Visibility = EquipmentParameterVisibility.User;
+        AssertMixedParameterVisibility(manager.CurrentDocument);
+
+        Assert.True((await manager.SaveAndApplyAsync(draft)).IsSuccess);
+        using var reopened = scope.CreateManager();
+        Assert.Null(reopened.LastLoadError);
+        AssertMixedParameterVisibility(reopened.CurrentDocument);
+        var exportPath = scope.Path + ".export";
+        Assert.True((await reopened.ExportDraftAsync(exportPath, reopened.CreateDraft())).IsSuccess);
+        AssertMixedParameterVisibility(await reopened.ImportDraftAsync(exportPath));
+    }
+
+    // CFG-09
+    [Fact]
+    public void Duplicate_card_copies_parameter_visibility_and_clears_setpoints()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var editor = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        AddParametersWithMixedVisibility(editor.Draft);
+        var source = editor.SelectedCard!;
+
+        editor.DuplicateCardCommand.Execute().Subscribe();
+
+        var copy = editor.SelectedCard!;
+        Assert.NotSame(source, copy);
+        Assert.Equal(source.Parameters.Select(x => x.Visibility), copy.Parameters.Select(x => x.Visibility));
+        Assert.All(copy.Parameters, parameter =>
+        {
+            Assert.Null(parameter.SavedValue);
+            Assert.False(parameter.PendingAutoDispatch);
+            Assert.Null(parameter.LastDispatchError);
+        });
+        Assert.Equal("5000", source.Parameters[0].SavedValue);
+        Assert.True(source.Parameters[0].PendingAutoDispatch);
+        Assert.Equal("Нет связи", source.Parameters[1].LastDispatchError);
+    }
+
+    // CFG-10
+    [Fact]
+    public async Task Changing_visibility_notifies_and_preserves_binding_and_setpoint()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var draft = manager.CreateDraft();
+        AddParametersWithMixedVisibility(draft);
+        var parameters = draft.Cards.Single().Parameters;
+        var original = scope.Mapper.ToDefinition(draft).MapEquipment.Single().Parameters;
+        var changedProperties = new List<string?>();
+        parameters[0].PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
+
+        parameters[0].Visibility = EquipmentParameterVisibility.Admin;
+        parameters[1].Visibility = EquipmentParameterVisibility.User;
+
+        Assert.Equal(nameof(EquipmentCardParameterConfiguration.Visibility), Assert.Single(changedProperties));
+        Assert.True((await manager.SaveAndApplyAsync(draft)).IsSuccess);
+        using var reopened = scope.CreateManager();
+        Assert.Null(reopened.LastLoadError);
+        var persisted = reopened.CurrentDefinition.MapEquipment.Single().Parameters;
+        Assert.Equal(original[0] with { Visibility = EquipmentParameterVisibility.Admin }, persisted[0]);
+        Assert.Equal(original[1] with { Visibility = EquipmentParameterVisibility.User }, persisted[1]);
+    }
+
+    // CFG-11
+    [Theory]
+    [InlineData(nameof(EquipmentCardParameterConfiguration.SignalId))]
+    [InlineData(nameof(EquipmentCardParameterConfiguration.Direction))]
+    [InlineData(nameof(EquipmentCardParameterConfiguration.ValueType))]
+    public void Changing_parameter_binding_clears_setpoint(string property)
+    {
+        var parameter = new EquipmentCardParameterConfiguration
+        {
+            SignalId = "equip.bucket.speed",
+            ValueType = SignalValueType.UInt16,
+            Visibility = EquipmentParameterVisibility.Admin,
+            SavedValue = "10",
+            PendingAutoDispatch = true,
+            LastDispatchError = "Нет связи",
+        };
+
+        switch (property)
+        {
+            case nameof(parameter.SignalId):
+                parameter.SignalId = "equip.bucket.other";
+                break;
+            case nameof(parameter.Direction):
+                parameter.Direction = SignalBindingDirection.Read;
+                break;
+            case nameof(parameter.ValueType):
+                parameter.ValueType = SignalValueType.Word;
+                break;
+        }
+
+        Assert.Null(parameter.SavedValue);
+        Assert.False(parameter.PendingAutoDispatch);
+        Assert.Null(parameter.LastDispatchError);
+        Assert.Equal(EquipmentParameterVisibility.Admin, parameter.Visibility);
+    }
+
+    // CFG-12
+    [Theory]
+    [InlineData("null")]
+    [InlineData("0")]
+    [InlineData("1")]
+    [InlineData("\"0\"")]
+    [InlineData("\"\"")]
+    [InlineData("\"operator\"")]
+    [InlineData("\"user, admin\"")]
+    public async Task Invalid_parameter_visibility_json_does_not_load_or_rewrite_the_profile(string value)
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        AddParametersWithMixedVisibility(document);
+        await scope.Storage.SaveActiveAsync(document);
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+        json["schemaVersion"] = 20;
+        json["cards"]![0]!["parameters"]![0]!["visibility"] = JsonNode.Parse(value);
+        var invalid = json.ToJsonString();
+        await File.WriteAllTextAsync(scope.Path, invalid);
+
+        await Assert.ThrowsAsync<JsonException>(() => scope.Storage.LoadActiveAsync());
+        using var manager = scope.CreateManager();
+        Assert.NotNull(manager.LastLoadError);
+        Assert.Empty(manager.CurrentDefinition.MapEquipment.Single().Parameters);
+        Assert.Equal(invalid, await File.ReadAllTextAsync(scope.Path));
+        Assert.False(File.Exists(scope.Path + ".bak"));
+    }
+
+    // CFG-12, CFG-14
+    [Fact]
+    public void Validator_rejects_undefined_visibility_and_duplicate_signal_ids_across_visibilities()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        AddParametersWithMixedVisibility(document);
+        var card = document.Cards.Single();
+        card.Parameters.Add(new() { SignalId = "equip.bucket.invalid", Visibility = (EquipmentParameterVisibility)99 });
+        card.Parameters[1].SignalId = card.Parameters[0].SignalId;
+
+        var errors = new RouteMapConfigurationValidator().Validate(document).Errors;
+
+        Assert.Contains(errors, error => error.ObjectId == card.Id &&
+            error.Property == nameof(EquipmentCardParameterConfiguration.Visibility));
+        Assert.Contains(errors, error => error.ObjectId == card.Id &&
+            error.Property == nameof(EquipmentCardParameterConfiguration.SignalId) &&
+            error.Message.Contains("несколько раз"));
+    }
+
+    private static void AddParametersWithMixedVisibility(RouteMapConfigurationDocument document)
+    {
+        var parameters = document.Cards.Single().Parameters;
+        parameters.Add(new()
+        {
+            Title = "Фильтер",
+            SignalId = "equip.bucket.parameter2",
+            ValueType = SignalValueType.UInt16,
+            SavedValue = "5000",
+            PendingAutoDispatch = true,
+        });
+        parameters.Add(new()
+        {
+            Title = "Скорость",
+            SignalId = "equip.bucket.speed",
+            Visibility = EquipmentParameterVisibility.Admin,
+            SavedValue = "10",
+            LastDispatchError = "Нет связи",
+        });
+    }
+
+    private static void AssertMixedParameterVisibility(RouteMapConfigurationDocument document)
+    {
+        var parameters = document.Cards.Single().Parameters;
+        Assert.Equal(new[]
+        {
+            ("equip.bucket.parameter2", EquipmentParameterVisibility.User),
+            ("equip.bucket.speed", EquipmentParameterVisibility.Admin),
+        }, parameters.Select(x => (x.SignalId, x.Visibility)));
     }
 
     [Fact]
