@@ -1,5 +1,6 @@
 using Configurator.Application.Services;
 using Configurator.Application.Services.Modbus.Configuration;
+using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Dialogs.HelpDialog;
@@ -27,6 +28,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private readonly IDisposable _definitionSubscription;
     private readonly IRouteMapRuntimeMapper<RouteMapRuntimeState> _runtimeMapper;
     private readonly IEquipmentCommandDispatcher _commandDispatcher;
+    private readonly RouteMapConfigurationManager _configurationManager;
     private readonly RouteMapModbusBindingDiagnostics? _bindingDiagnostics;
     private readonly RouteMapSessionJournal _sessionJournal;
     private readonly IOptionsMonitor<ModbusOptions> _modbusOptions;
@@ -37,6 +39,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private IReadOnlyDictionary<string, RouteNodeRoleState> _nodeRoleStates;
     private RouteMapDefinition _definition;
     private IReadOnlyDictionary<string, SignalValue>? _lastSignals;
+    private long? _lastSignalGeneration;
+    private RouteMapDefinition? _topBarRuntimeDefinition;
     private string? _selectedObjectId;
     private string? _commandErrorMessage;
     private string _connectionStatusText = "Ожидание";
@@ -61,6 +65,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     {
         _runtimeMapper = runtimeMapper;
         _commandDispatcher = commandDispatcher;
+        _configurationManager = configurationManager;
         _bindingDiagnostics = bindingDiagnostics;
         _sessionJournal = sessionJournal;
         _modbusOptions = modbusOptions;
@@ -70,6 +75,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         _definition = configurationManager.CurrentDefinition;
         IsConnectionStatusVisible = _isAdminMode;
         TopBar = new TopBarViewModel(
+            _isAdminMode,
             settingsDialogService,
             commandDispatcher,
             Definition.TopBar,
@@ -77,7 +83,9 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             palette: Definition.Display?.Palette,
             helpDialogService: helpDialogService,
             commandErrorHandler: message => CommandErrorMessage = message,
-            commandSuccessHandler: () => CommandErrorMessage = null);
+            commandSuccessHandler: () => CommandErrorMessage = null,
+            getMappingError: GetTopBarCommandMappingError,
+            tryDispatchAdminCommand: TryDispatchTopBarCommandAsync);
         MapEquipmentCards = new ObservableCollection<EquipmentCardViewModel>(
             Definition.MapEquipment.Select(CreateEquipmentCardViewModel));
         NotificationsPanel = notificationsPanel;
@@ -108,6 +116,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
                 return;
 
             _lastSignals = signals ?? UnavailableSnapshot;
+            _lastSignalGeneration = signals is not null && runtime is not null ? generation : null;
             // Invalidation updates the UI; only live snapshots drive parameter dispatch on reconnect.
             ApplyRuntime(MapSnapshot(_lastSignals, Definition), isLiveSnapshot: signals is not null);
             if (signals is not null)
@@ -256,6 +265,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
 
     private void ApplyRuntime(RouteMapRuntimeState runtimeState, bool isLiveSnapshot)
     {
+        _topBarRuntimeDefinition = Definition;
+        TopBar.ApplyAdminCommandRuntime(runtimeState);
         var shouldDispatchPendingParameters =
             isLiveSnapshot && runtimeState.IsConnectionAvailable && !_wasConnectionAvailable;
         if (isLiveSnapshot)
@@ -284,6 +295,34 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         {
             _ = DispatchPendingParametersAsync();
         }
+    }
+
+    private string? GetTopBarCommandMappingError(SignalBinding binding)
+    {
+        if (_commandDispatcher is not IRouteMapSignalRuntime { CurrentSource: RouteMapSignalSource.Modbus })
+            return null;
+
+        var point = _modbusOptions.CurrentValue.DataMap.FirstOrDefault(
+            point => string.Equals(point.Name, binding.SignalId, StringComparison.OrdinalIgnoreCase));
+        return point is { Access: ModbusDataAccess.ReadWrite, WriteMode: ModbusWriteMode.Pulse }
+            && SignalModbusTypeCompatibility.IsCompatible(binding.ValueType, point.Type)
+                ? null
+                : $"для '{binding.SignalId}' требуется запись ReadWrite/Bool с режимом Pulse в Modbus.DataMap.";
+    }
+
+    private async Task<bool> TryDispatchTopBarCommandAsync(SignalWriteRequest request, CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _disposed) != 0 || !ReferenceEquals(_topBarRuntimeDefinition, _configurationManager.CurrentDefinition))
+            return false;
+
+        if (_commandDispatcher is RouteMapSignalRuntime runtime)
+        {
+            var generation = _lastSignalGeneration;
+            return generation.HasValue && await runtime.TryDispatchAtGenerationAsync(generation.Value, request, cancellationToken);
+        }
+
+        await _commandDispatcher.DispatchAsync(request, cancellationToken);
+        return true;
     }
 
     private EquipmentCardViewModel CreateEquipmentCardViewModel(EquipmentCommandCard card) =>

@@ -6,6 +6,7 @@ namespace Configurator.Desktop.Workspace.RouteMap.Services;
 
 public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRuntimeState>
 {
+    private static readonly IReadOnlyDictionary<string, SignalValue> EmptySignals = new Dictionary<string, SignalValue>();
     private readonly RouteMapConfigurationManager? _configurationManager;
     private readonly RouteMapDefinition? _fixedDefinition;
 
@@ -19,15 +20,17 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
         _fixedDefinition = definition;
     }
 
-    public RouteMapRuntimeState Map(IReadOnlyDictionary<string, SignalValue> signals)
+    public RouteMapRuntimeState Map(IReadOnlyDictionary<string, SignalValue>? signals)
         => Map(signals, _configurationManager?.CurrentDefinition ?? _fixedDefinition
             ?? throw new InvalidOperationException("RouteMap definition is unavailable."));
 
-    internal RouteMapRuntimeState Map(IReadOnlyDictionary<string, SignalValue> signals, RouteMapDefinition displayedDefinition)
+    internal RouteMapRuntimeState Map(IReadOnlyDictionary<string, SignalValue>? signals, RouteMapDefinition definition)
     {
+        var hasSnapshot = signals is not null;
+        signals ??= EmptySignals;
         var objects = new Dictionary<string, RouteObjectRuntimeState>();
-        var definition = _fixedDefinition ?? displayedDefinition;
-        var isConnectionAvailable = ReadConnectionAvailable(signals);
+        var isConnectionAvailable = hasSnapshot && ReadConnectionAvailable(signals);
+        var isAdminCommandConnectionAvailable = ReadGoodBool(signals, RouteMapSystemSignalIds.ConnectionConnected) == true;
         var isGlobalFaultActive = ReadBool(signals, RouteMapSystemSignalIds.GlobalFault);
         var palette = definition.Display?.Palette ?? new RouteMapPaletteSettings();
 
@@ -97,7 +100,15 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
             IsAutomaticCommandEnabled: ReadTopBarEnabled(signals, definition.TopBar?.Automatic, isConnectionAvailable),
             IsManualCommandEnabled: ReadTopBarEnabled(signals, definition.TopBar?.Manual, isConnectionAvailable),
             IsResetCommandEnabled: ReadTopBarEnabled(signals, definition.TopBar?.Reset, isConnectionAvailable),
-            IsEmergencyCommandEnabled: ReadTopBarEnabled(signals, definition.TopBar?.Emergency, isConnectionAvailable));
+            IsEmergencyCommandEnabled: ReadTopBarEnabled(signals, definition.TopBar?.Emergency, isConnectionAvailable))
+        {
+            UnloadCommand = MapTopBarCommand(signals, definition.TopBar?.Unload,
+                SignalBindingRole.UnloadCommand, isAdminCommandConnectionAvailable),
+            RotationCommand = MapTopBarCommand(signals, definition.TopBar?.Rotation,
+                SignalBindingRole.RotationCommand, isAdminCommandConnectionAvailable),
+            LoadCommand = MapTopBarCommand(signals, definition.TopBar?.Load,
+                SignalBindingRole.LoadCommand, isAdminCommandConnectionAvailable),
+        };
     }
 
     private static RouteObjectRuntimeState MapObject(
@@ -378,6 +389,29 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
 
         return signal.Value is not bool enabled || enabled;
     }
+
+    private static TopBarCommandRuntimeState MapTopBarCommand(
+        IReadOnlyDictionary<string, SignalValue> signals,
+        RouteTopBarButtonSettings? button,
+        SignalBindingRole role,
+        bool isConnectionAvailable)
+    {
+        var enabledBinding = button?.EnabledBinding;
+        var enabled = enabledBinding is
+            { Role: SignalBindingRole.Enabled, Direction: SignalBindingDirection.Read, ValueType: SignalValueType.Bool }
+            && !string.IsNullOrWhiteSpace(enabledBinding.SignalId)
+                ? ReadGoodBool(signals, enabledBinding.SignalId)
+                : null;
+        return new TopBarCommandRuntimeState(
+            isConnectionAvailable && button?.GetMomentaryCommandBinding(role) is not null
+            && (enabledBinding is null || enabled == true), enabled);
+    }
+
+    private static bool? ReadGoodBool(IReadOnlyDictionary<string, SignalValue> signals, string signalId) =>
+        signals.TryGetValue(signalId, out var signal) &&
+        signal is { IsQualityGood: true, IsStale: false, ValueType: SignalValueType.Bool, Value: bool value }
+            ? value
+            : null;
 
     private static bool ReadBool(
         IReadOnlyDictionary<string, SignalValue> signals,

@@ -788,6 +788,87 @@ public sealed class RouteMapRuntimeMapperTests
         Assert.True(runtime.HasEmergency);
     }
 
+    [Theory]
+    [InlineData(null, true, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, true)]
+    public void Map_requires_good_fresh_connection_for_admin_top_bar_commands(bool? connected, bool good, bool stale)
+    {
+        var mapper = new RouteMapRuntimeMapper(RouteMapSeed.Create());
+        var connectionId = RouteMapSystemSignalIds.ConnectionConnected;
+        var signals = new Dictionary<string, SignalValue>();
+        if (connected.HasValue)
+            signals[connectionId] = new(connectionId, connected, SignalValueType.Bool, DateTimeOffset.UtcNow, good, stale);
+
+        var runtime = mapper.Map(signals);
+
+        Assert.False(runtime.UnloadCommand.CanExecute);
+        Assert.False(runtime.RotationCommand.CanExecute);
+        Assert.False(runtime.LoadCommand.CanExecute);
+        Assert.Equal(default, mapper.Map(null).UnloadCommand);
+    }
+
+    [Fact]
+    public void Map_exposes_independent_admin_top_bar_enabled_signals()
+    {
+        var seed = RouteMapSeed.Create();
+        var topBar = seed.TopBar!;
+        var definition = seed with
+        {
+            TopBar = topBar with
+            {
+                Rotation = topBar.Rotation with { EnabledBinding = Enabled("test.rotate.enabled") },
+                Load = topBar.Load with { EnabledBinding = Enabled("test.load.enabled") },
+            },
+        };
+        var connectionId = RouteMapSystemSignalIds.ConnectionConnected;
+        var now = DateTimeOffset.UtcNow;
+        var runtime = new RouteMapRuntimeMapper(definition).Map(new Dictionary<string, SignalValue>
+        {
+            [connectionId] = new(connectionId, true, SignalValueType.Bool, now, true, false),
+            ["test.rotate.enabled"] = new("test.rotate.enabled", true, SignalValueType.Bool, now, true, false),
+            ["test.load.enabled"] = new("test.load.enabled", false, SignalValueType.Bool, now, true, false),
+        });
+
+        Assert.Equal(new TopBarCommandRuntimeState(true, null), runtime.UnloadCommand);
+        Assert.Equal(new TopBarCommandRuntimeState(true, true), runtime.RotationCommand);
+        Assert.Equal(new TopBarCommandRuntimeState(false, false), runtime.LoadCommand);
+
+        static SignalBinding Enabled(string id) =>
+            new(SignalBindingRole.Enabled, id, SignalBindingDirection.Read, SignalValueType.Bool);
+    }
+
+    [Fact]
+    public void Mock_provider_supplies_configured_admin_commands_and_enabled_signals()
+    {
+        var seed = RouteMapSeed.Create();
+        var topBar = seed.TopBar!;
+        var definition = seed with
+        {
+            TopBar = topBar with
+            {
+                Unload = WithEnabled(topBar.Unload),
+                Rotation = WithEnabled(topBar.Rotation),
+                Load = WithEnabled(topBar.Load),
+            },
+        };
+        var snapshot = new MockSignalProvider(definition).CreateSnapshot(0);
+        var runtime = new RouteMapRuntimeMapper(definition).Map(snapshot);
+
+        foreach (var settings in new[] { topBar.Unload, topBar.Rotation, topBar.Load })
+            Assert.Equal(false, snapshot[settings.Binding.SignalId].Value);
+        Assert.Equal(new TopBarCommandRuntimeState(true, true), runtime.UnloadCommand);
+        Assert.Equal(new TopBarCommandRuntimeState(true, true), runtime.RotationCommand);
+        Assert.Equal(new TopBarCommandRuntimeState(true, true), runtime.LoadCommand);
+
+        static RouteTopBarButtonSettings WithEnabled(RouteTopBarButtonSettings settings) => settings with
+        {
+            EnabledBinding = new(SignalBindingRole.Enabled, $"{settings.Binding.SignalId}.enabled",
+                SignalBindingDirection.Read, SignalValueType.Bool),
+        };
+    }
+
     [Fact]
     public void Map_applies_global_fault_to_route_objects_and_cards()
     {

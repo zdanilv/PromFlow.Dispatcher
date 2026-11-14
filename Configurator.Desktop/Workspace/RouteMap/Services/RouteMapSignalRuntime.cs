@@ -120,12 +120,23 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
 
     public async Task DispatchAsync(
         SignalWriteRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await DispatchCoreAsync(request, expectedGeneration: null, cancellationToken);
+
+    internal Task<bool> TryDispatchAtGenerationAsync(
+        long generation, SignalWriteRequest request, CancellationToken cancellationToken) =>
+        DispatchCoreAsync(request, generation, cancellationToken);
+
+    private async Task<bool> DispatchCoreAsync(
+        SignalWriteRequest request, long? expectedGeneration, CancellationToken cancellationToken)
     {
         IEquipmentCommandDispatcher dispatcher;
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            // Validate the snapshot source and select its dispatcher atomically.
+            if (expectedGeneration is { } generation && generation != _generation)
+                return false;
             dispatcher = DispatcherFor(_currentSource);
         }
 
@@ -140,6 +151,8 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
                 _modbusOptions.CurrentValue,
                 DateTimeOffset.Now);
         }
+
+        return true;
     }
 
     public void Dispose()

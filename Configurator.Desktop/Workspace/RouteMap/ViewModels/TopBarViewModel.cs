@@ -1,4 +1,5 @@
 using Avalonia.Media;
+using Avalonia.Threading;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
@@ -6,6 +7,8 @@ using Configurator.Desktop.Dialogs.HelpDialog;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
 using ReactiveUI;
+using System.Reactive;
+using System.Reactive.Linq;
 
 namespace Configurator.Desktop.Workspace.RouteMap.ViewModels;
 
@@ -15,6 +18,12 @@ public sealed class TopBarViewModel : ViewModelBase
     private readonly IHelpDialogService? _helpDialogService;
     private readonly Action<string>? _commandErrorHandler;
     private readonly Action? _commandSuccessHandler;
+    private readonly bool _isAdminMode;
+    private readonly Func<SignalBinding, string?>? _getMappingError;
+    private readonly Func<SignalWriteRequest, CancellationToken, Task<bool>>? _tryDispatchAdminCommand;
+    private readonly AdminCommandState _unload = new(SignalBindingRole.UnloadCommand);
+    private readonly AdminCommandState _rotation = new(SignalBindingRole.RotationCommand);
+    private readonly AdminCommandState _load = new(SignalBindingRole.LoadCommand);
     private RouteTopBarSettings _settings;
     private string _disabledColor;
     private bool _isAutomaticMode;
@@ -42,20 +51,44 @@ public sealed class TopBarViewModel : ViewModelBase
         IHelpDialogService? helpDialogService = null,
         Action<string>? commandErrorHandler = null,
         Action? commandSuccessHandler = null)
+        : this(false, settingsDialogService, commandDispatcher, settings, isSettingsVisible, palette,
+            helpDialogService, commandErrorHandler, commandSuccessHandler)
+    {
+    }
+
+    internal TopBarViewModel(
+        bool isAdminMode,
+        IRouteMapSettingsDialogService? settingsDialogService = null,
+        IEquipmentCommandDispatcher? commandDispatcher = null,
+        RouteTopBarSettings? settings = null,
+        bool isSettingsVisible = true,
+        RouteMapPaletteSettings? palette = null,
+        IHelpDialogService? helpDialogService = null,
+        Action<string>? commandErrorHandler = null,
+        Action? commandSuccessHandler = null,
+        Func<SignalBinding, string?>? getMappingError = null,
+        Func<SignalWriteRequest, CancellationToken, Task<bool>>? tryDispatchAdminCommand = null)
     {
         _commandDispatcher = commandDispatcher;
         _helpDialogService = helpDialogService;
         _commandErrorHandler = commandErrorHandler;
         _commandSuccessHandler = commandSuccessHandler;
+        _isAdminMode = isAdminMode;
+        _getMappingError = getMappingError;
+        _tryDispatchAdminCommand = tryDispatchAdminCommand;
         _settings = settings ?? CreateDefaultSettings();
         _disabledColor = (palette ?? new RouteMapPaletteSettings()).Disabled;
         IsSettingsVisible = isSettingsVisible;
+        ApplyAdminCommandSettings(settings);
 
         // Retain the public commands for existing callers; legacy modes are inert.
         SwitchToAutomaticCommand = ReactiveCommand.Create(() => { });
         SwitchToManualCommand = ReactiveCommand.Create(() => { });
         ResetCommand = ReactiveCommand.CreateFromTask(ExecuteResetAsync);
         EmergencyCommand = ReactiveCommand.CreateFromTask(ExecuteEmergencyAsync);
+        UnloadCommand = CreateAdminCommand(_unload, nameof(IsUnloadEnabled));
+        RotationCommand = CreateAdminCommand(_rotation, nameof(IsRotationEnabled));
+        LoadCommand = CreateAdminCommand(_load, nameof(IsLoadEnabled));
         OpenSettingsCommand = ReactiveCommand.CreateFromTask(() =>
             settingsDialogService?.ShowAsync() ?? Task.CompletedTask);
         OpenHelpCommand = ReactiveCommand.CreateFromTask(() =>
@@ -114,6 +147,27 @@ public sealed class TopBarViewModel : ViewModelBase
         IsResetCommandEnabled && IsEmergencyCommandEnabled;
 
     public bool IsSettingsVisible { get; }
+    public bool AreAdminCommandsVisible => _isAdminMode;
+
+    public string UnloadText => _unload.Settings?.Text ?? string.Empty;
+    public string RotationText => _rotation.Settings?.Text ?? string.Empty;
+    public string LoadText => _load.Settings?.Text ?? string.Empty;
+    public bool IsUnloadEnabled => CanExecuteAdminCommand(_unload);
+    public bool IsRotationEnabled => CanExecuteAdminCommand(_rotation);
+    public bool IsLoadEnabled => CanExecuteAdminCommand(_load);
+    public bool IsUnloadSending => _unload.IsSending;
+    public bool IsRotationSending => _rotation.IsSending;
+    public bool IsLoadSending => _load.IsSending;
+    public bool? UnloadEnabledSignalValue => _unload.Runtime.EnabledSignalValue;
+    public bool? RotationEnabledSignalValue => _rotation.Runtime.EnabledSignalValue;
+    public bool? LoadEnabledSignalValue => _load.Runtime.EnabledSignalValue;
+    public string? UnloadMappingError => _unload.MappingError;
+    public string? RotationMappingError => _rotation.MappingError;
+    public string? LoadMappingError => _load.MappingError;
+
+    public ReactiveCommand<Unit, Unit> UnloadCommand { get; }
+    public ReactiveCommand<Unit, Unit> RotationCommand { get; }
+    public ReactiveCommand<Unit, Unit> LoadCommand { get; }
 
     public string AutomaticText => _settings.Automatic.Text;
     public string ManualText => _settings.Manual.Text;
@@ -138,9 +192,14 @@ public sealed class TopBarViewModel : ViewModelBase
     public void ApplySettings(RouteTopBarSettings? settings, RouteMapPaletteSettings? palette = null)
     {
         _settings = settings ?? CreateDefaultSettings();
+        ApplyAdminCommandSettings(settings);
         if (palette is not null)
             _disabledColor = palette.Disabled;
         RaiseButtonProperties();
+        this.RaisePropertyChanged(nameof(UnloadText));
+        this.RaisePropertyChanged(nameof(RotationText));
+        this.RaisePropertyChanged(nameof(LoadText));
+        RaiseAdminCommandRuntimeProperties();
     }
 
     public void ApplyRuntime(
@@ -165,6 +224,15 @@ public sealed class TopBarViewModel : ViewModelBase
         IsEmergencyCommandEnabled = isConnectionAvailable && isEmergencyCommandEnabled;
         this.RaisePropertyChanged(nameof(AreCommandsEnabled));
         RaiseButtonProperties();
+    }
+
+    internal void ApplyAdminCommandRuntime(RouteMapRuntimeState runtime)
+    {
+        var unloadChanged = ApplyAdminCommandRuntime(_unload, runtime.UnloadCommand);
+        var rotationChanged = ApplyAdminCommandRuntime(_rotation, runtime.RotationCommand);
+        var loadChanged = ApplyAdminCommandRuntime(_load, runtime.LoadCommand);
+        if (unloadChanged || rotationChanged || loadChanged)
+            RaiseAdminCommandRuntimeProperties();
     }
 
     public void SetAutomaticPressed(bool isPressed)
@@ -266,6 +334,142 @@ public sealed class TopBarViewModel : ViewModelBase
             });
     }
 
+    private ReactiveCommand<Unit, Unit> CreateAdminCommand(AdminCommandState command, string enabledProperty) =>
+        ReactiveCommand.CreateFromObservable(
+            () => Observable.FromAsync(cancellationToken => ExecuteAdminCommandOnUiAsync(command, cancellationToken)),
+            this.Changed.Where(change => change.PropertyName == enabledProperty)
+                .Select(_ => CanExecuteAdminCommand(command))
+                .StartWith(CanExecuteAdminCommand(command))
+                .DistinctUntilChanged());
+
+    private bool CanExecuteAdminCommand(AdminCommandState command) =>
+        _isAdminMode && _commandDispatcher is not null && !command.IsSending &&
+        command.Runtime.CanExecute && command.MappingError is null &&
+        command.Settings?.GetMomentaryCommandBinding(command.Role) is not null;
+
+    private Task ExecuteAdminCommandOnUiAsync(AdminCommandState command, CancellationToken cancellationToken)
+    {
+        if (!_isAdminMode || command.IsSending || cancellationToken.IsCancellationRequested)
+            return Task.CompletedTask;
+
+        return Avalonia.Application.Current is null || Dispatcher.UIThread.CheckAccess()
+            ? ExecuteAdminCommandAsync(command, cancellationToken)
+            : Dispatcher.UIThread.InvokeAsync(() => ExecuteAdminCommandAsync(command, cancellationToken));
+    }
+
+    private async Task ExecuteAdminCommandAsync(AdminCommandState command, CancellationToken cancellationToken)
+    {
+        var settings = command.Settings;
+        if (!_isAdminMode || _commandDispatcher is null || !command.Runtime.CanExecute ||
+            settings is null || settings.GetMomentaryCommandBinding(command.Role) is not { } binding ||
+            cancellationToken.IsCancellationRequested || !command.TryBeginSending())
+            return;
+
+        try
+        {
+            RaiseAdminCommandSendingProperties();
+
+            if (!command.Runtime.CanExecute || !ReferenceEquals(command.Settings, settings) || cancellationToken.IsCancellationRequested)
+                return;
+
+            var mappingError = _getMappingError?.Invoke(binding);
+            if (mappingError is not null)
+            {
+                if (command.MappingError != mappingError)
+                {
+                    command.MappingError = mappingError;
+                    RaiseAdminCommandRuntimeProperties();
+                }
+                _commandErrorHandler?.Invoke($"Команда «{settings.Text}» недоступна: {mappingError}");
+                return;
+            }
+
+            var request = new SignalWriteRequest(binding.SignalId, true, binding.ValueType)
+            {
+                RequiredWriteMode = ModbusWriteMode.Pulse,
+            };
+            if (_tryDispatchAdminCommand is null)
+                await _commandDispatcher.DispatchAsync(request, cancellationToken);
+            else if (!await _tryDispatchAdminCommand(request, cancellationToken))
+                return;
+
+            _commandSuccessHandler?.Invoke();
+        }
+        catch (OperationCanceledException)
+        {
+            _commandErrorHandler?.Invoke($"Отправка команды «{settings.Text}» отменена.");
+        }
+        catch (TimeoutException ex)
+        {
+            _commandErrorHandler?.Invoke($"Истекло время ожидания команды «{settings.Text}»: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _commandErrorHandler?.Invoke($"Ошибка отправки команды «{settings.Text}»: {ex.Message}");
+        }
+        finally
+        {
+            command.EndSending();
+            RaiseAdminCommandSendingProperties();
+        }
+    }
+
+    private void ApplyAdminCommandSettings(RouteTopBarSettings? settings)
+    {
+        ApplyAdminCommandSettings(_unload, settings?.Unload);
+        ApplyAdminCommandSettings(_rotation, settings?.Rotation);
+        ApplyAdminCommandSettings(_load, settings?.Load);
+    }
+
+    private void ApplyAdminCommandSettings(AdminCommandState command, RouteTopBarButtonSettings? settings)
+    {
+        if (command.Settings?.Binding != settings?.Binding || command.Settings?.EnabledBinding != settings?.EnabledBinding)
+            command.Runtime = default;
+
+        command.Settings = settings;
+        command.MappingError = GetAdminCommandMappingError(command);
+    }
+
+    private bool ApplyAdminCommandRuntime(AdminCommandState command, TopBarCommandRuntimeState runtime)
+    {
+        var error = GetAdminCommandMappingError(command);
+        var changed = command.Runtime != runtime || command.MappingError != error;
+        command.Runtime = runtime;
+        command.MappingError = error;
+        return changed;
+    }
+
+    private string? GetAdminCommandMappingError(AdminCommandState command) =>
+        _isAdminMode && command.Settings?.GetMomentaryCommandBinding(command.Role) is { } binding
+            ? _getMappingError?.Invoke(binding)
+            : null;
+
+    private void RaiseAdminCommandRuntimeProperties()
+    {
+        this.RaisePropertyChanged(nameof(UnloadEnabledSignalValue));
+        this.RaisePropertyChanged(nameof(RotationEnabledSignalValue));
+        this.RaisePropertyChanged(nameof(LoadEnabledSignalValue));
+        this.RaisePropertyChanged(nameof(UnloadMappingError));
+        this.RaisePropertyChanged(nameof(RotationMappingError));
+        this.RaisePropertyChanged(nameof(LoadMappingError));
+        RaiseAdminCommandEnabledProperties();
+    }
+
+    private void RaiseAdminCommandSendingProperties()
+    {
+        this.RaisePropertyChanged(nameof(IsUnloadSending));
+        this.RaisePropertyChanged(nameof(IsRotationSending));
+        this.RaisePropertyChanged(nameof(IsLoadSending));
+        RaiseAdminCommandEnabledProperties();
+    }
+
+    private void RaiseAdminCommandEnabledProperties()
+    {
+        this.RaisePropertyChanged(nameof(IsUnloadEnabled));
+        this.RaisePropertyChanged(nameof(IsRotationEnabled));
+        this.RaisePropertyChanged(nameof(IsLoadEnabled));
+    }
+
     private async Task ExecuteCommandAsync(
         string commandText,
         Func<Task> executeAsync,
@@ -345,4 +549,17 @@ public sealed class TopBarViewModel : ViewModelBase
 
     private static RouteTopBarSettings CreateDefaultSettings() =>
         RouteMapSeed.Create().TopBar ?? throw new InvalidOperationException("RouteMap seed does not define TopBar settings.");
+
+    private sealed class AdminCommandState(SignalBindingRole role)
+    {
+        private int _sending;
+        public SignalBindingRole Role { get; } = role;
+        public RouteTopBarButtonSettings? Settings { get; set; }
+        public TopBarCommandRuntimeState Runtime { get; set; }
+        public string? MappingError { get; set; }
+        public bool IsSending => Volatile.Read(ref _sending) != 0;
+
+        public bool TryBeginSending() => Interlocked.CompareExchange(ref _sending, 1, 0) == 0;
+        public void EndSending() => Volatile.Write(ref _sending, 0);
+    }
 }

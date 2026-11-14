@@ -260,6 +260,37 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
     }
 
     [Fact]
+    public async Task SignalRuntime_DoesNotDispatchUsingSnapshotFromPreviousSourceGeneration()
+    {
+        var mockProvider = new ManualSignalProvider();
+        var modbusProvider = new ManualSignalProvider();
+        var mockCommands = new RecordingCommandDispatcher();
+        var modbusCommands = new RecordingCommandDispatcher();
+        using var runtime = new RouteMapSignalRuntime(mockProvider, mockCommands, modbusProvider, modbusCommands,
+            RouteMapSignalSource.Mock);
+        var lastGeneration = 0L;
+        using var subscription = runtime.ObserveUpdates().Subscribe(update =>
+        {
+            if (update.Signals is not null)
+                lastGeneration = update.Generation;
+        });
+        mockProvider.Publish("mock");
+        var request = new SignalWriteRequest(TopBarCommands[0].SignalId, true, SignalValueType.Bool)
+        {
+            RequiredWriteMode = ModbusWriteMode.Pulse,
+        };
+
+        runtime.SwitchSource(RouteMapSignalSource.Modbus);
+        Assert.False(await runtime.TryDispatchAtGenerationAsync(lastGeneration, request, CancellationToken.None));
+        Assert.Empty(mockCommands.Requests);
+        Assert.Empty(modbusCommands.Requests);
+
+        modbusProvider.Publish("modbus");
+        Assert.True(await runtime.TryDispatchAtGenerationAsync(lastGeneration, request, CancellationToken.None));
+        Assert.Same(request, Assert.Single(modbusCommands.Requests));
+    }
+
+    [Fact]
     public void SignalInventory_GroupsBindingsAndReportsTypeConflictsAndSystemSignal()
     {
         var definition = RouteMapSeed.Create();

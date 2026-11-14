@@ -1,3 +1,5 @@
+using Configurator.Application.Services.Signals;
+
 namespace Configurator.Desktop.Workspace.RouteMap.Models;
 
 public enum RouteNodeKind
@@ -144,7 +146,13 @@ public sealed record RouteTopBarButtonSettings
         SignalBindingRole.AutomaticModeCommand,
         "system.mode.automatic",
         SignalBindingDirection.ReadWrite,
-        Configurator.Application.Services.Signals.SignalValueType.Bool);
+        SignalValueType.Bool);
+
+    internal SignalBinding? GetMomentaryCommandBinding(SignalBindingRole role) =>
+        Binding is { Direction: SignalBindingDirection.ReadWrite, ValueType: SignalValueType.Bool } binding
+        && binding.Role == role && !string.IsNullOrWhiteSpace(binding.SignalId)
+            ? binding
+            : null;
 }
 
 public sealed record RouteTopBarSettings(

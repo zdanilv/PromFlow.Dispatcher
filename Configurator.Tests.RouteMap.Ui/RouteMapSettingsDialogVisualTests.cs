@@ -2012,6 +2012,128 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         window.Close();
     }
 
+    [AvaloniaTheory]
+    [InlineData(ApplicationOptions.AdminWorkMode)]
+    [InlineData(ApplicationOptions.UserWorkMode)]
+    public async Task Dashboard_top_bar_uses_work_mode_mapping_and_live_settings(string workMode)
+    {
+        const string oldId = "system.command.unload";
+        const string newId = "test.unload";
+        const string enabledId = "test.unload.enabled";
+        var seed = RouteMapSeed.Create();
+        var storage = new RouteMapConfigurationStorage(Path.Combine(Path.GetTempPath(), $"route-map-{Guid.NewGuid():N}.json"));
+        using var manager = new RouteMapConfigurationManager(storage, new RouteMapConfigurationMapper(seed),
+            new RouteMapConfigurationValidator(), new RouteMapConfigurationMigrator());
+        using var mockSignals = new Subject<IReadOnlyDictionary<string, SignalValue>>();
+        using var modbusSignals = new Subject<IReadOnlyDictionary<string, SignalValue>>();
+        var mockDispatcher = new NoOpCommandDispatcher();
+        var modbusDispatcher = new NoOpCommandDispatcher();
+        using var runtime = new RouteMapSignalRuntime(new TestSignalProvider(mockSignals), mockDispatcher,
+            new TestSignalProvider(modbusSignals), modbusDispatcher, RouteMapSignalSource.Mock);
+        var modbus = new ModbusOptions { DataMap = [Point(oldId), Point(newId)] };
+        var journal = new RouteMapSessionJournal();
+        var notifications = new NotificationsPanelViewModel(journal, new NoOpDialogService(), new NoOpBitWriter());
+        using var dashboard = new RouteMapDashboardViewModel(manager, runtime, new RouteMapRuntimeMapper(seed), runtime,
+            new NoOpSettingsDialogService(), notifications, journal, new StaticOptionsMonitor(modbus),
+            Options.Create(new ApplicationOptions { WorkMode = workMode }));
+        var topBar = dashboard.TopBar;
+        var admin = workMode == ApplicationOptions.AdminWorkMode;
+        var connected = RouteMapSystemSignalIds.ConnectionConnected;
+        var signals = new Dictionary<string, SignalValue> { [connected] = BoolSignal(connected, true) };
+
+        Assert.False(topBar.IsUnloadEnabled);
+        mockSignals.OnNext(signals);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(admin, topBar.AreAdminCommandsVisible);
+        Assert.Equal(admin, topBar.IsSettingsVisible);
+        Assert.Equal(admin, topBar.IsUnloadEnabled);
+        Assert.Equal(admin, topBar.IsRotationEnabled);
+        Assert.Equal(admin, topBar.IsLoadEnabled);
+        Assert.Empty(mockDispatcher.Requests);
+
+        runtime.SwitchSource(RouteMapSignalSource.Modbus);
+        Assert.False(topBar.IsUnloadEnabled);
+        await topBar.UnloadCommand.Execute().ToTask();
+        Assert.Empty(modbusDispatcher.Requests);
+        Assert.Empty(mockDispatcher.Requests);
+
+        modbusSignals.OnNext(signals);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(admin, topBar.IsUnloadEnabled);
+        Assert.False(topBar.IsRotationEnabled);
+        Assert.False(topBar.IsLoadEnabled);
+
+        var point = modbus.DataMap[0];
+        modbus.DataMap.RemoveAt(0);
+        await AssertInvalidMapping();
+        modbus.DataMap.Insert(0, point);
+        point.Access = ModbusDataAccess.Read;
+        await AssertInvalidMapping();
+        point.Access = ModbusDataAccess.ReadWrite;
+        point.Type = ModbusValueType.UInt16;
+        await AssertInvalidMapping();
+        point.Type = ModbusValueType.Bool;
+        point.WriteMode = ModbusWriteMode.Latched;
+        await AssertInvalidMapping();
+        point.WriteMode = ModbusWriteMode.Pulse;
+
+        var draft = manager.CreateDraft();
+        draft.TopBar.Unload.Text = "Тест выгрузки";
+        draft.TopBar.Unload.Bindings[0].SignalId = newId;
+        draft.TopBar.Unload.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.Enabled,
+            SignalId = enabledId,
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.Bool,
+        });
+        Assert.True(manager.Apply(draft).IsSuccess);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Тест выгрузки", topBar.UnloadText);
+        Assert.False(topBar.IsUnloadEnabled);
+        await topBar.UnloadCommand.Execute().ToTask();
+        Assert.Empty(modbusDispatcher.Requests);
+
+        modbusSignals.OnNext(new Dictionary<string, SignalValue>(signals) { [enabledId] = BoolSignal(enabledId, true) });
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(admin, topBar.IsUnloadEnabled);
+        Assert.Empty(modbusDispatcher.Requests);
+        await topBar.UnloadCommand.Execute().ToTask();
+        if (admin)
+        {
+            var sent = Assert.Single(modbusDispatcher.Requests);
+            Assert.Equal((newId, true, ModbusWriteMode.Pulse), (sent.SignalId, sent.Value, sent.RequiredWriteMode));
+            Assert.Null(dashboard.CommandErrorMessage);
+        }
+        else
+            Assert.Empty(modbusDispatcher.Requests);
+
+        dashboard.Dispose();
+        await topBar.UnloadCommand.Execute().ToTask();
+        Assert.Equal(admin ? 1 : 0, modbusDispatcher.Requests.Count);
+
+        async Task AssertInvalidMapping()
+        {
+            modbusSignals.OnNext(signals);
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(topBar.IsUnloadEnabled);
+            await topBar.UnloadCommand.Execute().ToTask();
+            Assert.Empty(modbusDispatcher.Requests);
+            if (admin)
+            {
+                Assert.Contains(oldId, topBar.UnloadMappingError);
+                Assert.Contains("Modbus.DataMap", dashboard.CommandErrorMessage);
+            }
+        }
+
+        static SignalValue BoolSignal(string id, bool value) => new(id, value, SignalValueType.Bool, DateTimeOffset.UtcNow, true, false);
+
+        static ModbusDataPointOptions Point(string id) => new()
+        {
+            Name = id, Access = ModbusDataAccess.ReadWrite, Type = ModbusValueType.Bool, WriteMode = ModbusWriteMode.Pulse,
+        };
+    }
+
     [AvaloniaFact]
     public void RouteMap_node_menu_items_are_disabled_when_commands_are_disabled()
     {

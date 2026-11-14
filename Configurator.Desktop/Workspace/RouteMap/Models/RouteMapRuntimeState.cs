@@ -14,6 +14,10 @@ public sealed record RouteMapRuntimeState(
     bool IsResetCommandEnabled = true,
     bool IsEmergencyCommandEnabled = true)
 {
+    public TopBarCommandRuntimeState UnloadCommand { get; init; }
+    public TopBarCommandRuntimeState RotationCommand { get; init; }
+    public TopBarCommandRuntimeState LoadCommand { get; init; }
+
     public static RouteMapRuntimeState Empty { get; } = new(
         new Dictionary<string, RouteObjectRuntimeState>(),
         IsAutomaticMode: false,
@@ -30,6 +34,8 @@ public sealed record RouteMapRuntimeState(
             : null;
     }
 }
+
+public readonly record struct TopBarCommandRuntimeState(bool CanExecute, bool? EnabledSignalValue);
 
 public sealed record RouteObjectRuntimeState(
     string ObjectId,
