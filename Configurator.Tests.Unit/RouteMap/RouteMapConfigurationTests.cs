@@ -3199,6 +3199,11 @@ public sealed class RouteMapConfigurationTests
     [InlineData("SYSTEM.COMMAND.ROTATE", true)]
     [InlineData("system.reset", true)]
     [InlineData("system.emergency", true)]
+    [InlineData("system.mode.automatic", true)]
+    [InlineData("system.mode.manual", true)]
+    [InlineData("connection.connected", true)]
+    [InlineData("connection.status", true)]
+    [InlineData("system.fault", true)]
     [InlineData("site.reset", true)]
     [InlineData("site.emergency", true)]
     [InlineData("route.node.wash.target", true)]
@@ -3561,8 +3566,10 @@ public sealed class RouteMapConfigurationTests
 
         Assert.False(viewModel.IsResetActive);
         Assert.Collection(dispatcher.Requests,
-            request => Assert.Equal(("system.reset", true), (request.SignalId, request.Value)),
-            request => Assert.Equal(("system.reset", true), (request.SignalId, request.Value)));
+            request => Assert.Equal(("system.reset", true, ModbusWriteMode.Pulse),
+                (request.SignalId, request.Value, request.RequiredWriteMode)),
+            request => Assert.Equal(("system.reset", true, ModbusWriteMode.Pulse),
+                (request.SignalId, request.Value, request.RequiredWriteMode)));
     }
 
     private sealed class NoOpBitWriter : IModbusBitWriter

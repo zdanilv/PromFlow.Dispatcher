@@ -476,8 +476,12 @@ public sealed class RouteMapConfigurationValidator
                 .Where(parameter => parameter.Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite)
                 .Select(parameter => parameter.SignalId))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        // Reserve the system commands even when their TopBar bindings have been customized.
-        writableSignalIds.UnionWith(["system.reset", "system.emergency"]);
+        // Reserve SignalIds owned by the runtime and by existing system commands.
+        writableSignalIds.UnionWith([
+            "system.reset", "system.emergency", "system.mode.automatic", "system.mode.manual",
+            RouteMapSystemSignalIds.ConnectionConnected, RouteMapSystemSignalIds.ConnectionStatus,
+            RouteMapSystemSignalIds.GlobalFault,
+        ]);
 
         foreach (var group in commandBindings
                      .Where(command => !string.IsNullOrWhiteSpace(command.Binding.SignalId))

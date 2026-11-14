@@ -121,9 +121,10 @@ public sealed class ModbusDataMapValidatorTests
     }
 
     [Theory]
+    [InlineData(null)]
     [InlineData(-1)]
     [InlineData(16)]
-    public void Validate_RejectsInvalidHoldingRegisterBit(int bitIndex)
+    public void Validate_RejectsInvalidHoldingRegisterBit(int? bitIndex)
     {
         var options = CreateOptions();
         options.DataMap.Add(new ModbusDataPointOptions
@@ -141,6 +142,43 @@ public sealed class ModbusDataMapValidatorTests
 
         Assert.False(result.Succeeded);
         Assert.Equal("ModbusRegisterBitInvalid", result.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData(int.MaxValue, 0, "ModbusRegisterAddressInvalid")]
+    [InlineData(2, ushort.MaxValue, "ModbusClientAddressInvalid")]
+    public void Validate_RejectsPulseAddressesOutsideRegisterAndClientRanges(int offset, int start, string errorCode)
+    {
+        var options = CreateOptions();
+        options.Client.HoldingRegisterStartAddress = start;
+        options.DataMap =
+        [
+            new()
+            {
+                Name = "system.command.unload", Area = ModbusDataArea.HoldingRegister,
+                Address = offset, BitIndex = 4, Type = ModbusValueType.Bool,
+                Access = ModbusDataAccess.ReadWrite, WriteMode = ModbusWriteMode.Pulse, PulseDurationMs = 50,
+            }
+        ];
+
+        var result = _validator.Validate(options, ModbusRunMode.Client);
+
+        Assert.Equal(errorCode, result.ErrorCode);
+        Assert.Contains("system.command.unload", result.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData(ModbusRunMode.Client, 0)]
+    [InlineData(ModbusRunMode.Server, 248)]
+    public void Validate_RejectsInvalidEndpointUnitId(ModbusRunMode mode, int unitId)
+    {
+        var options = CreateOptions();
+        options.Client.UnitId = options.Server.UnitId = unitId;
+
+        var result = _validator.Validate(options, mode);
+
+        Assert.Equal("ModbusUnitIdInvalid", result.ErrorCode);
+        Assert.Contains("1..247", result.ErrorMessage);
     }
 
     [Fact]

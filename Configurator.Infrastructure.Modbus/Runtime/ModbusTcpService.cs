@@ -4,6 +4,7 @@ using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Infrastructure.Modbus.Client;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Globalization;
@@ -207,34 +208,56 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     /// <summary>
     /// Записывает значение в именованную точку карты данных с учетом ее прав доступа и типа.
     /// </summary>
-    public async Task<ModbusOperationResult> SetAsync<T>(
+    public Task<ModbusOperationResult> SetAsync<T>(
         string name,
         T value,
-        CancellationToken ct = default)
+        CancellationToken ct = default) => SetAsync(name, value, pulse: null, ct);
+
+    internal const string PulseMappingRejected = "ModbusPulseMappingRejected";
+
+    internal readonly record struct PulseTarget(ModbusRunMode Role, ModbusOptions RuntimeOptions);
+
+    internal PulseTarget CapturePulseTarget() => new(WriteRole(ResolveWritableRole()), _runtimeService.CurrentOptions);
+
+    internal Task<ModbusOperationResult> SetPulseEdgeAsync(
+        ModbusDataPointOptions point, PulseTarget target, bool value, CancellationToken ct) =>
+        SetAsync(point.Name, value, (point, target), ct);
+
+    private async Task<ModbusOperationResult> SetAsync<T>(
+        string name, T value, (ModbusDataPointOptions Point, PulseTarget Target)? pulse, CancellationToken ct)
     {
-        if (!TryGetPoint(name, out var point, out var pointFailure))
-        {
-            return pointFailure;
-        }
-
-        if (!point.IsWritable)
-        {
-            return ModbusOperationResult.Failure(
-                "ModbusDataPointNotWritable",
-                $"Modbus data point '{point.Name}' is not writable.");
-        }
-
+        ModbusDataPointOptions point;
         object expectedValue = false;
         await _gate.WaitAsync(ct);
 
         try
         {
+            var role = WriteRole(ResolveWritableRole());
+            lock (_sync)
+            {
+                if (!TryGetPoint(name, out point, out var pointFailure))
+                    return pulse is null ? pointFailure : RejectPulseMapping(pointFailure.ErrorMessage);
+
+                if (pulse is { } expected)
+                {
+                    var validation = ValidatePulseMapping(point, expected.Point, expected.Target, role);
+                    if (!validation.Succeeded)
+                        return validation;
+                }
+            }
+
+            if (!point.IsWritable)
+            {
+                return ModbusOperationResult.Failure(
+                    "ModbusDataPointNotWritable",
+                    $"Modbus data point '{point.Name}' is not writable.");
+            }
+
             if (!TryBuildWritePayload(point, value, out var coilValue, out var registers, out expectedValue, out var payloadFailure))
             {
                 return payloadFailure;
             }
 
-            var role = ResolveWritableRole();
             if (role == ModbusRunMode.None)
             {
                 return ModbusOperationResult.Failure(
@@ -242,9 +265,16 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
                     "Modbus client or server must be running before writing data.");
             }
 
+            var pulseClient = pulse is not null && ShouldWriteThroughClient(role)
+                ? _clientService as ModbusClientService
+                : null;
             if (point.Area == ModbusDataArea.Coil)
             {
-                if (ShouldWriteThroughClient(role))
+                if (pulseClient is not null)
+                {
+                    await pulseClient.WritePulseCoilAsync(point.Address, coilValue, ct);
+                }
+                else if (ShouldWriteThroughClient(role))
                 {
                     await _clientService.WriteCoilAsync(point.Address, coilValue, ct);
                 }
@@ -257,7 +287,11 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             {
                 if (registers.Length == 1)
                 {
-                    if (ShouldWriteThroughClient(role))
+                    if (pulseClient is not null)
+                    {
+                        await pulseClient.WritePulseRegisterAsync(point.Address, registers[0], ct);
+                    }
+                    else if (ShouldWriteThroughClient(role))
                     {
                         await _clientService.WriteRegisterAsync(point.Address, registers[0], ct);
                     }
@@ -286,10 +320,10 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "Failed to write Modbus data point {DataPoint}", point.Name);
+            _logger.LogWarning(ex, "Failed to write Modbus data point {DataPoint}", name);
             return ModbusOperationResult.Failure(
                 "ModbusWriteFailed",
-                $"Failed to write Modbus data point '{point.Name}'.",
+                $"Failed to write Modbus data point '{name}'.",
                 ex.Message);
         }
         finally
@@ -307,6 +341,33 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
 
         return ModbusOperationResult.Success();
     }
+
+    private ModbusOperationResult ValidatePulseMapping(
+        ModbusDataPointOptions active, ModbusDataPointOptions expected, PulseTarget target, ModbusRunMode role)
+    {
+        if (active.Area != expected.Area || active.Address != expected.Address || active.BitIndex != expected.BitIndex
+            || active.Length != expected.Length || active.Type != expected.Type || active.Access != expected.Access
+            || active.WriteMode != expected.WriteMode || active.PulseDurationMs != expected.PulseDurationMs)
+        {
+            return RejectPulseMapping($"Active mapping for Modbus signal '{expected.Name}' differs from Modbus.DataMap.");
+        }
+
+        var runtimeOptions = _runtimeService.CurrentOptions;
+        if (role == ModbusRunMode.None || role != target.Role || !ReferenceEquals(runtimeOptions, target.RuntimeOptions))
+            return RejectPulseMapping($"The active Modbus endpoint for pulse '{expected.Name}' is unavailable or changed.");
+
+        var options = new ModbusOptions
+        {
+            Client = runtimeOptions.Client,
+            Server = runtimeOptions.Server,
+            DataMap = _currentOptions.DataMap,
+        };
+        var validation = _dataMapValidator.Validate(options, role);
+        return validation.Succeeded ? validation : RejectPulseMapping(validation.ErrorMessage);
+    }
+
+    private static ModbusOperationResult RejectPulseMapping(string? message) => ModbusOperationResult.Failure(
+        PulseMappingRejected, message ?? "Invalid Modbus pulse mapping.");
 
     /// <summary>
     /// Регистрирует callback для изменений именованной точки Modbus-карты.
@@ -787,6 +848,9 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     /// </summary>
     private static bool ShouldWriteThroughClient(ModbusRunMode role)
         => role is ModbusRunMode.Client or ModbusRunMode.Both;
+
+    private static ModbusRunMode WriteRole(ModbusRunMode role)
+        => role == ModbusRunMode.Both ? ModbusRunMode.Client : role;
 
     /// <summary>
     /// Сохраняет декодированное значение и уведомляет подписчиков только при изменении.

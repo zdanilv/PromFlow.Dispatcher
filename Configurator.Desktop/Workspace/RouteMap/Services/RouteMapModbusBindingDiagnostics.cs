@@ -1,8 +1,11 @@
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Data;
+using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
+using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -10,6 +13,7 @@ namespace Configurator.Desktop.Workspace.RouteMap.Services;
 
 public sealed class RouteMapModbusBindingDiagnostics : IDisposable
 {
+    private static readonly ModbusDataMapValidator DataMapValidator = new();
     private readonly RouteMapConfigurationManager _configurationManager;
     private readonly IOptionsMonitor<ModbusOptions> _optionsMonitor;
     private readonly ILogger<RouteMapModbusBindingDiagnostics> _logger;
@@ -49,100 +53,66 @@ public sealed class RouteMapModbusBindingDiagnostics : IDisposable
             return;
         }
 
-        var points = _optionsMonitor.CurrentValue.DataMap
+        var options = _optionsMonitor.CurrentValue;
+        var points = options.DataMap
             .Where(point => !string.IsNullOrWhiteSpace(point.Name))
             .GroupBy(point => point.Name, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
-        foreach (var binding in EnumerateBindings(definition))
+        var inventory = RouteMapSignalInventory.Build(definition);
+        foreach (var item in inventory)
         {
-            if (IsSystemSignal(binding.SignalId))
+            if (item.IsSystem)
             {
                 continue;
             }
 
-            if (!points.TryGetValue(binding.SignalId, out var point))
+            if (!points.TryGetValue(item.SignalId, out var point))
             {
-                _logger.LogWarning("RouteMap signal {SignalId} is missing from Modbus.DataMap", binding.SignalId);
+                _logger.LogWarning("RouteMap signal {SignalId} is missing from Modbus.DataMap", item.SignalId);
                 continue;
             }
 
-            if (binding.Direction is SignalBindingDirection.Read or SignalBindingDirection.ReadWrite
+            if (item.RequiredAccess is ModbusDataAccess.Read or ModbusDataAccess.ReadWrite
                 && !point.IsReadable)
             {
-                _logger.LogWarning("RouteMap signal {SignalId} requires read access", binding.SignalId);
+                _logger.LogWarning("RouteMap signal {SignalId} requires read access", item.SignalId);
             }
 
-            if (binding.Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite
+            if (item.RequiredAccess is ModbusDataAccess.Write or ModbusDataAccess.ReadWrite
                 && !point.IsWritable)
             {
-                _logger.LogWarning("RouteMap signal {SignalId} requires write access", binding.SignalId);
+                _logger.LogWarning("RouteMap signal {SignalId} requires write access", item.SignalId);
             }
 
-            if (!TypesMatch(binding.ValueType, point.Type))
+            if (!SignalModbusTypeCompatibility.IsCompatible(item.ExpectedType, point.Type))
             {
                 _logger.LogWarning(
                     "RouteMap signal {SignalId} expects {SignalType}, but Modbus.DataMap defines {ModbusType}",
-                    binding.SignalId,
-                    binding.ValueType,
+                    item.SignalId,
+                    item.ExpectedType,
                     point.Type);
             }
-        }
-    }
-
-    private static IEnumerable<SignalBinding> EnumerateBindings(RouteMapDefinition definition)
-    {
-        var bindings = definition.Nodes.SelectMany(node => node.Bindings)
-            .Concat(definition.Segments.SelectMany(segment => segment.Bindings))
-            .Concat(definition.Segments.SelectMany(segment => segment.ActiveFragments ?? []).Select(fragment => fragment.Binding))
-            .Concat(definition.Vehicles.SelectMany(vehicle => vehicle.Bindings))
-            .Concat(definition.MapEquipment.SelectMany(card => card.Bindings));
-
-        if (definition.TopBar is not null)
-        {
-            var topBarBindings = new[]
+            if (item.RequiresPulseWriteMode && point.WriteMode != ModbusWriteMode.Pulse)
             {
-                definition.TopBar.Automatic.Binding,
-                definition.TopBar.Automatic.EnabledBinding,
-                definition.TopBar.Manual.Binding,
-                definition.TopBar.Manual.EnabledBinding,
-                definition.TopBar.Reset.Binding,
-                definition.TopBar.Reset.EnabledBinding,
-                definition.TopBar.Emergency.Binding,
-                definition.TopBar.Emergency.EnabledBinding,
-            }.OfType<SignalBinding>();
-
-            bindings = bindings.Concat(topBarBindings);
+                _logger.LogWarning("RouteMap signal {SignalId} requires Pulse write mode, but Modbus.DataMap uses {WriteMode}",
+                    item.SignalId, point.WriteMode);
+            }
         }
 
-        bindings = bindings.Concat(
-        [
-            new SignalBinding(
-                SignalBindingRole.Fault,
-                RouteMapSystemSignalIds.GlobalFault,
-                SignalBindingDirection.Read,
-                SignalValueType.Bool)
-        ]);
-
-        return bindings
-            .Where(binding => !IsDeprecatedSignalRole(binding.Role))
-            .Where(binding => !string.IsNullOrWhiteSpace(binding.SignalId))
-            .GroupBy(binding => binding.SignalId, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First());
+        var endpoints = _optionsMonitor.Get(ModbusOptions.DemoSectionName);
+        var validationOptions = new ModbusOptions
+        {
+            Client = endpoints.Client,
+            Server = endpoints.Server,
+            DataMap = options.DataMap,
+        };
+        var validation = DataMapValidator.Validate(validationOptions, ModbusRunMode.None);
+        if (validation.Succeeded && endpoints.Client.Enabled)
+            validation = DataMapValidator.Validate(validationOptions, ModbusRunMode.Client);
+        if (validation.Succeeded && endpoints.Server.Enabled)
+            validation = DataMapValidator.Validate(validationOptions, ModbusRunMode.Server);
+        if (!validation.Succeeded)
+            _logger.LogWarning("Invalid Modbus.DataMap: {ErrorMessage}", validation.ErrorMessage);
     }
-
-    private static bool IsDeprecatedSignalRole(SignalBindingRole role) => role is
-        SignalBindingRole.State or
-        SignalBindingRole.TargetOffFeedback or
-        SignalBindingRole.LoaderOffFeedback or
-        SignalBindingRole.AutomaticModeOffFeedback or
-        SignalBindingRole.ManualModeOffFeedback or
-        SignalBindingRole.EmergencyOffFeedback;
-
-    private static bool IsSystemSignal(string signalId) =>
-        string.Equals(signalId, RouteMapSystemSignalIds.ConnectionStatus, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(signalId, RouteMapSystemSignalIds.ConnectionConnected, StringComparison.OrdinalIgnoreCase);
-
-    private static bool TypesMatch(SignalValueType signalType, ModbusValueType modbusType) =>
-        SignalModbusTypeCompatibility.IsCompatible(signalType, modbusType);
 }

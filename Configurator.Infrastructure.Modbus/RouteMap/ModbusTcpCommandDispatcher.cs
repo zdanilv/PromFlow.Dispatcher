@@ -1,7 +1,10 @@
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
+using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Application.Services.Signals;
+using Configurator.Infrastructure.Modbus.Runtime;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
@@ -12,13 +15,15 @@ public sealed class ModbusTcpCommandDispatcher(
     IModbusTcpService modbusService,
     IOptionsMonitor<ModbusOptions> optionsMonitor) : IEquipmentCommandDispatcher
 {
+    private static readonly ModbusDataMapValidator DataMapValidator = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _pulseGates = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task DispatchAsync(
         SignalWriteRequest request,
         CancellationToken cancellationToken = default)
     {
-        var point = optionsMonitor.CurrentValue.DataMap.FirstOrDefault(
+        var options = optionsMonitor.CurrentValue;
+        var point = options.DataMap.FirstOrDefault(
             candidate => string.Equals(candidate.Name, request.SignalId, StringComparison.OrdinalIgnoreCase));
         if (point is null)
         {
@@ -44,10 +49,18 @@ public sealed class ModbusTcpCommandDispatcher(
 
         if (point.WriteMode == ModbusWriteMode.Pulse)
         {
+            if (point.Type != ModbusValueType.Bool)
+                throw new InvalidOperationException($"Modbus pulse signal '{point.Name}' requires Bool type.");
+
+            if (request.RequiredWriteMode == ModbusWriteMode.Pulse && point.Access != ModbusDataAccess.ReadWrite)
+                throw new InvalidOperationException($"Signal '{point.Name}' requires ReadWrite access.");
+
             if (request.Value is not bool pulseRequested || !pulseRequested)
             {
                 return;
             }
+
+            ThrowIfFailed(DataMapValidator.Validate(options, ModbusRunMode.None));
 
             var gate = _pulseGates.GetOrAdd(point.Name, _ => new SemaphoreSlim(1, 1));
             if (!await gate.WaitAsync(0, cancellationToken))
@@ -56,12 +69,19 @@ public sealed class ModbusTcpCommandDispatcher(
             var releaseGate = true;
             try
             {
+                var facade = modbusService as ModbusTcpService;
+                var target = facade?.CapturePulseTarget();
                 Exception? pulseError = null;
                 try
                 {
                     // Even a failed transport response may follow a successful physical write.
-                    await WriteOrThrowAsync(point.Name, true, cancellationToken);
+                    await WritePulseEdgeAsync(point, target, true, cancellationToken);
                     await Task.Delay(point.PulseDurationMs, cancellationToken);
+                }
+                catch (PulseMappingException)
+                {
+                    // The facade rejected the mapping before calling the transport.
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -70,7 +90,7 @@ public sealed class ModbusTcpCommandDispatcher(
 
                 Exception? resetError = null;
                 using var resetTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                var resetTask = WriteOrThrowAsync(point.Name, false, resetTimeout.Token);
+                var resetTask = WritePulseEdgeAsync(point, target, false, resetTimeout.Token);
                 try
                 {
                     await resetTask.WaitAsync(resetTimeout.Token);
@@ -115,8 +135,18 @@ public sealed class ModbusTcpCommandDispatcher(
     }
 
     private async Task WriteOrThrowAsync<T>(string signalId, T value, CancellationToken cancellationToken)
+        => ThrowIfFailed(await modbusService.SetAsync(signalId, value, cancellationToken));
+
+    private async Task WritePulseEdgeAsync(ModbusDataPointOptions point, ModbusTcpService.PulseTarget? target,
+        bool value, CancellationToken cancellationToken)
+        => ThrowIfFailed(modbusService is ModbusTcpService facade && target is { } pulseTarget
+            ? await facade.SetPulseEdgeAsync(point, pulseTarget, value, cancellationToken)
+            : await modbusService.SetAsync(point.Name, value, cancellationToken));
+
+    private static void ThrowIfFailed(ModbusOperationResult result)
     {
-        var result = await modbusService.SetAsync(signalId, value, cancellationToken);
+        if (result.ErrorCode == ModbusTcpService.PulseMappingRejected)
+            throw new PulseMappingException(result.ErrorMessage);
         if (!result.Succeeded)
         {
             throw new InvalidOperationException(
@@ -128,4 +158,6 @@ public sealed class ModbusTcpCommandDispatcher(
 
     private static bool IsCompatible(ModbusValueType modbusType, SignalValueType signalType) =>
         SignalModbusTypeCompatibility.IsCompatible(signalType, modbusType);
+
+    private sealed class PulseMappingException(string? message) : InvalidOperationException(message);
 }

@@ -517,9 +517,10 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        var singlePointOptions = CreateValidationOptions(_baseOptions);
-        singlePointOptions.DataMap = [row.ToOptions()];
-        var validation = _validator.Validate(singlePointOptions, ModbusRunMode.None);
+        var singlePointOptions = new ModbusOptions { DataMap = [row.ToOptions()] };
+        var validation = row.RequiresExplicitPulseMapping
+            ? ValidateOptions(singlePointOptions)
+            : _validator.Validate(singlePointOptions, ModbusRunMode.None);
         row.SetValidation(validation.Succeeded ? null : OperationMessage(validation));
     }
 
@@ -673,6 +674,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         PreferredBitIndex = inventory.PreferredBitIndex;
         RequiresLatchedWriteMode = inventory.RequiresLatchedWriteMode;
         RequiresPulseWriteMode = inventory.RequiresPulseWriteMode;
+        RequiresExplicitPulseMapping = inventory.RequiresExplicitPulseMapping;
         AvailableValueTypes = SignalModbusTypeCompatibility.CompatibleModbusTypes(ExpectedType);
         _isMapped = isMapped;
         ApplyPoint(point);
@@ -691,6 +693,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     public int? PreferredBitIndex { get; }
     public bool RequiresLatchedWriteMode { get; }
     public bool RequiresPulseWriteMode { get; }
+    internal bool RequiresExplicitPulseMapping { get; }
     public IReadOnlyList<ModbusValueType> AvailableValueTypes { get; }
 
     public bool IsMapped { get => _isMapped; set { this.RaiseAndSetIfChanged(ref _isMapped, value); RaiseStatus(); } }
@@ -758,8 +761,9 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         get => _bitIndex;
         set
         {
-            int? next = UsesRegisterBit ? value ?? 0 : null;
-            SetBitIndex(next);
+            if (UsesRegisterBit && value is null && !RequiresExplicitPulseMapping)
+                value = 0;
+            SetBitIndex(UsesRegisterBit ? value : null);
         }
     }
 
@@ -791,7 +795,8 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
 
     public void ResetToDefaults() => ApplyPoint(CreateDefaultPoint(new RouteMapSignalInventoryItem(
         SignalId, ExpectedType, RequiredAccess, Roles, Objects, HasTypeConflict, Category, IsSystem,
-        PreferPulseWriteMode, PreferHoldingRegisterBit, PreferredBitIndex, RequiresLatchedWriteMode, RequiresPulseWriteMode)));
+        PreferPulseWriteMode, PreferHoldingRegisterBit, PreferredBitIndex, RequiresLatchedWriteMode, RequiresPulseWriteMode,
+        RequiresExplicitPulseMapping)));
 
     public ModbusDataPointOptions ToOptions() => new()
     {
@@ -801,7 +806,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         Length = Length,
         Access = Access,
         Type = Type,
-        BitIndex = UsesRegisterBit ? BitIndex : null,
+        BitIndex = RequiresExplicitPulseMapping || UsesRegisterBit ? BitIndex : null,
         WriteMode = WriteMode,
         PulseDurationMs = PulseDurationMs,
     };
@@ -837,13 +842,13 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         {
             Name = item.SignalId,
             Area = area,
-            Address = 0,
+            Address = item.RequiresExplicitPulseMapping ? -1 : 0,
             Length = length,
             Access = item.RequiredAccess,
             Type = type,
             BitIndex = item.PreferHoldingRegisterBit ? item.PreferredBitIndex ?? 0 : null,
             WriteMode = item.PreferPulseWriteMode ? ModbusWriteMode.Pulse : ModbusWriteMode.Latched,
-            PulseDurationMs = 300,
+            PulseDurationMs = item.RequiresExplicitPulseMapping ? 0 : 300,
         };
     }
 
@@ -854,16 +859,17 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         this.RaiseAndSetIfChanged(ref _length, point.Length, nameof(Length));
         this.RaiseAndSetIfChanged(ref _access, point.Access, nameof(Access));
         this.RaiseAndSetIfChanged(ref _type, point.Type, nameof(Type));
-        SetBitIndex(UsesRegisterBit ? point.BitIndex ?? 0 : null);
+        SetBitIndex(point.BitIndex);
         this.RaiseAndSetIfChanged(ref _writeMode, point.WriteMode, nameof(WriteMode));
         this.RaiseAndSetIfChanged(ref _pulseDurationMs, point.PulseDurationMs, nameof(PulseDurationMs));
-        NormalizePointShape();
+        if (!RequiresExplicitPulseMapping)
+            NormalizePointShape();
         RaiseStatus();
     }
 
     private string FormatPhysicalAddress(ModbusEndpointOptions endpoint)
     {
-        if (IsSystem || !IsMapped)
+        if (IsSystem || !IsMapped || Address < 0)
         {
             return "—";
         }
@@ -956,7 +962,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     }
 
     private void NormalizeBitIndexForShape()
-        => SetBitIndex(UsesRegisterBit ? _bitIndex ?? 0 : null);
+        => BitIndex = _bitIndex;
 
     private void SetPhysicalAddressError(string? message)
     {

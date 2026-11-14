@@ -2044,6 +2044,41 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
+    public async Task Signal_mapping_shows_top_bar_commands_and_refreshes_after_settings_apply_and_save()
+    {
+        using var fixture = new SignalMappingFixture(1200, 760);
+        var manager = fixture.Manager;
+        using var settings = new RouteMapSettingsViewModel(manager,
+            new RouteMapConfigurationStorage(manager.ActiveFilePath), new NullFilePicker());
+        foreach (var id in new[] { "system.command.unload", "system.command.rotate", "system.command.load" })
+        {
+            var row = Assert.IsType<RouteMapSignalMappingRow>(SignalMappingRowGrid(fixture.View, id).DataContext);
+            Assert.False(row.IsMapped);
+            Assert.True(row.RequiresPulseWriteMode);
+        }
+
+        settings.Draft.TopBar.Unload.Bindings[0].SignalId = "site.unload";
+        settings.AddBindingCommand.Execute("unload").Subscribe();
+        settings.Apply();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(settings.ErrorMessage);
+        var unload = Assert.IsType<RouteMapSignalMappingRow>(SignalMappingRowGrid(fixture.View, "site.unload").DataContext);
+        var enabled = Assert.IsType<RouteMapSignalMappingRow>(SignalMappingRowGrid(fixture.View, "site.unload.enabled").DataContext);
+        Assert.False(unload.IsMapped);
+        Assert.False(enabled.RequiresPulseWriteMode);
+        Assert.Equal(ModbusDataAccess.Read, enabled.RequiredAccess);
+
+        settings.Draft.TopBar.Load.Bindings[0].SignalId = "site.load";
+        await settings.SaveAsync();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(settings.ErrorMessage);
+        Assert.False(Assert.IsType<RouteMapSignalMappingRow>(SignalMappingRowGrid(fixture.View, "site.load").DataContext).IsMapped);
+        var mapping = Assert.IsType<RouteMapSignalMappingViewModel>(fixture.View.DataContext);
+        Assert.DoesNotContain(mapping.Rows, row => row.SignalId is "system.command.unload" or "system.command.load"
+            or "system.mode.automatic" or "system.mode.manual");
+    }
+
+    [AvaloniaFact]
     public void Signal_mapping_uses_gray_background_only_for_unmapped_rows()
     {
         using var fixture = new SignalMappingFixture(1200, 760);
@@ -2320,6 +2355,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         }
 
         public RouteMapSignalMappingView View { get; }
+        public RouteMapConfigurationManager Manager => _manager;
         public Window Window { get; }
 
         public void Dispose()

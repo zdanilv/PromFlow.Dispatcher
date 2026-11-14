@@ -344,6 +344,63 @@ public sealed class ModbusRuntimeSmokeTests
     }
 
     [Fact]
+    public async Task Client_DoesNotResendPulseActivationAfterMissingReply()
+    {
+        using var testTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ct = testTimeout.Token;
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        await using var client = new ModbusClientService(NullLogger<ModbusClientService>.Instance);
+        await client.StartAsync(new ModbusEndpointOptions
+        {
+            Host = IPAddress.Loopback.ToString(),
+            Port = ((IPEndPoint)listener.LocalEndpoint).Port,
+            PollIntervalMs = 100,
+            CoilCount = 1,
+            HoldingRegistersEnabled = false,
+        }, ct);
+        using var peer = await listener.AcceptTcpClientAsync(ct);
+        using var stream = peer.GetStream();
+        var activationCount = 0;
+
+        async Task ServeAsync()
+        {
+            var request = new byte[12];
+            try
+            {
+                while (true)
+                {
+                    await stream.ReadExactlyAsync(request, ct);
+                    if (request[7] == 5)
+                    {
+                        Interlocked.Increment(ref activationCount);
+                        continue; // Accept the command frame and omit its response.
+                    }
+
+                    Assert.Equal(1, request[7]);
+                    byte[] response = [request[0], request[1], 0, 0, 0, 4, request[6], 1, 1, 0];
+                    await stream.WriteAsync(response, ct);
+                }
+            }
+            catch (EndOfStreamException) { }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        }
+
+        var peerTask = ServeAsync();
+        try
+        {
+            Assert.True(await WaitForAsync(() => client.State == ModbusConnectionState.Running));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => client.WritePulseCoilAsync(0, true, ct).WaitAsync(ct));
+            Assert.Equal(1, Volatile.Read(ref activationCount));
+        }
+        finally
+        {
+            await testTimeout.CancelAsync();
+            await peerTask;
+        }
+    }
+
+    [Fact]
     public async Task Client_StartsRetryLoopWhenServerUnavailableAndStopCancelsIt()
     {
         var port = GetAvailablePort();

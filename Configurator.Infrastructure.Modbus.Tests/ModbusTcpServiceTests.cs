@@ -4,7 +4,9 @@ using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Application.Services.Signals;
 using Configurator.Infrastructure.Modbus.Client;
+using Configurator.Infrastructure.Modbus.RouteMap;
 using Configurator.Infrastructure.Modbus.Runtime;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -238,6 +240,85 @@ public sealed class ModbusTcpServiceTests
 
         Assert.True(result.Succeeded, result.ErrorMessage);
         Assert.Equal((2, (ushort)3), Assert.Single(client.RegisterWrites));
+    }
+
+    [Fact]
+    public async Task Dispatcher_PulsesThreeTopBarRegisterBitsIndependentlyAndPreservesTheirNeighbors()
+    {
+        var options = CreateOptions();
+        options.WriteConfirmationTimeoutMs = 0;
+        var points = new[]
+        {
+            CreateRegisterBit("system.command.unload", 0, 0),
+            CreateRegisterBit("system.command.rotate", 2, 1),
+            CreateRegisterBit("system.command.load", 3, 2),
+        };
+        foreach (var point in points)
+        {
+            point.WriteMode = ModbusWriteMode.Pulse;
+            point.PulseDurationMs = 25;
+            options.DataMap.Add(point);
+        }
+
+        var runtime = new FakeRuntimeService();
+        var client = new NoopClientService();
+        await using var service = CreateService(runtime, client, new NoopServerService(), options);
+        Assert.True((await service.StartClientAsync()).Succeeded);
+        runtime.PublishSnapshot([0b1010_0000, 0, 0b0100_0000, 0b0001_0000]);
+        var dispatcher = new ModbusTcpCommandDispatcher(service, new TestOptionsMonitor(options));
+
+        foreach (var point in points)
+            await dispatcher.DispatchAsync(new SignalWriteRequest(point.Name, true, SignalValueType.Bool)
+                { RequiredWriteMode = ModbusWriteMode.Pulse });
+
+        Assert.Equal(new (int Address, ushort Value)[]
+        {
+            (0, 0b1010_0001), (0, 0b1010_0000),
+            (2, 0b0100_0010), (2, 0b0100_0000),
+            (3, 0b0001_0100), (3, 0b0001_0000),
+        }, client.RegisterWrites);
+    }
+
+    [Fact]
+    public async Task Dispatcher_RejectsSavedPulseWhenTheActivePointIsLatched()
+    {
+        var options = CreateOptions();
+        var client = new NoopClientService();
+        await using var service = CreateService(new FakeRuntimeService(), client, new NoopServerService(), options);
+        Assert.True((await service.StartClientAsync()).Succeeded);
+        var savedOptions = options.Clone();
+        savedOptions.DataMap[0].WriteMode = ModbusWriteMode.Pulse;
+        var dispatcher = new ModbusTcpCommandDispatcher(service, new TestOptionsMonitor(savedOptions));
+
+        var error = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => dispatcher.DispatchAsync(
+            new SignalWriteRequest("DemoButton", true, SignalValueType.Bool) { RequiredWriteMode = ModbusWriteMode.Pulse }));
+
+        Assert.Contains("differs from Modbus.DataMap", error.Message);
+        Assert.Empty(client.CoilWrites);
+    }
+
+    [Fact]
+    public async Task Dispatcher_DoesNotResetAReplacementPointAfterTheRisingEdge()
+    {
+        var options = CreateOptions();
+        options.DataMap[0].WriteMode = ModbusWriteMode.Pulse;
+        options.DataMap[0].PulseDurationMs = 20;
+        var client = new NoopClientService();
+        await using var service = CreateService(new FakeRuntimeService(), client, new NoopServerService(), options);
+        Assert.True((await service.StartClientAsync()).Succeeded);
+        var replacement = options.Clone();
+        replacement.DataMap[0].Address = 3;
+        ModbusOperationResult? applyResult = null;
+        client.OnCoilWrite = () => applyResult = service.ApplyDataMap(replacement.DataMap);
+        var dispatcher = new ModbusTcpCommandDispatcher(service, new TestOptionsMonitor(options));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => dispatcher.DispatchAsync(
+            new SignalWriteRequest("DemoButton", true, SignalValueType.Bool) { RequiredWriteMode = ModbusWriteMode.Pulse }));
+
+        Assert.True(applyResult?.Succeeded);
+        Assert.Contains("PLC command state is unknown", error.Message);
+        Assert.Contains("differs from Modbus.DataMap", error.InnerException?.Message);
+        Assert.Equal((0, true), Assert.Single(client.CoilWrites));
     }
 
     [Fact]
@@ -531,6 +612,7 @@ public sealed class ModbusTcpServiceTests
         public ModbusConnectionState State { get; } = ModbusConnectionState.Running;
         public ModbusSnapshot Snapshot { get; } = ModbusSnapshot.Empty;
         public List<(int Address, bool Value)> CoilWrites { get; } = [];
+        public Action? OnCoilWrite { get; set; }
         public List<(int Address, ushort Value)> RegisterWrites { get; } = [];
         public List<(int StartAddress, ushort[] Values)> RegistersWrites { get; } = [];
         public event EventHandler<ModbusStatus>? StatusChanged
@@ -550,6 +632,7 @@ public sealed class ModbusTcpServiceTests
         public Task WriteCoilAsync(int address, bool value, CancellationToken cancellationToken = default)
         {
             CoilWrites.Add((address, value));
+            OnCoilWrite?.Invoke();
             return Task.CompletedTask;
         }
 

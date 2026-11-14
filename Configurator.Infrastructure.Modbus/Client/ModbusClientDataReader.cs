@@ -56,7 +56,7 @@ internal sealed class ModbusClientDataReader
     /// </summary>
     public Task WriteCoilAsync(int address, bool value)
     {
-        return _master.WriteSingleCoilAsync(_unitId, (ushort)address, value);
+        return _master.WriteSingleCoilAsync(_unitId, checked((ushort)address), value);
     }
 
     /// <summary>
@@ -64,7 +64,7 @@ internal sealed class ModbusClientDataReader
     /// </summary>
     public Task WriteRegisterAsync(int address, ushort value)
     {
-        return _master.WriteSingleRegisterAsync(_unitId, (ushort)address, value);
+        return _master.WriteSingleRegisterAsync(_unitId, checked((ushort)address), value);
     }
 
     /// <summary>
@@ -72,6 +72,6 @@ internal sealed class ModbusClientDataReader
     /// </summary>
     public Task WriteRegistersAsync(int startAddress, ushort[] values)
     {
-        return _master.WriteMultipleRegistersAsync(_unitId, (ushort)startAddress, values);
+        return _master.WriteMultipleRegistersAsync(_unitId, checked((ushort)startAddress), values);
     }
 }

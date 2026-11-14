@@ -28,7 +28,8 @@ internal sealed record RouteMapSignalInventoryItem(
     bool PreferHoldingRegisterBit = false,
     int? PreferredBitIndex = null,
     bool RequiresLatchedWriteMode = false,
-    bool RequiresPulseWriteMode = false);
+    bool RequiresPulseWriteMode = false,
+    bool RequiresExplicitPulseMapping = false);
 
 internal static class RouteMapSignalInventory
 {
@@ -89,7 +90,9 @@ internal static class RouteMapSignalInventory
                     PreferHoldingRegisterBit: hasSelectorCommand,
                     PreferredBitIndex: hasCheckedCommand && !hasUncheckedCommand ? 1 : hasSelectorCommand ? 0 : null,
                     RequiresLatchedWriteMode: requiresLatchedWriteMode,
-                    RequiresPulseWriteMode: requiresPulseWriteMode);
+                    RequiresPulseWriteMode: requiresPulseWriteMode,
+                    RequiresExplicitPulseMapping: group.Any(item => item.Category == RouteMapSignalElementCategory.TopBar
+                        && item.Binding.Role is SignalBindingRole.UnloadCommand or SignalBindingRole.RotationCommand or SignalBindingRole.LoadCommand));
             })
             .OrderBy(item => item.SignalId, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -135,19 +138,22 @@ internal static class RouteMapSignalInventory
     private static IEnumerable<(string ObjectName, RouteMapSignalElementCategory Category, SignalBinding Binding, bool PreferPulseWriteMode)> EnumerateBindings(
         RouteMapDefinition definition)
     {
-        if (definition.TopBar is not null)
+        if (definition.TopBar is { } topBar)
         {
-            yield return ("TopBar.СБРОС", RouteMapSignalElementCategory.TopBar, definition.TopBar.Reset.Binding, true);
-            yield return (
-                "TopBar.АВАРИЯ",
-                RouteMapSignalElementCategory.TopBar,
-                definition.TopBar.Emergency.Binding,
-                false);
-
-            if (definition.TopBar.Reset.EnabledBinding is not null)
-                yield return ("TopBar.СБРОС", RouteMapSignalElementCategory.TopBar, definition.TopBar.Reset.EnabledBinding, false);
-            if (definition.TopBar.Emergency.EnabledBinding is not null)
-                yield return ("TopBar.АВАРИЯ", RouteMapSignalElementCategory.TopBar, definition.TopBar.Emergency.EnabledBinding, false);
+            var buttons = new (RouteTopBarButtonSettings Button, string Name, bool Pulse)[]
+            {
+                (topBar.Unload, topBar.Unload.Text, true),
+                (topBar.Rotation, topBar.Rotation.Text, true),
+                (topBar.Load, topBar.Load.Text, true),
+                (topBar.Reset, "СБРОС", true),
+                (topBar.Emergency, "АВАРИЯ", false),
+            };
+            foreach (var (button, name, pulse) in buttons)
+            {
+                yield return ($"TopBar.{name}", RouteMapSignalElementCategory.TopBar, button.Binding, pulse);
+                if (button.EnabledBinding is { } enabled)
+                    yield return ($"TopBar.{name}", RouteMapSignalElementCategory.TopBar, enabled, false);
+            }
         }
 
         foreach (var node in definition.Nodes)

@@ -21,6 +21,182 @@ namespace Configurator.Tests.Unit.RouteMap;
 
 public sealed class RouteMapSignalRuntimeAndMappingTests
 {
+    private static readonly (string SignalId, SignalBindingRole Role, string Caption)[] TopBarCommands =
+    [
+        ("system.command.unload", SignalBindingRole.UnloadCommand, "ВЫГРУЗКА"),
+        ("system.command.rotate", SignalBindingRole.RotationCommand, "ВРАЩЕНИЕ"),
+        ("system.command.load", SignalBindingRole.LoadCommand, "ЗАГРУЗКА"),
+    ];
+
+    [Fact]
+    public void Inventory_ListsThreeTopBarPulseCommandsAndOnlyConfiguredEnabledBindings()
+    {
+        var definition = RouteMapSeed.Create();
+        var inventory = RouteMapSignalInventory.Build(definition);
+        var topBar = definition.TopBar!;
+        foreach (var (signalId, role, caption) in TopBarCommands)
+        {
+            var item = Assert.Single(inventory, entry => entry.SignalId == signalId);
+            Assert.Equal(role.ToString(), item.Roles);
+            Assert.Equal($"TopBar.{caption}", item.Objects);
+            Assert.Equal(RouteMapSignalElementCategory.TopBar, item.Category);
+            Assert.Equal(SignalValueType.Bool, item.ExpectedType);
+            Assert.Equal(ModbusDataAccess.ReadWrite, item.RequiredAccess);
+            Assert.True(item.RequiresPulseWriteMode);
+            Assert.True(item.PreferPulseWriteMode);
+            Assert.False(item.RequiresLatchedWriteMode);
+        }
+        Assert.DoesNotContain(inventory, entry => entry.Category == RouteMapSignalElementCategory.TopBar
+            && entry.Roles == nameof(SignalBindingRole.Enabled));
+        Assert.DoesNotContain(inventory, entry => entry.Roles is nameof(SignalBindingRole.AutomaticModeCommand)
+            or nameof(SignalBindingRole.ManualModeCommand));
+
+        RouteTopBarButtonSettings Customize(RouteTopBarButtonSettings button, string id) => button with
+        {
+            Binding = button.Binding with { SignalId = $"site.{id}" },
+            EnabledBinding = new SignalBinding(SignalBindingRole.Enabled, $"site.{id}.enabled",
+                SignalBindingDirection.Read, SignalValueType.Bool),
+        };
+
+        inventory = RouteMapSignalInventory.Build(definition with
+        {
+            TopBar = topBar with
+            {
+                Unload = Customize(topBar.Unload, "unload"),
+                Rotation = Customize(topBar.Rotation, "rotate"),
+                Load = Customize(topBar.Load, "load"),
+            },
+        });
+        foreach (var (defaultId, role, _) in TopBarCommands)
+        {
+            Assert.DoesNotContain(inventory, item => item.SignalId == defaultId);
+            var customId = $"site.{defaultId.Split('.')[^1]}";
+            Assert.Equal(role.ToString(), Assert.Single(inventory, item => item.SignalId == customId).Roles);
+            var enabled = Assert.Single(inventory, item => item.SignalId == $"{customId}.enabled");
+            Assert.Equal(nameof(SignalBindingRole.Enabled), enabled.Roles);
+            Assert.Equal(ModbusDataAccess.Read, enabled.RequiredAccess);
+            Assert.Equal(SignalValueType.Bool, enabled.ExpectedType);
+            Assert.Equal(RouteMapSignalElementCategory.TopBar, enabled.Category);
+            Assert.False(enabled.RequiresPulseWriteMode);
+            Assert.False(enabled.PreferPulseWriteMode);
+        }
+    }
+
+    [Fact]
+    public async Task Mapping_ValidatesTopBarPulseDraftAndPreservesProfileOnSaveAndReload()
+    {
+        using var scope = new ConfigurationScope();
+        var options = new ModbusOptions
+        {
+            DataMap =
+            [
+                new() { Name = "other.word", Area = ModbusDataArea.HoldingRegister, Address = 7 },
+                new() { Name = "system.reset", Area = ModbusDataArea.Coil, Address = 1,
+                    Type = ModbusValueType.Bool, Access = ModbusDataAccess.ReadWrite, WriteMode = ModbusWriteMode.Pulse },
+                new() { Name = "system.emergency", Area = ModbusDataArea.Coil, Address = 2,
+                    Type = ModbusValueType.Bool, Access = ModbusDataAccess.ReadWrite },
+            ],
+            AlarmMap = [new() { Id = "alarm.keep" }],
+            AddressLabels = [new() { Address = 7, DisplayName = "existing" }],
+        };
+        var config = new RecordingAppConfigService();
+        var runtime = new RecordingDataMapRuntime();
+        using var mapping = new RouteMapSignalMappingViewModel(scope.Manager, new TestOptionsMonitor(options),
+            config, new ModbusDataMapValidator(), runtime);
+        var rows = TopBarCommands.Select(command => Assert.Single(mapping.Rows, row => row.SignalId == command.SignalId)).ToArray();
+        Assert.All(rows, row => Assert.False(row.IsMapped));
+        await mapping.SaveAsync();
+        Assert.DoesNotContain(config.SavedModbus!.DataMap, point => point.Name.StartsWith("system.command.", StringComparison.Ordinal));
+
+        var unload = rows[0];
+        await mapping.CreateMappingCommand.Execute(unload).FirstAsync();
+        Assert.Equal(ModbusWriteMode.Pulse, unload.WriteMode);
+        Assert.Equal(-1, unload.Address);
+        Assert.Equal(0, unload.PulseDurationMs);
+        Assert.Contains("negative address", unload.ValidationMessage);
+        unload.Address = 7;
+        Assert.Contains("pulse duration", unload.ValidationMessage);
+        unload.PulseDurationMs = 75;
+        unload.Area = ModbusDataArea.HoldingRegister;
+        Assert.Null(unload.BitIndex);
+        Assert.Contains("BitIndex", unload.ValidationMessage);
+        unload.BitIndex = 16;
+        Assert.Contains("BitIndex", unload.ValidationMessage);
+        unload.BitIndex = 3;
+        unload.WriteMode = ModbusWriteMode.Latched;
+        Assert.Contains("Pulse", unload.ValidationMessage);
+        unload.WriteMode = ModbusWriteMode.Pulse;
+        unload.Access = ModbusDataAccess.Read;
+        Assert.Contains("ReadWrite", unload.ValidationMessage);
+        unload.Access = ModbusDataAccess.ReadWrite;
+        unload.Type = ModbusValueType.UInt16;
+        Assert.Contains("Bool", unload.ValidationMessage);
+        unload.Type = ModbusValueType.Bool;
+        unload.BitIndex = 3;
+
+        await mapping.SaveAsync();
+        Assert.Contains("other.word", mapping.ErrorMessage);
+        Assert.Contains("overlapping", mapping.ErrorMessage);
+
+        unload.Address = 8;
+        var rotation = rows[1];
+        await mapping.CreateMappingCommand.Execute(rotation).FirstAsync();
+        rotation.Area = ModbusDataArea.HoldingRegister;
+        rotation.Address = unload.Address;
+        rotation.BitIndex = unload.BitIndex;
+        rotation.PulseDurationMs = 90;
+        await mapping.SaveAsync();
+        Assert.Contains("overlapping", mapping.ErrorMessage);
+
+        rotation.BitIndex = 4;
+        await mapping.SaveAsync();
+        Assert.Null(mapping.ErrorMessage);
+        var saved = config.SavedModbus!;
+        using var reopened = new RouteMapSignalMappingViewModel(scope.Manager, new TestOptionsMonitor(saved),
+            config, new ModbusDataMapValidator(), runtime);
+        Assert.Collection(rows.Select(original => Assert.Single(reopened.Rows, row => row.SignalId == original.SignalId)),
+            row => { Assert.False(row.HasError); Assert.True(row.IsMapped); Assert.Equal(3, row.BitIndex); Assert.Equal(75, row.PulseDurationMs); },
+            row => { Assert.False(row.HasError); Assert.True(row.IsMapped); Assert.Equal(4, row.BitIndex); Assert.Equal(90, row.PulseDurationMs); },
+            row => Assert.False(row.IsMapped));
+        foreach (var original in options.DataMap)
+        {
+            var restored = Assert.Single(saved.DataMap, point => point.Name == original.Name);
+            Assert.Equal((original.Area, original.Address, original.BitIndex, original.Access, original.Type, original.WriteMode),
+                (restored.Area, restored.Address, restored.BitIndex, restored.Access, restored.Type, restored.WriteMode));
+        }
+        Assert.Equal("alarm.keep", Assert.Single(saved.AlarmMap).Id);
+        Assert.Equal("existing", Assert.Single(saved.AddressLabels).DisplayName);
+    }
+
+    [Fact]
+    public void Diagnostics_ReportsTopBarPulseRequirementsAndPhysicalConflicts()
+    {
+        using var scope = new ConfigurationScope();
+        using var runtime = new RouteMapSignalRuntime(new ManualSignalProvider(), new RecordingCommandDispatcher(),
+            new ManualSignalProvider(), new RecordingCommandDispatcher(), RouteMapSignalSource.Modbus);
+        var logger = new CapturingLogger<RouteMapModbusBindingDiagnostics>();
+        var options = new ModbusOptions
+        {
+            DataMap =
+            [
+                new() { Name = "system.command.unload", Area = ModbusDataArea.HoldingRegister,
+                    Address = 3, BitIndex = 2, Type = ModbusValueType.Bool, Access = ModbusDataAccess.Read },
+                new() { Name = "system.command.rotate", Area = ModbusDataArea.HoldingRegister,
+                    Address = 3, Type = ModbusValueType.Word, Access = ModbusDataAccess.ReadWrite,
+                    WriteMode = ModbusWriteMode.Pulse },
+            ],
+        };
+        using var diagnostics = new RouteMapModbusBindingDiagnostics(scope.Manager,
+            new TestOptionsMonitor(options), runtime, logger);
+
+        Assert.Contains(logger.Warnings, message => message.Contains("system.command.load is missing"));
+        Assert.Contains(logger.Warnings, message => message.Contains("system.command.unload requires write access"));
+        Assert.Contains(logger.Warnings, message => message.Contains("system.command.unload requires Pulse"));
+        Assert.Contains(logger.Warnings, message => message.Contains("system.command.rotate expects Bool"));
+        Assert.Contains(logger.Warnings, message => message.Contains("overlapping HoldingRegister addresses"));
+        Assert.DoesNotContain(logger.Warnings, message => message.Contains("system.mode.automatic") || message.Contains("system.mode.manual"));
+    }
+
     [Fact]
     public async Task SignalRuntime_SwitchesObservableAndCommandBackendWithoutReplacingSubscribers()
     {
@@ -528,7 +704,7 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         })));
         Assert.Contains("expects UInt16, but Modbus.DataMap defines Bool", Assert.Single(WarningsFor(new ModbusDataPointOptions
         {
-            Name = signalId, Access = ModbusDataAccess.Read, Type = ModbusValueType.Bool
+            Name = signalId, Access = ModbusDataAccess.Read, Type = ModbusValueType.Bool, BitIndex = 0
         })));
         Assert.Empty(WarningsFor(new ModbusDataPointOptions
         {

@@ -210,7 +210,7 @@ public sealed class ModbusDataMapValidator : IModbusDataMapValidator
     {
         if (point.Type == ModbusValueType.Bool)
         {
-            if (point.Length != 1 || point.BitIndex is < 0 or > 15)
+            if (point.Length != 1 || point.BitIndex is not (>= 0 and <= 15))
             {
                 return ModbusOperationResult.Failure(
                     "ModbusRegisterBitInvalid",
@@ -247,7 +247,7 @@ public sealed class ModbusDataMapValidator : IModbusDataMapValidator
 
     private static ModbusOperationResult ValidateRegisterRange(ModbusDataPointOptions point)
     {
-        if (point.Address + point.Length > MaxRegisters)
+        if ((long)point.Address + point.Length > MaxRegisters)
         {
             return ModbusOperationResult.Failure(
                 "ModbusRegisterAddressInvalid",
@@ -281,6 +281,26 @@ public sealed class ModbusDataMapValidator : IModbusDataMapValidator
         ModbusEndpointOptions endpoint,
         string role)
     {
+        if (endpoint.UnitId is < 1 or > 247)
+        {
+            return ModbusOperationResult.Failure(
+                "ModbusUnitIdInvalid",
+                $"Modbus data point '{point.Name}' requires a {role} UnitId in range 1..247.");
+        }
+
+        if (role == "client")
+        {
+            var startAddress = point.Area == ModbusDataArea.Coil
+                ? endpoint.CoilStartAddress
+                : endpoint.HoldingRegisterStartAddress;
+            if (startAddress < 0 || (long)startAddress + point.Address + point.Length - 1 > ushort.MaxValue)
+            {
+                return ModbusOperationResult.Failure(
+                    "ModbusClientAddressInvalid",
+                    $"Modbus data point '{point.Name}' is outside the client physical address range 0..65535.");
+            }
+        }
+
         if (point.Area == ModbusDataArea.Coil)
         {
             if (!endpoint.CoilsEnabled && role == "client")

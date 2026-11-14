@@ -1,4 +1,5 @@
 using Avalonia.Media;
+using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Dialogs.HelpDialog;
@@ -255,7 +256,7 @@ public sealed class TopBarViewModel : ViewModelBase
                 RaiseButtonProperties();
                 try
                 {
-                    await DispatchAsync(_settings.Reset.Binding, true);
+                    await DispatchAsync(_settings.Reset.Binding, true, ModbusWriteMode.Pulse);
                 }
                 finally
                 {
@@ -295,11 +296,14 @@ public sealed class TopBarViewModel : ViewModelBase
         RaiseButtonProperties();
     }
 
-    private Task DispatchAsync(SignalBinding binding, bool value)
+    private Task DispatchAsync(SignalBinding binding, bool value, ModbusWriteMode? requiredWriteMode = null)
     {
         if (_commandDispatcher is null || binding.Direction == SignalBindingDirection.Read)
             return Task.CompletedTask;
-        return _commandDispatcher.DispatchAsync(new SignalWriteRequest(binding.SignalId, value, binding.ValueType));
+        return _commandDispatcher.DispatchAsync(new SignalWriteRequest(binding.SignalId, value, binding.ValueType)
+        {
+            RequiredWriteMode = requiredWriteMode,
+        });
     }
 
     private void RaiseButtonProperties()

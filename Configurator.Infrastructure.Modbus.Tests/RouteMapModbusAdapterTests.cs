@@ -27,6 +27,9 @@ public sealed class RouteMapModbusAdapterTests
 
     [Theory]
     [InlineData("custom.start", ModbusWriteMode.Latched, ModbusWriteMode.Pulse)]
+    [InlineData("system.command.unload", ModbusWriteMode.Latched, ModbusWriteMode.Pulse)]
+    [InlineData("system.command.rotate", ModbusWriteMode.Latched, ModbusWriteMode.Pulse)]
+    [InlineData("system.command.load", ModbusWriteMode.Latched, ModbusWriteMode.Pulse)]
     [InlineData("custom.stop", ModbusWriteMode.Pulse, ModbusWriteMode.Latched)]
     public async Task Dispatcher_RejectsWrongCommandModeBeforeAnyWrite(
         string signalId, ModbusWriteMode actualMode, ModbusWriteMode requiredMode)
@@ -71,6 +74,39 @@ public sealed class RouteMapModbusAdapterTests
 
         Assert.Equal([(signalId, true), (signalId, false)], service.Writes);
         Assert.True(Stopwatch.GetElapsedTime(writeTimes[0], writeTimes[1]) >= TimeSpan.FromMilliseconds(80));
+    }
+
+    [Theory]
+    [InlineData("missing", "not configured")]
+    [InlineData("read", "read-only")]
+    [InlineData("write", "requires ReadWrite")]
+    [InlineData("type", "requested Bool")]
+    [InlineData("duration", "pulse duration")]
+    [InlineData("bit", "BitIndex")]
+    [InlineData("conflict", "overlapping")]
+    public async Task Dispatcher_RejectsInvalidTopBarPulseBeforeAnyWrite(string issue, string message)
+    {
+        const string signalId = "system.command.unload";
+        var point = CreatePoint(signalId, ModbusWriteMode.Pulse);
+        var options = CreateOptions(point);
+        switch (issue)
+        {
+            case "missing": options.DataMap.Clear(); break;
+            case "read": point.Access = ModbusDataAccess.Read; break;
+            case "write": point.Access = ModbusDataAccess.Write; break;
+            case "type": point.Type = ModbusValueType.UInt16; break;
+            case "duration": point.PulseDurationMs = 0; break;
+            case "bit": point.Area = ModbusDataArea.HoldingRegister; break;
+            case "conflict": options.DataMap.Add(CreatePoint("other", ModbusWriteMode.Latched)); break;
+        }
+
+        var service = new FakeModbusService();
+        var dispatcher = new ModbusTcpCommandDispatcher(service, new TestOptionsMonitor(options));
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => dispatcher.DispatchAsync(
+            new SignalWriteRequest(signalId, true, SignalValueType.Bool) { RequiredWriteMode = ModbusWriteMode.Pulse }));
+
+        Assert.Contains(message, error.Message);
+        Assert.Empty(service.Writes);
     }
 
     [Theory]

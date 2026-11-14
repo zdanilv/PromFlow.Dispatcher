@@ -25,6 +25,7 @@ internal sealed class ModbusClientService : IModbusClientService
     private readonly SemaphoreSlim _ioGate = new(1, 1);
     private CancellationTokenSource? _loopCancellation;
     private Task? _loopTask;
+    private TcpClient? _socket;
     private ModbusIpMaster? _master;
     private ModbusClientDataReader? _reader;
     private ModbusEndpointOptions _options = new();
@@ -123,7 +124,13 @@ internal sealed class ModbusClientService : IModbusClientService
     /// <summary>
     /// Записывает одно coil-значение в подключенное Modbus-устройство.
     /// </summary>
-    public async Task WriteCoilAsync(int address, bool value, CancellationToken cancellationToken = default)
+    public Task WriteCoilAsync(int address, bool value, CancellationToken cancellationToken = default)
+        => WriteCoilAsync(address, value, cancellationToken, pulse: false);
+
+    internal Task WritePulseCoilAsync(int address, bool value, CancellationToken cancellationToken)
+        => WriteCoilAsync(address, value, cancellationToken, pulse: true);
+
+    private async Task WriteCoilAsync(int address, bool value, CancellationToken cancellationToken, bool pulse)
     {
         if (!_options.CoilsEnabled)
         {
@@ -136,13 +143,20 @@ internal sealed class ModbusClientService : IModbusClientService
             reader => reader.WriteCoilAsync(_options.CoilStartAddress + address, value),
             $"Клиент записал Coil[{address}]={value}",
             "Coils",
-            cancellationToken);
+            cancellationToken, pulse);
     }
 
     /// <summary>
     /// Записывает один holding-регистр в подключенное Modbus-устройство.
     /// </summary>
-    public async Task WriteRegisterAsync(int address, ushort value, CancellationToken cancellationToken = default)
+    public Task WriteRegisterAsync(int address, ushort value, CancellationToken cancellationToken = default)
+        => WriteRegisterAsync(address, value, cancellationToken, pulse: false);
+
+    internal Task WritePulseRegisterAsync(int address, ushort value, CancellationToken cancellationToken)
+        => WriteRegisterAsync(address, value, cancellationToken, pulse: true);
+
+    private async Task WriteRegisterAsync(
+        int address, ushort value, CancellationToken cancellationToken, bool pulse)
     {
         if (!_options.HoldingRegistersEnabled)
         {
@@ -155,7 +169,7 @@ internal sealed class ModbusClientService : IModbusClientService
             reader => reader.WriteRegisterAsync(_options.HoldingRegisterStartAddress + address, value),
             $"Клиент записал Register[{address}]={value}",
             "Holding Registers",
-            cancellationToken);
+            cancellationToken, pulse);
     }
 
     /// <summary>
@@ -256,6 +270,7 @@ internal sealed class ModbusClientService : IModbusClientService
 
             socket = await ConnectTcpClientWithTimeoutAsync(cancellationToken);
             tcpClient = new TcpClientRx(socket);
+            _socket = socket;
             socket = null;
             _master = ModbusIpMaster.CreateIp(tcpClient);
             tcpClient = null;
@@ -313,21 +328,81 @@ internal sealed class ModbusClientService : IModbusClientService
         Func<ModbusClientDataReader, Task> write,
         string successMessage,
         string failureArea,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool pulse = false)
     {
         var written = false;
         var reconnect = false;
         Exception? failure = null;
         var failureMessage = string.Empty;
+        var pulseTimeoutMs = Math.Max(1000, _options.PollIntervalMs * 2);
+        using var pulseDeadline = pulse ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken) : null;
+        pulseDeadline?.CancelAfter(pulseTimeoutMs);
         // Запись и polling используют один master, поэтому проходят через общий I/O gate.
-        await _ioGate.WaitAsync(cancellationToken);
+        try
+        {
+            await _ioGate.WaitAsync(pulseDeadline?.Token ?? cancellationToken);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && pulse)
+        {
+            throw new TimeoutException("Timed out waiting for the Modbus client to send a pulse edge.", ex);
+        }
 
         try
         {
             var reader = EnsureReader();
-            await write(reader);
+            if (pulseDeadline is null)
+            {
+                await write(reader);
+            }
+            else
+            {
+                if (_state != ModbusConnectionState.Running)
+                    throw new InvalidOperationException("Modbus client is not connected for the pulse write.");
+
+                var transport = _master?.Transport ?? throw new InvalidOperationException("Modbus client transport is unavailable.");
+                var socket = _socket ?? throw new InvalidOperationException("Modbus client socket is unavailable.");
+                // A missing reply can follow a successful write. Do not resend a pulse edge.
+                var retries = transport.Retries;
+                var busyUsesRetryCount = transport.SlaveBusyUsesRetryCount;
+                try
+                {
+                    pulseDeadline.Token.ThrowIfCancellationRequested();
+                    transport.Retries = 0;
+                    transport.SlaveBusyUsesRetryCount = true;
+                    // ModbusRx reads asynchronously, so socket ReceiveTimeout alone does not bound the wait.
+                    using (pulseDeadline.Token.Register(socket.Dispose))
+                    {
+                        try
+                        {
+                            pulseDeadline.Token.ThrowIfCancellationRequested();
+                            await write(reader);
+                        }
+                        catch (Exception ex) when (pulseDeadline.IsCancellationRequested)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            throw new TimeoutException("Modbus pulse write reply timed out.", ex);
+                        }
+                    }
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (pulseDeadline.IsCancellationRequested)
+                        throw new TimeoutException("Modbus pulse write reply timed out.");
+                }
+                finally
+                {
+                    transport.Retries = retries;
+                    transport.SlaveBusyUsesRetryCount = busyUsesRetryCount;
+                }
+            }
             written = true;
             PublishStatus(ModbusConnectionState.Running, successMessage);
+        }
+        catch (OperationCanceledException) when (pulse)
+        {
+            DisposeConnectionCore();
+            if (_state == ModbusConnectionState.Running)
+                PublishStatus(ModbusConnectionState.Reconnecting, "Запись отменена, клиент переподключается");
+            throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -340,6 +415,11 @@ internal sealed class ModbusClientService : IModbusClientService
                 ? "Запись недоступна: клиент переподключается"
                 : failureMessage;
             PublishStatus(state, message, failureMessage);
+            if (pulse && reconnect)
+            {
+                DisposeConnectionCore();
+                reconnect = false;
+            }
         }
         finally
         {
@@ -356,7 +436,9 @@ internal sealed class ModbusClientService : IModbusClientService
             throw new InvalidOperationException(failureMessage, failure);
         }
 
-        if (written)
+        // Pulse edges leave snapshots to the normal polling loop. In particular, starting
+        // the hold interval must not wait for an unrelated read after the rising edge.
+        if (written && !pulse)
         {
             await ReadAndPublishAsync(cancellationToken);
         }
@@ -564,6 +646,8 @@ internal sealed class ModbusClientService : IModbusClientService
         _lastPollError = null;
         _master?.Dispose();
         _master = null;
+        _socket?.Dispose();
+        _socket = null;
     }
 
     private async Task DelayBeforeRetryAsync(CancellationToken cancellationToken)
