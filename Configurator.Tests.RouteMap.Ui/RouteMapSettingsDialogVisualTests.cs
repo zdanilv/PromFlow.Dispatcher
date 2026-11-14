@@ -2087,8 +2087,28 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             Direction = SignalBindingDirection.Read,
             ValueType = SignalValueType.Bool,
         });
-        Assert.True(manager.Apply(draft).IsSuccess);
-        Dispatcher.UIThread.RunJobs();
+        var dashboardView = new RouteMapDashboardView { DataContext = dashboard };
+        var window = new Window { Width = 1366, Height = 768, Content = dashboardView };
+        window.Show();
+        try
+        {
+            Dispatcher.UIThread.RunJobs();
+            var topBarView = Assert.Single(dashboardView.GetVisualDescendants().OfType<TopBarView>());
+            var unloadButton = topBarView.FindControl<Button>("UnloadButton")!;
+            Assert.Equal(admin, unloadButton.IsEffectivelyVisible);
+            Assert.Equal("ВЫГРУЗКА", unloadButton.Content);
+
+            Assert.True(manager.Apply(draft).IsSuccess);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal("Тест выгрузки", unloadButton.Content);
+            Assert.Equal("ВРАЩЕНИЕ", topBarView.FindControl<Button>("RotationButton")!.Content);
+            Assert.Equal("ЗАГРУЗКА", topBarView.FindControl<Button>("LoadButton")!.Content);
+        }
+        finally
+        {
+            window.Close();
+        }
         Assert.Equal("Тест выгрузки", topBar.UnloadText);
         Assert.False(topBar.IsUnloadEnabled);
         await topBar.UnloadCommand.Execute().ToTask();
