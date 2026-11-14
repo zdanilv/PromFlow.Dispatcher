@@ -2137,6 +2137,139 @@ public sealed class RouteMapConfigurationTests
         Assert.DoesNotContain(viewModel.Draft.TopBar.Reset.Bindings, x => x.Role == SignalBindingRole.Enabled);
     }
 
+    [Theory]
+    [InlineData("unload", SignalBindingRole.UnloadCommand, "system.command.unload")]
+    [InlineData("rotation", SignalBindingRole.RotationCommand, "system.command.rotate")]
+    [InlineData("load", SignalBindingRole.LoadCommand, "system.command.load")]
+    public async Task Settings_apply_save_and_reopen_new_top_bar_commands(
+        string section, SignalBindingRole role, string defaultSignalId)
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        using var editor = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+        var original = manager.CurrentDefinition.TopBar!;
+        var publications = new List<RouteMapDefinition>();
+        using var subscription = manager.DefinitionChanges.Skip(1).Subscribe(publications.Add);
+        var (button, roles) = section switch
+        {
+            "unload" => (editor.Draft.TopBar.Unload, editor.UnloadBindingRoles),
+            "rotation" => (editor.Draft.TopBar.Rotation, editor.RotationBindingRoles),
+            _ => (editor.Draft.TopBar.Load, editor.LoadBindingRoles),
+        };
+        Assert.Equal(new[] { role, SignalBindingRole.Enabled }, roles);
+        var command = Assert.Single(button.Bindings);
+        Assert.Equal((role, defaultSignalId, SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+            (command.Role, command.SignalId, command.Direction, command.ValueType));
+
+        editor.RemoveBindingCommand.Execute(command).Subscribe();
+        Assert.Same(command, Assert.Single(button.Bindings));
+        Assert.Contains("обязателен", editor.ErrorMessage);
+
+        var commandId = $"site.command.{section}";
+        var enabledId = $"site.permissive.{section}";
+        button.Text = $"Настройка {section}";
+        command.SignalId = commandId;
+        editor.AddBindingCommand.Execute(section).Subscribe();
+        var enabled = Assert.Single(button.Bindings, binding => binding.Role == SignalBindingRole.Enabled);
+        Assert.Equal(($"{commandId}.enabled", SignalBindingDirection.Read, SignalValueType.Bool),
+            (enabled.SignalId, enabled.Direction, enabled.ValueType));
+        editor.AddBindingCommand.Execute(section).Subscribe();
+        Assert.Same(enabled, Assert.Single(button.Bindings, binding => binding.Role == SignalBindingRole.Enabled));
+
+        editor.RemoveBindingCommand.Execute(enabled).Subscribe();
+        Assert.Same(command, Assert.Single(button.Bindings));
+        editor.AddBindingCommand.Execute(section).Subscribe();
+        Assert.Single(button.Bindings, binding => binding.Role == SignalBindingRole.Enabled).SignalId = enabledId;
+
+        editor.ApplyCommand.Execute().Subscribe();
+        Assert.Null(editor.ErrorMessage);
+        Assert.Same(manager.CurrentDefinition, Assert.Single(publications));
+        Assert.False(File.Exists(scope.Path));
+        var applied = manager.CurrentDefinition.TopBar!;
+        var appliedButton = section switch
+        {
+            "unload" => applied.Unload,
+            "rotation" => applied.Rotation,
+            _ => applied.Load,
+        };
+        Assert.Equal((button.Text, commandId, enabledId),
+            (appliedButton.Text, appliedButton.Binding.SignalId, appliedButton.EnabledBinding?.SignalId));
+        Assert.Equal(original.Reset, applied.Reset);
+        Assert.Equal(original.Emergency, applied.Emergency);
+        Assert.Equal(RouteCommandButtonKind.Toggle, applied.Emergency.ButtonKind);
+        Assert.False(applied.Emergency.OffFeedbackEnabled);
+        Assert.Null(applied.Emergency.OffFeedbackBinding);
+        Assert.Equal(original.Automatic, applied.Automatic);
+        Assert.Equal(original.Manual, applied.Manual);
+
+        button.Text = $"Сохранено {section}";
+        await editor.SaveCommand.Execute().FirstAsync();
+        Assert.Null(editor.ErrorMessage);
+        using var reopenedManager = scope.CreateManager();
+        Assert.Null(reopenedManager.LastLoadError);
+        using var reopened = new RouteMapSettingsViewModel(reopenedManager, scope.Storage, new NullFilePicker());
+        var saved = section switch
+        {
+            "unload" => reopened.Draft.TopBar.Unload,
+            "rotation" => reopened.Draft.TopBar.Rotation,
+            _ => reopened.Draft.TopBar.Load,
+        };
+        Assert.Equal(button.Text, saved.Text);
+        reopened.AddBindingCommand.Execute(section).Subscribe();
+        Assert.Equal(2, saved.Bindings.Count);
+        Assert.Equal(commandId, Assert.Single(saved.Bindings, binding => binding.Role == role).SignalId);
+        Assert.Equal(enabledId, Assert.Single(saved.Bindings, binding => binding.Role == SignalBindingRole.Enabled).SignalId);
+    }
+
+    [Fact]
+    public async Task Settings_reject_invalid_top_bar_bindings_on_apply_and_save()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var original = manager.CurrentDefinition;
+        using var editor = new RouteMapSettingsViewModel(manager, scope.Storage, new NullFilePicker());
+
+        Assert.Single(editor.Draft.TopBar.Unload.Bindings).Direction = SignalBindingDirection.Read;
+        editor.AddBindingCommand.Execute("rotation").Subscribe();
+        var enabled = Assert.Single(editor.Draft.TopBar.Rotation.Bindings, binding => binding.Role == SignalBindingRole.Enabled);
+        enabled.ValueType = SignalValueType.UInt16;
+
+        editor.ApplyCommand.Execute().Subscribe();
+
+        Assert.Contains("Binding UnloadCommand должен иметь направление ReadWrite", editor.ErrorMessage);
+        Assert.Contains("Binding Enabled должен иметь тип Bool", editor.ErrorMessage);
+        Assert.Same(original, manager.CurrentDefinition);
+
+        await editor.SaveCommand.Execute().FirstAsync();
+
+        Assert.Contains("Binding UnloadCommand должен иметь направление ReadWrite", editor.ErrorMessage);
+        Assert.Contains("Binding Enabled должен иметь тип Bool", editor.ErrorMessage);
+        Assert.Same(original, manager.CurrentDefinition);
+        Assert.False(File.Exists(scope.Path));
+    }
+
+    [Fact]
+    public async Task Settings_import_restores_a_missing_command_without_replacing_custom_bindings()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var imported = scope.Mapper.CreateSeedDocument();
+        imported.TopBar.Unload.Text = "Своя выгрузка";
+        imported.TopBar.Unload.Bindings.Clear();
+        imported.TopBar.Rotation.Bindings[0].SignalId = "site.rotation";
+        var path = scope.Path + ".import.json";
+        await scope.Storage.SaveAsync(path, imported);
+        using var editor = new RouteMapSettingsViewModel(manager, scope.Storage, new RouteMapTestFilePicker(path));
+
+        await editor.ImportCommand.Execute().FirstAsync();
+
+        Assert.Null(editor.ErrorMessage);
+        Assert.Equal("Своя выгрузка", editor.Draft.TopBar.Unload.Text);
+        Assert.Equal("system.command.unload", Assert.Single(editor.Draft.TopBar.Unload.Bindings).SignalId);
+        Assert.Equal("site.rotation", Assert.Single(editor.Draft.TopBar.Rotation.Bindings).SignalId);
+        Assert.Equal("system.command.rotate", manager.CurrentDefinition.TopBar!.Rotation.Binding.SignalId);
+    }
+
     [Fact]
     public void Settings_removes_card_parameter_from_draft_and_published_signal_inventory()
     {

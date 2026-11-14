@@ -1598,7 +1598,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
-    public void TopBar_settings_hide_mode_editors_and_keep_reset_and_emergency()
+    public void TopBar_settings_show_command_editors_in_order_and_hide_legacy_modes()
     {
         using var fixture = new DialogFixture(1320, 780);
         fixture.SelectTab(2);
@@ -1608,10 +1608,99 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             .ToArray();
         Assert.False(editors.Single(border => ReferenceEquals(border.DataContext, fixture.ViewModel.Draft.TopBar.Automatic)).IsVisible);
         Assert.False(editors.Single(border => ReferenceEquals(border.DataContext, fixture.ViewModel.Draft.TopBar.Manual)).IsVisible);
-        Assert.True(editors.Single(border => ReferenceEquals(border.DataContext, fixture.ViewModel.Draft.TopBar.Reset)).IsVisible);
-        Assert.True(editors.Single(border => ReferenceEquals(border.DataContext, fixture.ViewModel.Draft.TopBar.Emergency)).IsVisible);
+        var topBar = fixture.ViewModel.Draft.TopBar;
+        var visible = editors.Where(border => border.IsEffectivelyVisible).ToArray();
+        Assert.Equal(new RouteTopBarButtonConfiguration[] { topBar.Unload, topBar.Rotation, topBar.Load, topBar.Reset, topBar.Emergency },
+            visible.Select(border => Assert.IsAssignableFrom<RouteTopBarButtonConfiguration>(border.DataContext)));
+        Assert.Equal(new[] { "ВЫГРУЗКА", "ВРАЩЕНИЕ", "ЗАГРУЗКА", "СБРОС", "АВАРИЯ" },
+            visible.Select(border => ((StackPanel)border.Child!).Children.OfType<TextBlock>().Single().Text));
+        Assert.All(visible.Zip(visible.Skip(1)), pair =>
+            Assert.True(pair.First.TranslatePoint(default, fixture.Dialog)!.Value.Y <
+                pair.Second.TranslatePoint(default, fixture.Dialog)!.Value.Y));
         Assert.Empty(fixture.ViewModel.AutomaticModeBindingRoles);
         Assert.Empty(fixture.ViewModel.ManualModeBindingRoles);
+
+        var scroll = visible[0].GetVisualAncestors().OfType<ScrollViewer>().First();
+        Assert.True(scroll.Extent.Height > scroll.Viewport.Height);
+        CaptureTopBarSettings("top-bar-settings-top");
+        visible[^1].BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(scroll.Offset.Y > 0);
+        Assert.InRange(visible[^1].TranslatePoint(default, scroll)!.Value.Y,
+            0, scroll.Viewport.Height - visible[^1].Bounds.Height + 1);
+        CaptureTopBarSettings("top-bar-settings-bottom");
+
+        void CaptureTopBarSettings(string name)
+        {
+            if (string.IsNullOrEmpty(HeadlessTestApplication.ScreenshotDirectory))
+                return;
+
+            using var frame = new RenderTargetBitmap(PixelSize.FromSize(fixture.Dialog.Bounds.Size, 1), new Vector(96, 96));
+            frame.Render(fixture.Dialog);
+            RouteMapDeadEndVisualTests.SaveFrame(frame, name);
+        }
+    }
+
+    [AvaloniaFact]
+    public void TopBar_settings_edit_bindings_and_discard_pending_changes_on_close()
+    {
+        using var fixture = new DialogFixture(1320, 780);
+        fixture.SelectTab(2);
+        var original = fixture.Manager.CurrentDefinition;
+        var topBar = fixture.ViewModel.Draft.TopBar;
+        foreach (var (button, role, section) in new[]
+                 {
+                     (topBar.Unload, SignalBindingRole.UnloadCommand, "unload"),
+                     (topBar.Rotation, SignalBindingRole.RotationCommand, "rotation"),
+                     (topBar.Load, SignalBindingRole.LoadCommand, "load"),
+                 })
+        {
+            var border = fixture.Dialog.GetVisualDescendants().OfType<Border>()
+                .Single(item => item.Classes.Contains("editor") && ReferenceEquals(item.DataContext, button));
+            var text = border.GetVisualDescendants().OfType<TextBox>().Single(input => input.Classes.Contains("form"));
+            text.SetCurrentValue(TextBox.TextProperty, $"Настройка {section}");
+            var editor = border.GetVisualDescendants().OfType<SignalBindingsEditor>().Single();
+            Assert.Equal(new[] { role, SignalBindingRole.Enabled }, editor.AllowedRoles.Cast<SignalBindingRole>());
+            Grid BindingRow(SignalBindingRole bindingRole) => editor.GetVisualDescendants().OfType<Grid>()
+                .Single(row => row.Classes.Contains("signal-binding-row") &&
+                    row.DataContext is SignalBindingConfiguration binding && binding.Role == bindingRole);
+
+            var commandRow = BindingRow(role);
+            var roleBox = commandRow.Children.OfType<ComboBox>().Single(box => box.Classes.Contains("signal-binding-role"));
+            Assert.Equal(role, roleBox.SelectedItem);
+            Assert.False(roleBox.IsEffectivelyEnabled);
+            var commandId = $"site.command.{section}";
+            commandRow.Children.OfType<TextBox>().Single().SetCurrentValue(TextBox.TextProperty, commandId);
+            var add = editor.GetVisualDescendants().OfType<Button>().Single(item => Equals(item.Content, "Добавить binding"));
+            add.Command!.Execute(add.CommandParameter);
+            add.Command.Execute(add.CommandParameter);
+            Dispatcher.UIThread.RunJobs();
+            var enabledRow = BindingRow(SignalBindingRole.Enabled);
+            var enabledId = enabledRow.Children.OfType<TextBox>().Single();
+            Assert.Equal($"{commandId}.enabled", enabledId.Text);
+            enabledId.SetCurrentValue(TextBox.TextProperty, $"site.permissive.{section}");
+            Assert.Equal($"Настройка {section}", button.Text);
+            Assert.Equal(commandId, Assert.Single(button.Bindings, binding => binding.Role == role).SignalId);
+            Assert.Equal($"site.permissive.{section}",
+                Assert.Single(button.Bindings, binding => binding.Role == SignalBindingRole.Enabled).SignalId);
+
+            var remove = enabledRow.Children.OfType<Button>().Single();
+            remove.Command!.Execute(remove.CommandParameter);
+            Assert.Equal(role, Assert.Single(button.Bindings).Role);
+        }
+
+        fixture.ViewModel.AddBindingCommand.Execute("unload").Subscribe();
+        var results = new List<bool>();
+        using var subscription = fixture.ViewModel.Result.Subscribe(results.Add);
+        var close = fixture.Dialog.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "ЗАКРЫТЬ"));
+        close.Command!.Execute(close.CommandParameter);
+        Assert.False(Assert.Single(results));
+        Assert.Same(original, fixture.Manager.CurrentDefinition);
+        Assert.False(File.Exists(fixture.Manager.ActiveFilePath));
+        var storage = new RouteMapConfigurationStorage(fixture.Manager.ActiveFilePath);
+        using var reopened = new RouteMapSettingsViewModel(fixture.Manager, storage, new NullFilePicker());
+        Assert.Equal("ВЫГРУЗКА", reopened.Draft.TopBar.Unload.Text);
+        Assert.Equal("system.command.unload", Assert.Single(reopened.Draft.TopBar.Unload.Bindings).SignalId);
     }
 
     [AvaloniaFact]

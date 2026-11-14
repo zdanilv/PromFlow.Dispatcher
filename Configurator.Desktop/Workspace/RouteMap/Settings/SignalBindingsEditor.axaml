@@ -32,6 +32,7 @@
                     MinWidth="900"
                     Margin="0,2">
                 <ComboBox Grid.Column="0"
+                          Classes="signal-binding-role"
                           ItemsSource="{Binding AllowedRoles, ElementName=Editor}"
                           SelectedItem="{Binding Role}"/>
                 <TextBox Grid.Column="1" Text="{Binding SignalId}"/>

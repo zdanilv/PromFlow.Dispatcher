@@ -166,6 +166,12 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         [];
     public IReadOnlyList<SignalBindingRole> ManualModeBindingRoles { get; } =
         [];
+    public IReadOnlyList<SignalBindingRole> UnloadBindingRoles { get; } =
+        [SignalBindingRole.UnloadCommand, SignalBindingRole.Enabled];
+    public IReadOnlyList<SignalBindingRole> RotationBindingRoles { get; } =
+        [SignalBindingRole.RotationCommand, SignalBindingRole.Enabled];
+    public IReadOnlyList<SignalBindingRole> LoadBindingRoles { get; } =
+        [SignalBindingRole.LoadCommand, SignalBindingRole.Enabled];
     public IReadOnlyList<SignalBindingRole> ResetBindingRoles { get; } =
         [SignalBindingRole.ResetCommand, SignalBindingRole.Enabled];
     public IReadOnlyList<SignalBindingRole> EmergencyBindingRoles { get; } =
@@ -701,33 +707,43 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private void AddBinding(string scope)
     {
-        var bindings = scope switch
+        var topBar = Draft.TopBar;
+        (RouteTopBarButtonConfiguration? Button, SignalBindingRole CommandRole) topBarSection = scope switch
         {
-            "node" => SelectedNode?.Bindings,
-            "segment" => SelectedSegment?.Bindings,
-            "card" => SelectedCard?.Bindings,
-            "reset" => Draft.TopBar.Reset.Bindings,
-            "emergency" => Draft.TopBar.Emergency.Bindings,
-            _ => null,
+            "unload" => (topBar.Unload, SignalBindingRole.UnloadCommand),
+            "rotation" => (topBar.Rotation, SignalBindingRole.RotationCommand),
+            "load" => (topBar.Load, SignalBindingRole.LoadCommand),
+            "reset" => (topBar.Reset, SignalBindingRole.ResetCommand),
+            "emergency" => (topBar.Emergency, SignalBindingRole.EmergencyCommand),
+            _ => default,
         };
-        if (bindings is null)
-            return;
-
-        if (scope is "reset" or "emergency")
+        if (topBarSection.Button is { } button)
         {
-            if (bindings.Any(x => x.Role == SignalBindingRole.Enabled))
+            if (button.Bindings.Any(x => x?.Role == SignalBindingRole.Enabled))
+                return;
+            var command = button.Bindings.FirstOrDefault(x => x?.Role == topBarSection.CommandRole);
+            if (command is null)
                 return;
 
-            var commandSignalId = bindings.First(x => x.Role != SignalBindingRole.Enabled).SignalId;
-            bindings.Add(new SignalBindingConfiguration
+            button.Bindings.Add(new SignalBindingConfiguration
             {
                 Role = SignalBindingRole.Enabled,
-                SignalId = $"{commandSignalId}.enabled",
+                SignalId = $"{command.SignalId}.enabled",
                 Direction = SignalBindingDirection.Read,
                 ValueType = SignalValueType.Bool,
             });
             return;
         }
+
+        var bindings = scope switch
+        {
+            "node" => SelectedNode?.Bindings,
+            "segment" => SelectedSegment?.Bindings,
+            "card" => SelectedCard?.Bindings,
+            _ => null,
+        };
+        if (bindings is null)
+            return;
 
         bindings.Add(new SignalBindingConfiguration
         {
@@ -752,6 +768,9 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         SelectedNode?.Bindings.Remove(binding);
         SelectedSegment?.Bindings.Remove(binding);
         SelectedCard?.Bindings.Remove(binding);
+        Draft.TopBar.Unload.Bindings.Remove(binding);
+        Draft.TopBar.Rotation.Bindings.Remove(binding);
+        Draft.TopBar.Load.Bindings.Remove(binding);
         Draft.TopBar.Reset.Bindings.Remove(binding);
         Draft.TopBar.Emergency.Bindings.Remove(binding);
     }
@@ -872,6 +891,12 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
             return binding.Role == SignalBindingRole.AutomaticModeCommand;
         if (Draft.TopBar.Manual.Bindings.Contains(binding))
             return binding.Role == SignalBindingRole.ManualModeCommand;
+        if (Draft.TopBar.Unload.Bindings.Contains(binding))
+            return binding.Role == SignalBindingRole.UnloadCommand;
+        if (Draft.TopBar.Rotation.Bindings.Contains(binding))
+            return binding.Role == SignalBindingRole.RotationCommand;
+        if (Draft.TopBar.Load.Bindings.Contains(binding))
+            return binding.Role == SignalBindingRole.LoadCommand;
         if (Draft.TopBar.Reset.Bindings.Contains(binding))
             return binding.Role == SignalBindingRole.ResetCommand;
         if (Draft.TopBar.Emergency.Bindings.Contains(binding))
@@ -957,6 +982,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private static void EnsureTopBarBindings(RouteTopBarConfiguration topBar)
     {
+        EnsureNewTopBarCommandBindings(topBar);
         EnsureBinding(topBar.Reset.Bindings, SignalBindingRole.ResetCommand, "system.reset", SignalBindingDirection.ReadWrite);
         EnsureBinding(topBar.Emergency.Bindings, SignalBindingRole.EmergencyCommand, "system.emergency", SignalBindingDirection.ReadWrite);
         topBar.Emergency.ButtonKind = RouteCommandButtonKind.Toggle;
@@ -964,13 +990,23 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         RemoveBindings(topBar.Emergency.Bindings, SignalBindingRole.EmergencyOffFeedback);
     }
 
+    private static void EnsureNewTopBarCommandBindings(RouteTopBarConfiguration topBar)
+    {
+        EnsureTopBarCommandBinding(topBar.Unload, RouteMapSeed.DefaultUnloadButton.Binding);
+        EnsureTopBarCommandBinding(topBar.Rotation, RouteMapSeed.DefaultRotationButton.Binding);
+        EnsureTopBarCommandBinding(topBar.Load, RouteMapSeed.DefaultLoadButton.Binding);
+    }
+
+    private static void EnsureTopBarCommandBinding(RouteTopBarButtonConfiguration button, SignalBinding binding) =>
+        EnsureBinding(button.Bindings, binding.Role, binding.SignalId, binding.Direction);
+
     private static void EnsureBinding(
         ICollection<SignalBindingConfiguration> bindings,
         SignalBindingRole role,
         string signalId,
         SignalBindingDirection direction)
     {
-        if (bindings.Any(x => x.Role == role))
+        if (bindings.Any(x => x?.Role == role))
             return;
         bindings.Add(new SignalBindingConfiguration
         {
@@ -1086,6 +1122,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     private void AttachDraft(RouteMapConfigurationDocument document)
     {
+        EnsureNewTopBarCommandBindings(document.TopBar);
         document.Chains.CollectionChanged += OnCollectionChanged;
         document.Nodes.CollectionChanged += OnCollectionChanged;
         document.Segments.CollectionChanged += OnCollectionChanged;
