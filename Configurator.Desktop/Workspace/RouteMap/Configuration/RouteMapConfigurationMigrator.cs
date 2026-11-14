@@ -140,6 +140,12 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 21;
                     wasMigrated = true;
                     break;
+                case 21:
+                    document.TopBar ??= RouteTopBarConfiguration.CreateDefault();
+                    document.TopBar.EnsureCommandSections();
+                    document.SchemaVersion = 22;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }

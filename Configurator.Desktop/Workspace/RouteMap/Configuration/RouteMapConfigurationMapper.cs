@@ -183,6 +183,9 @@ public sealed class RouteMapConfigurationMapper
         Manual = ToConfiguration(topBar.Manual),
         Reset = ToConfiguration(topBar.Reset),
         Emergency = ToEmergencyConfiguration(topBar.Emergency),
+        Unload = ToConfiguration(topBar.Unload),
+        Rotation = ToConfiguration(topBar.Rotation),
+        Load = ToConfiguration(topBar.Load),
     };
 
     private static RouteTopBarButtonConfiguration ToConfiguration(RouteTopBarButtonSettings button) => new()
@@ -239,7 +242,23 @@ public sealed class RouteMapConfigurationMapper
             offFeedbackRole: null,
             offFeedbackSignalId: null,
             offFeedbackEnabled: false,
-            RouteCommandButtonKind.Toggle));
+            RouteCommandButtonKind.Toggle))
+    {
+        Unload = ToCommandModel(topBar.Unload, RouteMapSeed.DefaultUnloadButton),
+        Rotation = ToCommandModel(topBar.Rotation, RouteMapSeed.DefaultRotationButton),
+        Load = ToCommandModel(topBar.Load, RouteMapSeed.DefaultLoadButton),
+    };
+
+    private static RouteTopBarButtonSettings ToCommandModel(
+        RouteTopBarButtonConfiguration button,
+        RouteTopBarButtonSettings defaults) => ToModel(
+            button,
+            defaults.Binding.Role,
+            defaults.Binding.SignalId,
+            offFeedbackRole: null,
+            offFeedbackSignalId: null,
+            offFeedbackEnabled: false,
+            defaults.ButtonKind);
 
     private static RouteTopBarButtonSettings ToModel(
         RouteTopBarButtonConfiguration button,

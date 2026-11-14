@@ -150,10 +150,14 @@ public sealed class RouteMapConfigurationStorage
             SignalBindingRole.ResetCommand,
             "system.reset");
         document.TopBar.Emergency ??= RouteTopBarEmergencyButtonConfiguration.Create("АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency");
+        document.TopBar.EnsureCommandSections();
         document.TopBar.Automatic.Bindings ??= [];
         document.TopBar.Manual.Bindings ??= [];
         document.TopBar.Reset.Bindings ??= [];
         document.TopBar.Emergency.Bindings ??= [];
+        document.TopBar.Unload.Bindings ??= [];
+        document.TopBar.Rotation.Bindings ??= [];
+        document.TopBar.Load.Bindings ??= [];
         document.Chains ??= [];
         document.Nodes ??= [];
         document.Segments ??= [];

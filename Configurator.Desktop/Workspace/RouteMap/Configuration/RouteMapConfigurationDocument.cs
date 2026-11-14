@@ -40,7 +40,7 @@ public abstract class RouteMapConfigurationItem : ReactiveObject
 
 public sealed class RouteMapConfigurationDocument
 {
-    public const int CurrentSchemaVersion = 21;
+    public const int CurrentSchemaVersion = 22;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public RouteMapSettingsConfiguration Map { get; set; } = new();
@@ -139,6 +139,9 @@ public sealed class RouteTopBarConfiguration
     public RouteTopBarButtonConfiguration Manual { get; set; } = new();
     public RouteTopBarButtonConfiguration Reset { get; set; } = new();
     public RouteTopBarEmergencyButtonConfiguration Emergency { get; set; } = new();
+    public RouteTopBarButtonConfiguration Unload { get; set; } = CreateCommand(RouteMapSeed.DefaultUnloadButton);
+    public RouteTopBarButtonConfiguration Rotation { get; set; } = CreateCommand(RouteMapSeed.DefaultRotationButton);
+    public RouteTopBarButtonConfiguration Load { get; set; } = CreateCommand(RouteMapSeed.DefaultLoadButton);
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
@@ -154,6 +157,16 @@ public sealed class RouteTopBarConfiguration
         Emergency = RouteTopBarEmergencyButtonConfiguration.Create(
             "АВАРИЯ", SignalBindingRole.EmergencyCommand, "system.emergency"),
     };
+
+    internal void EnsureCommandSections()
+    {
+        Unload ??= CreateCommand(RouteMapSeed.DefaultUnloadButton);
+        Rotation ??= CreateCommand(RouteMapSeed.DefaultRotationButton);
+        Load ??= CreateCommand(RouteMapSeed.DefaultLoadButton);
+    }
+
+    private static RouteTopBarButtonConfiguration CreateCommand(RouteTopBarButtonSettings button) =>
+        RouteTopBarButtonConfiguration.Create(button.Text, button.Binding.Role, button.Binding.SignalId);
 }
 
 public class RouteTopBarButtonConfiguration : ReactiveObject

@@ -8,6 +8,21 @@ namespace Configurator.Tests.Unit.RouteMap;
 
 public sealed class RouteMapSeedTests
 {
+    [Theory]
+    [InlineData(SignalBindingRole.UnloadCommand, "ВЫГРУЗКА", "system.command.unload")]
+    [InlineData(SignalBindingRole.RotationCommand, "ВРАЩЕНИЕ", "system.command.rotate")]
+    [InlineData(SignalBindingRole.LoadCommand, "ЗАГРУЗКА", "system.command.load")]
+    public void Create_defines_momentary_top_bar_commands(SignalBindingRole role, string text, string signalId)
+    {
+        var topBar = Assert.IsType<RouteTopBarSettings>(RouteMapSeed.Create().TopBar);
+        var button = Assert.Single(new[] { topBar.Unload, topBar.Rotation, topBar.Load }, item => item.Binding.Role == role);
+
+        Assert.Equal(text, button.Text);
+        Assert.Equal(RouteCommandButtonKind.Momentary, button.ButtonKind);
+        Assert.Equal(new SignalBinding(role, signalId, SignalBindingDirection.ReadWrite, SignalValueType.Bool), button.Binding);
+        Assert.Null(button.EnabledBinding);
+    }
+
     [Fact]
     public void Create_contains_only_simplified_route_map_objects()
     {

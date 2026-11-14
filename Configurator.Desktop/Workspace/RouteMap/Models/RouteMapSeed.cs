@@ -254,6 +254,22 @@ public static class RouteMapSeed
         return bindings.ToArray();
     }
 
+    internal static RouteTopBarButtonSettings DefaultUnloadButton { get; } =
+        CreateMomentaryTopBarButton("ВЫГРУЗКА", SignalBindingRole.UnloadCommand, "system.command.unload");
+
+    internal static RouteTopBarButtonSettings DefaultRotationButton { get; } =
+        CreateMomentaryTopBarButton("ВРАЩЕНИЕ", SignalBindingRole.RotationCommand, "system.command.rotate");
+
+    internal static RouteTopBarButtonSettings DefaultLoadButton { get; } =
+        CreateMomentaryTopBarButton("ЗАГРУЗКА", SignalBindingRole.LoadCommand, "system.command.load");
+
+    private static RouteTopBarButtonSettings CreateMomentaryTopBarButton(string text, SignalBindingRole role, string signalId) => new()
+    {
+        Text = text,
+        ButtonKind = RouteCommandButtonKind.Momentary,
+        Binding = new SignalBinding(role, signalId, SignalBindingDirection.ReadWrite, SignalValueType.Bool),
+    };
+
     private static RouteTopBarSettings CreateTopBar() => new(
         new RouteTopBarButtonSettings
         {

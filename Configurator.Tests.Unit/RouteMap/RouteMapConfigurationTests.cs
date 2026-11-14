@@ -27,6 +27,186 @@ namespace Configurator.Tests.Unit.RouteMap;
 public sealed class RouteMapConfigurationTests
 {
     [Theory]
+    [InlineData(20)]
+    [InlineData(21)]
+    public async Task Manager_migrates_missing_top_bar_commands_and_preserves_saved_configuration(int version)
+    {
+        using var scope = new TempConfigurationScope();
+        await scope.Storage.SaveActiveAsync(scope.Mapper.CreateSeedDocument());
+        var expected = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+        expected["schemaVersion"] = version;
+        expected["vendorRoot"] = true;
+        var topBar = expected["topBar"]!.AsObject();
+        topBar["vendorTopBar"] = "keep";
+        foreach (var (section, signalId) in new[]
+                 {
+                     ("automatic", "site.automatic"), ("manual", "site.manual"),
+                     ("reset", "site.reset"), ("emergency", "site.emergency"), ("unload", "site.unload"),
+                 })
+        {
+            var button = topBar[section]!;
+            button["text"] = $"Настройка {section}";
+            button["vendorButton"] = section;
+            button["bindings"]![0]!["signalId"] = signalId;
+            button["bindings"]![0]!["vendorBinding"] = 42;
+            button["bindings"]!.AsArray().Add(JsonNode.Parse($$"""
+                { "role": "enabled", "signalId": "{{signalId}}.enabled", "direction": "read", "valueType": "bool" }
+                """));
+        }
+        var rotation = topBar["rotation"]!.DeepClone();
+        var load = topBar["load"]!.DeepClone();
+        topBar.Remove("rotation");
+        topBar.Remove("load");
+        var original = expected.ToJsonString();
+        await File.WriteAllTextAsync(scope.Path, original);
+
+        using var manager = scope.CreateManager();
+
+        Assert.Null(manager.LastLoadError);
+        Assert.Equal(22, manager.CurrentDocument.SchemaVersion);
+        Assert.Equal(original, await File.ReadAllTextAsync(scope.Path + ".bak"));
+        expected["schemaVersion"] = 22;
+        topBar["rotation"] = rotation;
+        topBar["load"] = load;
+        var persisted = await File.ReadAllTextAsync(scope.Path);
+        Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(persisted)));
+
+        using var reopened = scope.CreateManager();
+        Assert.Null(reopened.LastLoadError);
+        Assert.Equal(persisted, await File.ReadAllTextAsync(scope.Path));
+        Assert.Single(Directory.GetFiles(System.IO.Path.GetDirectoryName(scope.Path)!, "route-map.json.bak*"));
+        var unload = reopened.CurrentDefinition.TopBar!.Unload;
+        Assert.Equal("Настройка unload", unload.Text);
+        Assert.Equal("site.unload", unload.Binding.SignalId);
+        Assert.Equal("site.unload.enabled", unload.EnabledBinding?.SignalId);
+        Assert.Equal(RouteCommandButtonKind.Momentary, unload.ButtonKind);
+        var roundTrip = scope.Mapper.ToDocument(reopened.CurrentDefinition);
+        Assert.Equal(new[] { "site.unload", "site.unload.enabled" }, roundTrip.TopBar.Unload.Bindings.Select(binding => binding.SignalId));
+
+        var draft = reopened.CreateDraft();
+        draft.TopBar.Unload.Text = "Выгрузка вручную";
+        draft.TopBar.Unload.Bindings[0].SignalId = "site.updated.unload";
+        Assert.True((await reopened.SaveAndApplyAsync(draft)).IsSuccess);
+        using var saved = scope.CreateManager();
+        Assert.Null(saved.LastLoadError);
+        Assert.Equal("Выгрузка вручную", saved.CurrentDefinition.TopBar!.Unload.Text);
+        Assert.Equal("site.updated.unload", saved.CurrentDefinition.TopBar.Unload.Binding.SignalId);
+
+        var exportPath = scope.Path + ".export";
+        Assert.True((await saved.ExportDraftAsync(exportPath, saved.CreateDraft())).IsSuccess);
+        var imported = await saved.ImportDraftAsync(exportPath);
+        Assert.False(new RouteMapConfigurationMigrator().Migrate(imported).WasMigrated);
+        expected["topBar"]!["unload"]!["text"] = "Выгрузка вручную";
+        expected["topBar"]!["unload"]!["bindings"]![0]!["signalId"] = "site.updated.unload";
+        Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(await File.ReadAllTextAsync(exportPath))));
+        Assert.Equal(42, imported.TopBar.Unload.Bindings[0].ExtensionData!["vendorBinding"].GetInt32());
+    }
+
+    [Theory]
+    [InlineData(21)]
+    [InlineData(22)]
+    public async Task Storage_defaults_missing_command_sections_and_leaves_incomplete_bindings_for_validation(int version)
+    {
+        using var scope = new TempConfigurationScope();
+        await scope.Storage.SaveActiveAsync(scope.Mapper.CreateSeedDocument());
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+        json["schemaVersion"] = version;
+        var topBar = json["topBar"]!.AsObject();
+        topBar.Remove("unload");
+        topBar["rotation"] = null;
+        topBar["load"]!["text"] = "Своя загрузка";
+        topBar["load"]!["bindings"] = null;
+        var original = json.ToJsonString();
+        await File.WriteAllTextAsync(scope.Path, original);
+
+        var document = scope.Storage.Load(scope.Path);
+        var migration = new RouteMapConfigurationMigrator().Migrate(document);
+
+        Assert.Equal(version == 21, migration.WasMigrated);
+        Assert.Equal(22, document.SchemaVersion);
+        Assert.Equal("system.command.unload", Assert.Single(document.TopBar.Unload.Bindings).SignalId);
+        Assert.Equal("system.command.rotate", Assert.Single(document.TopBar.Rotation.Bindings).SignalId);
+        Assert.Equal("Своя загрузка", document.TopBar.Load.Text);
+        Assert.Empty(document.TopBar.Load.Bindings);
+        Assert.Contains(new RouteMapConfigurationValidator().Validate(document).Errors,
+            error => error.Scope == "topBar" && error.ObjectId == "load" && error.Message.Contains("LoadCommand"));
+
+        using var manager = scope.CreateManager();
+        Assert.NotNull(manager.LastLoadError);
+        Assert.Equal(original, await File.ReadAllTextAsync(scope.Path));
+        Assert.False(File.Exists(scope.Path + ".bak"));
+    }
+
+    [Fact]
+    public async Task Manager_opens_partial_v22_without_rewriting_it()
+    {
+        using var scope = new TempConfigurationScope();
+        await scope.Storage.SaveActiveAsync(scope.Mapper.CreateSeedDocument());
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+        var topBar = json["topBar"]!.AsObject();
+        topBar.Remove("unload");
+        topBar.Remove("rotation");
+        topBar.Remove("load");
+        var original = json.ToJsonString();
+        await File.WriteAllTextAsync(scope.Path, original);
+
+        using var manager = scope.CreateManager();
+
+        Assert.Null(manager.LastLoadError);
+        Assert.Equal(scope.Mapper.SeedDefinition.TopBar, manager.CurrentDefinition.TopBar);
+        Assert.Equal(original, await File.ReadAllTextAsync(scope.Path));
+        Assert.False(File.Exists(scope.Path + ".bak"));
+    }
+
+    [Fact]
+    public async Task Current_schema_writes_new_top_bar_sections_and_roles_as_camel_case()
+    {
+        using var scope = new TempConfigurationScope();
+        await scope.Storage.SaveActiveAsync(scope.Mapper.CreateSeedDocument());
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+        Assert.Equal(22, json["schemaVersion"]!.GetValue<int>());
+        var topBar = json["topBar"]!;
+        foreach (var (section, text, role, signalId) in new[]
+                 {
+                     ("unload", "ВЫГРУЗКА", "unloadCommand", "system.command.unload"),
+                     ("rotation", "ВРАЩЕНИЕ", "rotationCommand", "system.command.rotate"),
+                     ("load", "ЗАГРУЗКА", "loadCommand", "system.command.load"),
+                 })
+        {
+            var button = topBar[section]!;
+            Assert.Equal(text, button["text"]!.GetValue<string>());
+            var binding = Assert.Single(button["bindings"]!.AsArray())!;
+            Assert.Equal(role, binding["role"]!.GetValue<string>());
+            Assert.Equal(signalId, binding["signalId"]!.GetValue<string>());
+            Assert.Equal("readWrite", binding["direction"]!.GetValue<string>());
+            Assert.Equal("bool", binding["valueType"]!.GetValue<string>());
+        }
+    }
+
+    [Fact]
+    public void Migrator_adds_only_missing_top_bar_sections_and_is_idempotent()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.SchemaVersion = 21;
+        document.TopBar.Unload = null!;
+        var rotation = document.TopBar.Rotation;
+        rotation.Text = "Свое вращение";
+        rotation.Bindings[0].SignalId = "site.rotate";
+        var migrator = new RouteMapConfigurationMigrator();
+
+        Assert.True(migrator.Migrate(document).WasMigrated);
+        Assert.Equal(22, document.SchemaVersion);
+        Assert.Equal("system.command.unload", Assert.Single(document.TopBar.Unload.Bindings).SignalId);
+        Assert.Same(rotation, document.TopBar.Rotation);
+        Assert.Equal("Свое вращение", rotation.Text);
+        Assert.Equal("site.rotate", Assert.Single(rotation.Bindings).SignalId);
+        Assert.False(migrator.Migrate(document).WasMigrated);
+        Assert.Single(document.TopBar.Unload.Bindings);
+        Assert.Empty(new RouteMapConfigurationValidator().Validate(document).Errors);
+    }
+
+    [Theory]
     [InlineData(RouteTerminalSide.From, 28d, true)]
     [InlineData(RouteTerminalSide.To, null, false)]
     public async Task DeadEnd_round_trips_geometry_and_main_track_bindings(
@@ -650,6 +830,9 @@ public sealed class RouteMapConfigurationTests
         {
             var document = version < 20 ? CreateLegacyTopology(scope, version) : scope.Mapper.CreateSeedDocument();
             document.SchemaVersion = version;
+            document.TopBar.Unload = null!;
+            document.TopBar.Rotation = null!;
+            document.TopBar.Load = null!;
             if (version < 18)
                 document.Cards.Single().StatusMapping = null;
 
@@ -2131,7 +2314,7 @@ public sealed class RouteMapConfigurationTests
         using var manager = scope.CreateManager();
 
         Assert.Null(manager.LastLoadError);
-        Assert.Equal(21, manager.CurrentDocument.SchemaVersion);
+        Assert.Equal(22, manager.CurrentDocument.SchemaVersion);
         var migrated = manager.CurrentDefinition.MapEquipment.Single().Parameters;
         Assert.Equal("equip.bucket.parameter2", migrated[0].Binding.SignalId);
         Assert.Equal(EquipmentParameterVisibility.User, migrated[0].Visibility);
@@ -2141,7 +2324,7 @@ public sealed class RouteMapConfigurationTests
         Assert.Equal(EquipmentParameterVisibility.Admin, migrated[1].Visibility);
         Assert.Equal(original, await File.ReadAllTextAsync(scope.Path + ".bak"));
 
-        expected["schemaVersion"] = 21;
+        expected["schemaVersion"] = 22;
         filter["visibility"] = "user";
         var persisted = await File.ReadAllTextAsync(scope.Path);
         Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(persisted)));
@@ -2156,7 +2339,7 @@ public sealed class RouteMapConfigurationTests
 
     // CFG-03, CFG-04, CFG-05
     [Fact]
-    public async Task Parameter_visibility_round_trips_through_v21_json_and_mapper()
+    public async Task Parameter_visibility_round_trips_through_current_json_and_mapper()
     {
         using var scope = new TempConfigurationScope();
         var document = scope.Mapper.CreateSeedDocument();
@@ -2164,7 +2347,7 @@ public sealed class RouteMapConfigurationTests
 
         await scope.Storage.SaveActiveAsync(document);
         var json = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
-        Assert.Equal(21, json["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(22, json["schemaVersion"]!.GetValue<int>());
         var parameters = json["cards"]![0]!["parameters"]!.AsArray();
         Assert.Equal(new[] { "user", "admin" }, parameters.Select(x => x!["visibility"]!.GetValue<string>()));
         var loaded = await scope.Storage.LoadAsync(scope.Path);
@@ -2826,6 +3009,92 @@ public sealed class RouteMapConfigurationTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, x => x.Message.Contains(nameof(SignalBindingRole.ResetCommand)));
+    }
+
+    [Fact]
+    public void Validator_requires_exactly_one_matching_command_and_valid_optional_enabled()
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        var topBar = document.TopBar;
+        topBar.Unload.Bindings.Clear();
+        topBar.Rotation.Bindings.Add(RouteTopBarButtonConfiguration.Create(
+            "Дубликат", SignalBindingRole.RotationCommand, "site.other.rotation").Bindings[0]);
+        topBar.Load.Text = " ";
+        topBar.Load.Bindings[0].SignalId = " ";
+        topBar.Load.Bindings[0].Direction = SignalBindingDirection.Write;
+        topBar.Load.Bindings[0].ValueType = SignalValueType.UInt16;
+        topBar.Load.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.StartCommand,
+            SignalId = "site.start",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Bool,
+        });
+        topBar.Load.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.Enabled,
+            SignalId = "site.load.enabled",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.UInt16,
+        });
+        topBar.Load.Bindings.Add(new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.Enabled,
+            SignalId = "site.other.enabled",
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.Bool,
+        });
+
+        var errors = new RouteMapConfigurationValidator().Validate(document).Errors;
+
+        Assert.All(errors, error => Assert.Equal("topBar", error.Scope));
+        Assert.Contains(errors, error => error.ObjectId == "unload" && error.Message == "Требуется ровно один binding UnloadCommand.");
+        Assert.Contains(errors, error => error.ObjectId == "rotation" && error.Message == "Роль RotationCommand указана несколько раз.");
+        var loadErrors = errors.Where(error => error.ObjectId == "load").ToArray();
+        Assert.Contains(loadErrors, error => error.Property == "Text");
+        Assert.Contains(loadErrors, error => error.Property == "SignalId");
+        Assert.Contains(loadErrors, error => error.Message == "Роль StartCommand недоступна для этого объекта.");
+        Assert.Contains(loadErrors, error => error.Message == "Роль Enabled указана несколько раз.");
+        Assert.Contains(loadErrors, error => error.Message == "Binding Enabled должен иметь направление Read.");
+        Assert.Contains(loadErrors, error => error.Message == "Binding Enabled должен иметь тип Bool.");
+        Assert.Contains(loadErrors, error => error.Message == "Binding LoadCommand должен иметь направление ReadWrite.");
+        Assert.Contains(loadErrors, error => error.Message == "Binding LoadCommand должен иметь тип Bool.");
+    }
+
+    [Theory]
+    [InlineData("SYSTEM.COMMAND.ROTATE", true)]
+    [InlineData("system.reset", true)]
+    [InlineData("system.emergency", true)]
+    [InlineData("site.reset", true)]
+    [InlineData("site.emergency", true)]
+    [InlineData("route.node.wash.target", true)]
+    [InlineData("equip.bucket.start", true)]
+    [InlineData("site.parameter", true)]
+    [InlineData("site.read.parameter", false)]
+    [InlineData("site.legacy.automatic", false)]
+    public void Validator_checks_new_commands_against_writable_signals(string signalId, bool hasConflict)
+    {
+        using var scope = new TempConfigurationScope();
+        var document = scope.Mapper.CreateSeedDocument();
+        document.TopBar.Unload.Bindings[0].SignalId = signalId;
+        document.TopBar.Reset.Bindings[0].SignalId = "site.reset";
+        document.TopBar.Emergency.Bindings[0].SignalId = "site.emergency";
+        document.TopBar.Automatic.Bindings[0].SignalId = "site.legacy.automatic";
+        var parameters = document.Cards.Single().Parameters;
+        parameters.Add(new EquipmentCardParameterConfiguration { SignalId = "site.parameter" });
+        parameters.Add(new EquipmentCardParameterConfiguration { SignalId = "site.read.parameter", Direction = SignalBindingDirection.Read });
+
+        var errors = new RouteMapConfigurationValidator().Validate(document).Errors;
+
+        if (!hasConflict)
+        {
+            Assert.Empty(errors);
+            return;
+        }
+
+        Assert.Contains(errors, error => error.Scope == "topBar" && error.ObjectId == "unload" &&
+            error.Property == "SignalId" && error.Message.Contains(signalId, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

@@ -44,7 +44,7 @@ public sealed class RouteMapConfigurationValidator
         ValidatePositive(errors, "map", null, nameof(document.Map.FragmentLength), document.Map.FragmentLength);
         ValidateNonNegative(errors, "map", null, nameof(document.Map.FragmentGap), document.Map.FragmentGap);
         ValidatePalette(errors, document.Map.Palette);
-        ValidateTopBar(errors, document.TopBar);
+        ValidateTopBar(errors, document);
 
         ValidateIds(errors, "chain", document.Chains);
         ValidateIds(errors, "node", document.Nodes);
@@ -432,8 +432,9 @@ public sealed class RouteMapConfigurationValidator
 
     private static void ValidateTopBar(
         ICollection<RouteMapConfigurationError> errors,
-        RouteTopBarConfiguration topBar)
+        RouteMapConfigurationDocument document)
     {
+        var topBar = document.TopBar;
         ValidatePresentLegacyTopBarBindings(errors, "automatic", topBar.Automatic, SignalBindingRole.AutomaticModeCommand);
         ValidatePresentLegacyTopBarBindings(errors, "manual", topBar.Manual, SignalBindingRole.ManualModeCommand);
         ValidateTopBarButton(
@@ -450,6 +451,46 @@ public sealed class RouteMapConfigurationValidator
             SignalBindingRole.EmergencyCommand,
             offFeedbackRole: null,
             requireOffFeedback: false);
+
+        var commandSections = new (string Id, RouteTopBarButtonConfiguration Button, SignalBindingRole Role)[]
+        {
+            ("unload", topBar.Unload, SignalBindingRole.UnloadCommand),
+            ("rotation", topBar.Rotation, SignalBindingRole.RotationCommand),
+            ("load", topBar.Load, SignalBindingRole.LoadCommand),
+        };
+        foreach (var (id, button, role) in commandSections)
+            ValidateTopBarButton(errors, id, button, role, offFeedbackRole: null, requireOffFeedback: false);
+
+        var commandBindings = commandSections.SelectMany(section => (section.Button?.Bindings ?? [])
+            .Where(binding => binding is not null && binding.Role == section.Role)
+            .Select(binding => (section.Id, Binding: binding))).ToArray();
+        var writableSignalIds = (topBar.Reset?.Bindings ?? [])
+            .Concat(topBar.Emergency?.Bindings ?? [])
+            .Concat(document.Nodes.SelectMany(node => node.Bindings))
+            .Concat(document.Segments.SelectMany(segment => segment.Bindings))
+            .Concat(document.Segments.SelectMany(segment => segment.ActiveFragments).Select(fragment => fragment.Binding))
+            .Concat(document.Cards.SelectMany(card => card.Bindings))
+            .Where(binding => binding?.Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite)
+            .Select(binding => binding.SignalId)
+            .Concat(document.Cards.SelectMany(card => card.Parameters ?? [])
+                .Where(parameter => parameter.Direction is SignalBindingDirection.Write or SignalBindingDirection.ReadWrite)
+                .Select(parameter => parameter.SignalId))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Reserve the system commands even when their TopBar bindings have been customized.
+        writableSignalIds.UnionWith(["system.reset", "system.emergency"]);
+
+        foreach (var group in commandBindings
+                     .Where(command => !string.IsNullOrWhiteSpace(command.Binding.SignalId))
+                     .GroupBy(command => command.Binding.SignalId, StringComparer.OrdinalIgnoreCase))
+        {
+            var sections = group.Select(command => command.Id).Distinct().ToArray();
+            if (sections.Length == 1 && !writableSignalIds.Contains(group.Key))
+                continue;
+
+            foreach (var id in sections)
+                Add(errors, "topBar", id, nameof(SignalBindingConfiguration.SignalId),
+                    $"SignalId '{group.Key}' зарезервирован для другой команды или используется другой привязкой с записью.");
+        }
     }
 
     private static void ValidatePresentLegacyTopBarBindings(
@@ -479,11 +520,16 @@ public sealed class RouteMapConfigurationValidator
     private static void ValidateTopBarButton(
         ICollection<RouteMapConfigurationError> errors,
         string id,
-        RouteTopBarButtonConfiguration button,
+        RouteTopBarButtonConfiguration? button,
         SignalBindingRole role,
         SignalBindingRole? offFeedbackRole,
         bool requireOffFeedback)
     {
+        if (button is null)
+        {
+            Add(errors, "topBar", id, nameof(RouteTopBarButtonConfiguration.Bindings), "Секция кнопки обязательна.");
+            return;
+        }
         if (string.IsNullOrWhiteSpace(button.Text))
             Add(errors, "topBar", id, nameof(button.Text), "Текст кнопки обязателен.");
         if (button is RouteTopBarEmergencyButtonConfiguration emergency)
@@ -497,10 +543,13 @@ public sealed class RouteMapConfigurationValidator
         var allowedRoles = offFeedbackRole.HasValue
             ? [role, offFeedbackRole.Value, SignalBindingRole.Enabled]
             : new[] { role, SignalBindingRole.Enabled };
-        ValidateBindings(errors, "topBar", id, button.Bindings, allowedRoles);
-        ValidateRequiredBinding(errors, "topBar", id, button.Bindings, role, SignalBindingDirection.ReadWrite);
+        var bindings = (button.Bindings ?? []).Where(binding => binding is not null).ToArray();
+        if (button.Bindings is not null && bindings.Length != button.Bindings.Count)
+            Add(errors, "topBar", id, nameof(button.Bindings), "Пустая сигнальная привязка недопустима.");
+        ValidateBindings(errors, "topBar", id, bindings, allowedRoles);
+        ValidateRequiredBinding(errors, "topBar", id, bindings, role, SignalBindingDirection.ReadWrite);
         if (requireOffFeedback && offFeedbackRole.HasValue)
-            ValidateRequiredBinding(errors, "topBar", id, button.Bindings, offFeedbackRole.Value, SignalBindingDirection.Read);
+            ValidateRequiredBinding(errors, "topBar", id, bindings, offFeedbackRole.Value, SignalBindingDirection.Read);
     }
 
     private static void ValidateTerminalAnchor(
@@ -615,7 +664,10 @@ public sealed class RouteMapConfigurationValidator
         SignalBindingRole.AutomaticModeCommand or
         SignalBindingRole.ManualModeCommand or
         SignalBindingRole.ResetCommand or
-        SignalBindingRole.EmergencyCommand;
+        SignalBindingRole.EmergencyCommand or
+        SignalBindingRole.UnloadCommand or
+        SignalBindingRole.RotationCommand or
+        SignalBindingRole.LoadCommand;
 
     private static bool IsOffFeedbackRole(SignalBindingRole role) => role is
         SignalBindingRole.StartOffFeedback or

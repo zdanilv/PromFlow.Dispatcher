@@ -151,7 +151,12 @@ public sealed record RouteTopBarSettings(
     RouteTopBarButtonSettings Automatic,
     RouteTopBarButtonSettings Manual,
     RouteTopBarButtonSettings Reset,
-    RouteTopBarButtonSettings Emergency);
+    RouteTopBarButtonSettings Emergency)
+{
+    public RouteTopBarButtonSettings Unload { get; init; } = RouteMapSeed.DefaultUnloadButton;
+    public RouteTopBarButtonSettings Rotation { get; init; } = RouteMapSeed.DefaultRotationButton;
+    public RouteTopBarButtonSettings Load { get; init; } = RouteMapSeed.DefaultLoadButton;
+}
 
 public sealed record RouteSegmentStyle
 {
