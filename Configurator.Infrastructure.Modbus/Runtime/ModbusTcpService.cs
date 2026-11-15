@@ -23,6 +23,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     private readonly IModbusDataMapValidator _dataMapValidator;
     private readonly ILogger<ModbusTcpService> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly SemaphoreSlim _dataMapChangeGate = new(1, 1);
     private readonly object _sync = new();
     private readonly Dictionary<string, ModbusDataPointOptions> _dataMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ModbusDataValue> _latestValues = new(StringComparer.OrdinalIgnoreCase);
@@ -119,6 +120,74 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
 
         SnapshotChanged?.Invoke(this, snapshot);
         return ModbusOperationResult.Success();
+    }
+
+    public async Task<T> RunDataMapChangeAsync<T>(Func<Task<T>> change, CancellationToken cancellationToken = default)
+    {
+        await _dataMapChangeGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await change();
+        }
+        finally
+        {
+            _dataMapChangeGate.Release();
+        }
+    }
+
+    public Task<ModbusOperationResult> RemovePointWhileStoppedAsync(
+        string name,
+        Func<CancellationToken, Task<bool>> persist,
+        CancellationToken cancellationToken = default) =>
+        RunDataMapChangeAsync(() => RemovePointCoreAsync(name, persist, cancellationToken), cancellationToken);
+
+    private async Task<ModbusOperationResult> RemovePointCoreAsync(
+        string name, Func<CancellationToken, Task<bool>> persist, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var removed = false;
+            var stopped = await _runtimeService.TryRunWhileStoppedAsync(async ct =>
+            {
+                if (!await persist(ct))
+                    return;
+
+                RemovePoint(name);
+                removed = true;
+            }, cancellationToken);
+
+            if (!stopped)
+                return ModbusOperationResult.Failure("ModbusMustBeStopped",
+                    "Остановите клиент и сервер Modbus TCP, затем повторите удаление.");
+
+            return removed ? ModbusOperationResult.Success()
+                : ModbusOperationResult.Failure("ModbusPointChanged",
+                    "Точка Modbus изменилась, была удалена или снова используется в RouteMap. Проверьте обновлённый список.");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private void RemovePoint(string name)
+    {
+        ModbusDataSnapshot snapshot;
+        lock (_sync)
+        {
+            var options = _currentOptions.Clone();
+            options.DataMap.RemoveAll(point => string.Equals(point.Name, name, StringComparison.OrdinalIgnoreCase));
+            _currentOptions = options;
+            _dataMap.Remove(name);
+            _latestValues.Remove(name);
+            var values = new Dictionary<string, ModbusDataValue>(_currentDataSnapshot.Values, StringComparer.OrdinalIgnoreCase);
+            values.Remove(name);
+            snapshot = _currentDataSnapshot with { Values = values };
+            _currentDataSnapshot = snapshot;
+        }
+
+        NotifyDataSnapshot(snapshot);
     }
 
     /// <summary>
@@ -417,6 +486,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         _runtimeService.SnapshotChanged -= OnRuntimeSnapshotChanged;
         await StopAsync();
         _gate.Dispose();
+        _dataMapChangeGate.Dispose();
     }
 
     /// <summary>
@@ -861,6 +931,9 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
 
         lock (_sync)
         {
+            if (!_dataMap.ContainsKey(dataValue.Name))
+                return;
+
             if (_latestValues.TryGetValue(dataValue.Name, out var previous)
                 && ValuesEqual(previous.Value, dataValue.Value))
             {
@@ -918,12 +991,17 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         lock (_sync)
         {
             snapshot = new ModbusDataSnapshot(
-                new Dictionary<string, ModbusDataValue>(values, StringComparer.OrdinalIgnoreCase),
+                values.Where(pair => _dataMap.ContainsKey(pair.Key)).ToDictionary(StringComparer.OrdinalIgnoreCase),
                 timestamp,
                 _state);
             _currentDataSnapshot = snapshot;
         }
 
+        NotifyDataSnapshot(snapshot);
+    }
+
+    private void NotifyDataSnapshot(ModbusDataSnapshot snapshot)
+    {
         try
         {
             SnapshotChanged?.Invoke(this, snapshot);

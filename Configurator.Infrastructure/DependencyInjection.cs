@@ -11,7 +11,11 @@ namespace Configurator.Infrastructure
     public static class DependencyInjection
     {
         // IConfiguration configuration - проброс конфигурации из Boot
-        public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+        public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration) =>
+            AddInfrastructure(services, configuration, writableConfiguration: null);
+
+        public static IServiceCollection AddInfrastructure(
+            this IServiceCollection services, IConfiguration configuration, IConfigurationRoot? writableConfiguration)
         {
             // Реализация интерфейсов
             //services.AddScoped<IJsonStartspaceOptions, JsonStartspaceOptions>();
@@ -28,7 +32,10 @@ namespace Configurator.Infrastructure
             services.AddSingleton<IAutostartRegistrationService, ApplicationAutostartRegistrationService>();
             services.AddSingleton<Configurator.Application.Services.IAppConfigService>(sp => new AppConfigService(
                 sp.GetRequiredService<IConfiguration>(),
-                ApplicationConfigPaths.SharedAppSettingsPath));
+                ApplicationConfigPaths.SharedAppSettingsPath,
+                ApplicationConfigPaths.UserSettingsPath,
+                legacyUserSettingsFilePaths: null,
+                writableConfiguration: writableConfiguration));
             return services;
         }
     }

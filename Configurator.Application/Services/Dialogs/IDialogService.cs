@@ -32,6 +32,10 @@ public interface IDialogService
     /// </returns>
     Task<bool> ConfirmAsync(string message, CancellationToken ct = default);
 
+    Task<bool> ConfirmAsync(
+        string title, string message, string confirmText, string cancelText, CancellationToken ct = default) =>
+        Task.FromResult(false);
+
     /// <summary>
     /// Shows a secure input dialog and requests a secret value from user.
     /// </summary>

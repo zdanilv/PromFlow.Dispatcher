@@ -5,8 +5,12 @@ using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Application.Services.Signals;
+using Configurator.Desktop.Workspace.ModbusProfile;
+using Configurator.Infrastructure.Modbus.Configuration;
 using Configurator.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -16,6 +20,90 @@ namespace Configurator.Infrastructure.Modbus.Tests;
 
 public sealed class AppConfigServiceTests
 {
+    [Fact]
+    public async Task RemovingUnusedPointOverridesInstallDefaultsAndKeepsTheRestOfTheProfile()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"DesktopTemplate-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "appsettings.json");
+        var defaults = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Modbus:DataMap:0:Name"] = "installed.default",
+            ["Modbus:DataMap:0:BitIndex"] = "7",
+            ["Modbus:DataMap:1:Name"] = "installed.tail",
+            ["Modbus:Client:Port"] = "1502"
+        }).Build();
+        try
+        {
+            var user = new ConfigurationBuilder().SetBasePath(directory)
+                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false).Build();
+            IConfigurationRoot Compose(IConfiguration profile) => new ConfigurationBuilder()
+                .Add(new ModbusDataMapConfigurationSource(defaults, profile))
+                .AddConfiguration(profile).Build();
+            var configuration = Compose(user);
+            var service = new AppConfigService(configuration, path, Path.Combine(directory, "settings.json"), null, user);
+            using var services = new ServiceCollection()
+                .Configure<ModbusOptions>(configuration.GetSection(ModbusOptions.SectionName))
+                .BuildServiceProvider();
+            var mapOptions = services.GetRequiredService<IOptionsMonitor<ModbusOptions>>();
+            ModbusOptions Read() => service.GetSection<ModbusOptions>(ModbusOptions.SectionName);
+            Assert.Equal(2, Read().DataMap.Count);
+            Assert.True(await service.TryRemoveModbusDataPointAsync(Read().DataMap[1]));
+            Assert.Equal("installed.default", Assert.Single(mapOptions.CurrentValue.DataMap).Name);
+
+            await File.WriteAllTextAsync(path, """
+                {
+                  "modbus": {
+                    "dataMap": [
+                      { "name": "equip.bucket.parameter2", "BitIndex": 3, "Type": "Word" },
+                      { "name": "diagnostic.keep", "BitIndex": 2, "Type": "Word", "vendor": "keep" }
+                    ],
+                    "custom": true
+                  }
+                }
+                """);
+            user.Reload();
+            var stale = Read();
+            var target = stale.DataMap[0].Clone();
+            Assert.Equal(3, target.BitIndex);
+            target.BitIndex = 4;
+            Assert.False(await service.TryRemoveModbusDataPointAsync(target));
+            target.BitIndex = 3;
+            Assert.True(await service.TryRemoveModbusDataPointAsync(target));
+
+            var keep = Assert.Single(Read().DataMap);
+            Assert.Equal("diagnostic.keep", keep.Name);
+            Assert.Equal(2, keep.BitIndex);
+            Assert.Equal(1502, Read().Client.Port);
+            await service.SaveModbusAddressLabelsAsync(stale);
+            await service.SaveModbusAlarmsAsync(stale);
+            var saved = JsonNode.Parse(await File.ReadAllTextAsync(path))!["modbus"]!;
+            Assert.Equal("keep", Assert.Single(saved["dataMap"]!.AsArray())!["vendor"]!.GetValue<string>());
+            Assert.True(saved["custom"]!.GetValue<bool>());
+
+            var export = new ModbusTcpProfileTransferService(service, mapOptions, new ModbusDemoOptionsProvider(mapOptions),
+                new ModbusDataMapValidator(), new ModbusAlarmMapValidator(), new UnusedDataMapRuntime());
+            var exportPath = Path.Combine(directory, "export.json");
+            await export.ExportAsync(exportPath);
+            var exported = JsonNode.Parse(await File.ReadAllTextAsync(exportPath))!;
+            Assert.Equal("diagnostic.keep", Assert.Single(exported["DataMap"]!.AsArray())!["Name"]!.GetValue<string>());
+
+            Assert.True(await service.TryRemoveModbusDataPointAsync(keep));
+            var reopened = new ConfigurationBuilder().SetBasePath(directory).AddJsonFile("appsettings.json").Build();
+            Assert.Empty(Compose(reopened).GetSection("Modbus").Get<ModbusOptions>()!.DataMap);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private sealed class UnusedDataMapRuntime : IModbusDataMapRuntime
+    {
+        public ModbusOperationResult ApplyDataMap(IReadOnlyList<ModbusDataPointOptions> dataMap) =>
+            throw new NotSupportedException();
+    }
+
     [Fact]
     public async Task SaveSectionAsyncUpdatesOnlyRequestedSection()
     {

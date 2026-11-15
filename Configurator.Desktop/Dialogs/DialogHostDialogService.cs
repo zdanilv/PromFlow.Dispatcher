@@ -35,6 +35,13 @@ public sealed class DialogHostDialogService(
         return result is true;
     }
 
+    public async Task<bool> ConfirmAsync(
+        string title, string message, string confirmText, string cancelText, CancellationToken ct = default)
+    {
+        var context = dialogViewFactory.CreateConfirm(title, message, confirmText, cancelText);
+        return await ShowWithFallbackAsync(context, fallback: false, ct) is true;
+    }
+
     /// <inheritdoc />
     public async Task<string?> RequestSecretAsync(string message, CancellationToken ct = default)
     {

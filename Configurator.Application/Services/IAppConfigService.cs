@@ -34,6 +34,18 @@ namespace Configurator.Application.Services
         /// </summary>
         Task SaveSectionAsync<T>(string sectionName, T value, CancellationToken ct = default);
         /// <summary>
+        /// Removes a named Modbus.DataMap point only if its current mapping still matches the one shown to the user.
+        /// </summary>
+        Task<bool> TryRemoveModbusDataPointAsync(ModbusDataPointOptions expected, CancellationToken ct = default) =>
+            throw new NotSupportedException();
+
+        Task SaveModbusAlarmsAsync(ModbusOptions options, CancellationToken ct = default) =>
+            SaveSectionAsync(ModbusOptions.SectionName, options, ct);
+
+        Task SaveModbusAddressLabelsAsync(ModbusOptions options, CancellationToken ct = default) =>
+            SaveSectionAsync(ModbusOptions.SectionName, options, ct);
+
+        /// <summary>
         /// Сохраняет несколько секций одним обновлением конфигурационного файла.
         /// Реализация по умолчанию оставлена для тестовых doubles; production-реализация
         /// должна записывать все переданные секции атомарно.

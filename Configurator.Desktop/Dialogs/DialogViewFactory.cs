@@ -26,9 +26,12 @@ namespace Configurator.Desktop.Dialogs;
 
 public sealed class DialogViewFactory(IServiceProvider serviceProvider) : IDialogViewFactory
 {
-    public DialogViewContext<bool> CreateConfirm(string message)
+    public DialogViewContext<bool> CreateConfirm(string message) =>
+        CreateConfirm(string.Empty, message, "ОК", "Закрыть");
+
+    public DialogViewContext<bool> CreateConfirm(string title, string message, string confirmText, string cancelText)
     {
-        var vm = ActivatorUtilities.CreateInstance<ConfirmDialogViewModel>(serviceProvider, message);
+        var vm = new ConfirmDialogViewModel(message, title, confirmText, cancelText);
         var view = serviceProvider.GetRequiredService<ConfirmDialogView>();
         view.DataContext = vm;
 

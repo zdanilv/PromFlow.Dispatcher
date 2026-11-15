@@ -16,6 +16,7 @@ namespace Configurator.Infrastructure.Services
     public class AppConfigService : IAppConfigService
     {
         private readonly IConfiguration _configuration;
+        private readonly IConfigurationRoot? _writableConfiguration;
         private readonly string _configFilePath;
         private readonly string _userSettingsFilePath;
         private readonly IReadOnlyList<string> _legacyUserSettingsFilePaths;
@@ -39,8 +40,19 @@ namespace Configurator.Infrastructure.Services
             string configFilePath,
             string userSettingsFilePath,
             IEnumerable<string>? legacyUserSettingsFilePaths = null)
+            : this(configuration, configFilePath, userSettingsFilePath, legacyUserSettingsFilePaths, writableConfiguration: null)
+        {
+        }
+
+        public AppConfigService(
+            IConfiguration configuration,
+            string configFilePath,
+            string userSettingsFilePath,
+            IEnumerable<string>? legacyUserSettingsFilePaths,
+            IConfigurationRoot? writableConfiguration)
         {
             _configuration = configuration;
+            _writableConfiguration = writableConfiguration;
             _configFilePath = configFilePath;
             _userSettingsFilePath = userSettingsFilePath;
             var pathComparer = OperatingSystem.IsWindows()
@@ -116,15 +128,103 @@ namespace Configurator.Infrastructure.Services
                 SetSection(root, sectionName, replacement);
                 await File.WriteAllTextAsync(_configFilePath, root.ToJsonString(JsonOptions), ct);
 
-                if (_configuration is IConfigurationRoot configurationRoot)
-                {
-                    configurationRoot.Reload();
-                }
+                ReloadConfiguration();
             }
             finally
             {
                 _saveGate.Release();
             }
+        }
+
+        public async Task<bool> TryRemoveModbusDataPointAsync(ModbusDataPointOptions expected, CancellationToken ct = default)
+        {
+            await _saveGate.WaitAsync(ct);
+            try
+            {
+                var root = await ReadSettingsAsync(ct);
+                var modbus = GetProperty(root, ModbusOptions.SectionName) as JsonObject ?? new JsonObject();
+                var map = GetProperty(modbus, nameof(ModbusOptions.DataMap)) as JsonArray
+                    ?? (JsonArray)JsonSerializer.SerializeToNode(
+                        GetSection<ModbusOptions>(ModbusOptions.SectionName).DataMap, JsonOptions)!;
+
+                var matching = map.OfType<JsonObject>().Where(point =>
+                    string.Equals(GetProperty(point, nameof(ModbusDataPointOptions.Name))?.GetValue<string>(),
+                        expected.Name, StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (matching.Length == 0 || !matching.Any(point =>
+                    point.Deserialize<ModbusDataPointOptions>(PointJsonOptions) is { } current &&
+                    current.HasSameMapping(expected)))
+                {
+                    return false;
+                }
+                // Names identify points in the runtime, including when an invalid map has duplicate names.
+                foreach (var point in matching)
+                    map.Remove(point);
+
+                if (map.Parent is null)
+                    SetSection(modbus, nameof(ModbusOptions.DataMap), map);
+                if (modbus.Parent is null)
+                    SetSection(root, ModbusOptions.SectionName, modbus);
+
+                await WriteSettingsAtomicallyAsync(root, ct);
+                return true;
+            }
+            finally
+            {
+                _saveGate.Release();
+            }
+        }
+
+        public Task SaveModbusAlarmsAsync(ModbusOptions options, CancellationToken ct = default) =>
+            SaveModbusArrayAsync(nameof(ModbusOptions.AlarmMap), options.AlarmMap, ct, "Id");
+
+        public Task SaveModbusAddressLabelsAsync(ModbusOptions options, CancellationToken ct = default) =>
+            SaveModbusArrayAsync(nameof(ModbusOptions.AddressLabels), options.AddressLabels, ct, "Area", "Address", "BitIndex");
+
+        private async Task SaveModbusArrayAsync<T>(string key, T items, CancellationToken ct, params string[] identity)
+        {
+            await _saveGate.WaitAsync(ct);
+            try
+            {
+                var root = await ReadSettingsAsync(ct);
+                var modbus = GetProperty(root, ModbusOptions.SectionName) as JsonObject ?? new JsonObject();
+                var replacement = new JsonObject { [key] = JsonSerializer.SerializeToNode(items, JsonOptions) };
+                PreserveArrayEntries(modbus, replacement, key, identity);
+                SetSection(modbus, key, replacement[key]?.DeepClone());
+                if (modbus.Parent is null)
+                    SetSection(root, ModbusOptions.SectionName, modbus);
+                await WriteSettingsAtomicallyAsync(root, ct);
+            }
+            finally
+            {
+                _saveGate.Release();
+            }
+        }
+
+        private async Task<JsonObject> ReadSettingsAsync(CancellationToken ct)
+        {
+            var json = File.Exists(_configFilePath) ? await File.ReadAllTextAsync(_configFilePath, ct) : null;
+            return string.IsNullOrWhiteSpace(json) ? new JsonObject() : JsonNode.Parse(json)!.AsObject();
+        }
+
+        private async Task WriteSettingsAtomicallyAsync(JsonObject root, CancellationToken ct)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_configFilePath))!);
+            var temporaryPath = _configFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            var moved = false;
+            try
+            {
+                await File.WriteAllTextAsync(temporaryPath, root.ToJsonString(JsonOptions), ct);
+                ct.ThrowIfCancellationRequested();
+                File.Move(temporaryPath, _configFilePath, overwrite: true);
+                moved = true;
+            }
+            finally
+            {
+                if (!moved)
+                    File.Delete(temporaryPath);
+            }
+
+            ReloadConfiguration();
         }
 
         private static bool RemovesObsoleteModeMapping(JsonObject oldModbus, JsonObject newModbus)
@@ -241,16 +341,15 @@ namespace Configurator.Infrastructure.Services
                 }
 
                 await File.WriteAllTextAsync(_configFilePath, root.ToJsonString(JsonOptions), ct);
-                if (_configuration is IConfigurationRoot configurationRoot)
-                {
-                    configurationRoot.Reload();
-                }
+                ReloadConfiguration();
             }
             finally
             {
                 _saveGate.Release();
             }
         }
+
+        private void ReloadConfiguration() => (_writableConfiguration ?? _configuration as IConfigurationRoot)?.Reload();
 
         /// <summary>
         /// Сохранить пользовательские настройки в отдельный файл.
@@ -334,6 +433,12 @@ namespace Configurator.Infrastructure.Services
         {
             WriteIndented = true,
             Converters = { new JsonStringEnumConverter() }
+        };
+
+        private static readonly JsonSerializerOptions PointJsonOptions = new(JsonOptions)
+        {
+            PropertyNameCaseInsensitive = true,
+            NumberHandling = JsonNumberHandling.AllowReadingFromString
         };
     }
 }

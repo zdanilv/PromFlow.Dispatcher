@@ -25,6 +25,7 @@ public interface IDialogViewFactory
     /// <param name="message">Dialog text that describes the confirmation action to the user.</param>
     /// <returns>Prepared view with bound view-model and its result stream.</returns>
     DialogViewContext<bool> CreateConfirm(string message);
+    DialogViewContext<bool> CreateConfirm(string title, string message, string confirmText, string cancelText);
 
     /// <summary>
     /// Creates a secret input dialog view and view-model pair through DI for desktop-layer presentation.

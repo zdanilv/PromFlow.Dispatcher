@@ -177,7 +177,7 @@ public sealed class ModbusAddressCatalogViewModel : ViewModelBase, IDisposable
                 });
             }
 
-            await _appConfigService.SaveSectionAsync(ModbusOptions.SectionName, latest);
+            await _appConfigService.SaveModbusAddressLabelsAsync(latest);
             row.SetSavedDisplayName(displayName);
             _editingRow = null;
             SetMessage("Диагностическое имя Modbus сохранено.", null);

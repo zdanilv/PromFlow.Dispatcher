@@ -183,6 +183,20 @@ public sealed class RouteMapConfigurationManager : IDisposable
         }
     }
 
+    internal async Task<T> WithCurrentDefinitionAsync<T>(
+        Func<RouteMapDefinition, Task<T>> action, CancellationToken cancellationToken)
+    {
+        await _writeGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await action(CurrentDefinition);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
     private async Task<RouteMapConfigurationOperationResult> SaveAndApplyCoreAsync(
         RouteMapConfigurationDocument document,
         CancellationToken cancellationToken)

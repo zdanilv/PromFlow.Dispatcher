@@ -253,6 +253,46 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
+
+        <Expander Classes="unused-modbus-group"
+                  IsVisible="{Binding HasUnusedPoints}" IsExpanded="True" HorizontalContentAlignment="Stretch">
+          <Expander.Header>
+            <Border Background="White" BorderBrush="#D7E0E7" BorderThickness="0,1,0,1" Padding="10,7">
+              <TextBlock Text="Неиспользуемые точки" FontWeight="SemiBold" Foreground="#44505C"/>
+            </Border>
+          </Expander.Header>
+          <ItemsControl ItemsSource="{Binding UnusedPoints}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Classes="unused-modbus-row" Background="White" BorderBrush="#E1E6EA" BorderThickness="0,0,0,1" Padding="6">
+                  <Grid ColumnDefinitions="220,180,105,110,130,125,70,70,130,120,70,110,100,160,160,100" ColumnSpacing="6">
+                    <Grid.Styles>
+                      <Style Selector="TextBlock"><Setter Property="VerticalAlignment" Value="Center"/></Style>
+                    </Grid.Styles>
+                    <TextBlock Text="{Binding Point.Name}" TextWrapping="Wrap"/>
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                      <Ellipse Classes="unused-modbus-marker" Width="9" Height="9" Fill="#EAB308" Stroke="#876500"
+                               VerticalAlignment="Center"/>
+                      <TextBlock Text="Неиспользуемый"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="5" Text="{Binding Point.Area}"/>
+                    <TextBlock Grid.Column="6" Text="{Binding Point.Address}"/>
+                    <TextBlock Grid.Column="7" Text="{Binding Point.Length}"/>
+                    <TextBlock Grid.Column="8" Text="{Binding Point.Access}"/>
+                    <TextBlock Grid.Column="9" Text="{Binding Point.Type}"/>
+                    <TextBlock Grid.Column="10" Text="{Binding Point.BitIndex}"/>
+                    <TextBlock Grid.Column="11" Text="{Binding Point.WriteMode}"/>
+                    <TextBlock Grid.Column="12" Text="{Binding Point.PulseDurationMs}"/>
+                    <TextBlock Grid.Column="13" Text="{Binding ClientPhysicalAddress}"/>
+                    <TextBlock Grid.Column="14" Text="{Binding ServerPhysicalAddress}"/>
+                    <Button Grid.Column="15" Content="Удалить"
+                            Command="{Binding DataContext.RemoveUnusedPointCommand, ElementName=Root}" CommandParameter="{Binding}"/>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Expander>
       </StackPanel>
     </ScrollViewer>
   </Grid>

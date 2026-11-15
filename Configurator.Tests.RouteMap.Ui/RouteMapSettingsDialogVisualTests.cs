@@ -27,6 +27,7 @@ using Configurator.Application.Services.Signals;
 using Configurator.Application.Services.OpcUa.Browsing;
 using Configurator.Application.Services.OpcUa.Tags;
 using Configurator.Desktop.Dialogs.AlarmNotificationDialog;
+using Configurator.Desktop.Dialogs.ConfirmDialog;
 using Configurator.Desktop.Dialogs;
 using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Dialogs.HelpDialog;
@@ -2186,6 +2187,103 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
+    public async Task Signal_mapping_confirms_explicit_removal_of_invalid_unused_point()
+    {
+        const string signalId = "equip.bucket.parameter2";
+        var options = new ModbusOptions
+        {
+            DataMap = [
+                new() { Name = signalId, Type = ModbusValueType.Word, BitIndex = 3 },
+                new() { Name = "diagnostic.keep", Type = ModbusValueType.Word, BitIndex = 4 },
+                new() { Name = "SYSTEM.EMERGENCY", Area = ModbusDataArea.Coil, Type = ModbusValueType.Bool,
+                    Access = ModbusDataAccess.ReadWrite }
+            ]
+        };
+        using var services = new ServiceCollection().AddTransient<ConfirmDialogView>().BuildServiceProvider();
+        var dialog = new DialogHostDialogService(new DialogViewFactory(services), new DialogCoordinator());
+        var config = new NullAppConfigService
+        {
+            RemovePoint = point => options.DataMap.RemoveAll(current => current.Name == point.Name) > 0
+        };
+        var runtime = new NoOpDataMapRuntime();
+        var styles = new DialogHostStyles();
+        Avalonia.Application.Current!.Styles.Add(styles);
+        try
+        {
+            using var fixture = new SignalMappingFixture(1200, 760, options, config, runtime, dialog);
+            var mapping = Assert.IsType<RouteMapSignalMappingViewModel>(fixture.View.DataContext);
+            var group = fixture.View.GetVisualDescendants().OfType<Expander>()
+                .Single(expander => expander.Classes.Contains("unused-modbus-group"));
+            Assert.True(group.IsVisible);
+            Assert.True(group.IsExpanded);
+            Assert.Contains(group.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == "Неиспользуемые точки");
+            Assert.Equal(2, mapping.UnusedPoints.Count);
+            var orphan = mapping.UnusedPoints.Single(row => row.Point.Name == signalId);
+            var rowView = group.GetVisualDescendants().OfType<Border>()
+                .Single(border => border.Classes.Contains("unused-modbus-row") && ReferenceEquals(border.DataContext, orphan));
+            Assert.Contains(rowView.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == "Неиспользуемый");
+            Assert.Contains(rowView.GetVisualDescendants().OfType<TextBlock>(),
+                text => Grid.GetColumn(text) == 10 && text.Text == "3");
+            var marker = Assert.Single(rowView.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Ellipse>());
+            Assert.Equal(Color.Parse("#EAB308"), Assert.IsAssignableFrom<ISolidColorBrush>(marker.Fill).Color);
+            var delete = Assert.Single(rowView.GetVisualDescendants().OfType<Button>());
+            Assert.Equal("Удалить", delete.Content);
+            Assert.Same(mapping.RemoveUnusedPointCommand, delete.Command);
+            Assert.Same(orphan, delete.CommandParameter);
+
+            Task StartDeletion()
+            {
+                var task = mapping.RemoveUnusedPointCommand.Execute(
+                    mapping.UnusedPoints.Single(row => row.Point.Name == signalId)).ToTask();
+                Dispatcher.UIThread.RunJobs();
+                return task;
+            }
+
+            void Answer(string answer)
+            {
+                var dialogView = fixture.Window.GetVisualDescendants().OfType<ConfirmDialogView>().Single();
+                Assert.Contains(dialogView.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == "Подтверждение");
+                Assert.Contains(dialogView.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == "Вы уверены?");
+                var button = dialogView.GetVisualDescendants().OfType<Button>().Single(item => Equals(item.Content, answer));
+                button.Command!.Execute(button.CommandParameter);
+            }
+
+            var removal = StartDeletion();
+            Answer("Отмена");
+            await removal.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, config.RemovalCount);
+
+            removal = StartDeletion();
+            var draft = fixture.Manager.CreateDraft();
+            draft.TopBar.Unload.Bindings[0].SignalId = signalId.ToUpperInvariant();
+            Assert.True(fixture.Manager.Apply(draft).IsSuccess);
+            Answer("Да");
+            await removal.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, config.RemovalCount);
+            Dispatcher.UIThread.RunJobs();
+            Assert.DoesNotContain(mapping.UnusedPoints, row => row.Point.Name == signalId);
+
+            draft.TopBar.Unload.Bindings[0].SignalId = "system.command.unload";
+            Assert.True(fixture.Manager.Apply(draft).IsSuccess);
+            Dispatcher.UIThread.RunJobs();
+            var emergency = mapping.Rows.Single(row => row.SignalId.Equals("system.emergency", StringComparison.OrdinalIgnoreCase));
+            emergency.Address = 2;
+            removal = StartDeletion();
+            Answer("Да");
+            await removal.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(1, config.RemovalCount);
+            Assert.DoesNotContain(options.DataMap, point => point.Name == signalId);
+            Assert.Equal("diagnostic.keep", Assert.Single(mapping.UnusedPoints).Point.Name);
+            Assert.True(mapping.IsDirty);
+            Assert.Equal(2, mapping.Rows.Single(row => row.SignalId == emergency.SignalId).Address);
+        }
+        finally
+        {
+            Avalonia.Application.Current!.Styles.Remove(styles);
+        }
+    }
+
+    [AvaloniaFact]
     public async Task Signal_mapping_shows_top_bar_commands_and_refreshes_after_settings_apply_and_save()
     {
         using var fixture = new SignalMappingFixture(1200, 760);
@@ -2458,7 +2556,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         private readonly RouteMapConfigurationManager _manager;
         private readonly RouteMapSignalMappingViewModel _viewModel;
 
-        public SignalMappingFixture(double width, double height)
+        public SignalMappingFixture(double width, double height, ModbusOptions? customOptions = null,
+            IAppConfigService? appConfig = null, IModbusDataMapRuntime? runtime = null, IDialogService? dialog = null)
         {
             Directory.CreateDirectory(_directory);
             var storage = new RouteMapConfigurationStorage(Path.Combine(_directory, "route-map.json"));
@@ -2486,12 +2585,18 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             };
             _viewModel = new RouteMapSignalMappingViewModel(
                 _manager,
-                new StaticOptionsMonitor(options),
-                new NullAppConfigService(),
+                new StaticOptionsMonitor(customOptions ?? options),
+                appConfig ?? new NullAppConfigService(),
                 new ModbusDataMapValidator(),
-                new NoOpDataMapRuntime());
+                runtime ?? new NoOpDataMapRuntime(),
+                dialogService: dialog);
             View = new RouteMapSignalMappingView { DataContext = _viewModel };
-            Window = new Window { Width = width, Height = height, Content = View };
+            Window = new Window
+            {
+                Width = width,
+                Height = height,
+                Content = dialog is null ? View : new DialogHost { Identifier = DialogHostIds.Root, Content = View }
+            };
             Window.Show();
             Dispatcher.UIThread.RunJobs();
         }
@@ -2521,6 +2626,11 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     {
         public ModbusOperationResult ApplyDataMap(IReadOnlyList<ModbusDataPointOptions> dataMap) =>
             ModbusOperationResult.Success();
+
+        public async Task<ModbusOperationResult> RemovePointWhileStoppedAsync(
+            string name, Func<CancellationToken, Task<bool>> persist, CancellationToken cancellationToken = default) =>
+            await persist(cancellationToken) ? ModbusOperationResult.Success()
+                : ModbusOperationResult.Failure("ModbusPointChanged", "Точка изменилась.");
     }
 
     private sealed class EmptySignalProvider : ISignalValueProvider
@@ -2582,6 +2692,14 @@ public sealed partial class RouteMapSettingsDialogVisualTests
 
     private sealed class NullAppConfigService : IAppConfigService
     {
+        public Func<ModbusDataPointOptions, bool>? RemovePoint { get; init; }
+        public int RemovalCount { get; private set; }
+        public Task<bool> TryRemoveModbusDataPointAsync(ModbusDataPointOptions point, CancellationToken ct = default)
+        {
+            RemovalCount++;
+            return Task.FromResult(RemovePoint?.Invoke(point) == true);
+        }
+
         public T GetSection<T>(string sectionName) where T : class, new() => new();
         public string GetValue(string key) => string.Empty;
         public Task SaveSectionAsync<T>(string sectionName, T value, CancellationToken ct = default) => Task.CompletedTask;

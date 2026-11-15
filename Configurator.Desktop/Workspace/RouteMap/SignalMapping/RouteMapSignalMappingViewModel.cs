@@ -40,6 +40,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
     private bool _isLoading;
     private bool _isDirty;
     private bool _hasExternalChanges;
+    private bool _mapChangeInProgress;
     private string? _errorMessage;
     private string? _statusMessage;
     private bool _disposed;
@@ -71,16 +72,17 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         ReloadCommand = ReactiveCommand.Create(Reload);
         CreateMappingCommand = ReactiveCommand.Create<RouteMapSignalMappingRow>(CreateMapping);
         RemoveMappingCommand = ReactiveCommand.Create<RouteMapSignalMappingRow>(RemoveMapping);
-        ImportProfileCommand = ReactiveCommand.CreateFromTask(ImportProfileAsync);
+        RemoveUnusedPointCommand = ReactiveCommand.CreateFromTask<UnusedModbusPoint>(point => RemoveUnusedPointAsync(point));
+        ImportProfileCommand = ReactiveCommand.CreateFromTask(() => RunMapChangeAsync(ImportProfileAsync));
         ExportProfileCommand = ReactiveCommand.CreateFromTask(ExportProfileAsync);
 
         RebuildRows(configurationManager.CurrentDefinition, _baseOptions, preserveDraft: false);
         _definitionSubscription = configurationManager.DefinitionChanges
             .Skip(1)
             .Subscribe(definition => Dispatcher.UIThread.Post(() =>
-                RebuildRows(definition, _baseOptions, preserveDraft: IsDirty)));
-        _optionsSubscription = optionsMonitor.OnChange((options, name) =>
-            Dispatcher.UIThread.Post(() => HandleExternalOptions(options, name)));
+                RebuildRows(definition, _optionsMonitor.CurrentValue, preserveDraft: IsDirty)));
+        _optionsSubscription = optionsMonitor.OnChange((_, name) =>
+            Dispatcher.UIThread.Post(() => HandleExternalOptions(_optionsMonitor.CurrentValue, name)));
         if (_profileTransferService is not null)
         {
             _profileTransferService.ProfileApplied += OnProfileApplied;
@@ -89,6 +91,8 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<RouteMapSignalMappingRow> Rows { get; } = [];
     public ObservableCollection<RouteMapSignalMappingGroup> Groups { get; } = [];
+    public IReadOnlyList<UnusedModbusPoint> UnusedPoints { get; private set; } = [];
+    public bool HasUnusedPoints => UnusedPoints.Count > 0;
     public IReadOnlyList<ModbusDataArea> DataAreas { get; } = Enum.GetValues<ModbusDataArea>();
     public IReadOnlyList<ModbusDataAccess> AccessModes { get; } = Enum.GetValues<ModbusDataAccess>();
     public IReadOnlyList<ModbusValueType> ValueTypes { get; } = Enum.GetValues<ModbusValueType>();
@@ -97,6 +101,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ReloadCommand { get; }
     public ReactiveCommand<RouteMapSignalMappingRow, Unit> CreateMappingCommand { get; }
     public ReactiveCommand<RouteMapSignalMappingRow, Unit> RemoveMappingCommand { get; }
+    public ReactiveCommand<UnusedModbusPoint, Unit> RemoveUnusedPointCommand { get; }
     public ReactiveCommand<Unit, Unit> ImportProfileCommand { get; }
     public ReactiveCommand<Unit, Unit> ExportProfileCommand { get; }
 
@@ -174,7 +179,65 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         }
     }
 
-    internal async Task SaveAsync(CancellationToken cancellationToken = default)
+    internal Task RemoveUnusedPointAsync(UnusedModbusPoint row, CancellationToken cancellationToken = default) =>
+        RunMapChangeAsync(async () =>
+        {
+            var point = row.Point.Clone();
+            try
+            {
+                if (_dialogService is null ||
+                    !await _dialogService.ConfirmAsync("Подтверждение", "Вы уверены?", "Да", "Отмена", cancellationToken))
+                {
+                    return;
+                }
+
+                ErrorMessage = null;
+                StatusMessage = null;
+                var result = await _configurationManager.WithCurrentDefinitionAsync(
+                    definition => _dataMapRuntime.RemovePointWhileStoppedAsync(point.Name, ct =>
+                        IsUnused(point, ActiveSignalIds(definition))
+                            ? _appConfigService.TryRemoveModbusDataPointAsync(point, ct)
+                            : Task.FromResult(false), cancellationToken),
+                    cancellationToken);
+
+                if (result.Succeeded || result.ErrorCode == "ModbusPointChanged")
+                    RebuildRows(_configurationManager.CurrentDefinition, _optionsMonitor.CurrentValue, preserveDraft: IsDirty);
+
+                if (result.Succeeded)
+                    StatusMessage = $"Точка {point.Name} удалена из Modbus.DataMap.";
+                else
+                    ErrorMessage = OperationMessage(result);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                ErrorMessage = $"Не удалось удалить точку {point.Name} из Modbus.DataMap: {ex.Message}";
+            }
+        });
+
+    private async Task RunMapChangeAsync(Func<Task> change)
+    {
+        if (_mapChangeInProgress)
+            return;
+
+        _mapChangeInProgress = true;
+        try
+        {
+            await change();
+        }
+        finally
+        {
+            _mapChangeInProgress = false;
+        }
+    }
+
+    internal Task SaveAsync(CancellationToken cancellationToken = default) =>
+        RunMapChangeAsync(() => _dataMapRuntime.RunDataMapChangeAsync(
+            () => SaveCoreAsync(cancellationToken), cancellationToken));
+
+    private async Task<bool> SaveCoreAsync(CancellationToken cancellationToken)
     {
         ErrorMessage = null;
         StatusMessage = null;
@@ -188,7 +251,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         {
             ErrorMessage = string.Join(Environment.NewLine, invalidRows.Take(8).Select(row =>
                 $"{row.SignalId}: {row.ValidationMessage}"));
-            return;
+            return false;
         }
 
         var latest = _optionsMonitor.CurrentValue.Clone();
@@ -200,7 +263,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         if (activeUsages.Length > 0)
         {
             ErrorMessage = $"Очистка устаревших режимов остановлена: SignalId {string.Join(", ", activeUsages)} используется другим активным binding.";
-            return;
+            return false;
         }
 
         var obsoleteMappings = latest.DataMap
@@ -213,7 +276,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
                  _modbusTcpService.State.ServerState != ModbusConnectionState.Stopped))
             {
                 ErrorMessage = "Для очистки устаревших режимов остановите клиент и сервер Modbus TCP, затем повторите сохранение.";
-                return;
+                return false;
             }
         }
         var routeSignalIds = Rows
@@ -230,7 +293,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         if (!validation.Succeeded)
         {
             ErrorMessage = OperationMessage(validation);
-            return;
+            return false;
         }
 
         try
@@ -247,21 +310,23 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
                 // Starting a role can race with the awaited file save. The next role start
                 // reads the reloaded options; avoid replacing a map during a live pulse.
                 StatusMessage = "Устаревшие режимы удалены из сохранённого Modbus.DataMap. Перезапустите роль Modbus TCP, если она была запущена во время сохранения.";
-                return;
+                return true;
             }
 
             var applyResult = _dataMapRuntime.ApplyDataMap(latest.DataMap);
             if (!applyResult.Succeeded)
             {
                 ErrorMessage = $"Карта сохранена, но не применена к работающему Modbus: {OperationMessage(applyResult)} Она вступит в силу после перезапуска runtime.";
-                return;
+                return false;
             }
 
             StatusMessage = "Связи SignalId сохранены и применены к Modbus runtime.";
+            return true;
         }
         catch (Exception ex)
         {
             ErrorMessage = $"Не удалось сохранить связи SignalId: {ex.Message}";
+            return false;
         }
     }
 
@@ -271,6 +336,9 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
 
     private void Reload()
     {
+        if (_mapChangeInProgress)
+            return;
+
         RebuildRows(_configurationManager.CurrentDefinition, _optionsMonitor.CurrentValue.Clone(), preserveDraft: false);
         ErrorMessage = null;
         StatusMessage = "Связи перечитаны из Modbus.DataMap.";
@@ -362,6 +430,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         if (string.Equals(name, ModbusOptions.DemoSectionName, StringComparison.Ordinal))
         {
             RefreshPhysicalAddresses();
+            RebuildUnusedPoints(_configurationManager.CurrentDefinition, _optionsMonitor.CurrentValue);
             return;
         }
 
@@ -372,6 +441,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
 
         if (IsDirty)
         {
+            RebuildUnusedPoints(_configurationManager.CurrentDefinition, options);
             HasExternalChanges = true;
             StatusMessage = "Modbus.DataMap изменен извне. Нажмите ПЕРЕЗАГРУЗИТЬ, чтобы отказаться от локального черновика.";
             return;
@@ -427,6 +497,7 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             }
 
             BuildGroups();
+            RebuildUnusedPoints(definition, options);
 
             this.RaisePropertyChanged(nameof(ClientAddressBase));
             this.RaisePropertyChanged(nameof(ServerAddressBase));
@@ -440,6 +511,25 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         {
             _isLoading = false;
         }
+    }
+
+    private static HashSet<string> ActiveSignalIds(RouteMapDefinition definition) =>
+        RouteMapSignalInventory.Build(definition).Select(item => item.SignalId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsUnused(ModbusDataPointOptions point, HashSet<string> activeSignalIds) =>
+        !string.IsNullOrWhiteSpace(point.Name) && !IsObsoleteModeSignal(point.Name) && !activeSignalIds.Contains(point.Name);
+
+    private void RebuildUnusedPoints(RouteMapDefinition definition, ModbusOptions options)
+    {
+        var activeIds = ActiveSignalIds(definition);
+        UnusedPoints = options.DataMap
+            .Where(point => IsUnused(point, activeIds))
+            .DistinctBy(point => point.Name, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(point => point.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(point => new UnusedModbusPoint(point.Clone(), _addressOptions.Client, _addressOptions.Server))
+            .ToArray();
+        this.RaisePropertyChanged(nameof(UnusedPoints));
+        this.RaisePropertyChanged(nameof(HasUnusedPoints));
     }
 
     private void OnRowPropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
@@ -622,17 +712,27 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         }
 
         return left.DataMap.Zip(right.DataMap).All(pair =>
-            pair.First.Name == pair.Second.Name
-            && pair.First.Area == pair.Second.Area
-            && pair.First.Address == pair.Second.Address
-            && pair.First.Length == pair.Second.Length
-            && pair.First.Access == pair.Second.Access
-            && pair.First.Type == pair.Second.Type
-            && pair.First.BitIndex == pair.Second.BitIndex
-            && pair.First.WriteMode == pair.Second.WriteMode
-            && pair.First.PulseDurationMs == pair.Second.PulseDurationMs);
+            pair.First.Name == pair.Second.Name && pair.First.HasSameMapping(pair.Second));
     }
 
+}
+
+public sealed class UnusedModbusPoint
+{
+    internal UnusedModbusPoint(ModbusDataPointOptions point, ModbusEndpointOptions client, ModbusEndpointOptions server)
+    {
+        Point = point;
+        ClientPhysicalAddress = FormatAddress(client);
+        ServerPhysicalAddress = FormatAddress(server);
+    }
+
+    public ModbusDataPointOptions Point { get; }
+    public string ClientPhysicalAddress { get; }
+    public string ServerPhysicalAddress { get; }
+
+    private string FormatAddress(ModbusEndpointOptions endpoint) =>
+        Point.Address < 0 ? "—" : ((long)Point.Address + (Point.Area == ModbusDataArea.Coil
+            ? endpoint.CoilStartAddress : endpoint.HoldingRegisterStartAddress)).ToString(CultureInfo.InvariantCulture);
 }
 
 public sealed class RouteMapSignalMappingRow : ReactiveObject

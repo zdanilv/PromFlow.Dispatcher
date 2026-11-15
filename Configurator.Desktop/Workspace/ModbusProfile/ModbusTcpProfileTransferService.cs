@@ -95,10 +95,15 @@ public sealed class ModbusTcpProfileTransferService : IModbusTcpProfileTransferS
         }
     }
 
-    public async Task<ModbusTcpProfileApplyResult> ApplyAsync(
+    public Task<ModbusTcpProfileApplyResult> ApplyAsync(
         ModbusTcpProfile profile,
         bool applyRangeCorrection,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        _dataMapRuntime.RunDataMapChangeAsync(
+            () => ApplyCoreAsync(profile, applyRangeCorrection, cancellationToken), cancellationToken);
+
+    private async Task<ModbusTcpProfileApplyResult> ApplyCoreAsync(
+        ModbusTcpProfile profile, bool applyRangeCorrection, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(profile);
         var validation = Validate(profile);

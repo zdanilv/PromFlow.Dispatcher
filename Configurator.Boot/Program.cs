@@ -106,7 +106,7 @@ internal static class Program
             .AddJsonFile(sharedConfigProvider, ApplicationConfigPaths.AppSettingsFileName, optional: true, reloadOnChange: true)
             .Build();
         var runtimeConfiguration = new ConfigurationBuilder()
-            .AddConfiguration(launchConfiguration)
+            .Add(new ModbusDataMapConfigurationSource(launchConfiguration, sharedConfiguration))
             .AddConfiguration(sharedConfiguration)
             .Build();
 
@@ -124,7 +124,7 @@ internal static class Program
                     services.Configure<ApplicationOptions>(launchConfiguration.GetSection(ApplicationOptions.SectionName));
                     services.Configure<StartupOptions>(runtimeConfiguration.GetSection(StartupOptions.SectionName));
                     services.AddApplication();
-                    services.AddInfrastructure(runtimeConfiguration);
+                    services.AddInfrastructure(runtimeConfiguration, sharedConfiguration);
                     services.AddSingleton<IHelpOptionsProvider>(_ => new HelpOptionsProvider(
                         launchConfiguration,
                         sharedConfiguration));

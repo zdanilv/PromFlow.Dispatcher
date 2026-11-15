@@ -43,6 +43,12 @@ public interface IModbusRuntimeService : IAsyncDisposable
     event EventHandler<ModbusSnapshot>? SnapshotChanged;
 
     /// <summary>
+    /// Runs a configuration change under the same gate as starts and stops, only when both roles are stopped.
+    /// </summary>
+    Task<bool> TryRunWhileStoppedAsync(Func<CancellationToken, Task> change, CancellationToken cancellationToken) =>
+        Task.FromResult(false);
+
+    /// <summary>
     /// Запускает роли Modbus согласно выбранному режиму.
     /// </summary>
     /// <param name="mode">Какие роли нужно запустить: клиент, сервер или обе.</param>

@@ -67,6 +67,12 @@ public sealed class ModbusDataPointOptions
     /// </summary>
     public bool IsWritable => Access is ModbusDataAccess.Write or ModbusDataAccess.ReadWrite;
 
+    public bool HasSameMapping(ModbusDataPointOptions other) =>
+        string.Equals(Name, other.Name, StringComparison.OrdinalIgnoreCase) &&
+        Area == other.Area && Address == other.Address && Length == other.Length &&
+        Access == other.Access && Type == other.Type && BitIndex == other.BitIndex &&
+        WriteMode == other.WriteMode && PulseDurationMs == other.PulseDurationMs;
+
     /// <summary>
     /// Создает независимую копию настроек точки данных.
     /// </summary>

@@ -102,6 +102,26 @@ internal sealed class ModbusRuntimeService : IModbusRuntimeService
     /// </summary>
     public event EventHandler<ModbusSnapshot>? SnapshotChanged;
 
+    public async Task<bool> TryRunWhileStoppedAsync(Func<CancellationToken, Task> change, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_clientService.State != ModbusConnectionState.Stopped ||
+                _serverService.State != ModbusConnectionState.Stopped)
+            {
+                return false;
+            }
+
+            await change(cancellationToken);
+            return true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     /// <summary>
     /// Запускает выбранные роли runtime с актуальными настройками.
     /// </summary>

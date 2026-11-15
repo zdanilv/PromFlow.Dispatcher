@@ -363,6 +363,47 @@ public sealed class ModbusTcpServiceTests
     }
 
     [Fact]
+    public async Task RemovePointWhileStoppedWaitsForPersistenceAndRejectsActiveRole()
+    {
+        var options = CreateOptions(port: 1502);
+        var monitor = new TestOptionsMonitor(options);
+        var client = new NoopClientService { State = ModbusConnectionState.Running };
+        var server = new NoopServerService { State = ModbusConnectionState.Stopped };
+        await using var runtime = new ModbusRuntimeService(client, server, monitor, NullLogger<ModbusRuntimeService>.Instance);
+        await using var service = CreateService(runtime, client, server, options);
+
+        var refused = await service.RemovePointWhileStoppedAsync("DemoInput", _ =>
+            throw new InvalidOperationException("Persistence must not run while a role is active."));
+        Assert.Equal("ModbusMustBeStopped", refused.ErrorCode);
+        client.State = ModbusConnectionState.Stopped;
+        var failedWrite = await Assert.ThrowsAsync<IOException>(() =>
+            service.RemovePointWhileStoppedAsync("DemoInput", _ => throw new IOException()));
+        Assert.NotNull(failedWrite);
+        Assert.NotEqual("ModbusDataPointMissing", (await service.GetAsync<ushort>("DemoInput")).ErrorCode);
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var deletion = service.RemovePointWhileStoppedAsync("DemoInput", async _ =>
+        {
+            entered.SetResult();
+            await allowSave.Task;
+            options.DataMap.RemoveAll(point => point.Name == "DemoInput");
+            return true;
+        });
+        await entered.Task;
+        var start = runtime.StartAsync(ModbusRunMode.Client);
+        Assert.False(start.IsCompleted);
+        allowSave.SetResult();
+
+        Assert.True((await deletion).Succeeded);
+        await start;
+        Assert.Equal("ModbusDataPointMissing", (await service.GetAsync<ushort>("DemoInput")).ErrorCode);
+        Assert.False(service.CurrentSnapshot.Values.ContainsKey("DemoInput"));
+        Assert.Empty(client.RegisterWrites);
+        Assert.Empty(server.RegisterWrites);
+    }
+
+    [Fact]
     public async Task ApplyDataMap_ReplacesLookupWithoutRestartAndWaitsForNextSnapshot()
     {
         var options = CreateOptions();
@@ -609,7 +650,7 @@ public sealed class ModbusTcpServiceTests
 
     private sealed class NoopClientService : IModbusClientService
     {
-        public ModbusConnectionState State { get; } = ModbusConnectionState.Running;
+        public ModbusConnectionState State { get; set; } = ModbusConnectionState.Running;
         public ModbusSnapshot Snapshot { get; } = ModbusSnapshot.Empty;
         public List<(int Address, bool Value)> CoilWrites { get; } = [];
         public Action? OnCoilWrite { get; set; }
@@ -653,7 +694,7 @@ public sealed class ModbusTcpServiceTests
 
     private sealed class NoopServerService : IModbusServerService
     {
-        public ModbusConnectionState State { get; } = ModbusConnectionState.Running;
+        public ModbusConnectionState State { get; set; } = ModbusConnectionState.Running;
         public ModbusSnapshot Snapshot { get; } = ModbusSnapshot.Empty;
         public List<(int Address, bool Value)> CoilWrites { get; } = [];
         public List<(int Address, ushort Value)> RegisterWrites { get; } = [];

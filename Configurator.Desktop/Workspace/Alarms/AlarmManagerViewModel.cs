@@ -163,7 +163,7 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
 
         try
         {
-            await _appConfigService.SaveSectionAsync(ModbusOptions.SectionName, latest, cancellationToken);
+            await _appConfigService.SaveModbusAlarmsAsync(latest, cancellationToken);
             _baseOptions = latest.Clone();
             _addressOptions = ReadAddressOptions();
             IsDirty = false;
