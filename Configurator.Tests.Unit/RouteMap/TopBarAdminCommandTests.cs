@@ -58,6 +58,7 @@ public sealed class TopBarAdminCommandTests
     }
 
     [Theory]
+    [InlineData("true")]
     [InlineData("false")]
     [InlineData("bad")]
     [InlineData("stale")]
@@ -66,27 +67,37 @@ public sealed class TopBarAdminCommandTests
     [InlineData("wrong-type")]
     public async Task Configured_enabled_requires_a_good_fresh_true(string state)
     {
-        var settings = Settings with { Unload = WithEnabledBinding(Settings.Unload) };
-        var enabledId = settings.Unload.EnabledBinding!.SignalId;
-        var dispatcher = new RecordingDispatcher();
-        var topBar = new TopBarViewModel(true, commandDispatcher: dispatcher, settings: settings);
-        var signals = Connected();
-        if (state != "missing")
+        for (var index = 0; index < 3; index++)
         {
-            object? value = state == "null" ? null : state != "false";
-            signals[enabledId] = new(enabledId, value, state == "wrong-type" ? SignalValueType.String : SignalValueType.Bool,
-                DateTimeOffset.UtcNow, IsQualityGood: state != "bad", IsStale: state == "stale");
+            var button = WithEnabledBinding(GetButton(index));
+            var settings = ReplaceButton(index, button);
+            var enabledId = button.EnabledBinding!.SignalId;
+            var dispatcher = new RecordingDispatcher();
+            var topBar = new TopBarViewModel(true, commandDispatcher: dispatcher, settings: settings);
+            var signals = Connected();
+            if (state != "missing")
+            {
+                object? value = state == "null" ? null : state != "false";
+                signals[enabledId] = new(enabledId, value, state == "wrong-type" ? SignalValueType.String : SignalValueType.Bool,
+                    DateTimeOffset.UtcNow, IsQualityGood: state != "bad", IsStale: state == "stale");
+            }
+
+            ApplySnapshot(topBar, settings, signals);
+
+            Assert.Empty(dispatcher.Requests);
+            var commands = GetCommands(topBar);
+            var allowed = state == "true";
+            for (var commandIndex = 0; commandIndex < commands.Length; commandIndex++)
+                Assert.Equal(commandIndex != index || allowed, ((ICommand)commands[commandIndex]).CanExecute(null));
+
+            bool?[] enabledValues = [topBar.UnloadEnabledSignalValue, topBar.RotationEnabledSignalValue, topBar.LoadEnabledSignalValue];
+            Assert.Equal(state switch { "true" => true, "false" => false, _ => (bool?)null }, enabledValues[index]);
+            await Execute(commands[index]);
+            if (allowed)
+                AssertPulse(Assert.Single(dispatcher.Requests), button.Binding.SignalId);
+            else
+                Assert.Empty(dispatcher.Requests);
         }
-
-        ApplySnapshot(topBar, settings, signals);
-
-        Assert.False(topBar.IsUnloadEnabled);
-        Assert.False(((ICommand)topBar.UnloadCommand).CanExecute(null));
-        Assert.True(topBar.IsRotationEnabled);
-        Assert.True(topBar.IsLoadEnabled);
-        Assert.Equal(state == "false" ? false : (bool?)null, topBar.UnloadEnabledSignalValue);
-        await Execute(topBar.UnloadCommand);
-        Assert.Empty(dispatcher.Requests);
     }
 
     [Theory]
@@ -98,10 +109,11 @@ public sealed class TopBarAdminCommandTests
     [InlineData("role")]
     public async Task Invalid_command_binding_blocks_dispatch(string invalid)
     {
-        var binding = Settings.Unload.Binding;
-        var settings = Settings with
+        for (var index = 0; index < 3; index++)
         {
-            Unload = Settings.Unload with
+            var button = GetButton(index);
+            var binding = button.Binding;
+            var settings = ReplaceButton(index, button with
             {
                 Binding = invalid switch
                 {
@@ -110,18 +122,19 @@ public sealed class TopBarAdminCommandTests
                     "read" => binding with { Direction = SignalBindingDirection.Read },
                     "write" => binding with { Direction = SignalBindingDirection.Write },
                     "type" => binding with { ValueType = SignalValueType.String },
-                    "role" => binding with { Role = SignalBindingRole.RotationCommand },
+                    "role" => binding with { Role = SignalBindingRole.ResetCommand },
                     _ => throw new ArgumentOutOfRangeException(nameof(invalid)),
                 },
-            },
-        };
-        var dispatcher = new RecordingDispatcher();
-        var topBar = new TopBarViewModel(true, commandDispatcher: dispatcher, settings: settings);
-        ApplySnapshot(topBar, settings, Connected());
+            });
+            var dispatcher = new RecordingDispatcher();
+            var topBar = new TopBarViewModel(true, commandDispatcher: dispatcher, settings: settings);
+            ApplySnapshot(topBar, settings, Connected());
 
-        Assert.False(topBar.IsUnloadEnabled);
-        await Execute(topBar.UnloadCommand);
-        Assert.Empty(dispatcher.Requests);
+            var command = GetCommands(topBar)[index];
+            Assert.False(((ICommand)command).CanExecute(null));
+            await Execute(command);
+            Assert.Empty(dispatcher.Requests);
+        }
     }
 
     [Theory]
@@ -282,6 +295,20 @@ public sealed class TopBarAdminCommandTests
     }
 
     private static Task<ReactiveUnit> Execute(ReactiveCommand<ReactiveUnit, ReactiveUnit> command) => command.Execute().ToTask();
+
+    private static RouteTopBarButtonSettings GetButton(int index) =>
+        new[] { Settings.Unload, Settings.Rotation, Settings.Load }[index];
+
+    private static RouteTopBarSettings ReplaceButton(int index, RouteTopBarButtonSettings button) => index switch
+    {
+        0 => Settings with { Unload = button },
+        1 => Settings with { Rotation = button },
+        2 => Settings with { Load = button },
+        _ => throw new ArgumentOutOfRangeException(nameof(index)),
+    };
+
+    private static ReactiveCommand<ReactiveUnit, ReactiveUnit>[] GetCommands(TopBarViewModel topBar) =>
+        [topBar.UnloadCommand, topBar.RotationCommand, topBar.LoadCommand];
 
     private static void ApplySnapshot(TopBarViewModel topBar, RouteTopBarSettings settings, Dictionary<string, SignalValue>? signals) =>
         topBar.ApplyAdminCommandRuntime(new RouteMapRuntimeMapper(Seed with { TopBar = settings }).Map(signals));

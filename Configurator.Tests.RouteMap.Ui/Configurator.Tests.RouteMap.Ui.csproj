@@ -18,5 +18,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Configurator.Desktop\Configurator.Desktop.csproj" />
+    <ProjectReference Include="..\Configurator.Infrastructure.Modbus\Configurator.Infrastructure.Modbus.csproj" />
   </ItemGroup>
 </Project>

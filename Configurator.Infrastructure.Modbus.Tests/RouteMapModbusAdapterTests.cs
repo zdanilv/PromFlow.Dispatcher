@@ -48,10 +48,13 @@ public sealed class RouteMapModbusAdapterTests
         Assert.Empty(service.Writes);
     }
 
-    [Fact]
-    public async Task Dispatcher_PulseCommand_AlwaysResetsValue()
+    [Theory]
+    [InlineData("equip.bucket.start")]
+    [InlineData("system.command.unload")]
+    [InlineData("system.command.rotate")]
+    [InlineData("system.command.load")]
+    public async Task Dispatcher_PulseCommand_AlwaysResetsValue(string signalId)
     {
-        const string signalId = "equip.bucket.start";
         var writeTimes = new List<long>();
         var service = new FakeModbusService
         {
@@ -82,8 +85,10 @@ public sealed class RouteMapModbusAdapterTests
     [InlineData("write", "requires ReadWrite")]
     [InlineData("type", "requested Bool")]
     [InlineData("duration", "pulse duration")]
+    [InlineData("address", "address")]
     [InlineData("bit", "BitIndex")]
-    [InlineData("conflict", "overlapping")]
+    [InlineData("duplicate-bit", "overlapping")]
+    [InlineData("register-overlap", "overlapping")]
     public async Task Dispatcher_RejectsInvalidTopBarPulseBeforeAnyWrite(string issue, string message)
     {
         const string signalId = "system.command.unload";
@@ -96,8 +101,24 @@ public sealed class RouteMapModbusAdapterTests
             case "write": point.Access = ModbusDataAccess.Write; break;
             case "type": point.Type = ModbusValueType.UInt16; break;
             case "duration": point.PulseDurationMs = 0; break;
+            case "address": point.Address = -1; break;
             case "bit": point.Area = ModbusDataArea.HoldingRegister; break;
-            case "conflict": options.DataMap.Add(CreatePoint("other", ModbusWriteMode.Latched)); break;
+            case "duplicate-bit":
+                point.Area = ModbusDataArea.HoldingRegister;
+                point.BitIndex = 0;
+                var duplicate = CreatePoint("other", ModbusWriteMode.Latched);
+                duplicate.Area = point.Area;
+                duplicate.BitIndex = point.BitIndex;
+                options.DataMap.Add(duplicate);
+                break;
+            case "register-overlap":
+                point.Area = ModbusDataArea.HoldingRegister;
+                point.BitIndex = 0;
+                var register = CreatePoint("other", ModbusWriteMode.Latched);
+                register.Area = point.Area;
+                register.Type = ModbusValueType.UInt16;
+                options.DataMap.Add(register);
+                break;
         }
 
         var service = new FakeModbusService();
@@ -112,6 +133,9 @@ public sealed class RouteMapModbusAdapterTests
     [Theory]
     [InlineData("equip.bucket.start")]
     [InlineData("system.reset")]
+    [InlineData("system.command.unload")]
+    [InlineData("system.command.rotate")]
+    [InlineData("system.command.load")]
     public async Task Dispatcher_PulseCommand_FailedSetStillAttemptsResetOnce(string signalId)
     {
         var service = new FakeModbusService
@@ -146,6 +170,22 @@ public sealed class RouteMapModbusAdapterTests
 
         Assert.Same(timeout, error);
         Assert.Equal([("pulse", true), ("pulse", false)], service.Writes);
+    }
+
+    [Fact]
+    public async Task Dispatcher_PulseCommand_CancellationBeforeActivationDoesNotWriteEitherEdge()
+    {
+        const string signalId = "system.command.unload";
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var service = new FakeModbusService();
+        var dispatcher = CreatePulseDispatcher(service, signalId);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            dispatcher.DispatchAsync(new SignalWriteRequest(signalId, true, SignalValueType.Bool)
+                { RequiredWriteMode = ModbusWriteMode.Pulse }, cancellation.Token));
+
+        Assert.Empty(service.Writes);
     }
 
     [Fact]

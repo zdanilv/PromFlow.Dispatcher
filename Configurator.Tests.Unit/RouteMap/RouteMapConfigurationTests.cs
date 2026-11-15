@@ -138,6 +138,66 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
+    public async Task V22_round_trips_all_custom_commands_through_save_apply_export_and_import()
+    {
+        using var source = new TempConfigurationScope();
+        using var target = new TempConfigurationScope();
+        await source.Storage.SaveActiveAsync(source.Mapper.CreateSeedDocument());
+        var expected = JsonNode.Parse(await File.ReadAllTextAsync(source.Path))!;
+        var topBar = expected["topBar"]!;
+        foreach (var section in new[] { "unload", "rotation", "load" })
+        {
+            var button = topBar[section]!;
+            button["text"] = $"Настройка {section}";
+            button["vendorButton"] = section;
+            var bindings = button["bindings"]!.AsArray();
+            bindings[0]!["signalId"] = $"site.{section}";
+            bindings[0]!["vendorBinding"] = 42;
+            bindings.Add(JsonNode.Parse($$"""
+                { "role": "enabled", "signalId": "site.{{section}}.enabled", "direction": "read", "valueType": "bool", "vendorEnabled": true }
+                """));
+        }
+
+        await File.WriteAllTextAsync(source.Path, expected.ToJsonString());
+        using (var editing = source.CreateManager())
+        {
+            Assert.Null(editing.LastLoadError);
+            Assert.True((await editing.SaveAndApplyAsync(editing.CreateDraft())).IsSuccess);
+        }
+
+        using var reopened = source.CreateManager();
+        Assert.Null(reopened.LastLoadError);
+        Assert.True(reopened.Apply(reopened.CreateDraft()).IsSuccess);
+        var exportPath = source.Path + ".export.json";
+        Assert.True((await reopened.ExportDraftAsync(exportPath, reopened.CreateDraft())).IsSuccess);
+        Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(await File.ReadAllTextAsync(exportPath))));
+
+        using (var importing = target.CreateManager())
+        {
+            var imported = await importing.ImportDraftAsync(exportPath);
+            Assert.Equal(22, imported.SchemaVersion);
+            Assert.True((await importing.SaveAndApplyAsync(imported)).IsSuccess);
+        }
+
+        using var importedManager = target.CreateManager();
+        Assert.Null(importedManager.LastLoadError);
+        Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(await File.ReadAllTextAsync(target.Path))));
+        var settings = importedManager.CurrentDefinition.TopBar!;
+        Assert.Collection(new[] { settings.Unload, settings.Rotation, settings.Load },
+            button => CheckButton(button, "unload", SignalBindingRole.UnloadCommand),
+            button => CheckButton(button, "rotation", SignalBindingRole.RotationCommand),
+            button => CheckButton(button, "load", SignalBindingRole.LoadCommand));
+
+        static void CheckButton(RouteTopBarButtonSettings button, string section, SignalBindingRole role)
+        {
+            Assert.Equal($"Настройка {section}", button.Text);
+            Assert.Equal(role, button.Binding.Role);
+            Assert.Equal($"site.{section}", button.Binding.SignalId);
+            Assert.Equal($"site.{section}.enabled", button.EnabledBinding?.SignalId);
+        }
+    }
+
+    [Fact]
     public async Task Manager_opens_partial_v22_without_rewriting_it()
     {
         using var scope = new TempConfigurationScope();
