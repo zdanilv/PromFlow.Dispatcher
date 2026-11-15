@@ -17,7 +17,6 @@ internal sealed record RouteMapViewportLayout(
     private const double CompactLabelReserve = 30;
     private const double TerminalLabelRoom = 60;
     public bool CardsBelow { get; init; }
-    public bool FitFragmentRanges { get; init; }
 
     public static RouteMapViewportLayout Create(
         RouteMapDefinition definition,
@@ -84,10 +83,7 @@ internal sealed record RouteMapViewportLayout(
                     Math.Max(0, left - bounds.Left - display.MapPadding));
                 transform = transform.WithViewMetrics(nodeScale, -shiftLeft);
             }
-            return new RouteMapViewportLayout(transform, logicalBounds, bounds, rightReserve)
-            {
-                FitFragmentRanges = hasStandardTerminals,
-            };
+            return new RouteMapViewportLayout(transform, logicalBounds, bounds, rightReserve);
         }
     }
 }

@@ -261,7 +261,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
                 var bsuPath = RouteSegmentGeometry.Create(bsuLink,
                     viewport.Transform.ToViewPoint(bsu1.X, bsu1.Y), viewport.Transform.ToViewPoint(bsu2.X, bsu2.Y));
                 Assert.True(RouteSegmentGeometry.CalculateViewDrawableRanges(
-                        bsuPath, bsuLink, bsu1, bsu2, map.Definition.Display!, viewport.Transform.NodeScale).Count > 0,
+                        bsuPath, bsuLink, bsu1, bsu2, map.Definition.Display!, viewport.Transform.NodeScale, viewport.Transform.Scale).Count > 0,
                     $"The BSU link was clipped at {size}, map {map.Bounds.Size}, scale {viewport.Transform.Scale}, body {bsuPath.Length}.");
                 foreach (var terminal in map.Definition.Segments.Where(segment => segment.Kind == RouteSegmentKind.DeadEnd))
                 {

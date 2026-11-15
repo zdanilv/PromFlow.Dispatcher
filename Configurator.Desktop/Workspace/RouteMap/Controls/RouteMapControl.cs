@@ -226,15 +226,13 @@ public sealed class RouteMapControl : Control
             {
                 var logicalPath = RouteSegmentGeometry.Create(segment, new Point(from.X, from.Y), new Point(to.X, to.Y));
                 viewRanges = RouteSegmentGeometry.ProjectRanges(logicalRanges, logicalPath.Length, viewPath.Length);
-                if (layout.FitFragmentRanges)
-                {
-                    viewRanges = RouteSegmentGeometry.FitViewFragmentRanges(
-                        viewRanges, viewPath.Length, from, to, style, transform.NodeScale, transform.Scale);
-                }
+                viewRanges = RouteSegmentGeometry.FitViewFragmentRanges(
+                    viewRanges, viewPath.Length, from, to, style, transform.NodeScale, transform.Scale);
             }
             else
             {
-                viewRanges = RouteSegmentGeometry.CalculateViewDrawableRanges(viewPath, segment, from, to, display, transform.NodeScale);
+                viewRanges = RouteSegmentGeometry.CalculateViewDrawableRanges(
+                    viewPath, segment, from, to, display, transform.NodeScale, transform.Scale);
             }
 
             var baseState = state is RouteObjectState.ActiveRoute or RouteObjectState.Running
@@ -257,8 +255,12 @@ public sealed class RouteMapControl : Control
                 using var clip = isTerminal && activePen.LineCap == PenLineCap.Round && activePen.Thickness > style.Thickness
                     ? context.PushGeometryClip(RouteSegmentGeometry.CreateTerminalBodyClip(segment, p1, p2, activePen.Thickness))
                     : default;
+                var capAdjustment = activePen.LineCap == PenLineCap.Round ? (activePen.Thickness - style.Thickness) / 2 : 0;
                 foreach (var range in activeRanges)
-                    context.DrawGeometry(null, activePen, RouteSegmentGeometry.CreateGeometry(viewPath, range));
+                {
+                    var activeRange = RouteSegmentGeometry.MatchEndpointClearance(range, viewRanges, from, to, capAdjustment);
+                    context.DrawGeometry(null, activePen, RouteSegmentGeometry.CreateGeometry(viewPath, activeRange));
+                }
             }
 
             if (isTerminal)

@@ -24,7 +24,7 @@ public sealed class RouteSegmentGeometryTests
         var station = horizontalCap ? to : from;
         var length = RouteSegmentGeometry.Distance(start, end);
         var body = Assert.Single(RouteSegmentGeometry.CalculateTerminalViewDrawableRanges(
-            line, station, style, new RouteMapDisplaySettings(), length, layout.Transform.Scale, []));
+            line, station, style, new RouteMapDisplaySettings(), length, layout.Transform.Scale, [], layout.Transform.NodeScale));
 
         Assert.True(body.Length > 0);
         Assert.Equal(horizontalCap ? 0 : length, horizontalCap ? body.Start : body.End, precision: 8);
@@ -67,21 +67,21 @@ public sealed class RouteSegmentGeometryTests
     public void Short_DeadEnd_reaches_the_cap_and_clears_the_station(double length, double scale, bool reversed)
     {
         var segment = DeadEnd(reversed);
-        var station = new RouteNode("station", "", 0, 0, RouteNodeKind.ServicePoint, RouteObjectState.Idle, []);
+        var station = new RouteNode("station", "", 50, 50, RouteNodeKind.ServicePoint, RouteObjectState.Idle, []);
+        var anchor = station with { Id = "anchor", X = station.X + length, Kind = RouteNodeKind.TerminalAnchor };
+        var (from, to) = reversed ? (anchor, station) : (station, anchor);
         var style = new RouteSegmentStyle();
-        var viewLength = length * scale;
-        var (start, end) = reversed ? (new Point(viewLength, 0), default(Point)) : (default, new Point(viewLength, 0));
+        var transform = RouteMapTransform.Create(100, 100, 100 * scale, 100 * scale, padding: 0);
+        Assert.True(RouteSegmentGeometry.TryCreateTerminalViewGeometry(segment, from, to, style, transform,
+            new Rect(0, 0, 200, 200), out var start, out var end, out _));
         var path = RouteSegmentGeometry.Create(segment, start, end);
         var range = Assert.Single(RouteSegmentGeometry.CalculateTerminalViewDrawableRanges(
             segment, station, style, new RouteMapDisplaySettings(), path.Length, scale, []));
 
         var stationTrim = reversed ? path.Length - range.End : range.Start;
         Assert.True(range.Length > 0);
-        Assert.True(stationTrim >= 15 + 1 + style.ActiveThickness * scale / 2);
-        Assert.True(stationTrim <= 15 + style.EndpointGap);
-        if (viewLength >= 15 + style.EndpointGap + style.ActiveThickness * scale / 2)
-            Assert.Equal(15 + style.EndpointGap, stationTrim, precision: 8);
-        AssertPoint(new Point(viewLength, 0), path.PointAt(reversed ? range.Start : range.End));
+        Assert.Equal(16 + (3 + style.Thickness / 2) * scale, stationTrim, precision: 8);
+        AssertPoint(reversed ? start : end, path.PointAt(reversed ? range.Start : range.End));
     }
 
     [Theory]
@@ -100,8 +100,8 @@ public sealed class RouteSegmentGeometryTests
 
         Assert.Equal(3, logical.Count);
         Assert.Equal(3, projected.Count);
-        Assert.Equal(reversed ? 0 : 21, projected[0].Start, precision: 8);
-        Assert.Equal(reversed ? 154 : 175, projected[^1].End, precision: 8);
+        Assert.Equal(reversed ? 0 : 18.5, projected[0].Start, precision: 8);
+        Assert.Equal(reversed ? 156.5 : 175, projected[^1].End, precision: 8);
         Assert.True(projected[1].Start > projected[0].End);
         Assert.True(projected[2].Start > projected[1].End);
     }
@@ -300,6 +300,79 @@ public sealed class RouteSegmentGeometryTests
             (fitted[0].End + fitted[1].Start) / 2, precision: 8);
     }
 
+    [Theory]
+    [InlineData(1920, 1080, RouteLineCap.Round)]
+    [InlineData(1280, 720, RouteLineCap.Round)]
+    [InlineData(800, 600, RouteLineCap.Round)]
+    [InlineData(1920, 1080, RouteLineCap.Flat)]
+    public void All_station_approaches_keep_the_same_scaled_visible_gap(double width, double height, RouteLineCap cap)
+    {
+        var definition = RouteMapSeed.Create();
+        var display = definition.Display!;
+        var layout = RouteMapViewportLayout.Create(definition, width, height);
+        var transform = layout.Transform;
+        var nodes = definition.Nodes.ToDictionary(node => node.Id);
+        var checkedApproaches = 0;
+        foreach (var source in definition.Segments)
+        {
+            var from = nodes[source.FromNodeId];
+            var to = nodes[source.ToNodeId];
+            var isTerminal = source.Kind == RouteSegmentKind.DeadEnd;
+            var style = source.Style! with { LineCap = cap, Thickness = isTerminal ? 3 : 4 };
+            var segment = source with { Style = style };
+            var start = transform.ToViewPoint(from.X, from.Y);
+            var end = transform.ToViewPoint(to.X, to.Y);
+            var strokeScale = isTerminal ? transform.Scale : 1;
+            if (isTerminal)
+                Assert.True(RouteSegmentGeometry.TryCreateTerminalViewGeometry(segment, from, to, style,
+                    transform, layout.MapViewBounds, out start, out end, out _));
+
+            var path = RouteSegmentGeometry.Create(segment, start, end, transform.Scale);
+            IReadOnlyList<RoutePathRange> ranges;
+            if (isTerminal)
+            {
+                var station = segment.TerminalSide == RouteTerminalSide.From ? to : from;
+                ranges = RouteSegmentGeometry.CalculateTerminalViewDrawableRanges(segment, station, style,
+                    display, path.Length, transform.Scale, [], transform.NodeScale);
+            }
+            else if (segment.ActiveFragments is { Count: > 0 })
+            {
+                var logical = RouteSegmentGeometry.CalculateLogicalDrawableRanges(segment, from, to, display);
+                var projected = RouteSegmentGeometry.ProjectRanges(logical, path.Length / transform.Scale, path.Length);
+                ranges = RouteSegmentGeometry.FitViewFragmentRanges(projected, path.Length, from, to, style,
+                    transform.NodeScale, transform.Scale);
+                Assert.Equal(segment.ActiveFragments.Count, ranges.Count);
+            }
+            else
+            {
+                ranges = RouteSegmentGeometry.CalculateViewDrawableRanges(path, segment, from, to, display,
+                    transform.NodeScale, transform.Scale);
+            }
+
+            Assert.NotEmpty(ranges);
+            var normalCap = cap == RouteLineCap.Round ? style.Thickness * strokeScale / 2 : 0;
+            var activeCap = cap == RouteLineCap.Round ? style.ActiveThickness * strokeScale / 2 : 0;
+            var activeFirst = RouteSegmentGeometry.MatchEndpointClearance(ranges[0], ranges, from, to, activeCap - normalCap);
+            var activeLast = RouteSegmentGeometry.MatchEndpointClearance(ranges[^1], ranges, from, to, activeCap - normalCap);
+            CheckApproach(from, start, ranges[0].Start, normalCap);
+            CheckApproach(to, end, ranges[^1].End, normalCap);
+            CheckApproach(from, start, activeFirst.Start, activeCap);
+            CheckApproach(to, end, activeLast.End, activeCap);
+
+            void CheckApproach(RouteNode node, Point center, double distanceAlongPath, double capExtension)
+            {
+                if (node.Kind == RouteNodeKind.TerminalAnchor)
+                    return;
+
+                var outlineRadius = (node.Style!.Radius + node.Style.BorderThickness / 2) * transform.NodeScale;
+                var gap = RouteSegmentGeometry.Distance(center, path.PointAt(distanceAlongPath)) - outlineRadius - capExtension;
+                Assert.Equal(3 * transform.Scale, gap, precision: 5);
+                checkedApproaches++;
+            }
+        }
+        Assert.Equal(16, checkedApproaches);
+    }
+
     [Fact]
     public void View_drawable_ranges_use_screen_length_after_viewport_scale()
     {
@@ -320,12 +393,14 @@ public sealed class RouteSegmentGeometryTests
             segment,
             from,
             to,
-            display));
+            display,
+            nodeScale: 1,
+            scale));
         var logicalRanges = RouteSegmentGeometry.CalculateLogicalDrawableRanges(segment, from, to, display);
 
         Assert.Equal(2, logicalRanges.Count);
-        Assert.Equal(21, visualRange.Start, precision: 8);
-        Assert.Equal(viewPath.Length - 21, visualRange.End, precision: 8);
+        Assert.Equal(18 + 3 * scale, visualRange.Start, precision: 8);
+        Assert.Equal(viewPath.Length - (18 + 3 * scale), visualRange.End, precision: 8);
     }
 
     [Fact]
@@ -343,11 +418,11 @@ public sealed class RouteSegmentGeometryTests
             new Point(from.X * scale, from.Y * scale),
             new Point(to.X * scale, to.Y * scale));
 
-        var ranges = RouteSegmentGeometry.CalculateViewDrawableRanges(viewPath, segment, from, to, display);
+        var ranges = RouteSegmentGeometry.CalculateViewDrawableRanges(viewPath, segment, from, to, display, nodeScale: 1, scale);
 
         Assert.IsType<RouteArcPathPart>(viewPath.Parts[1]);
         Assert.Equal(3, ranges.Count);
-        Assert.Equal(21, ranges[0].Start, precision: 8);
+        Assert.Equal(18 + 3 * scale, ranges[0].Start, precision: 8);
         Assert.Equal(100, ranges[0].Length, precision: 8);
         Assert.Equal(100, ranges[1].Length, precision: 8);
         Assert.True(ranges[2].Length >= 100);
