@@ -189,7 +189,7 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
             }
         }
 
-        if (missingPointNames.Count > 0)
+        if (_currentOptions.DataMap.Count > 0 && missingPointNames.Count > 0)
         {
             StatusText = "Конфигурация ModbusDemo неполна.";
             LastError = $"В ModbusDemo:DataMap отсутствуют точки: {string.Join(", ", missingPointNames)}.";
@@ -618,7 +618,13 @@ public sealed class ModbusDemoViewModel : ViewModelBase, IDisposable
     }
 
     private ModbusOptions BuildOptions()
-        => DraftOptions.Clone();
+    {
+        var options = DraftOptions.Clone();
+        // The active Modbus TCP screen uses the Route Map's separate data map.
+        // Retained legacy demo points must not restrict the shared endpoint range.
+        options.DataMap.Clear();
+        return options;
+    }
 
     private async Task SaveSettingsAsync()
     {

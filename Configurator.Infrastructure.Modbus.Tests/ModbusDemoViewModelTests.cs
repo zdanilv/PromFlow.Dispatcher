@@ -43,6 +43,19 @@ public sealed class ModbusDemoViewModelTests
     }
 
     [Fact]
+    public void EmptyLegacyMapDoesNotShowMissingDemoPointsError()
+    {
+        var options = CreateOptions();
+        options.DataMap.Clear();
+        using var viewModel = new ModbusDemoViewModel(
+            new FakeModbusTcpService { RejectSubscriptions = true },
+            new TestOptionsProvider(options), new FakeDialogService(),
+            new FakeAppConfigService(options), action => action());
+
+        Assert.DoesNotContain("ModbusDemo:DataMap", viewModel.LastError);
+    }
+
+    [Fact]
     public void TelemetrySubscriptionDecodesTelemetry1Bits()
     {
         var service = new FakeModbusTcpService();
@@ -509,6 +522,26 @@ public sealed class ModbusDemoViewModelTests
         Assert.True(await WaitForAsync(() => service.LastStartClientOptions is not null));
         Assert.Equal(ModbusOptions.DemoSectionName, dialog.LastModbusSectionName);
         Assert.Equal(2503, service.LastStartClientOptions?.Client.Port);
+    }
+
+    [Fact]
+    public async Task StartingEitherRoleIgnoresRetainedLegacyDemoMap()
+    {
+        var service = new FakeModbusTcpService();
+        using var viewModel = CreateViewModel(service);
+        viewModel.DraftOptions.Client.RegisterCount = 1;
+        viewModel.DraftOptions.Server.RegisterCount = 1;
+
+        await viewModel.StartClientCommand.Execute().FirstAsync().ToTask();
+        Assert.True(await WaitForAsync(() => service.LastStartClientOptions is not null && !viewModel.IsLifecycleOperationActive));
+        await viewModel.StartServerCommand.Execute().FirstAsync().ToTask();
+        Assert.True(await WaitForAsync(() => service.LastStartServerOptions is not null && !viewModel.IsLifecycleOperationActive));
+
+        Assert.Empty(service.LastStartClientOptions!.DataMap);
+        Assert.Empty(service.LastStartServerOptions!.DataMap);
+        Assert.Contains(viewModel.DraftOptions.DataMap, point => point.Name == "MB_ТЕКУЩАЯ_ПОЗИЦИЯ");
+        Assert.True(new Configurator.Application.Services.Modbus.Validation.ModbusDataMapValidator()
+            .Validate(service.LastStartClientOptions, ModbusRunMode.Client).Succeeded);
     }
 
     private static ModbusCommandBitRow FindCommand(
