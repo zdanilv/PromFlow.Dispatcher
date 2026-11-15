@@ -16,6 +16,9 @@ PLC. RouteMap, ViewModel и XAML должны знать только `SignalId`
 ```text
 system.reset
 system.emergency
+system.command.unload
+system.command.rotate
+system.command.load
 system.fault
 route.node.bsu_1.active
 route.node.bsu_1.target
@@ -83,6 +86,7 @@ Direction должен соответствовать Modbus access:
 | `StartOffFeedback`, `StopOffFeedback` | `Bool` | read-only disable bits for card start/stop buttons |
 | `TargetCommand`, `LoaderCommand` | `Bool` | node menu commands |
 | `ResetCommand`, `EmergencyCommand` | `Bool` | действующие команды TopBar |
+| `UnloadCommand`, `RotationCommand`, `LoadCommand` | `Bool` | моментальные команды TopBar в `admin`, `ReadWrite/Pulse` |
 | `AutomaticModeCommand`, `ManualModeCommand` | `Bool` | obsolete, сохранены только в исторических DTO |
 | `Enabled` | `Bool` | optional read-only availability of a configured element |
 
@@ -114,10 +118,46 @@ Direction должен соответствовать Modbus access:
 `UncheckedCommand` и `CheckedCommand` остаются лишь для исторических карточек без
 `PowerFeedback` и не создаются для новой карточки.
 `ResetCommand` обязателен для TopBar-кнопки `СБРОС`, по умолчанию использует
-`system.reset` и требует `ReadWrite/Bool/Pulse`. `Enabled` всегда имеет
-направление `Read`; `false` отключает элемент, отсутствие binding/значения означает
-enabled, bad/stale означает offline. Для карточки с `PowerFeedback` хороший
+`system.reset` и требует `ReadWrite/Bool/Pulse`. У `СБРОС`, `АВАРИЯ` и объектов карты
+хороший `Enabled=false` отключает элемент. Отсутствие привязки или значения не
+ограничивает его по `Enabled`, Bad/Stale блокирует. Для карточки с `PowerFeedback` хороший
 `Enabled=false` не отправляет selector-записей.
+
+## Командные SignalId TopBar
+
+| SignalId по умолчанию | Роль | Категория | Тип / доступ / режим записи |
+|---|---|---|---|
+| `system.command.unload` | `UnloadCommand` | `TopBar` | `Bool / ReadWrite / Pulse` |
+| `system.command.rotate` | `RotationCommand` | `TopBar` | `Bool / ReadWrite / Pulse` |
+| `system.command.load` | `LoadCommand` | `TopBar` | `Bool / ReadWrite / Pulse` |
+
+`SignalId ↔ Modbus` показывает эти три строки и настроенные `Enabled`, по одной
+строке на уникальный SignalId. Администратор может изменить SignalId во вкладке
+`TopBar` редактора Route Map.
+Каждому имени нужна вручную назначенная точка `Modbus.DataMap` с таким же `Name`.
+`AutomaticModeCommand` и `ManualModeCommand` остаются в исторических JSON-привязках
+и исключены из активного списка.
+
+На каждую кнопку можно настроить один `Enabled` (`Read/Bool`). Это разрешающий
+вход без `Pulse`, для подтверждения механического выполнения нужен отдельный
+технологический feedback. Если привязки нет, команда проверяется по остальным
+условиям. Если она есть, требуется свежий `Good/true`; `false`, Bad/Stale,
+отсутствующее значение или неверный тип блокируют выполнение.
+
+### Диагностика сопоставления команд TopBar
+
+| Ситуация | Что показывает или проверяет приложение |
+|---|---|
+| Точка отсутствует | Строка `Не настроен`. В Modbus-режиме кнопка недоступна, dispatcher отклоняет запрос без точки. |
+| Неверный тип | Строка `Ошибка` с сообщением `Ожидается Bool, выбран несовместимый Modbus тип …`. Запись отклоняется. |
+| Точка только для чтения | Строка `Ошибка` с сообщением `Binding требует доступ ReadWrite, выбран Read.` Запись отклоняется. |
+| `Latched` вместо `Pulse` | Строка `Ошибка` с сообщением `SignalId … требует режим записи Pulse.` Dispatcher проверяет обязательный режим до записи. |
+| Некорректный физический адрес | Строка `Ошибка`. Валидатор проверяет offset, bit и диапазоны активных endpoint (например, `ModbusRegisterBitInvalid` или `ModbusRegisterRangeInvalid`). Некорректная карта отклоняется. |
+| Пересечение точек | Проверка всей карты при сохранении выдаёт `Modbus data points '…' and '…' use overlapping … addresses.` (`ModbusDataPointAddressConflict`). Это блокирует повторное использование одного бита или перекрытие целого слова и бита. |
+
+TopBar блокирует команду при отсутствии точки или несовместимом типе, доступе и
+режиме записи. Проверка карты и активной точки перед записью дополнительно
+отклоняет некорректную адресацию. Об условиях назначения точки см. [руководство Modbus TCP](03-modbus-tcp-guide.ru.md).
 
 ## Системные SignalId
 

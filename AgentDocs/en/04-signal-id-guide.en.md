@@ -17,6 +17,9 @@ Examples:
 ```text
 system.reset
 system.emergency
+system.command.unload
+system.command.rotate
+system.command.load
 system.fault
 route.node.bsu_1.active
 route.node.bsu_1.target
@@ -89,6 +92,7 @@ Supported value types map to Modbus types as follows:
 | `StartOffFeedback`, `StopOffFeedback` | `Bool` | card start/stop disable bits |
 | `TargetCommand`, `LoaderCommand` | `Bool` | node menu commands |
 | `ResetCommand`, `EmergencyCommand` | `Bool` | active TopBar commands |
+| `UnloadCommand`, `RotationCommand`, `LoadCommand` | `Bool` | momentary admin TopBar commands, `ReadWrite/Pulse` |
 | `AutomaticModeCommand`, `ManualModeCommand` | `Bool` | obsolete, historical DTOs only |
 
 `StartOffFeedback=true` or `StopOffFeedback=true` disables the matching card button;
@@ -99,6 +103,33 @@ and `State` are legacy concepts and must not be used for new behavior.
 `Title`, `SignalId`, `Direction`, and `ValueType` on the `Карточки` tab; these SignalIds
 automatically appear in `SignalId ↔ Modbus`, while the physical address still belongs
 only to `Modbus.DataMap`.
+
+## TopBar Command SignalIds
+
+| Default SignalId | Role | Category | Type / access / write mode |
+|---|---|---|---|
+| `system.command.unload` | `UnloadCommand` | `TopBar` | `Bool / ReadWrite / Pulse` |
+| `system.command.rotate` | `RotationCommand` | `TopBar` | `Bool / ReadWrite / Pulse` |
+| `system.command.load` | `LoadCommand` | `TopBar` | `Bool / ReadWrite / Pulse` |
+
+Admins can change these SignalIds on the Route Map editor's `TopBar` tab. The
+inventory shows the three commands and any configured `Enabled` bindings, with
+one row per distinct SignalId.
+Assign each command's physical point manually in `Modbus.DataMap` using the same
+`Name`. `AutomaticModeCommand` and `ManualModeCommand` remain historical.
+
+A button can have one optional `Read/Bool` `Enabled` binding. If configured, it
+must be fresh, good, and `true`. A missing signal value, wrong type, `false`,
+Bad, or Stale blocks execution. Without the binding, the other checks determine
+availability. `Enabled` is a permissive input. Equipment feedback confirms physical
+execution separately.
+
+The mapping editor shows `Не настроен` for an unmapped row. In Modbus mode a
+missing point blocks the command. Incompatible types, read-only access, and
+`Latched` instead of `Pulse` display `Ошибка` and prevent the write. Invalid
+addresses fail point or active endpoint range validation. When saving the full map,
+`ModbusDataPointAddressConflict` rejects overlapping physical points. The dispatcher
+validates the mapping before writing. [Modbus TCP guide](03-modbus-tcp-guide.en.md)
 
 ## System SignalIds
 

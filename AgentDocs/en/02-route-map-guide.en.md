@@ -26,11 +26,11 @@ admin mode is preserved for the next user-mode launch.
 
 ## Definition And Schema
 
-The current user profile schema is version `21`:
+The current user profile uses schema version `22`.
 
 ```json
 {
-  "schemaVersion": 21,
+  "schemaVersion": 22,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -55,7 +55,16 @@ The `v20 → v21` migration adds `visibility: "user"` to parameters where the fi
 is absent. It preserves explicit valid visibility values, existing setpoints, and
 additional JSON fields. The manager backs up the active profile before saving the
 migrated file atomically. Explicit invalid visibility values cause a load or validation
-error. Reopening a v21 profile skips migration.
+error.
+
+The `v21 → v22` migration adds defaults for missing or null `topBar.unload`,
+`rotation`, and `load` sections. It preserves configured commands, `reset`,
+`emergency`, and historical `automatic` and `manual`. Migration and round-trip
+tests verify that custom labels, SignalIds, optional bindings, and extension
+fields on the document, TopBar, button, and binding survive. The manager backs up
+the active file before saving a successful migration. Loading a v22 file fills
+missing sections in memory without rewriting it. An existing section with a
+missing required binding fails validation.
 
 ## Objects
 
@@ -92,6 +101,44 @@ still visually mark selected nodes until those roles are cleared.
 
 ## Commands
 
+### TopBar
+
+In `Application.WorkMode=admin`, the default command order is
+**ВЫГРУЗКА → ВРАЩЕНИЕ → ЗАГРУЗКА → СБРОС → АВАРИЯ → НАСТРОЙКИ**. The center
+group scrolls when space is limited, with «ПРОМ Диспетчер» on the left and
+`ПОМОЩЬ` on the right. In `user`, `СБРОС`, `АВАРИЯ`, and `ПОМОЩЬ` remain
+visible. The three new commands and `НАСТРОЙКИ` are hidden. `TopBarViewModel`
+also guards direct execution of the three commands in `user` mode.
+`Application.WorkMode` selects the application mode and gates these commands.
+Secure authentication is outside its scope. The PLC owns equipment permissives
+and interlocks.
+
+| Default label | `topBar` section | C# role | JSON role | Default SignalId |
+|---|---|---|---|---|
+| `ВЫГРУЗКА` | `unload` | `UnloadCommand` | `unloadCommand` | `system.command.unload` |
+| `ВРАЩЕНИЕ` | `rotation` | `RotationCommand` | `rotationCommand` | `system.command.rotate` |
+| `ЗАГРУЗКА` | `load` | `LoadCommand` | `loadCommand` | `system.command.load` |
+
+All three are momentary `Button` controls with a required `ReadWrite/Bool`
+binding and a mandatory Modbus `Pulse` mapping. They require fresh, good
+`connection.connected=true`, plus fresh, good `true` from `Enabled` when
+configured. A pending send blocks reactivation of the same command. A missing
+or incompatible point blocks the command in Modbus mode. Snapshots update
+availability without dispatch. The JSON fragment in the Russian guide shows the
+three new sections and uses `direction: "readWrite"` and `valueType: "bool"`.
+[Route Map JSON example](../ru/02-route-map-guide.ru.md#верхняя-панель)
+
+In `НАСТРОЙКИ` → `TopBar`, edit `Текст` and the required command `SignalId`
+in `Signal bindings`. The required row stays in the table. `Добавить binding`
+creates one optional `Read/Bool` `Enabled` row with initial SignalId
+`<commandSignalId>.enabled`. Edit its SignalId or use `Удалить` to remove it.
+`ПРИМЕНИТЬ` publishes the validated draft for the current session. `СОХРАНИТЬ`
+saves and publishes it. Both refresh TopBar and the inventory without sending
+these commands or assigning physical addresses. `ЗАКРЫТЬ` discards edits still
+in the draft.
+
+### Equipment cards and existing commands
+
 The bucket card uses `equip.bucket.power` as a read-only `PowerFeedback` Bool signal.
 Its 40×40 PowerStandby icon is red for a good, fresh `false`, green for a good,
 fresh `true`, and neutral gray for missing, bad, stale, offline, or invalid data.
@@ -112,8 +159,9 @@ request within 10 seconds, Pending clears with a visible error and no automatic 
 
 `Automatic` and `Manual` are hidden in user and admin TopBar and settings. Their
 commands are inert and their SignalIds are absent from the active mapping inventory.
-Historical TopBar JSON fields remain readable for compatibility. `Reset` remains
-an active `system.reset` Pulse command, and `Emergency` remains available.
+Historical TopBar JSON fields are preserved for compatibility. `СБРОС` remains
+a `system.reset` Pulse command. `АВАРИЯ` keeps its ToggleButton and the default
+`system.emergency` Latched mapping.
 
 `StartOffFeedback` and `StopOffFeedback` are active card-only `Read/Bool` roles.
 `true` disables the matching button and, for historical Toggle cards, clears checked

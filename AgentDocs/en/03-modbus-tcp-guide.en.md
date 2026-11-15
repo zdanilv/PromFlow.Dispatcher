@@ -63,6 +63,25 @@ Bool inside holding register:
 `Name` must match `SignalBinding.SignalId`. Keep one canonical casing even though lookup
 is case-insensitive.
 
+The admin TopBar commands `ВЫГРУЗКА`, `ВРАЩЕНИЕ`, and `ЗАГРУЗКА` default to
+`system.command.unload`, `system.command.rotate`, and `system.command.load`.
+Each point requires `Type=Bool`, `Access=ReadWrite`, and `WriteMode=Pulse`.
+Each button activation requests `true` with `RequiredWriteMode = ModbusWriteMode.Pulse`.
+The dispatcher handles the timed `false` write and rejects a `Latched` mapping
+before writing. `СБРОС` also requires `Pulse`. `АВАРИЯ` retains its ToggleButton
+and default `Latched` mapping. Check `Latched` separately on custom profiles.
+The Emergency ViewModel sends `true/false` without a `RequiredWriteMode`.
+Operator alarms and their acknowledgements use `Modbus.AlarmMap`.
+
+Leave each new point unmapped until the PLC developer confirms its physical
+address. Use `Создать` in `SignalId ↔ Modbus` to set `Area`, zero-based `Address` (`Offset`),
+`Length=1`, and `BitIndex` (`Bit`, required for `HoldingRegister` and empty for
+`Coil`) in `Modbus.DataMap`. Route Map stores domain bindings. Default settings
+provide no physical mappings for these three commands. Use approved PLC addresses
+and keep synthetic test addresses in isolated profiles. Configure `PulseDurationMs`
+(`Pulse ms`) per point. A value of 300 ms is an isolated-test example. Confirm the
+pulse duration for the equipment in the PLC contract.
+
 The bucket card uses three separate points: `equip.bucket.power` (`Read/Bool`),
 `equip.bucket.start` (`ReadWrite/Bool/Pulse`, default 300 ms), and
 `equip.bucket.stop` (`ReadWrite/Bool/Latched`). The PowerStandby indicator never
@@ -180,9 +199,25 @@ Before `DispatchAsync`, the dialog checks that the `SignalId` row exists in
 `String` fits into `Length * 2` UTF-8 bytes.
 
 `Latched` writes the supplied value and waits for readback for readable points.
-`Pulse` accepts only `true`, writes `true`, waits `PulseDurationMs`, then writes `false`.
-Use pulse only when the PLC contract requires an edge or short pulse.
+`Pulse` accepts only `true`, writes `true`, waits `PulseDurationMs`, and attempts
+to write `false`. The dispatcher makes a bounded reset attempt after an uncertain
+activation, timeout, or cancellation. A failed `true` write leaves activation
+unconfirmed. A failed `false` write or confirmation leaves the command bit state
+uncertain. The application sends no automatic `true` retry after a timeout or
+reconnect. The Modbus result describes the write operation. Equipment feedback
+is required to confirm physical execution.
 
 Register-bit writes are serialized read-modify-write operations using the latest raw word
 shadow. The first write is rejected until the raw register snapshot exists. Do not map the
 same bit twice or overlap whole-register values with bit points.
+
+### Connecting to a live PLC
+
+Confirm the physical point for each command with the PLC contract owner. Include
+area, register or coil, bit index, address bases, UnitId, Bool/ReadWrite access,
+and pulse duration. Verify single and repeated pulse behavior, operation permissives,
+hardware and software interlocks, and the PLC watchdog and safe behavior during
+connection loss or an uncertain `false` reset. Agree on duplicate prevention after
+reconnect, the equipment state after application or PLC restart, a safe commissioning
+sequence, and who approves the contract. Production acceptance requires separate
+equipment testing under the approved contract.
