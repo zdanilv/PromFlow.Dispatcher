@@ -4,6 +4,7 @@ using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Encoding;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
+using Configurator.Infrastructure.Modbus.Runtime;
 using CP.IO.Ports;
 using Microsoft.Extensions.Logging;
 using ModbusRx;
@@ -16,7 +17,7 @@ namespace Configurator.Infrastructure.Modbus.Client;
 /// <summary>
 /// Modbus TCP клиент: читает карту данных и пишет значения по командам UI.
 /// </summary>
-internal sealed class ModbusClientService : IModbusClientService
+internal sealed class ModbusClientService : IModbusClientService, IModbusBitPulseProvider
 {
     private readonly ILogger<ModbusClientService> _logger;
     private readonly Func<ModbusEndpointOptions, CancellationToken, Task<TcpClient>> _connectTcpClientAsync;
@@ -154,6 +155,143 @@ internal sealed class ModbusClientService : IModbusClientService
 
     internal Task WritePulseRegisterAsync(int address, ushort value, CancellationToken cancellationToken)
         => WriteRegisterAsync(address, value, cancellationToken, pulse: true);
+
+    IModbusBitPulseTarget IModbusBitPulseProvider.CaptureBitPulseTarget(ModbusBitAddressOptions address)
+    {
+        // Capture references first; the edge validates all of them together under _ioGate.
+        // A restart/reconnect must never redirect a pending ACK release.
+        var options = _options;
+        var reader = _reader;
+        var master = _master;
+        var socket = _socket;
+        if (_state != ModbusConnectionState.Running || reader is null || master is null || socket is null)
+            throw new ModbusBitPulseNotSentException("The original Modbus client target is unavailable.");
+
+        int physicalAddress;
+        try
+        {
+            if (address.Area == ModbusDataArea.Coil && address.BitIndex is null && options.CoilsEnabled)
+            {
+                ValidateAddress(address.Address, options.CoilCount, "Coil");
+                physicalAddress = checked((ushort)(options.CoilStartAddress + address.Address));
+            }
+            else if (address.Area == ModbusDataArea.HoldingRegister
+                && address.BitIndex is >= 0 and <= 15 && options.HoldingRegistersEnabled)
+            {
+                ValidateAddress(address.Address, options.RegisterCount, "Holding Register");
+                physicalAddress = checked((ushort)(options.HoldingRegisterStartAddress + address.Address));
+            }
+            else
+            {
+                throw new ArgumentException("The ACK area is disabled or its bit address is invalid.", nameof(address));
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or OverflowException)
+        {
+            throw new ModbusBitPulseNotSentException("Invalid Modbus client ACK target.", ex);
+        }
+
+        var area = address.Area;
+        var bitIndex = address.BitIndex;
+        return new ModbusBitPulseTarget(
+            $"Client {options.Host}:{options.Port}, UnitId={options.UnitId}, {area}[{physicalAddress}], bit={bitIndex}",
+            (value, token) => WriteBitPulseEdgeAsync(
+                options, reader, master, socket, area, physicalAddress, bitIndex, value, token));
+    }
+
+    private async Task WriteBitPulseEdgeAsync(
+        ModbusEndpointOptions options,
+        ModbusClientDataReader reader,
+        ModbusIpMaster master,
+        TcpClient socket,
+        ModbusDataArea area,
+        int physicalAddress,
+        int? bitIndex,
+        bool value,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _ioGate.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException ex)
+        {
+            throw new ModbusBitPulseNotSentException("The ACK edge was cancelled before acquiring client I/O.", ex);
+        }
+
+        var writeStarted = false;
+        var ioStarted = false;
+        try
+        {
+            if (_state != ModbusConnectionState.Running || !ReferenceEquals(options, _options)
+                || !ReferenceEquals(reader, _reader) || !ReferenceEquals(master, _master)
+                || !ReferenceEquals(socket, _socket))
+                throw new ModbusBitPulseNotSentException("The original Modbus client ACK session is no longer available.");
+
+            var transport = master.Transport
+                ?? throw new ModbusBitPulseNotSentException("The original Modbus client ACK transport is unavailable.");
+            var retries = transport.Retries;
+            var busyUsesRetryCount = transport.SlaveBusyUsesRetryCount;
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                transport.Retries = 0;
+                transport.SlaveBusyUsesRetryCount = true;
+                // Async ModbusRx I/O has no CancellationToken. Closing this pinned socket
+                // bounds its read/write and prevents a late request on a replacement session.
+                ioStarted = true;
+                using var abort = cancellationToken.Register(socket.Dispose);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (area == ModbusDataArea.HoldingRegister)
+                {
+                    // Read the actual word for this edge under the same I/O gate. Neither
+                    // another role's snapshot nor the pre-rise word is a safe release base.
+                    var words = await reader.ReadHoldingRegistersAsync(physicalAddress, 1);
+                    if (words.Length != 1)
+                        throw new InvalidOperationException("The ACK register read returned no trustworthy word.");
+                    var mask = checked((ushort)(1 << bitIndex!.Value));
+                    var word = value ? (ushort)(words[0] | mask) : (ushort)(words[0] & ~mask);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    writeStarted = true;
+                    await reader.WriteRegisterAsync(physicalAddress, word);
+                }
+                else
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    writeStarted = true;
+                    await reader.WriteCoilAsync(physicalAddress, value);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            finally
+            {
+                transport.Retries = retries;
+                transport.SlaveBusyUsesRetryCount = busyUsesRetryCount;
+            }
+        }
+        catch (ModbusBitPulseNotSentException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (ioStarted && (cancellationToken.IsCancellationRequested || !IsModbusApplicationException(ex)))
+            {
+                DisposeConnectionCore();
+                if (_state == ModbusConnectionState.Running)
+                    PublishStatus(ModbusConnectionState.Reconnecting, "Ошибка ACK, клиент переподключается", ex.Message);
+            }
+
+            if (!writeStarted)
+                throw new ModbusBitPulseNotSentException("The ACK edge was not written; its register read or preparation failed.", ex);
+            throw;
+        }
+        finally
+        {
+            _ioGate.Release();
+        }
+    }
 
     private async Task WriteRegisterAsync(
         int address, ushort value, CancellationToken cancellationToken, bool pulse)

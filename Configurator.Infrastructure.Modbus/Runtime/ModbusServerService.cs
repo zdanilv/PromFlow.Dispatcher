@@ -13,7 +13,7 @@ namespace Configurator.Infrastructure.Modbus.Runtime;
 /// <summary>
 /// Встроенный Modbus TCP сервер с ручным управлением локальной картой данных.
 /// </summary>
-internal sealed class ModbusServerService : IModbusServerService
+internal sealed class ModbusServerService : IModbusServerService, IModbusBitPulseProvider
 {
     private readonly ILogger<ModbusServerService> _logger;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
@@ -43,6 +43,109 @@ internal sealed class ModbusServerService : IModbusServerService
     /// Последний snapshot значений, опубликованных серверной ролью.
     /// </summary>
     public ModbusSnapshot Snapshot => _snapshot;
+
+    IModbusBitPulseTarget IModbusBitPulseProvider.CaptureBitPulseTarget(ModbusBitAddressOptions address)
+    {
+        var options = _options;
+        var server = _server;
+        var dataStore = server?.DataStore;
+        if (_state != ModbusConnectionState.Running || server is null || dataStore is null)
+            throw new ModbusBitPulseNotSentException("The original Modbus server ACK target is unavailable.");
+
+        try
+        {
+            if (address.Area == ModbusDataArea.Coil && address.BitIndex is null)
+                ValidateAddress(address.Address, options.CoilCount, "Coil");
+            else if (address.Area == ModbusDataArea.HoldingRegister && address.BitIndex is >= 0 and <= 15)
+                ValidateAddress(address.Address, options.RegisterCount, "Holding Register");
+            else
+                throw new ArgumentException("The server ACK bit address is invalid.", nameof(address));
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ModbusBitPulseNotSentException("Invalid Modbus server ACK target.", ex);
+        }
+
+        var area = address.Area;
+        var offset = address.Address;
+        var bitIndex = address.BitIndex;
+        return new ModbusBitPulseTarget(
+            $"Server {options.BindAddress}:{options.Port}, UnitId={options.UnitId}, {area}[{offset}], bit={bitIndex}",
+            (value, token) => WriteBitPulseEdgeAsync(options, server, dataStore, area, offset, bitIndex, value, token));
+    }
+
+    private async Task WriteBitPulseEdgeAsync(
+        ModbusEndpointOptions options,
+        ModbusServer server,
+        DataStore dataStore,
+        ModbusDataArea area,
+        int offset,
+        int? bitIndex,
+        bool value,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _ioGate.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException ex)
+        {
+            throw new ModbusBitPulseNotSentException("The ACK edge was cancelled before acquiring server I/O.", ex);
+        }
+
+        var writeStarted = false;
+        var syncTaken = false;
+        var writeLockTaken = false;
+        try
+        {
+            if (_state != ModbusConnectionState.Running || !ReferenceEquals(options, _options)
+                || !ReferenceEquals(server, _server) || !ReferenceEquals(dataStore, server.DataStore))
+                throw new ModbusBitPulseNotSentException("The original Modbus server ACK session is no longer available.");
+
+            // Standard ModbusRx requests use SyncRoot, optimized requests use Lock.
+            // Cover both while reading and updating the live word, with bounded waits.
+            while (!syncTaken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Monitor.TryEnter(dataStore.SyncRoot, 25, ref syncTaken);
+            }
+            while (!writeLockTaken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                writeLockTaken = dataStore.Lock.TryEnterWriteLock(25);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (area == ModbusDataArea.HoldingRegister)
+            {
+                var word = dataStore.HoldingRegisters[offset + 1];
+                var mask = checked((ushort)(1 << bitIndex!.Value));
+                writeStarted = true;
+                dataStore.HoldingRegisters[offset + 1] = value ? (ushort)(word | mask) : (ushort)(word & ~mask);
+            }
+            else
+            {
+                writeStarted = true;
+                dataStore.CoilDiscretes[offset + 1] = value;
+            }
+        }
+        catch (ModbusBitPulseNotSentException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (!writeStarted)
+        {
+            throw new ModbusBitPulseNotSentException("The server ACK edge was not written; its live word or preparation is unavailable.", ex);
+        }
+        finally
+        {
+            if (writeLockTaken)
+                dataStore.Lock.ExitWriteLock();
+            if (syncTaken)
+                Monitor.Exit(dataStore.SyncRoot);
+            _ioGate.Release();
+        }
+    }
 
     /// <summary>
     /// Уведомляет подписчиков об изменении агрегированного статуса runtime.
@@ -306,12 +409,21 @@ internal sealed class ModbusServerService : IModbusServerService
         _loopCancellation = null;
         _loopTask = null;
 
-        _server?.Stop();
-        _tcpSubscription?.Dispose();
-        _tcpSubscription = null;
-        _server?.Dispose();
-        _server = null;
-        _state = ModbusConnectionState.Stopped;
+        // ACK target validation and datastore access share this gate with disposal.
+        await _ioGate.WaitAsync();
+        try
+        {
+            _server?.Stop();
+            _tcpSubscription?.Dispose();
+            _tcpSubscription = null;
+            _server?.Dispose();
+            _server = null;
+            _state = ModbusConnectionState.Stopped;
+        }
+        finally
+        {
+            _ioGate.Release();
+        }
     }
 
     private ModbusServer EnsureServer()

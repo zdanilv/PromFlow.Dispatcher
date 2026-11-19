@@ -10,9 +10,11 @@ internal sealed class ModbusBitWriter(
     IModbusRuntimeService runtime,
     IModbusClientService client,
     IModbusServerService server,
-    ILogger<ModbusBitWriter> logger) : IModbusBitWriter
+    ILogger<ModbusBitWriter> logger,
+    TimeSpan? edgeTimeout = null) : IModbusBitWriter
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly TimeSpan _edgeTimeout = edgeTimeout ?? TimeSpan.FromSeconds(2);
 
     public async Task<ModbusOperationResult> PulseAsync(
         ModbusBitAddressOptions address,
@@ -20,25 +22,114 @@ internal sealed class ModbusBitWriter(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(address);
+        // Callers may edit their configuration while the pulse is queued or held.
+        var capturedAddress = address.Clone();
+        var validation = Validate(capturedAddress, pulseDurationMs);
+        if (!validation.Succeeded)
+            return validation;
 
-        if (pulseDurationMs is < 1 or > 60000)
-        {
-            return ModbusOperationResult.Failure(
-                "ModbusBitPulseDurationInvalid",
-                "Modbus bit pulse duration must be in range 1..60000 ms.");
-        }
-
-        await _gate.WaitAsync(cancellationToken);
         try
         {
-            return address.Area switch
+            await _gate.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return Cancelled("Acknowledgement was cancelled before activation; no edge was sent.");
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var status = runtime.Status;
+            var provider = status.ClientState == ModbusConnectionState.Running
+                ? client as IModbusBitPulseProvider
+                : status.ServerState == ModbusConnectionState.Running
+                    ? server as IModbusBitPulseProvider
+                    : null;
+            if (provider is null)
             {
-                ModbusDataArea.Coil => await PulseCoilAsync(address, pulseDurationMs, cancellationToken),
-                ModbusDataArea.HoldingRegister => await PulseRegisterBitAsync(address, pulseDurationMs, cancellationToken),
-                _ => ModbusOperationResult.Failure(
-                    "ModbusBitAreaUnsupported",
-                    $"Modbus bit area '{address.Area}' is unsupported.")
-            };
+                return ModbusOperationResult.Failure(
+                    "ModbusNotRunning",
+                    "A running Modbus role with a safe acknowledgement transport is required.");
+            }
+
+            IModbusBitPulseTarget target;
+            try
+            {
+                target = provider.CaptureBitPulseTarget(capturedAddress);
+            }
+            catch (Exception ex)
+            {
+                return ModbusOperationResult.Failure(
+                    "ModbusBitPulseRisingEdgeFailed",
+                    "Acknowledgement target is unavailable; no edge was sent.", ex.Message);
+            }
+
+            Exception? risingFailure = null;
+            var cancelled = false;
+            try
+            {
+                await WriteEdgeAsync(target, true, cancellationToken);
+            }
+            catch (ModbusBitPulseNotSentException ex)
+            {
+                return ModbusOperationResult.Failure(
+                    cancellationToken.IsCancellationRequested
+                        ? "ModbusBitPulseCancelled" : "ModbusBitPulseRisingEdgeFailed",
+                    "Acknowledgement activation failed before the write; no edge was sent.",
+                    $"Target: {target.Description}. Rising edge: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                // A lost reply does not prove that the PLC did not apply true.
+                // Never retry activation; only attempt release on the captured target.
+                risingFailure = ex;
+                cancelled = cancellationToken.IsCancellationRequested;
+            }
+
+            if (risingFailure is null)
+            {
+                try
+                {
+                    await Task.Delay(pulseDurationMs, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    cancelled = true;
+                }
+            }
+
+            try
+            {
+                // Release has its own deadline, independent of the caller's cancellation.
+                await WriteEdgeAsync(target, false, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                var details = $"Target: {target.Description}. Rising edge: "
+                    + (risingFailure is null ? "confirmed" : risingFailure.Message)
+                    + $". Falling edge: {ex.Message}. ACK bit physical state is unknown.";
+                logger.LogWarning(ex, "Failed to release acknowledgement: {Details}", details);
+                return ModbusOperationResult.Failure(
+                    "ModbusBitPulseReleaseFailed",
+                    "Acknowledgement release failed; ACK bit physical state is unknown.", details);
+            }
+
+            if (risingFailure is not null)
+            {
+                return ModbusOperationResult.Failure(
+                    cancelled ? "ModbusBitPulseCancelled" : "ModbusBitPulseRisingEdgeFailed",
+                    "Acknowledgement activation was not confirmed; release was confirmed.",
+                    $"Target: {target.Description}. Rising edge: {risingFailure.Message}. Falling edge: confirmed.");
+            }
+
+            return cancelled
+                ? Cancelled("Acknowledgement was cancelled during the hold; release was confirmed.")
+                : ModbusOperationResult.Success();
+        }
+        catch (OperationCanceledException)
+        {
+            return Cancelled("Acknowledgement was cancelled before activation; no edge was sent.");
         }
         finally
         {
@@ -46,213 +137,43 @@ internal sealed class ModbusBitWriter(
         }
     }
 
-    private async Task<ModbusOperationResult> PulseCoilAsync(
-        ModbusBitAddressOptions address,
-        int pulseDurationMs,
-        CancellationToken cancellationToken)
+    private async Task WriteEdgeAsync(
+        IModbusBitPulseTarget target, bool value, CancellationToken cancellationToken)
     {
-        if (address.BitIndex is not null)
-        {
-            return ModbusOperationResult.Failure(
-                "ModbusBitCoilBitIndexInvalid",
-                "Coil bit write must not define BitIndex.");
-        }
-
-        if (!TryResolveTarget(out var target, out var failure))
-        {
-            return failure;
-        }
-
-        var set = await WriteCoilAsync(target, address.Address, true, cancellationToken);
-        if (!set.Succeeded)
-        {
-            return set;
-        }
-
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(_edgeTimeout);
+        if (cancellationToken.IsCancellationRequested)
+            throw new ModbusBitPulseNotSentException("The ACK edge was cancelled before submission.");
         try
         {
-            await Task.Delay(pulseDurationMs, cancellationToken);
+            await target.WriteAsync(value, deadline.Token).WaitAsync(deadline.Token);
         }
-        finally
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            using var resetTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            await WriteCoilAsync(target, address.Address, false, resetTimeout.Token);
-        }
-
-        return ModbusOperationResult.Success();
-    }
-
-    private async Task<ModbusOperationResult> PulseRegisterBitAsync(
-        ModbusBitAddressOptions address,
-        int pulseDurationMs,
-        CancellationToken cancellationToken)
-    {
-        if (address.BitIndex is < 0 or > 15 or null)
-        {
-            return ModbusOperationResult.Failure(
-                "ModbusBitRegisterBitInvalid",
-                "Holding Register bit write must define BitIndex in range 0..15.");
-        }
-
-        if (!TryResolveTarget(out var target, out var targetFailure))
-        {
-            return targetFailure;
-        }
-
-        if (!TryReadRegisterWord(target, address.Address, out var initialWord))
-        {
-            return ModbusOperationResult.Failure(
-                "ModbusBitRegisterSnapshotUnavailable",
-                $"Holding register {address.Address} has no snapshot for bit pulse.");
-        }
-
-        var mask = checked((ushort)(1 << address.BitIndex.Value));
-        var trueWord = (ushort)(initialWord | mask);
-        var set = await WriteRegisterAsync(target, address.Address, trueWord, cancellationToken);
-        if (!set.Succeeded)
-        {
-            return set;
-        }
-
-        try
-        {
-            await Task.Delay(pulseDurationMs, cancellationToken);
-        }
-        finally
-        {
-            using var resetTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            var baseWord = TryReadRegisterWord(target, address.Address, out var latestWord)
-                ? latestWord
-                : trueWord;
-            var falseWord = (ushort)(baseWord & ~mask);
-            await WriteRegisterAsync(target, address.Address, falseWord, resetTimeout.Token);
-        }
-
-        return ModbusOperationResult.Success();
-    }
-
-    private bool TryResolveTarget(
-        out ModbusBitWriteTarget target,
-        out ModbusOperationResult failure)
-    {
-        var status = runtime.Status;
-        if (status.ClientState == ModbusConnectionState.Running)
-        {
-            target = ModbusBitWriteTarget.Client;
-            failure = ModbusOperationResult.Success();
-            return true;
-        }
-
-        if (status.ServerState == ModbusConnectionState.Running)
-        {
-            target = ModbusBitWriteTarget.Server;
-            failure = ModbusOperationResult.Success();
-            return true;
-        }
-
-        target = ModbusBitWriteTarget.Client;
-        failure = ModbusOperationResult.Failure(
-            "ModbusNotRunning",
-            "Modbus client or server must be running before writing acknowledgement.");
-        return false;
-    }
-
-    private bool TryReadRegisterWord(
-        ModbusBitWriteTarget target,
-        int address,
-        out ushort word)
-    {
-        var preferred = target == ModbusBitWriteTarget.Client
-            ? runtime.ClientSnapshot
-            : runtime.ServerSnapshot;
-        var fallback = target == ModbusBitWriteTarget.Client
-            ? runtime.ServerSnapshot
-            : runtime.ClientSnapshot;
-
-        if (TryReadRegisterWord(preferred, address, out word))
-        {
-            return true;
-        }
-
-        return TryReadRegisterWord(fallback, address, out word);
-    }
-
-    private static bool TryReadRegisterWord(
-        ModbusSnapshot snapshot,
-        int address,
-        out ushort word)
-    {
-        if (address >= 0 && address < snapshot.HoldingRegisters.Count)
-        {
-            word = snapshot.HoldingRegisters[address];
-            return true;
-        }
-
-        word = 0;
-        return false;
-    }
-
-    private async Task<ModbusOperationResult> WriteCoilAsync(
-        ModbusBitWriteTarget target,
-        int address,
-        bool value,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (target == ModbusBitWriteTarget.Client)
-            {
-                await client.WriteCoilAsync(address, value, cancellationToken);
-            }
-            else
-            {
-                await server.SetCoilAsync(address, value, cancellationToken);
-            }
-
-            return ModbusOperationResult.Success();
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogWarning(ex, "Failed to write acknowledgement Coil {Address}", address);
-            return ModbusOperationResult.Failure(
-                "ModbusBitWriteFailed",
-                $"Failed to write acknowledgement Coil {address}.",
-                ex.Message);
+            throw new TimeoutException($"Acknowledgement {(value ? "activation" : "release")} timed out.", ex);
         }
     }
 
-    private async Task<ModbusOperationResult> WriteRegisterAsync(
-        ModbusBitWriteTarget target,
-        int address,
-        ushort value,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (target == ModbusBitWriteTarget.Client)
-            {
-                await client.WriteRegisterAsync(address, value, cancellationToken);
-            }
-            else
-            {
-                await server.SetRegisterAsync(address, value, cancellationToken);
-            }
+    private static ModbusOperationResult Cancelled(string message)
+        => ModbusOperationResult.Failure("ModbusBitPulseCancelled", message);
 
-            return ModbusOperationResult.Success();
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogWarning(ex, "Failed to write acknowledgement Holding Register {Address}", address);
-            return ModbusOperationResult.Failure(
-                "ModbusBitWriteFailed",
-                $"Failed to write acknowledgement Holding Register {address}.",
-                ex.Message);
-        }
-    }
-
-    private enum ModbusBitWriteTarget
+    private static ModbusOperationResult Validate(ModbusBitAddressOptions address, int pulseDurationMs)
     {
-        Client,
-        Server
+        if (pulseDurationMs is < 1 or > 60000)
+            return ModbusOperationResult.Failure("ModbusBitPulseDurationInvalid",
+                "Modbus bit pulse duration must be in range 1..60000 ms.");
+        if (address.Address is < 0 or > ushort.MaxValue)
+            return ModbusOperationResult.Failure("ModbusBitAddressInvalid",
+                "Modbus bit offset must be in range 0..65535.");
+        return address.Area switch
+        {
+            ModbusDataArea.Coil when address.BitIndex is not null => ModbusOperationResult.Failure(
+                "ModbusBitCoilBitIndexInvalid", "Coil bit write must not define BitIndex."),
+            ModbusDataArea.HoldingRegister when address.BitIndex is < 0 or > 15 or null => ModbusOperationResult.Failure(
+                "ModbusBitRegisterBitInvalid", "Holding Register bit write must define BitIndex in range 0..15."),
+            ModbusDataArea.Coil or ModbusDataArea.HoldingRegister => ModbusOperationResult.Success(),
+            _ => ModbusOperationResult.Failure("ModbusBitAreaUnsupported",
+                $"Modbus bit area '{address.Area}' is unsupported.")
+        };
     }
 }
