@@ -1301,6 +1301,33 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
+    public async Task Deferred_and_completed_attempts_cannot_overwrite_a_newer_saved_value()
+    {
+        using var scope = new TempConfigurationScope();
+        using (var manager = scope.CreateManager())
+        {
+            var draft = manager.CreateDraft();
+            AddParametersWithMixedVisibility(draft);
+            Assert.True((await manager.SaveAndApplyAsync(draft)).IsSuccess);
+            using var store = new RouteMapEquipmentParameterValueStore(manager);
+            const string signal = "equip.bucket.speed";
+            await store.SaveAsync("equip.bucket", [new(signal, "11")], false);
+            await store.DeferDispatchAsync("equip.bucket", signal, "11");
+            Assert.Contains(store.GetPending(), pending => pending.Parameter.Binding.SignalId == signal);
+            await store.SaveAsync("equip.bucket", [new(signal, "12")], true);
+            await store.CompleteDispatchAsync("equip.bucket", signal, "11", "Old error");
+            var current = manager.CurrentDefinition.MapEquipment.Single().Parameters.Single(p => p.Binding.SignalId == signal);
+            Assert.Equal(("12", true, null), (current.SavedValue, current.PendingAutoDispatch, current.LastDispatchError));
+            await store.CompleteDispatchAsync("equip.bucket", signal, "12", "Current error");
+            await store.DeferDispatchAsync("equip.bucket", signal, "11");
+        }
+        using var restarted = scope.CreateManager();
+        Assert.Equal(22, restarted.CurrentDocument.SchemaVersion);
+        var saved = restarted.CurrentDefinition.MapEquipment.Single().Parameters.Single(p => p.Binding.SignalId == "equip.bucket.speed");
+        Assert.Equal(("12", false, "Current error"), (saved.SavedValue, saved.PendingAutoDispatch, saved.LastDispatchError));
+    }
+
+    [Fact]
     public async Task Parameter_value_store_persists_pending_value_and_dispatch_error_across_restart()
     {
         using var scope = new TempConfigurationScope();

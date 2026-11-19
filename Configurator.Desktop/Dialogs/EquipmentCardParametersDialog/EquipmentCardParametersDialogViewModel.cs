@@ -8,6 +8,7 @@ using System.Reactive.Subjects;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
+using Configurator.Desktop.Workspace.RouteMap.Services;
 using ReactiveUI;
 
 namespace Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
@@ -21,6 +22,7 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
     private readonly EquipmentCommandCard _card;
     private readonly IReadOnlyDictionary<string, SignalValue>? _signals;
     private readonly bool _isConnectionAvailable;
+    private readonly RouteMapSignalRuntime? _signalRuntime;
     private readonly Subject<bool> _result = new();
     private string? _errorMessage;
     private string? _statusMessage;
@@ -49,6 +51,7 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
         _card = card;
         _signals = signals;
         _dispatcher = dispatcher;
+        _signalRuntime = dispatcher as RouteMapSignalRuntime;
         _writeValidator = writeValidator ?? NoopEquipmentParameterWriteValidator.Instance;
         _valueStore = valueStore ?? NoopEquipmentParameterValueStore.Instance;
         _definitionStore = definitionStore;
@@ -281,9 +284,29 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
             return;
 
         _isSavingValues = true;
+        var gate = _signalRuntime?.EquipmentParameterDispatchGate;
         try
         {
-            await SaveValuesAsync();
+            if (gate is not null)
+                await gate.WaitAsync();
+            bool reconcilePending;
+            try
+            {
+                reconcilePending = !_disposed && await SaveValuesAsync();
+            }
+            finally
+            {
+                gate?.Release();
+            }
+            // Reconnect may already have been handled while Save/defer awaited storage.
+            // The same attempt lane prevents this one reconciliation from duplicating it.
+            if (reconcilePending && _signalRuntime is not null)
+                await new EquipmentParameterAutoDispatcher(_valueStore, _signalRuntime, _writeValidator, _signalRuntime)
+                    .DispatchPendingAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ErrorMessage = $"Не удалось сохранить параметры: {ex.Message}";
         }
         finally
         {
@@ -291,10 +314,14 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
         }
     }
 
-    private async Task SaveValuesAsync()
+    private async Task<bool> SaveValuesAsync()
     {
         ErrorMessage = null;
         StatusMessage = null;
+        long generation = 0;
+        var isConnectionAvailable = _signalRuntime is null
+            ? _isConnectionAvailable && _dispatcher is not IRouteMapSignalRuntime
+            : _signalRuntime.TryGetAvailableModbusGeneration(out generation);
 
         var requests = new List<(EquipmentCardParameterRow Parameter, SignalWriteRequest Request)>();
         foreach (var parameter in Parameters)
@@ -313,16 +340,23 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
             }
         }
 
-        if (_isConnectionAvailable)
+        if (isConnectionAvailable)
         {
             foreach (var item in requests)
                 item.Parameter.ValidationMessage = _writeValidator.Validate(item.Request);
+            if (_signalRuntime is not null &&
+                (!_signalRuntime.TryGetAvailableModbusGeneration(out var validatedGeneration) || validatedGeneration != generation))
+            {
+                isConnectionAvailable = false;
+                foreach (var item in requests)
+                    item.Parameter.ValidationMessage = null;
+            }
         }
 
         if (Parameters.Any(parameter => parameter.HasValidationError))
         {
             ErrorMessage = "Исправьте значения параметров.";
-            return;
+            return false;
         }
 
         if (requests.Count == 0)
@@ -330,7 +364,7 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
             StatusMessage = Parameters.Any(parameter => parameter.CanEdit)
                 ? "Нет заданных значений для сохранения."
                 : "Нет редактируемых параметров.";
-            return;
+            return false;
         }
 
         try
@@ -344,39 +378,87 @@ public sealed class EquipmentCardParametersDialogViewModel : ReactiveObject, IDi
             await _valueStore.SaveAsync(
                 _card.Id,
                 values,
-                pendingAutoDispatch: !_isConnectionAvailable);
+                pendingAutoDispatch: !isConnectionAvailable);
 
-            if (!_isConnectionAvailable)
+            if (!isConnectionAvailable)
             {
                 StatusMessage = "Сохранено локально. Отправка будет выполнена после подключения.";
-                return;
+                return true;
             }
 
             var failures = new List<string>();
             var sent = 0;
-            foreach (var item in requests)
+            var next = 0;
+            var firstUnstarted = 0;
+            try
             {
-                var savedValue = item.Parameter.SerializeValue(item.Request);
-                try
+                for (; next < requests.Count; next++)
                 {
-                    await _dispatcher.DispatchAsync(item.Request);
-                    await _valueStore.CompleteDispatchAsync(_card.Id, item.Request.SignalId, savedValue, null);
-                    sent++;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    await _valueStore.CompleteDispatchAsync(_card.Id, item.Request.SignalId, savedValue, ex.Message);
-                    failures.Add($"{item.Parameter.Title}: {ex.Message}");
+                    var item = requests[next];
+                    var savedValue = item.Parameter.SerializeValue(item.Request);
+                    string? dispatchError = null;
+                    OperationCanceledException? cancellation = null;
+                    if (_signalRuntime is not null)
+                    {
+                        var writeError = _writeValidator.Validate(item.Request);
+                        if (!_signalRuntime.TryGetAvailableModbusGeneration(out var currentGeneration) ||
+                            currentGeneration != generation)
+                            break;
+                        if (!string.IsNullOrWhiteSpace(writeError))
+                        {
+                            firstUnstarted = next + 1;
+                            await _valueStore.CompleteDispatchAsync(_card.Id, item.Request.SignalId, savedValue, writeError);
+                            failures.Add($"{item.Parameter.Title}: {writeError}");
+                            continue;
+                        }
+                    }
+                    try
+                    {
+                        if (_signalRuntime is not null)
+                        {
+                            if (!await _signalRuntime.TryDispatchEquipmentParameterAsync(generation, item.Request))
+                                break;
+                        }
+                        else
+                        {
+                            await _dispatcher.DispatchAsync(item.Request);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        dispatchError = string.IsNullOrWhiteSpace(ex.Message)
+                            ? "Отправка отменена; результат неизвестен." : ex.Message;
+                        cancellation = ex as OperationCanceledException;
+                    }
+                    firstUnstarted = next + 1;
+                    await _valueStore.CompleteDispatchAsync(_card.Id, item.Request.SignalId, savedValue, dispatchError);
+                    if (cancellation is not null)
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(cancellation).Throw();
+                    if (dispatchError is null)
+                        sent++;
+                    else
+                        failures.Add($"{item.Parameter.Title}: {dispatchError}");
                 }
             }
+            finally
+            {
+                // Even a failed result save must leave subsequent, unstarted values pending.
+                foreach (var item in requests.Skip(firstUnstarted))
+                    await _valueStore.DeferDispatchAsync(_card.Id, item.Request.SignalId,
+                        item.Parameter.SerializeValue(item.Request));
+            }
 
-            StatusMessage = $"Отправлено параметров: {sent}.";
+            StatusMessage = next == requests.Count
+                ? $"Отправлено параметров: {sent}."
+                : "Сохранено локально. Отправка будет выполнена после подключения.";
             if (failures.Count > 0)
                 ErrorMessage = $"Не удалось сохранить параметры: {string.Join("; ", failures)}";
+            return next < requests.Count;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ErrorMessage = $"Не удалось сохранить параметры: {ex.Message}";
+            return false;
         }
     }
 
@@ -401,6 +483,9 @@ internal sealed class NoopEquipmentParameterValueStore : IEquipmentParameterValu
         CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     public IReadOnlyList<PendingEquipmentParameter> GetPending() => [];
+
+    public Task DeferDispatchAsync(string cardId, string signalId, string expectedSavedValue,
+        CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     public Task CompleteDispatchAsync(
         string cardId,

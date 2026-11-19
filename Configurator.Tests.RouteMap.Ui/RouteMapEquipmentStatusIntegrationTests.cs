@@ -16,6 +16,7 @@ using Configurator.Application.Services;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap;
+using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -444,6 +445,80 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
+    public async Task Pending_admin_setpoint_is_sent_once_to_Modbus_after_connected_Mock_in_user_mode()
+    {
+        using var fixture = new MigratedStatusFixture(dispatchPendingParameters: true);
+        var snapshot = fixture.Mock.CreateSnapshot(3);
+        fixture.Publish(snapshot);
+        Assert.Equal(0, fixture.Parameters.Attempts);
+        fixture.ModbusSignals.OnNext(snapshot);
+        fixture.SwitchToModbus();
+        Dispatcher.UIThread.RunJobs();
+        await fixture.Parameters.Completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        for (var i = 0; i < 20; i++)
+            fixture.ModbusSignals.OnNext(snapshot);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(1, fixture.Parameters.Attempts);
+        Assert.Empty(fixture.Commands.Requests); // Mock dispatcher never confirms PLC delivery.
+        var sent = Assert.Single(fixture.ModbusCommands.Requests);
+        Assert.Equal(("test.bucket.pending", (ushort)11, SignalValueType.Word),
+            (sent.SignalId, sent.Value, sent.ValueType));
+        using var restarted = fixture.OpenManager();
+        var saved = restarted.CurrentDefinition.MapEquipment.Single().Parameters.Single();
+        Assert.Equal(("11", false, null), (saved.SavedValue, saved.PendingAutoDispatch, saved.LastDispatchError));
+        Assert.Equal(22, restarted.CurrentDocument.SchemaVersion);
+    }
+
+    [AvaloniaFact]
+    public void Pending_dispatch_treats_first_Modbus_snapshot_as_available_after_connected_Mock()
+    {
+        using var fixture = new MigratedStatusFixture();
+        var snapshot = fixture.Mock.CreateSnapshot(3);
+        fixture.Publish(snapshot);
+        Assert.Equal(0, fixture.Parameters.Attempts);
+        // The real source already has a snapshot before it is selected (replay provider).
+        fixture.ModbusSignals.OnNext(snapshot);
+        fixture.SwitchToModbus();
+        Assert.Equal(0, fixture.Parameters.Attempts); // Invalidation alone cannot dispatch.
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(1, fixture.Parameters.Attempts);
+        for (var i = 0; i < 20; i++)
+            fixture.ModbusSignals.OnNext(snapshot);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(1, fixture.Parameters.Attempts);
+        fixture.ModbusSignals.OnNext(null!); // A non-live invalidation cannot rearm this generation.
+        Dispatcher.UIThread.RunJobs();
+        fixture.ModbusSignals.OnNext(snapshot);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(1, fixture.Parameters.Attempts);
+        fixture.Signals.OnNext(snapshot); // A late event from the unsubscribed Mock source.
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(1, fixture.Parameters.Attempts);
+        Assert.Empty(fixture.Commands.Requests);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void Pending_dispatch_waits_for_good_fresh_Modbus_connection(bool good, bool stale)
+    {
+        using var fixture = new MigratedStatusFixture();
+        fixture.Publish(fixture.Mock.CreateSnapshot(3));
+        fixture.SwitchToModbus();
+        var snapshot = fixture.Mock.CreateSnapshot(3).ToDictionary();
+        SetSignal(snapshot, RouteMapSystemSignalIds.ConnectionConnected, true, good, stale);
+        fixture.ModbusSignals.OnNext(snapshot);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(0, fixture.Parameters.Attempts);
+        SetSignal(snapshot, RouteMapSystemSignalIds.ConnectionConnected, true);
+        fixture.ModbusSignals.OnNext(snapshot.ToDictionary());
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(1, fixture.Parameters.Attempts);
+        Assert.Empty(fixture.Commands.Requests);
+    }
+
+    [AvaloniaFact]
     public void Switching_to_modbus_discards_a_queued_mock_snapshot_until_the_first_modbus_poll()
     {
         using var fixture = new MigratedStatusFixture();
@@ -465,7 +540,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     }
 
     [AvaloniaFact]
-    public void Switching_between_healthy_sources_does_not_trigger_pending_parameter_dispatch()
+    public void Switching_between_healthy_sources_dispatches_pending_only_for_the_new_Modbus_generation()
     {
         using var fixture = new MigratedStatusFixture();
         fixture.Publish(fixture.Mock.CreateSnapshot(3));
@@ -477,7 +552,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
 
         fixture.AssertStatus(1, "Ожидание", "#99445566", EquipmentStatusCategory.Information,
             EquipmentStatusQuality.Known, true, true);
-        Assert.Equal(attempts, fixture.Parameters.Attempts);
+        Assert.Equal(attempts + 1, fixture.Parameters.Attempts);
         Assert.Empty(fixture.Commands.Requests);
     }
 
@@ -573,7 +648,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         Assert.True(card.IsStopChecked);
         Assert.False(card.IsStopPending);
         Assert.Single(fixture.Commands.Requests);
-        Assert.Equal(autoDispatchAttempts + (publishSnapshotFirst ? 0 : 1), fixture.Parameters.Attempts);
+        Assert.Equal(autoDispatchAttempts, fixture.Parameters.Attempts); // Mock readback cannot deliver PLC setpoints.
     }
 
     [AvaloniaFact]
@@ -695,12 +770,19 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         private readonly Window _window;
         private bool _dashboardDisposed;
 
-        public MigratedStatusFixture(Task? startCompletion = null)
+        public MigratedStatusFixture(Task? startCompletion = null, bool dispatchPendingParameters = false)
         {
             Storage = new RouteMapConfigurationStorage(Path.Combine(_directory, "route-map.json"));
             var historical = _mapper.CreateSeedDocument();
             historical.SchemaVersion = 17;
             var bucket = historical.Cards.Single();
+            if (dispatchPendingParameters)
+                bucket.Parameters.Add(new EquipmentCardParameterConfiguration
+                {
+                    Title = "Pending admin setpoint", SignalId = "test.bucket.pending",
+                    Direction = SignalBindingDirection.Write, ValueType = SignalValueType.Word,
+                    Visibility = EquipmentParameterVisibility.Admin, SavedValue = "11", PendingAutoDispatch = true,
+                });
             bucket.StatusMapping = null;
             bucket.Bindings.Add(BoolBinding(SignalBindingRole.Enabled, EnabledId));
             bucket.Bindings.Add(BoolBinding(SignalBindingRole.Fault, FaultId));
@@ -723,7 +805,11 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             }));
             Commands = new RecordingStatusCommandDispatcher(startCompletion);
             _signalRuntime = new RouteMapSignalRuntime(provider, Commands, new TestSignalProvider(ModbusSignals),
-                Commands, RouteMapSignalSource.Mock);
+                dispatchPendingParameters ? ModbusCommands : Commands, RouteMapSignalSource.Mock);
+            Parameters = new RecordingParameterDispatcher(dispatchPendingParameters
+                ? new EquipmentParameterAutoDispatcher(new RouteMapEquipmentParameterValueStore(Manager),
+                    _signalRuntime, NoopEquipmentParameterWriteValidator.Instance, _signalRuntime)
+                : null);
             Dashboard = new RouteMapDashboardViewModel(Manager, _signalRuntime, new RouteMapRuntimeMapper(Manager),
                 _signalRuntime, new NoOpSettingsDialogService(), notifications, journal,
                 new StaticOptionsMonitor(new ModbusOptions()),
@@ -740,7 +826,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         public MockSignalProvider Mock { get; }
         public RouteMapDashboardViewModel Dashboard { get; }
         public RecordingStatusCommandDispatcher Commands { get; }
-        public RecordingParameterDispatcher Parameters { get; } = new();
+        public RecordingParameterDispatcher Parameters { get; }
+        public RecordingStatusCommandDispatcher ModbusCommands { get; } = new(null);
         public Subject<IReadOnlyDictionary<string, SignalValue>> Signals { get; } = new();
         public ReplaySubject<IReadOnlyDictionary<string, SignalValue>> ModbusSignals { get; } = new(1);
         public int Subscriptions { get; private set; }
@@ -834,14 +921,17 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         }
     }
 
-    private sealed class RecordingParameterDispatcher : IEquipmentParameterAutoDispatcher
+    private sealed class RecordingParameterDispatcher(IEquipmentParameterAutoDispatcher? inner = null) : IEquipmentParameterAutoDispatcher
     {
         public int Attempts { get; private set; }
+        public TaskCompletionSource Completed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Task DispatchPendingAsync(CancellationToken cancellationToken = default)
+        public async Task DispatchPendingAsync(CancellationToken cancellationToken = default)
         {
             Attempts++;
-            return Task.CompletedTask;
+            if (inner is not null)
+                await inner.DispatchPendingAsync(cancellationToken);
+            Completed.TrySetResult();
         }
     }
 

@@ -121,6 +121,21 @@ public sealed class RouteMapEquipmentParameterValueStore(
             parameter.LastDispatchError = errorMessage;
         }, cancellationToken);
 
+    public Task DeferDispatchAsync(
+        string cardId,
+        string signalId,
+        string expectedSavedValue,
+        CancellationToken cancellationToken = default) =>
+        UpdateAsync(document =>
+        {
+            var parameter = FindParameter(FindCard(document, cardId), signalId);
+            if (!string.Equals(parameter.SavedValue, expectedSavedValue, StringComparison.Ordinal))
+                return;
+
+            parameter.PendingAutoDispatch = true;
+            parameter.LastDispatchError = null;
+        }, cancellationToken);
+
     public void Dispose() => _disposed = true;
 
     private Task UpdateAsync(

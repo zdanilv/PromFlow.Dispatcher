@@ -46,7 +46,6 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private string _connectionStatusText = "Ожидание";
     private bool _wasConnectionAvailable;
     private int _disposed;
-    private int _isDispatchingPendingParameters;
 
     public RouteMapDashboardViewModel(
         RouteMapConfigurationManager configurationManager,
@@ -115,6 +114,9 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             if (Volatile.Read(ref _disposed) != 0 || (runtime is not null && !runtime.IsCurrentGeneration(generation)))
                 return;
 
+            if (runtime is not null && (sourceChanged ||
+                (_lastSignalGeneration is { } previousGeneration && previousGeneration != generation)))
+                _wasConnectionAvailable = false;
             _lastSignals = signals ?? UnavailableSnapshot;
             _lastSignalGeneration = signals is not null && runtime is not null ? generation : null;
             // Invalidation updates the UI; only live snapshots drive parameter dispatch on reconnect.
@@ -267,10 +269,14 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     {
         _topBarRuntimeDefinition = Definition;
         TopBar.ApplyAdminCommandRuntime(runtimeState);
+        var isModbusAvailable = _commandDispatcher is RouteMapSignalRuntime runtime
+            ? runtimeState.IsConnectionAvailable && runtime.TryGetAvailableModbusGeneration(out var generation)
+                && generation == _lastSignalGeneration
+            : runtimeState.IsConnectionAvailable;
         var shouldDispatchPendingParameters =
-            isLiveSnapshot && runtimeState.IsConnectionAvailable && !_wasConnectionAvailable;
+            isLiveSnapshot && isModbusAvailable && !_wasConnectionAvailable;
         if (isLiveSnapshot)
-            _wasConnectionAvailable = runtimeState.IsConnectionAvailable;
+            _wasConnectionAvailable = isModbusAvailable;
         RuntimeState = runtimeState;
         if (IsConnectionStatusVisible)
             ConnectionStatusText = runtimeState.ConnectionStatusText;
@@ -290,8 +296,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         ApplyNodeRoleReadback(runtimeState);
 
         if (shouldDispatchPendingParameters &&
-            _parameterAutoDispatcher is not null &&
-            Interlocked.CompareExchange(ref _isDispatchingPendingParameters, 1, 0) == 0)
+            _parameterAutoDispatcher is not null)
         {
             _ = DispatchPendingParametersAsync();
         }
@@ -342,10 +347,6 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             CommandErrorMessage = $"Не удалось автоматически отправить сохранённые параметры: {ex.Message}";
-        }
-        finally
-        {
-            Interlocked.Exchange(ref _isDispatchingPendingParameters, 0);
         }
     }
 

@@ -20,6 +20,13 @@ public interface IEquipmentParameterValueStore
 
     IReadOnlyList<PendingEquipmentParameter> GetPending();
 
+    Task DeferDispatchAsync(
+        string cardId,
+        string signalId,
+        string expectedSavedValue,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException("Хранилище не поддерживает отложенную отправку."));
+
     Task CompleteDispatchAsync(
         string cardId,
         string signalId,

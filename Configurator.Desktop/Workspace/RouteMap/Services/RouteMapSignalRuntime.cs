@@ -22,6 +22,25 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
     private long _generation;
     private bool _initialized;
     private bool _disposed;
+    private IReadOnlyDictionary<string, SignalValue>? _lastSnapshot;
+
+    // Save and reconnect share one attempt lane, including persistence of its outcome.
+    internal SemaphoreSlim EquipmentParameterDispatchGate { get; } = new(1, 1);
+
+    internal bool TryGetAvailableModbusGeneration(out long generation)
+    {
+        lock (_sync)
+        {
+            generation = _generation;
+            return IsModbusAvailable();
+        }
+    }
+
+    private bool IsModbusAvailable() => !_disposed && _currentSource == RouteMapSignalSource.Modbus
+        && _lastSnapshot is not null
+        && _lastSnapshot.TryGetValue(RouteMapSystemSignalIds.ConnectionConnected, out var connection)
+        && connection.ValueType == SignalValueType.Bool && connection.Value is true
+        && connection.IsQualityGood && !connection.IsStale;
 
     public RouteMapSignalRuntime(
         ISignalValueProvider mockProvider,
@@ -94,6 +113,7 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
             _currentSource = source;
             _initialized = true;
             generation = ++_generation;
+            _lastSnapshot = null;
             _activeSubscription?.Dispose();
             _activeSubscription = null;
             if (sourceChanged)
@@ -127,15 +147,26 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
         long generation, SignalWriteRequest request, CancellationToken cancellationToken) =>
         DispatchCoreAsync(request, generation, cancellationToken);
 
+    internal Task<bool> TryDispatchEquipmentParameterAsync(
+        long generation, SignalWriteRequest request, CancellationToken cancellationToken = default) =>
+        DispatchCoreAsync(request, generation, cancellationToken, requireAvailableModbus: true);
+
     private async Task<bool> DispatchCoreAsync(
-        SignalWriteRequest request, long? expectedGeneration, CancellationToken cancellationToken)
+        SignalWriteRequest request, long? expectedGeneration, CancellationToken cancellationToken,
+        bool requireAvailableModbus = false)
     {
         IEquipmentCommandDispatcher dispatcher;
         lock (_sync)
         {
+            if (requireAvailableModbus && _disposed)
+                return false;
             ObjectDisposedException.ThrowIf(_disposed, this);
             // Validate the snapshot source and select its dispatcher atomically.
             if (expectedGeneration is { } generation && generation != _generation)
+                return false;
+            if (requireAvailableModbus && !IsModbusAvailable())
+                return false;
+            if (requireAvailableModbus && cancellationToken.IsCancellationRequested)
                 return false;
             dispatcher = DispatcherFor(_currentSource);
         }
@@ -203,6 +234,7 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
                 return;
             }
 
+            _lastSnapshot = snapshot;
             _observable.Publish(new SnapshotUpdate(generation, snapshot));
         }
     }

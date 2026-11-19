@@ -1,5 +1,6 @@
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
+using System.Reactive.Subjects;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -7,6 +8,7 @@ using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Dialogs.EquipmentCardParametersDialog;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.Settings;
+using Configurator.Desktop.Workspace.RouteMap.Services;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -15,6 +17,261 @@ namespace Configurator.Tests.Unit.RouteMap;
 
 public sealed class EquipmentCardParametersDialogViewModelTests
 {
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task Save_uses_current_Modbus_connection_instead_of_opening_state(bool openedOnline, bool savedOnline)
+    {
+        using var provider = new ParameterSignalProvider();
+        var commands = new CapturingDispatcher();
+        var mock = new CapturingDispatcher();
+        using var runtime = new RouteMapSignalRuntime(provider, mock, provider, commands, RouteMapSignalSource.Modbus);
+        provider.Connection(openedOnline);
+        var store = new SavingValueStore();
+        var validator = new RecordingWriteValidator();
+        using var vm = new EquipmentCardParametersDialogViewModel(
+            Card(Parameter("Speed", "card.speed", SignalBindingDirection.Write, SignalValueType.Word, "12")),
+            null, runtime, validator, isConnectionAvailable: openedOnline, valueStore: store);
+        provider.Connection(savedOnline);
+
+        await vm.SaveCommand.Execute().FirstAsync();
+
+        Assert.Equal(savedOnline ? 1 : 0, commands.Requests.Count);
+        Assert.Empty(mock.Requests);
+        Assert.Equal(!savedOnline, store.Inner.Pending.Count == 1);
+        Assert.Equal(savedOnline ? 1 : 0, store.Inner.Completions.Count);
+        Assert.Equal(savedOnline, validator.SignalIds.Count > 0);
+        Assert.Equal(savedOnline ? "Отправлено параметров: 1." :
+            "Сохранено локально. Отправка будет выполнена после подключения.", vm.StatusMessage);
+        Assert.Null(vm.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task Save_reconciles_reconnect_while_pending_is_being_saved_without_duplicate_attempt()
+    {
+        using var provider = new ParameterSignalProvider();
+        var commands = new CapturingDispatcher();
+        using var runtime = new RouteMapSignalRuntime(provider, new CapturingDispatcher(), provider, commands,
+            RouteMapSignalSource.Modbus);
+        provider.Connection(false);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new SavingValueStore(async () => { entered.SetResult(); await release.Task; });
+        using var vm = new EquipmentCardParametersDialogViewModel(
+            Card(Parameter("Speed", "card.speed", SignalBindingDirection.Write, SignalValueType.Word, "12")),
+            null, runtime, isConnectionAvailable: false, valueStore: store);
+        var saving = vm.SaveCommand.Execute().FirstAsync().ToTask();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        provider.Connection(true);
+        var reconnect = new EquipmentParameterAutoDispatcher(store, runtime,
+            NoopEquipmentParameterWriteValidator.Instance, runtime).DispatchPendingAsync();
+        release.SetResult();
+        await Task.WhenAll(saving, reconnect).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal("card.speed", Assert.Single(commands.Requests).SignalId);
+        Assert.Null(Assert.Single(store.Inner.Completions).ErrorMessage);
+        Assert.Empty(store.GetPending());
+        Assert.Equal("Сохранено локально. Отправка будет выполнена после подключения.", vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task Save_source_round_trip_during_first_write_defers_only_the_unstarted_second_value()
+    {
+        using var provider = new ParameterSignalProvider();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commands = new CallbackDispatcher(async request =>
+        {
+            if (request.SignalId == "card.first")
+            {
+                entered.SetResult();
+                await release.Task;
+            }
+        });
+        var mock = new CapturingDispatcher();
+        using var runtime = new RouteMapSignalRuntime(provider, mock, provider, commands, RouteMapSignalSource.Modbus);
+        provider.Connection(true);
+        var store = new SavingValueStore();
+        using var vm = new EquipmentCardParametersDialogViewModel(Card(
+            Parameter("First", "card.first", SignalBindingDirection.Write, SignalValueType.Word, "11"),
+            Parameter("Second", "card.second", SignalBindingDirection.Write, SignalValueType.Word, "22")),
+            null, runtime, valueStore: store);
+        var saving = vm.SaveCommand.Execute().FirstAsync().ToTask();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        runtime.SwitchSource(RouteMapSignalSource.Mock);
+        runtime.SwitchSource(RouteMapSignalSource.Modbus);
+        release.SetResult();
+        await saving.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(new[] { "card.first", "card.second" }, commands.Requests.Select(r => r.SignalId));
+        Assert.Empty(mock.Requests);
+        Assert.Equal("card.second", Assert.Single(store.Deferred));
+        Assert.Equal(new[] { "card.first", "card.second" }, store.Inner.Completions.Select(c => c.SignalId));
+        Assert.All(store.Inner.Completions, c => Assert.Null(c.ErrorMessage));
+        Assert.Empty(store.GetPending());
+    }
+
+    private sealed class CallbackDispatcher(Func<SignalWriteRequest, Task> dispatch) : IEquipmentCommandDispatcher
+    {
+        public List<SignalWriteRequest> Requests { get; } = [];
+        public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return dispatch(request);
+        }
+    }
+
+    [Fact]
+    public async Task Save_preserves_unstarted_pending_when_validator_switches_source_after_preflight()
+    {
+        using var provider = new ParameterSignalProvider();
+        var commands = new CapturingDispatcher();
+        using var runtime = new RouteMapSignalRuntime(provider, commands, provider, commands, RouteMapSignalSource.Modbus);
+        provider.Connection(true);
+        var calls = 0;
+        var validator = new CallbackWriteValidator(() =>
+        {
+            if (++calls == 2)
+            {
+                runtime.SwitchSource(RouteMapSignalSource.Mock);
+                return "Mapping changed";
+            }
+            return null;
+        });
+        var store = new SavingValueStore();
+        using var vm = new EquipmentCardParametersDialogViewModel(
+            Card(Parameter("Speed", "card.speed", SignalBindingDirection.Write, SignalValueType.Word, "12")),
+            null, runtime, validator, valueStore: store);
+
+        await vm.SaveCommand.Execute().FirstAsync();
+
+        Assert.Empty(commands.Requests);
+        Assert.Empty(store.Inner.Completions);
+        Assert.Equal("12", Assert.Single(store.GetPending()).Parameter.SavedValue);
+        Assert.Null(vm.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Save_does_not_retry_started_online_write_when_result_persistence_fails(bool writeFails)
+    {
+        using var provider = new ParameterSignalProvider();
+        var commands = new CapturingDispatcher(writeFails ? new TimeoutException("Unknown delivery") : null);
+        using var runtime = new RouteMapSignalRuntime(provider, commands, provider, commands, RouteMapSignalSource.Modbus);
+        provider.Connection(true);
+        var store = new SavingValueStore(completionError: new IOException("Cannot persist result"));
+        using var vm = new EquipmentCardParametersDialogViewModel(
+            Card(Parameter("Speed", "card.speed", SignalBindingDirection.Write, SignalValueType.Word, "12")),
+            null, runtime, valueStore: store);
+
+        await vm.SaveCommand.Execute().FirstAsync();
+        runtime.SwitchSource(RouteMapSignalSource.Mock);
+        runtime.SwitchSource(RouteMapSignalSource.Modbus);
+        var auto = new EquipmentParameterAutoDispatcher(store, runtime, NoopEquipmentParameterWriteValidator.Instance, runtime);
+        await auto.DispatchPendingAsync();
+        await auto.DispatchPendingAsync();
+
+        Assert.Single(commands.Requests);
+        Assert.Empty(store.GetPending());
+        Assert.False(store.Inner.LastPendingAutoDispatch);
+        Assert.Contains("Cannot persist result", vm.ErrorMessage);
+        Assert.Null(vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task Save_reports_consumed_write_failure_without_promising_reconnect_retry()
+    {
+        using var provider = new ParameterSignalProvider();
+        var commands = new CapturingDispatcher(new TimeoutException("Unknown delivery"));
+        using var runtime = new RouteMapSignalRuntime(provider, commands, provider, commands, RouteMapSignalSource.Modbus);
+        provider.Connection(true);
+        var store = new SavingValueStore();
+        using var vm = new EquipmentCardParametersDialogViewModel(
+            Card(Parameter("Speed", "card.speed", SignalBindingDirection.Write, SignalValueType.Word, "12")),
+            null, runtime, valueStore: store);
+
+        await vm.SaveCommand.Execute().FirstAsync();
+
+        Assert.Single(commands.Requests);
+        Assert.Empty(store.GetPending());
+        Assert.Equal("Unknown delivery", Assert.Single(store.Inner.Completions).ErrorMessage);
+        Assert.Equal("Отправлено параметров: 0.", vm.StatusMessage);
+        Assert.Contains("Unknown delivery", vm.ErrorMessage);
+    }
+
+    private sealed class CallbackWriteValidator(Func<string?> validate) : IEquipmentParameterWriteValidator
+    {
+        public string? Validate(SignalWriteRequest request) => validate();
+    }
+
+    [Fact]
+    public async Task Save_in_connected_Mock_keeps_local_pending_without_dispatch_or_mapping_validation()
+    {
+        using var provider = new ParameterSignalProvider();
+        var commands = new CapturingDispatcher();
+        using var runtime = new RouteMapSignalRuntime(provider, commands, provider, commands, RouteMapSignalSource.Mock);
+        provider.Connection(true);
+        var store = new SavingValueStore();
+        using var vm = new EquipmentCardParametersDialogViewModel(
+            Card(Parameter("Speed", "card.speed", SignalBindingDirection.Write, SignalValueType.Word, "12")),
+            null, runtime, new StaticWriteValidator("Missing mapping"), valueStore: store);
+        await vm.SaveCommand.Execute().FirstAsync();
+        Assert.Empty(commands.Requests);
+        Assert.Single(store.GetPending());
+        Assert.Empty(store.Inner.Completions);
+        Assert.Null(vm.ErrorMessage);
+    }
+
+    private sealed class ParameterSignalProvider : ISignalValueProvider, IDisposable
+    {
+        private readonly ReplaySubject<IReadOnlyDictionary<string, SignalValue>> _signals = new(1);
+        public IObservable<IReadOnlyDictionary<string, SignalValue>> Observe() => _signals;
+        public void Connection(bool value) => _signals.OnNext(new Dictionary<string, SignalValue>
+        {
+            [RouteMapSystemSignalIds.ConnectionConnected] = new(RouteMapSystemSignalIds.ConnectionConnected,
+                value, SignalValueType.Bool, DateTimeOffset.UtcNow, true, false)
+        });
+        public void Dispose() => _signals.Dispose();
+    }
+
+    private sealed class SavingValueStore(Func<Task>? beforeSave = null, Exception? completionError = null) : IEquipmentParameterValueStore
+    {
+        public RecordingValueStore Inner { get; } = new();
+        public List<string> Deferred { get; } = [];
+        public async Task SaveAsync(string cardId, IReadOnlyCollection<EquipmentParameterSetpoint> values,
+            bool pendingAutoDispatch, CancellationToken cancellationToken = default)
+        {
+            if (beforeSave is not null)
+                await beforeSave();
+            await Inner.SaveAsync(cardId, values, pendingAutoDispatch, cancellationToken);
+            foreach (var value in values)
+            {
+                Inner.Pending.RemoveAll(p => p.CardId == cardId && p.Parameter.Binding.SignalId == value.SignalId);
+                if (pendingAutoDispatch)
+                    Inner.Pending.Add(new(cardId, Parameter("Speed", value.SignalId, SignalBindingDirection.Write,
+                        SignalValueType.Word, value.Value, pending: true)));
+            }
+        }
+        public IReadOnlyList<PendingEquipmentParameter> GetPending() => Inner.GetPending();
+        public Task DeferDispatchAsync(string cardId, string signalId, string expectedSavedValue,
+            CancellationToken cancellationToken = default)
+        {
+            Deferred.Add(signalId);
+            if (Inner.Saved.LastOrDefault(value => value.SignalId == signalId)?.Value == expectedSavedValue)
+            {
+                Inner.Pending.RemoveAll(p => p.CardId == cardId && p.Parameter.Binding.SignalId == signalId);
+                Inner.Pending.Add(new(cardId, Parameter("Speed", signalId, SignalBindingDirection.Write,
+                    SignalValueType.Word, expectedSavedValue, pending: true)));
+            }
+            return Task.CompletedTask;
+        }
+        public Task CompleteDispatchAsync(string cardId, string signalId, string expectedSavedValue,
+            string? errorMessage, CancellationToken cancellationToken = default) =>
+            completionError is not null ? Task.FromException(completionError) :
+                Inner.CompleteDispatchAsync(cardId, signalId, expectedSavedValue, errorMessage, cancellationToken);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -624,8 +881,11 @@ public sealed class EquipmentCardParametersDialogViewModelTests
     [Fact]
     public async Task Auto_dispatch_sends_pending_admin_value_once_and_records_dispatch_result()
     {
-        var runtime = new RuntimeSource(RouteMapSignalSource.Modbus);
         var dispatcher = new CapturingDispatcher();
+        using var provider = new ParameterSignalProvider();
+        using var runtime = new RouteMapSignalRuntime(provider, new CapturingDispatcher(), provider, dispatcher,
+            RouteMapSignalSource.Modbus);
+        provider.Connection(true);
         var store = new RecordingValueStore();
         var parameter = Parameter(
             "Speed",
@@ -650,8 +910,11 @@ public sealed class EquipmentCardParametersDialogViewModelTests
     [Fact]
     public async Task Auto_dispatch_error_is_saved_and_not_retried()
     {
-        var runtime = new RuntimeSource(RouteMapSignalSource.Modbus);
         var dispatcher = new CapturingDispatcher(new InvalidOperationException("PLC недоступен"));
+        using var provider = new ParameterSignalProvider();
+        using var runtime = new RouteMapSignalRuntime(provider, new CapturingDispatcher(), provider, dispatcher,
+            RouteMapSignalSource.Modbus);
+        provider.Connection(true);
         var store = new RecordingValueStore();
         var parameter = Parameter(
             "Enabled",
