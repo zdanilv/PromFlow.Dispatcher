@@ -35,7 +35,7 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
 #if DEBUG
         Debug.WriteLine($"[MainWindow] Загружены UserSettings: Width={_userSettings.Width}, Height={_userSettings.Height}, FullScreen={_userSettings.IsFullScreen}");
 #endif
-        // Корректируем размер и позицию, если FullScreen
+        // Сохраняем полноэкранный режим, иначе запускаем окно развёрнутым.
         if (_userSettings.IsFullScreen)
         {
             this.WindowState = WindowState.FullScreen;
@@ -44,7 +44,7 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
         {
             this.Width = _userSettings.Width;
             this.Height = _userSettings.Height;
-            this.WindowState = WindowState.Normal;
+            this.WindowState = WindowState.Maximized;
         }
 
         // Подписка на событие закрытия окна для сохранения настроек

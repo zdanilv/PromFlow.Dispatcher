@@ -109,14 +109,15 @@ public sealed class MainWindowLifecycleTests
     }
 
     [AvaloniaTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Window_StillAppliesAndSavesSizeAndFullScreen(bool fullScreen)
+    [InlineData(false, 1200, 800)]
+    [InlineData(false, 1366, 768)]
+    [InlineData(true, 1366, 768)]
+    public void Window_StartsMaximizedOrFullScreen_AndSavesSettings(bool fullScreen, double savedWidth, double savedHeight)
     {
         using var styles = new DialogStyles();
         var settings = new WindowSettingsService
         {
-            Settings = new UserSettings { Width = 1366, Height = 768, IsFullScreen = fullScreen }
+            Settings = new UserSettings { Width = savedWidth, Height = savedHeight, IsFullScreen = fullScreen }
         };
         using var services = new ServiceCollection().AddSingleton<IAppConfigService>(settings).BuildServiceProvider();
         var originalServices = Configurator.Desktop.App.Services;
@@ -125,13 +126,15 @@ public sealed class MainWindowLifecycleTests
         {
             var window = new MainWindow();
             Assert.Equal(WindowStartupLocation.CenterScreen, window.WindowStartupLocation);
-            Assert.Equal(fullScreen ? WindowState.FullScreen : WindowState.Normal, window.WindowState);
+            var expectedState = fullScreen ? WindowState.FullScreen : WindowState.Maximized;
+            Assert.Equal(expectedState, window.WindowState);
             if (!fullScreen)
             {
-                Assert.Equal(1366, window.Width);
-                Assert.Equal(768, window.Height);
+                Assert.Equal(savedWidth, window.Width);
+                Assert.Equal(savedHeight, window.Height);
             }
             window.Show();
+            Assert.Equal(expectedState, window.WindowState);
             var width = window.Width;
             var height = window.Height;
             window.Close();
@@ -140,6 +143,40 @@ public sealed class MainWindowLifecycleTests
             Assert.Equal(fullScreen, settings.Saved.IsFullScreen);
         }
         finally { Configurator.Desktop.App.Services = originalServices; }
+    }
+
+    [AvaloniaFact]
+    public void Window_ClosedInNormalState_StartsMaximizedAgain()
+    {
+        using var styles = new DialogStyles();
+        var settings = new WindowSettingsService();
+        using var services = new ServiceCollection().AddSingleton<IAppConfigService>(settings).BuildServiceProvider();
+        var originalServices = Configurator.Desktop.App.Services;
+        Configurator.Desktop.App.Services = services;
+        MainWindow? window = null;
+        try
+        {
+            window = new MainWindow();
+            Assert.Equal(WindowState.Maximized, window.WindowState);
+            window.Show();
+            window.WindowState = WindowState.Normal;
+            window.Width = 1000;
+            window.Height = 700;
+            window.Close();
+            Assert.False(settings.Saved!.IsFullScreen);
+
+            window = new MainWindow();
+            Assert.Equal(WindowState.Maximized, window.WindowState);
+            Assert.Equal(1000, window.Width);
+            Assert.Equal(700, window.Height);
+            window.Show();
+            Assert.Equal(WindowState.Maximized, window.WindowState);
+        }
+        finally
+        {
+            window?.Close();
+            Configurator.Desktop.App.Services = originalServices;
+        }
     }
 
     [AvaloniaFact]
