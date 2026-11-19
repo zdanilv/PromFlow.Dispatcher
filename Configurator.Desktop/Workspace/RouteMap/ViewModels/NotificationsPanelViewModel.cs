@@ -3,7 +3,6 @@ using System.Collections.Specialized;
 using System.Reactive;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Dialogs;
-using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Desktop.Workspace.RouteMap.Services;
 using Microsoft.Extensions.Options;
@@ -64,6 +63,7 @@ public sealed class NotificationsPanelViewModel : ViewModelBase, IDisposable
 
     private async Task ShowNotificationAsync(AlarmNotificationItem item)
     {
+        var context = item.AcknowledgementContext;
         var confirmed = await _dialogService.ShowAlarmNotificationAsync(
             new AlarmNotificationContent(item.Kind, item.Message, item.RegisterValueText));
         if (!confirmed)
@@ -71,19 +71,9 @@ public sealed class NotificationsPanelViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        var alarm = new ModbusAlarmOptions
+        if (!_disposed)
         {
-            Id = item.Id,
-            Kind = item.Kind,
-            Message = item.Message,
-            Acknowledgement = item.Acknowledgement,
-            AcknowledgementPulseDurationMs = item.AcknowledgementPulseDurationMs
-        };
-
-        _journal.RecordAlarmAcknowledged(alarm, DateTimeOffset.Now);
-        if (_journal.IsAlarmActive(item.Id))
-        {
-            await _bitWriter.PulseAsync(item.Acknowledgement, item.AcknowledgementPulseDurationMs);
+            await _journal.CompleteAlarmAcknowledgementAsync(context, _bitWriter);
         }
     }
 

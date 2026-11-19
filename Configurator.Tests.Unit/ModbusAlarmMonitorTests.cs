@@ -335,7 +335,7 @@ public sealed class ModbusAlarmMonitorTests
             journal ?? new RouteMapSessionJournal(),
             NullLogger<ModbusAlarmMonitor>.Instance);
 
-    private static ModbusOptions CreateOptions(int repeatIntervalMs)
+    internal static ModbusOptions CreateOptions(int repeatIntervalMs)
         => new()
         {
             AlarmMap =
@@ -361,7 +361,7 @@ public sealed class ModbusAlarmMonitorTests
             ]
         };
 
-    private static ModbusSnapshot CreateSnapshot(bool alarmActive)
+    internal static ModbusSnapshot CreateSnapshot(bool alarmActive)
         => CreateSnapshot(alarmActive, false);
 
     private static ModbusSnapshot CreateSnapshot(params bool[] coils)
@@ -380,7 +380,7 @@ public sealed class ModbusAlarmMonitorTests
         public IDisposable? OnChange(Action<ModbusOptions, string?> listener) => null;
     }
 
-    private sealed class MutableOptionsMonitor(ModbusOptions options) : IOptionsMonitor<ModbusOptions>
+    internal sealed class MutableOptionsMonitor(ModbusOptions options) : IOptionsMonitor<ModbusOptions>
     {
         private readonly List<Action<ModbusOptions, string?>> _listeners = [];
         private ModbusOptions _currentValue = options;
@@ -464,17 +464,22 @@ public sealed class ModbusAlarmMonitorTests
         }
     }
 
-    private sealed class NoOpRuntime : IModbusRuntimeService
+    internal sealed class NoOpRuntime : IModbusRuntimeService
     {
-        public ModbusStatus Status { get; } = new()
+        public ModbusStatus Status { get; private set; } = new()
         {
             ClientState = ModbusConnectionState.Running,
             ServerState = ModbusConnectionState.Stopped
         };
         public ModbusSnapshot ClientSnapshot => ModbusSnapshot.Empty;
         public ModbusSnapshot ServerSnapshot => ModbusSnapshot.Empty;
-        public ModbusOptions CurrentOptions { get; } = new();
-        public event EventHandler<ModbusStatus>? StatusChanged { add { } remove { } }
+        public ModbusOptions CurrentOptions { get; set; } = new();
+        public event EventHandler<ModbusStatus>? StatusChanged;
+        public void SetStatus(ModbusStatus status)
+        {
+            Status = status;
+            StatusChanged?.Invoke(this, status);
+        }
         public event EventHandler<ModbusSnapshot>? SnapshotChanged { add { } remove { } }
         public Task StartAsync(ModbusRunMode mode = ModbusRunMode.Both, ModbusOptions? options = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

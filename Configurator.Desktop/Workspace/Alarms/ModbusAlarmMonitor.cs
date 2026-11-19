@@ -25,6 +25,9 @@ public sealed class ModbusAlarmMonitor : IDisposable
     private ModbusOptions _options;
     private bool _started;
     private bool _disposed;
+    private long _configurationGeneration;
+    private long _activationToken;
+    private (ModbusConnectionState Client, ModbusConnectionState Server) _runtimeStates;
 
     public ModbusAlarmMonitor(
         IOptionsMonitor<ModbusOptions> optionsMonitor,
@@ -41,6 +44,7 @@ public sealed class ModbusAlarmMonitor : IDisposable
         _sessionJournal = sessionJournal;
         _logger = logger;
         _options = optionsMonitor.CurrentValue.Clone();
+        _runtimeStates = (runtime.Status.ClientState, runtime.Status.ServerState);
     }
 
     public void Start()
@@ -52,18 +56,36 @@ public sealed class ModbusAlarmMonitor : IDisposable
 
         _started = true;
         _runtime.SnapshotChanged += OnSnapshotChanged;
+        _runtime.StatusChanged += OnStatusChanged;
         _optionsSubscription = _optionsMonitor.OnChange((options, name) =>
         {
-            if (string.Equals(name, ModbusOptions.DemoSectionName, StringComparison.Ordinal))
-            {
-                return;
-            }
-
+            AlarmRuntimeState[] invalidated;
             lock (_sync)
             {
-                _options = options.Clone();
-                PruneStates(_options.AlarmMap);
+                if (_disposed)
+                {
+                    return;
+                }
+
+                // ModbusDemo owns the TCP runtime, but never replaces Modbus.AlarmMap.
+                if (!string.Equals(name, ModbusOptions.DemoSectionName, StringComparison.Ordinal))
+                {
+                    if (SameAlarmMap(_options.AlarmMap, options.AlarmMap))
+                    {
+                        return;
+                    }
+
+                    _options = options.Clone();
+                    invalidated = InvalidateStates(state => !_options.AlarmMap.Any(alarm =>
+                        alarm.Enabled && SameAlarm(alarm, state.Context.CopyAlarm())));
+                }
+                else
+                {
+                    invalidated = InvalidateStates();
+                }
             }
+
+            CancelStates(invalidated);
         });
     }
 
@@ -74,9 +96,17 @@ public sealed class ModbusAlarmMonitor : IDisposable
             return;
         }
 
-        _disposed = true;
+        AlarmRuntimeState[] invalidated;
+        lock (_sync)
+        {
+            _disposed = true;
+            invalidated = InvalidateStates();
+        }
+
         _runtime.SnapshotChanged -= OnSnapshotChanged;
+        _runtime.StatusChanged -= OnStatusChanged;
         _optionsSubscription?.Dispose();
+        CancelStates(invalidated);
     }
 
     internal async Task ProcessSnapshotAsync(
@@ -85,14 +115,32 @@ public sealed class ModbusAlarmMonitor : IDisposable
         CancellationToken cancellationToken = default)
     {
         ModbusAlarmOptions[] alarms;
+        long generation;
+        AlarmRuntimeState[] invalidated;
         lock (_sync)
         {
+            if (_disposed || snapshot.Role != GetWriteRole(_runtime.Status))
+            {
+                return;
+            }
+
+            // A start of an already running role can replace CurrentOptions without
+            // a status transition. Recover on the next snapshot instead of retaining
+            // an invalid state whose IsShowing would otherwise remain set forever.
+            var runtimeOptions = _runtime.CurrentOptions;
+            invalidated = _states.Values.Any(state => !ReferenceEquals(state.RuntimeOptions, runtimeOptions)
+                                                      || state.Role != snapshot.Role)
+                ? InvalidateStates(state => !ReferenceEquals(state.RuntimeOptions, runtimeOptions)
+                                            || state.Role != snapshot.Role)
+                : [];
+            generation = _configurationGeneration;
             alarms = _options.AlarmMap
                 .Where(alarm => alarm.Enabled)
                 .Select(alarm => alarm.Clone())
                 .ToArray();
-            PruneStates(alarms);
         }
+
+        CancelStates(invalidated);
 
         foreach (var alarm in alarms)
         {
@@ -100,76 +148,84 @@ public sealed class ModbusAlarmMonitor : IDisposable
 
             var isActive = TryReadBit(snapshot, alarm.Alarm, out var value) && value;
             AlarmRuntimeState state;
+            AlarmRuntimeState? cleared = null;
+            var activated = false;
+            var show = false;
+            var markUnread = false;
             lock (_sync)
             {
-                state = GetState(alarm.Id);
+                if (_disposed || generation != _configurationGeneration)
+                {
+                    return;
+                }
+
+                _states.TryGetValue(alarm.Id, out var existing);
                 if (!isActive)
                 {
-                    if (state.IsActive)
+                    if (existing is not null)
                     {
-                        _sessionJournal.RecordAlarmCleared(alarm, now);
+                        _states.Remove(alarm.Id);
+                        cleared = existing;
                     }
+                }
+                else if (existing is null)
+                {
+                    existing = new AlarmRuntimeState(now, snapshot.Role, _runtime.CurrentOptions);
+                    var captured = existing;
+                    existing.Context = new AlarmAcknowledgementContext(
+                        alarm, ++_activationToken, generation,
+                        () => IsCurrent(alarm.Id, captured, generation), existing.Lifetime.Token);
+                    _states[alarm.Id] = existing;
+                    activated = true;
+                }
 
-                    state.IsActive = false;
-                    state.ActivatedAt = null;
+                state = existing!;
+                if (isActive && !state.IsShowing
+                    && (state.NextShowAt is not { } nextShowAt || now >= nextShowAt))
+                {
+                    state.IsShowing = true;
+                    markUnread = state.ShouldMarkNotificationUnread;
                     state.ShouldMarkNotificationUnread = false;
-                    state.NextShowAt = null;
-                    state.IsShowing = false;
-                    continue;
+                    show = true;
                 }
+            }
 
-                if (!state.IsActive)
-                {
-                    state.IsActive = true;
-                    state.ActivatedAt = now;
-                    state.ShouldMarkNotificationUnread = true;
-                    state.NextShowAt = now;
-                    _sessionJournal.RecordAlarmActivated(alarm, now);
-                }
+            if (cleared is not null)
+            {
+                cleared.Lifetime.Cancel();
+                _sessionJournal.RecordAlarmCleared(alarm, now);
+            }
 
-                if (state.IsShowing || state.NextShowAt is { } nextShowAt && now < nextShowAt)
-                {
-                    continue;
-                }
+            if (activated)
+            {
+                _sessionJournal.RecordAlarmActivated(alarm, now);
+            }
 
-                state.IsShowing = true;
+            if (!show || !state.Context.IsCurrent())
+            {
+                continue;
             }
 
             try
             {
-                DateTimeOffset createdAt;
-                bool markUnread;
-                lock (_sync)
-                {
-                    state = GetState(alarm.Id);
-                    createdAt = state.ActivatedAt ?? now;
-                    markUnread = state.ShouldMarkNotificationUnread;
-                    state.ShouldMarkNotificationUnread = false;
-                }
-
                 var notification = CreateNotificationContent(alarm, snapshot);
                 _sessionJournal.ShowAlarmNotification(
                     alarm,
-                    createdAt,
+                    state.ActivatedAt,
                     markUnread,
-                    notification.RegisterValueText);
+                    notification.RegisterValueText,
+                    state.Context);
                 var confirmed = await _dialogService.ShowAlarmNotificationAsync(notification, cancellationToken);
                 if (confirmed)
                 {
-                    _sessionJournal.RecordAlarmAcknowledged(alarm, DateTimeOffset.Now);
-                    if (alarm.AcknowledgementEnabled && _sessionJournal.IsAlarmActive(alarm.Id))
+                    var acknowledgement = await _sessionJournal.CompleteAlarmAcknowledgementAsync(
+                        state.Context, _bitWriter, cancellationToken);
+                    if (acknowledgement is { Succeeded: false })
                     {
-                        var acknowledgement = await _bitWriter.PulseAsync(
-                            alarm.Acknowledgement,
-                            alarm.AcknowledgementPulseDurationMs,
-                            cancellationToken);
-                        if (!acknowledgement.Succeeded)
-                        {
-                            _logger.LogWarning(
-                                "Failed to write acknowledgement for alarm {AlarmId}: {Error}",
-                                alarm.Id,
-                                acknowledgement.ErrorMessage);
-                        }
+                        _logger.LogWarning(
+                            "Failed to write acknowledgement for alarm {AlarmId}: {Error}",
+                            alarm.Id,
+                            acknowledgement.ErrorMessage);
                     }
                 }
             }
@@ -185,9 +241,12 @@ public sealed class ModbusAlarmMonitor : IDisposable
             {
                 lock (_sync)
                 {
-                    var updated = GetState(alarm.Id);
-                    updated.IsShowing = false;
-                    updated.NextShowAt = now.AddMilliseconds(alarm.RepeatIntervalMs);
+                    if (_states.TryGetValue(alarm.Id, out var updated)
+                        && ReferenceEquals(updated, state))
+                    {
+                        updated.IsShowing = false;
+                        updated.NextShowAt = now.AddMilliseconds(alarm.RepeatIntervalMs);
+                    }
                 }
             }
         }
@@ -200,11 +259,22 @@ public sealed class ModbusAlarmMonitor : IDisposable
             return;
         }
 
+        var runtimeOptions = _runtime.CurrentOptions;
+        long generation;
+        lock (_sync)
+        {
+            generation = _configurationGeneration;
+        }
+
         Dispatcher.UIThread.Post(() =>
         {
-            if (_disposed)
+            lock (_sync)
             {
-                return;
+                if (_disposed || generation != _configurationGeneration
+                    || !ReferenceEquals(runtimeOptions, _runtime.CurrentOptions))
+                {
+                    return;
+                }
             }
 
             _ = ProcessSnapshotAsync(snapshot, DateTimeOffset.UtcNow);
@@ -227,27 +297,82 @@ public sealed class ModbusAlarmMonitor : IDisposable
         return false;
     }
 
-    private AlarmRuntimeState GetState(string alarmId)
+    private bool IsCurrent(string alarmId, AlarmRuntimeState state, long generation)
     {
-        if (!_states.TryGetValue(alarmId, out var state))
+        lock (_sync)
         {
-            state = new AlarmRuntimeState();
-            _states[alarmId] = state;
-        }
-
-        return state;
-    }
-
-    private void PruneStates(IReadOnlyList<ModbusAlarmOptions> alarms)
-    {
-        var knownIds = alarms
-            .Select(alarm => alarm.Id)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var stateId in _states.Keys.Where(id => !knownIds.Contains(id)).ToArray())
-        {
-            _states.Remove(stateId);
+            return !_disposed && generation == state.Context.ConfigurationGeneration
+                && _states.TryGetValue(alarmId, out var current) && ReferenceEquals(current, state)
+                && ReferenceEquals(state.RuntimeOptions, _runtime.CurrentOptions)
+                && state.Role == GetWriteRole(_runtime.Status);
         }
     }
+
+    private static ModbusRuntimeRole? GetWriteRole(ModbusStatus status) =>
+        status.ClientState == ModbusConnectionState.Running ? ModbusRuntimeRole.Client
+        : status.ServerState == ModbusConnectionState.Running ? ModbusRuntimeRole.Server : null;
+
+    private void OnStatusChanged(object? sender, ModbusStatus status)
+    {
+        AlarmRuntimeState[] invalidated;
+        lock (_sync)
+        {
+            var next = (status.ClientState, status.ServerState);
+            if (_disposed || next == _runtimeStates)
+            {
+                return;
+            }
+
+            _runtimeStates = next;
+            invalidated = InvalidateStates();
+        }
+
+        CancelStates(invalidated);
+    }
+
+    // Called under _sync; cancellation and observable UI updates happen outside it.
+    private AlarmRuntimeState[] InvalidateStates(Func<AlarmRuntimeState, bool>? predicate = null)
+    {
+        _configurationGeneration++;
+        var states = _states.Values.Where(state => predicate?.Invoke(state) ?? true).ToArray();
+        foreach (var state in states)
+        {
+            _states.Remove(state.Context.AlarmId);
+        }
+
+        return states;
+    }
+
+    private void CancelStates(IEnumerable<AlarmRuntimeState> states)
+    {
+        foreach (var state in states)
+        {
+            state.Lifetime.Cancel();
+            if (Dispatcher.UIThread.CheckAccess())
+            {
+                _sessionJournal.InvalidateAlarmNotification(state.Context);
+            }
+            else
+            {
+                Dispatcher.UIThread.Post(() => _sessionJournal.InvalidateAlarmNotification(state.Context));
+            }
+        }
+    }
+
+    private static bool SameAlarmMap(IReadOnlyList<ModbusAlarmOptions> left, IReadOnlyList<ModbusAlarmOptions> right) =>
+        left.Count == right.Count && left.Zip(right).All(pair => SameAlarm(pair.First, pair.Second));
+
+    private static bool SameAlarm(ModbusAlarmOptions left, ModbusAlarmOptions right) =>
+        left.Id == right.Id && left.Enabled == right.Enabled && left.Kind == right.Kind
+        && left.Message == right.Message && left.RegisterValueEnabled == right.RegisterValueEnabled
+        && left.RegisterValuePrefix == right.RegisterValuePrefix && left.RegisterValueAddress == right.RegisterValueAddress
+        && SameAddress(left.Alarm, right.Alarm) && SameAddress(left.Acknowledgement, right.Acknowledgement)
+        && left.AcknowledgementEnabled == right.AcknowledgementEnabled
+        && left.AcknowledgementPulseDurationMs == right.AcknowledgementPulseDurationMs
+        && left.RepeatIntervalMs == right.RepeatIntervalMs;
+
+    private static bool SameAddress(ModbusBitAddressOptions left, ModbusBitAddressOptions right) =>
+        left.Area == right.Area && left.Address == right.Address && left.BitIndex == right.BitIndex;
 
     private static bool TryReadBit(
         ModbusSnapshot snapshot,
@@ -298,12 +423,15 @@ public sealed class ModbusAlarmMonitor : IDisposable
             string.Concat(alarm.RegisterValuePrefix, valueText));
     }
 
-    private sealed class AlarmRuntimeState
+    private sealed class AlarmRuntimeState(DateTimeOffset activatedAt, ModbusRuntimeRole role, ModbusOptions runtimeOptions)
     {
-        public bool IsActive { get; set; }
+        public AlarmAcknowledgementContext Context { get; set; } = null!;
+        public CancellationTokenSource Lifetime { get; } = new();
+        public ModbusRuntimeRole Role { get; } = role;
+        public ModbusOptions RuntimeOptions { get; } = runtimeOptions;
         public bool IsShowing { get; set; }
         public DateTimeOffset? NextShowAt { get; set; }
-        public DateTimeOffset? ActivatedAt { get; set; }
-        public bool ShouldMarkNotificationUnread { get; set; }
+        public DateTimeOffset ActivatedAt { get; } = activatedAt;
+        public bool ShouldMarkNotificationUnread { get; set; } = true;
     }
 }

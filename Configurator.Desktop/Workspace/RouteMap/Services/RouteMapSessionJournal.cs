@@ -2,7 +2,9 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using Avalonia.Media;
 using Configurator.Application.Services.Modbus.Configuration;
+using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
+using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
@@ -83,20 +85,31 @@ public sealed class RouteMapSessionJournal
         DateTimeOffset createdAt,
         bool markUnread,
         string? registerValueText = null)
+        => ShowAlarmNotification(alarm, createdAt, markUnread, registerValueText, null);
+
+    internal void ShowAlarmNotification(
+        ModbusAlarmOptions alarm,
+        DateTimeOffset createdAt,
+        bool markUnread,
+        string? registerValueText,
+        AlarmAcknowledgementContext? context)
     {
         var item = Notifications.FirstOrDefault(
             candidate => string.Equals(candidate.Id, alarm.Id, StringComparison.OrdinalIgnoreCase));
         if (item is null)
         {
-            Notifications.Insert(0, new AlarmNotificationItem(
+            var notification = new AlarmNotificationItem(
                 alarm,
                 createdAt,
                 isUnread: markUnread,
                 isActive: true,
-                registerValueText: registerValueText));
+                registerValueText: registerValueText);
+            notification.AcknowledgementContext = context;
+            Notifications.Insert(0, notification);
             return;
         }
 
+        item.AcknowledgementContext = context;
         item.Apply(
             alarm,
             createdAt,
@@ -104,6 +117,51 @@ public sealed class RouteMapSessionJournal
             isActive: true,
             registerValueText: registerValueText);
         MoveNotificationToTop(item);
+    }
+
+    internal void InvalidateAlarmNotification(AlarmAcknowledgementContext context)
+    {
+        if (FindNotification(context.AlarmId) is { } item
+            && ReferenceEquals(item.AcknowledgementContext, context))
+        {
+            item.IsActive = false;
+        }
+    }
+
+    // Both dialog entry points finish here. No mutable notification/configuration is
+    // read after awaiting the dialog, and no journal state is changed after the I/O.
+    internal async Task<ModbusOperationResult?> CompleteAlarmAcknowledgementAsync(
+        AlarmAcknowledgementContext? context,
+        IModbusBitWriter writer,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (context is null || !context.IsCurrent()
+            || FindNotification(context.AlarmId) is not { IsActive: true } item
+            || !ReferenceEquals(item.AcknowledgementContext, context))
+        {
+            return null;
+        }
+
+        var alarm = context.CopyAlarm();
+        RecordAlarmAcknowledged(alarm, DateTimeOffset.Now);
+        if (!alarm.AcknowledgementEnabled || !context.IsCurrent())
+        {
+            return null;
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, context.CancellationToken);
+        try
+        {
+            // Invalidation also cancels an ACK waiting in the writer's gate.
+            linked.Token.ThrowIfCancellationRequested();
+            return await writer.PulseAsync(alarm.Acknowledgement, alarm.AcknowledgementPulseDurationMs, linked.Token);
+        }
+        catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested
+                                                  && !cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
     }
 
     public void RecordAlarmCleared(ModbusAlarmOptions alarm, DateTimeOffset timestamp)
@@ -275,6 +333,8 @@ public sealed class AlarmNotificationItem : ReactiveObject
 
     public string Id { get; }
 
+    internal AlarmAcknowledgementContext? AcknowledgementContext { get; set; }
+
     public ModbusAlarmKind Kind
     {
         get => _kind;
@@ -404,6 +464,23 @@ public sealed class AlarmNotificationItem : ReactiveObject
         ModbusAlarmKind.Message => "Сообщение",
         _ => "Сообщение"
     };
+}
+
+internal sealed class AlarmAcknowledgementContext(
+    ModbusAlarmOptions alarm,
+    long activationToken,
+    long configurationGeneration,
+    Func<bool> isCurrent,
+    CancellationToken cancellationToken)
+{
+    private readonly ModbusAlarmOptions _alarm = alarm.Clone();
+
+    public string AlarmId => _alarm.Id;
+    public long ActivationToken { get; } = activationToken;
+    public long ConfigurationGeneration { get; } = configurationGeneration;
+    public CancellationToken CancellationToken { get; } = cancellationToken;
+    public bool IsCurrent() => !CancellationToken.IsCancellationRequested && isCurrent();
+    public ModbusAlarmOptions CopyAlarm() => _alarm.Clone();
 }
 
 public sealed record RouteMapSessionHistoryItem(
