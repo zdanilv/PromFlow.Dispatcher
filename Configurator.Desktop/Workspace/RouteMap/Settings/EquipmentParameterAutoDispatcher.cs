@@ -64,6 +64,14 @@ public sealed class EquipmentParameterAutoDispatcher(
                 continue;
             }
 
+            if (!IsBatchAvailable())
+                break;
+            // Consume the single automatic attempt before transport I/O. If saving
+            // its outcome later fails, reconnect/restart must never repeat the write.
+            if (!await valueStore.TryBeginDispatchAsync(pending.CardId, request.SignalId,
+                    pending.Parameter.SavedValue!, cancellationToken))
+                continue;
+
             string? dispatchError = null;
             OperationCanceledException? cancellation = null;
             bool dispatched;
@@ -81,6 +89,8 @@ public sealed class EquipmentParameterAutoDispatcher(
 
             if (!dispatched)
             {
+                await valueStore.DeferDispatchAsync(pending.CardId, request.SignalId,
+                    pending.Parameter.SavedValue!, CancellationToken.None);
                 cancellationToken.ThrowIfCancellationRequested();
                 break;
             }

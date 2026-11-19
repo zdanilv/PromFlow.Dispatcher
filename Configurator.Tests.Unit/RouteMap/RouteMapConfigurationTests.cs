@@ -1364,6 +1364,89 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Auto_dispatch_result_save_failure_cannot_repeat_a_started_write_after_restart(bool writeFails)
+    {
+        using var scope = new TempConfigurationScope();
+        var writes = 0;
+        var provider = new ConnectedSignalProvider();
+        using var runtime = new RouteMapSignalRuntime(provider, new CapturingDispatcher(), provider,
+            new CallbackDispatcher(() =>
+            {
+                writes++;
+                Directory.CreateDirectory(scope.Path + ".tmp");
+                if (writeFails)
+                    throw new TimeoutException("Unknown delivery");
+            }), RouteMapSignalSource.Modbus);
+        using (var manager = scope.CreateManager())
+        {
+            var draft = manager.CreateDraft();
+            draft.Cards.Single().Parameters.Add(new EquipmentCardParameterConfiguration
+            {
+                Title = "Скорость", SignalId = "equip.bucket.speed",
+                Direction = SignalBindingDirection.Write, ValueType = SignalValueType.Word
+            });
+            Assert.True((await manager.SaveAndApplyAsync(draft)).IsSuccess);
+            using var store = new RouteMapEquipmentParameterValueStore(manager);
+            await store.SaveAsync("equip.bucket", [new("equip.bucket.speed", "11")], true);
+            var auto = new EquipmentParameterAutoDispatcher(store, runtime,
+                NoopEquipmentParameterWriteValidator.Instance, runtime);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => auto.DispatchPendingAsync());
+            Assert.Equal(1, writes);
+            Directory.Delete(scope.Path + ".tmp");
+        }
+
+        using var restarted = scope.CreateManager();
+        using var reopenedStore = new RouteMapEquipmentParameterValueStore(restarted);
+        runtime.SwitchSource(RouteMapSignalSource.Mock);
+        runtime.SwitchSource(RouteMapSignalSource.Modbus);
+        await new EquipmentParameterAutoDispatcher(reopenedStore, runtime,
+            NoopEquipmentParameterWriteValidator.Instance, runtime).DispatchPendingAsync();
+
+        Assert.Equal(1, writes);
+        var parameter = Assert.Single(restarted.CurrentDocument.Cards.Single().Parameters);
+        Assert.Equal("11", parameter.SavedValue);
+        Assert.False(parameter.PendingAutoDispatch);
+        Assert.False(string.IsNullOrWhiteSpace(parameter.LastDispatchError));
+        Assert.Equal(22, restarted.CurrentDocument.SchemaVersion);
+    }
+
+    [Fact]
+    public async Task Auto_dispatch_reservation_failure_leaves_pending_and_sends_nothing()
+    {
+        using var scope = new TempConfigurationScope();
+        using var manager = scope.CreateManager();
+        var draft = manager.CreateDraft();
+        draft.Cards.Single().Parameters.Add(new EquipmentCardParameterConfiguration
+        {
+            Title = "Скорость", SignalId = "equip.bucket.speed",
+            Direction = SignalBindingDirection.Write, ValueType = SignalValueType.Word
+        });
+        Assert.True((await manager.SaveAndApplyAsync(draft)).IsSuccess);
+        using var store = new RouteMapEquipmentParameterValueStore(manager);
+        await store.SaveAsync("equip.bucket", [new("equip.bucket.speed", "12")], true);
+        Assert.False(await store.TryBeginDispatchAsync("equip.bucket", "equip.bucket.speed", "11"));
+        var dispatcher = new CapturingDispatcher();
+        var provider = new ConnectedSignalProvider();
+        using var runtime = new RouteMapSignalRuntime(provider, dispatcher, provider, dispatcher, RouteMapSignalSource.Modbus);
+        var auto = new EquipmentParameterAutoDispatcher(store, runtime, NoopEquipmentParameterWriteValidator.Instance, runtime);
+        var original = await File.ReadAllBytesAsync(scope.Path);
+        Directory.CreateDirectory(scope.Path + ".tmp");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => auto.DispatchPendingAsync());
+        Assert.Empty(dispatcher.Requests);
+        Assert.Single(store.GetPending());
+        Assert.Equal(original, await File.ReadAllBytesAsync(scope.Path));
+        Directory.Delete(scope.Path + ".tmp");
+
+        await auto.DispatchPendingAsync();
+        Assert.Single(dispatcher.Requests);
+        Assert.Empty(store.GetPending());
+    }
+
+    [Theory]
     [InlineData(SignalBindingDirection.Read, SignalValueType.UInt16, EquipmentParameterVisibility.User)]
     [InlineData(SignalBindingDirection.Write, SignalValueType.Bool, EquipmentParameterVisibility.Admin)]
     [InlineData(SignalBindingDirection.ReadWrite, SignalValueType.Word, EquipmentParameterVisibility.Admin)]
@@ -3615,6 +3698,25 @@ public sealed class RouteMapConfigurationTests
             Requests.Add(request);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class CallbackDispatcher(Action callback) : IEquipmentCommandDispatcher
+    {
+        public Task DispatchAsync(SignalWriteRequest request, CancellationToken cancellationToken = default)
+        {
+            callback();
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ConnectedSignalProvider : ISignalValueProvider
+    {
+        public IObservable<IReadOnlyDictionary<string, SignalValue>> Observe() =>
+            Observable.Return<IReadOnlyDictionary<string, SignalValue>>(new Dictionary<string, SignalValue>
+            {
+                [RouteMapSystemSignalIds.ConnectionConnected] = new(RouteMapSystemSignalIds.ConnectionConnected,
+                    true, SignalValueType.Bool, DateTimeOffset.UtcNow, true, false)
+            });
     }
 
     private sealed class FailingDispatcher : IEquipmentCommandDispatcher

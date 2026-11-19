@@ -278,6 +278,41 @@ public sealed class NotificationsPanelViewModelTests
         Assert.Single(fixture.Journal.History, item => item.EventText == "OK");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Concurrent_panel_and_monitor_responses_cannot_ack_a_replacement_context(bool changeMap)
+    {
+        using var fixture = new Fixture();
+        var monitor = await fixture.OpenAsync(panel: false);
+        var panel = fixture.Panel.ShowNotificationCommand.Execute(Assert.Single(fixture.Journal.Notifications)).ToTask();
+        Assert.Equal(2, fixture.Dialog.Pending.Count);
+
+        if (changeMap)
+        {
+            var changed = fixture.Options.CurrentValue.Clone();
+            changed.AlarmMap[0].Acknowledgement.Address = 3;
+            fixture.Options.Emit(changed);
+        }
+        else
+        {
+            await fixture.Monitor.ProcessSnapshotAsync(ModbusAlarmMonitorTests.CreateSnapshot(false), fixture.Now.AddMilliseconds(100));
+        }
+        var replacement = fixture.Monitor.ProcessSnapshotAsync(ModbusAlarmMonitorTests.CreateSnapshot(true), fixture.Now.AddMilliseconds(200));
+        Assert.Equal(3, fixture.Dialog.Pending.Count);
+
+        fixture.Dialog.Answer(0, true);
+        fixture.Dialog.Answer(1, true);
+        await Task.WhenAll(monitor, panel);
+        fixture.AssertNoAcknowledgement();
+        Assert.True(Assert.Single(fixture.Journal.Notifications).IsUnread);
+
+        fixture.Dialog.Answer(2, true);
+        await replacement;
+        Assert.Equal(changeMap ? 3 : 1, Assert.Single(fixture.Writer.Pulses).Address);
+        Assert.Single(fixture.Journal.History, item => item.EventText == "OK");
+    }
+
     private sealed class Fixture : IDisposable
     {
         public Fixture(bool acknowledgementEnabled = true)

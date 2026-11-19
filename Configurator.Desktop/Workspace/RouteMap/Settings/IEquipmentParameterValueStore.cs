@@ -20,6 +20,14 @@ public interface IEquipmentParameterValueStore
 
     IReadOnlyList<PendingEquipmentParameter> GetPending();
 
+    // Return true only after durably consuming the matching pending attempt.
+    // Stores without this guarantee must not start automatic physical writes.
+    Task<bool> TryBeginDispatchAsync(
+        string cardId,
+        string signalId,
+        string expectedSavedValue,
+        CancellationToken cancellationToken = default) => Task.FromResult(false);
+
     Task DeferDispatchAsync(
         string cardId,
         string signalId,

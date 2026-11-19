@@ -968,6 +968,10 @@ public sealed class EquipmentCardParametersDialogTests
 
         public IReadOnlyList<PendingEquipmentParameter> GetPending() => _store.GetPending();
 
+        public Task<bool> TryBeginDispatchAsync(string cardId, string signalId, string expectedSavedValue,
+            CancellationToken cancellationToken = default) =>
+            _store.TryBeginDispatchAsync(cardId, signalId, expectedSavedValue, cancellationToken);
+
         public Task DeferDispatchAsync(string cardId, string signalId, string expectedSavedValue,
             CancellationToken cancellationToken = default) =>
             _store.DeferDispatchAsync(cardId, signalId, expectedSavedValue, cancellationToken);

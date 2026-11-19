@@ -254,6 +254,9 @@ public sealed class EquipmentCardParametersDialogViewModelTests
             }
         }
         public IReadOnlyList<PendingEquipmentParameter> GetPending() => Inner.GetPending();
+        public Task<bool> TryBeginDispatchAsync(string cardId, string signalId, string expectedSavedValue,
+            CancellationToken cancellationToken = default) =>
+            Inner.TryBeginDispatchAsync(cardId, signalId, expectedSavedValue, cancellationToken);
         public Task DeferDispatchAsync(string cardId, string signalId, string expectedSavedValue,
             CancellationToken cancellationToken = default)
         {
@@ -1082,6 +1085,14 @@ public sealed class EquipmentCardParametersDialogViewModelTests
         }
 
         public IReadOnlyList<PendingEquipmentParameter> GetPending() => Pending.ToArray();
+
+        public Task<bool> TryBeginDispatchAsync(string cardId, string signalId, string expectedSavedValue,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Pending.RemoveAll(item => item.CardId == cardId &&
+                item.Parameter.Binding.SignalId == signalId && item.Parameter.SavedValue == expectedSavedValue) > 0);
+        }
 
         public Task CompleteDispatchAsync(
             string cardId,

@@ -294,6 +294,50 @@ public sealed class EquipmentParameterAutoDispatcherTests
         AssertState(fixture, Second, "22", pending: true);
     }
 
+    [Fact]
+    public async Task Editing_value_while_reservation_waits_does_not_send_the_old_value()
+    {
+        using var reservation = new OperationBarrier();
+        using var fixture = new Fixture(begin: signal => signal == First ? reservation.EnterAsync() : Task.CompletedTask);
+        var batch = fixture.AutoDispatch.DispatchPendingAsync();
+        await reservation.Entered;
+        await fixture.Store.SaveAsync(CardId, [new(First, "12")], pendingAutoDispatch: true);
+        reservation.Release();
+        await batch.WaitAsync(BarrierTimeout);
+
+        Assert.Equal([Write(Second, 22)], fixture.Modbus.Requests);
+        AssertState(fixture, First, "12", pending: true);
+        await fixture.NewAutoDispatcher().DispatchPendingAsync();
+        Assert.Equal([Write(Second, 22), Write(First, 12)], fixture.Modbus.Requests);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Source_change_or_cancellation_during_reservation_defers_the_unstarted_attempt(bool cancel)
+    {
+        using var cancellation = new CancellationTokenSource();
+        using var reservation = new OperationBarrier();
+        using var fixture = new Fixture(begin: signal => signal == First ? reservation.EnterAsync() : Task.CompletedTask);
+        var batch = fixture.AutoDispatch.DispatchPendingAsync(cancellation.Token);
+        await reservation.Entered;
+        if (cancel)
+            cancellation.Cancel();
+        else
+            fixture.SwitchToMock();
+        reservation.Release();
+        if (cancel)
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => batch.WaitAsync(BarrierTimeout));
+        else
+            await batch.WaitAsync(BarrierTimeout);
+
+        AssertNoAttempts(fixture);
+        fixture.ReconnectModbus();
+        await fixture.NewAutoDispatcher().DispatchPendingAsync();
+        Assert.Equal([Write(First, 11), Write(Second, 22)], fixture.Modbus.Requests);
+        Assert.Empty(fixture.Mock.Requests);
+    }
+
     private static void AssertState(
         Fixture fixture, string signalId, string savedValue, bool pending, string? error = null)
     {
@@ -312,9 +356,10 @@ public sealed class EquipmentParameterAutoDispatcherTests
         public Fixture(
             Func<SignalWriteRequest, CancellationToken, Task>? dispatch = null,
             Func<Completion, Task>? persist = null,
-            bool publishConnection = true)
+            bool publishConnection = true,
+            Func<string, Task>? begin = null)
         {
-            Store = new RecordingValueStore(persist);
+            Store = new RecordingValueStore(persist, begin);
             Modbus = new RecordingDispatcher(dispatch);
             Runtime = new RouteMapSignalRuntime(_mockSignals, Mock, ModbusSignals, Modbus, RouteMapSignalSource.Modbus);
             AutoDispatch = NewAutoDispatcher();
@@ -410,7 +455,7 @@ public sealed class EquipmentParameterAutoDispatcherTests
 
     private sealed record Completion(string CardId, string SignalId, string ExpectedValue, string? Error);
 
-    private sealed class RecordingValueStore(Func<Completion, Task>? persist) : IEquipmentParameterValueStore
+    private sealed class RecordingValueStore(Func<Completion, Task>? persist, Func<string, Task>? begin) : IEquipmentParameterValueStore
     {
         private readonly object _sync = new();
         private readonly List<Completion> _completions = [];
@@ -461,6 +506,35 @@ public sealed class EquipmentParameterAutoDispatcherTests
                     .Select(parameter => new PendingEquipmentParameter(CardId, parameter))
                     .ToArray();
             }
+        }
+
+        public async Task<bool> TryBeginDispatchAsync(string cardId, string signalId, string expectedSavedValue,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (begin is not null)
+                await begin(signalId);
+            lock (_sync)
+            {
+                var index = FindParameterIndex(signalId);
+                var parameter = _parameters[index];
+                if (!parameter.PendingAutoDispatch || parameter.SavedValue != expectedSavedValue)
+                    return false;
+                _parameters[index] = parameter with { PendingAutoDispatch = false, LastDispatchError = "Unknown outcome" };
+                return true;
+            }
+        }
+
+        public Task DeferDispatchAsync(string cardId, string signalId, string expectedSavedValue,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_sync)
+            {
+                var index = FindParameterIndex(signalId);
+                if (_parameters[index].SavedValue == expectedSavedValue)
+                    _parameters[index] = _parameters[index] with { PendingAutoDispatch = true, LastDispatchError = null };
+            }
+            return Task.CompletedTask;
         }
 
         public async Task CompleteDispatchAsync(

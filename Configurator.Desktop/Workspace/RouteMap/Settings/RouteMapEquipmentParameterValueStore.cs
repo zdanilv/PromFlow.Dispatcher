@@ -105,6 +105,27 @@ public sealed class RouteMapEquipmentParameterValueStore(
                 .Select(parameter => new PendingEquipmentParameter(card.Id, parameter)))
             .ToArray();
 
+    public async Task<bool> TryBeginDispatchAsync(
+        string cardId,
+        string signalId,
+        string expectedSavedValue,
+        CancellationToken cancellationToken = default)
+    {
+        var started = false;
+        await UpdateAsync(document =>
+        {
+            var parameter = FindParameter(FindCard(document, cardId), signalId);
+            if (!parameter.PendingAutoDispatch ||
+                !string.Equals(parameter.SavedValue, expectedSavedValue, StringComparison.Ordinal))
+                return;
+
+            parameter.PendingAutoDispatch = false;
+            parameter.LastDispatchError = "Попытка отправки начата; результат неизвестен.";
+            started = true;
+        }, cancellationToken);
+        return started;
+    }
+
     public Task CompleteDispatchAsync(
         string cardId,
         string signalId,
