@@ -13,7 +13,7 @@ namespace Configurator.Infrastructure.Modbus.Runtime;
 /// <summary>
 /// Встроенный Modbus TCP сервер с ручным управлением локальной картой данных.
 /// </summary>
-internal sealed class ModbusServerService : IModbusServerService, IModbusBitPulseProvider
+internal sealed class ModbusServerService : IModbusServerService, IModbusBitPulseProvider, IModbusObservedWriter
 {
     private readonly ILogger<ModbusServerService> _logger;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
@@ -25,6 +25,7 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
     private ModbusEndpointOptions _options = new();
     private ModbusConnectionState _state = ModbusConnectionState.Stopped;
     private ModbusSnapshot _snapshot = ModbusSnapshot.Empty;
+    private Guid _sourceSessionId;
 
     /// <summary>
     /// Создает серверный сервис.
@@ -178,6 +179,7 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
             }
 
             _options = NormalizeOptions(options);
+            _sourceSessionId = Guid.NewGuid();
             PublishStatus(ModbusConnectionState.Starting, "Сервер запускается");
 
             try
@@ -246,7 +248,11 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
     /// <summary>
     /// Обновляет coil-значение в локальной карте встроенного сервера.
     /// </summary>
-    public async Task SetCoilAsync(int address, bool value, CancellationToken cancellationToken = default)
+    public Task SetCoilAsync(int address, bool value, CancellationToken cancellationToken = default)
+        => SetCoilAsync(address, value, cancellationToken, null);
+
+    private async Task SetCoilAsync(int address, bool value, CancellationToken cancellationToken,
+        Action<ModbusWriteReceipt>? observe)
     {
         await _ioGate.WaitAsync(cancellationToken);
 
@@ -254,6 +260,7 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
         {
             var server = EnsureServer();
             ValidateAddress(address, _options.CoilCount, "Coil");
+            observe?.Invoke(new(ModbusRuntimeRole.Server, _sourceSessionId, ModbusObservationSequence.Next()));
             server.DataStore!.CoilDiscretes[address + 1] = value;
             PublishStatus(ModbusConnectionState.Running, $"Сервер установил Coil[{address}]={value}");
         }
@@ -268,7 +275,11 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
     /// <summary>
     /// Обновляет один holding-регистр в локальной карте встроенного сервера.
     /// </summary>
-    public async Task SetRegisterAsync(int address, ushort value, CancellationToken cancellationToken = default)
+    public Task SetRegisterAsync(int address, ushort value, CancellationToken cancellationToken = default)
+        => SetRegisterAsync(address, value, cancellationToken, null);
+
+    private async Task SetRegisterAsync(int address, ushort value, CancellationToken cancellationToken,
+        Action<ModbusWriteReceipt>? observe)
     {
         await _ioGate.WaitAsync(cancellationToken);
 
@@ -276,6 +287,7 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
         {
             var server = EnsureServer();
             ValidateAddress(address, _options.RegisterCount, "Register");
+            observe?.Invoke(new(ModbusRuntimeRole.Server, _sourceSessionId, ModbusObservationSequence.Next()));
             server.DataStore!.HoldingRegisters[address + 1] = value;
             PublishStatus(ModbusConnectionState.Running, $"Сервер установил Register[{address}]={value}");
         }
@@ -290,7 +302,11 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
     /// <summary>
     /// Обновляет блок holding-регистров в локальной карте встроенного сервера.
     /// </summary>
-    public async Task SetRegistersAsync(int startAddress, ushort[] values, CancellationToken cancellationToken = default)
+    public Task SetRegistersAsync(int startAddress, ushort[] values, CancellationToken cancellationToken = default)
+        => SetRegistersAsync(startAddress, values, cancellationToken, null);
+
+    private async Task SetRegistersAsync(int startAddress, ushort[] values, CancellationToken cancellationToken,
+        Action<ModbusWriteReceipt>? observe)
     {
         await _ioGate.WaitAsync(cancellationToken);
 
@@ -298,6 +314,7 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
         {
             var server = EnsureServer();
             ValidateRange(startAddress, values.Length, _options.RegisterCount, "Register");
+            observe?.Invoke(new(ModbusRuntimeRole.Server, _sourceSessionId, ModbusObservationSequence.Next()));
 
             for (var index = 0; index < values.Length; index++)
             {
@@ -314,6 +331,21 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
         }
 
         await PublishSnapshotAsync(cancellationToken);
+    }
+
+    async Task<ModbusWriteReceipt> IModbusObservedWriter.WriteObservedAsync(
+        ModbusDataArea area, int address, bool coilValue, ushort[] registers,
+        bool pulse, CancellationToken cancellationToken)
+    {
+        ModbusWriteReceipt receipt = default;
+        void Observe(ModbusWriteReceipt value) => receipt = value;
+        if (area == ModbusDataArea.Coil)
+            await SetCoilAsync(address, coilValue, cancellationToken, Observe);
+        else if (registers.Length == 1)
+            await SetRegisterAsync(address, registers[0], cancellationToken, Observe);
+        else
+            await SetRegistersAsync(address, registers, cancellationToken, Observe);
+        return receipt;
     }
 
     /// <summary>
@@ -357,6 +389,7 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
                 ?? throw new InvalidOperationException("Карта данных сервера не инициализирована.");
             var coils = new bool[_options.CoilCount];
             var registers = new ushort[_options.RegisterCount];
+            var coilsSequence = ModbusObservationSequence.Next();
 
             for (var address = 0; address < coils.Length; address++)
             {
@@ -368,13 +401,23 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
                 registers[address] = dataStore.HoldingRegisters[address + 1];
             }
 
+            var readAt = DateTimeOffset.Now;
+
             var snapshot = new ModbusSnapshot
             {
                 Role = ModbusRuntimeRole.Server,
+                SourceSessionId = _sourceSessionId,
+                ReadSequence = coilsSequence,
+                CoilsReadState = coils.Length > 0
+                    ? new(true, true, true, readAt, coilsSequence)
+                    : ModbusAreaReadState.Unavailable(false),
+                HoldingRegistersReadState = registers.Length > 0
+                    ? new(true, true, true, readAt, coilsSequence)
+                    : ModbusAreaReadState.Unavailable(false),
                 Coils = coils,
                 HoldingRegisters = registers,
                 DecodedRegisters = ModbusRegistersCodec.Decode(registers),
-                Timestamp = DateTimeOffset.Now
+                Timestamp = readAt
             };
 
             _snapshot = snapshot;

@@ -16,7 +16,7 @@ using Xunit;
 
 namespace Configurator.Infrastructure.Modbus.Tests;
 
-public sealed class ModbusTcpServiceTests
+public sealed partial class ModbusTcpServiceTests
 {
     [Fact]
     public async Task StartClientAsync_StopsServerBeforeStartingClient()
@@ -592,6 +592,22 @@ public sealed class ModbusTcpServiceTests
                 Timestamp = DateTimeOffset.Now
             };
             SnapshotChanged?.Invoke(this, ClientSnapshot);
+        }
+
+        public void PublishRawSnapshot(ModbusSnapshot snapshot)
+        {
+            if (snapshot.Role == ModbusRuntimeRole.Client)
+                ClientSnapshot = snapshot;
+            else
+                ServerSnapshot = snapshot;
+            SnapshotChanged?.Invoke(this, snapshot);
+        }
+
+        public void ChangeEndpoint()
+        {
+            var next = CurrentOptions.Clone();
+            next.Client.Port++;
+            CurrentOptions = next;
         }
 
         public Task StartClientAsync(ModbusOptions? options = null, CancellationToken cancellationToken = default)

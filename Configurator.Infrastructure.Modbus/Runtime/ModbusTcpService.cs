@@ -8,6 +8,7 @@ using Configurator.Infrastructure.Modbus.Client;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Globalization;
+using System.Diagnostics;
 
 namespace Configurator.Infrastructure.Modbus.Runtime;
 
@@ -33,6 +34,23 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     private ModbusOptions _currentOptions;
     private ModbusServiceState _state = ModbusServiceState.Stopped;
     private ModbusDataSnapshot _currentDataSnapshot = ModbusDataSnapshot.Empty;
+    private long _dataGeneration;
+    private long _snapshotReadNotBefore;
+    private readonly Dictionary<ModbusRuntimeRole, long> _lastReadSequences = [];
+    private ModbusRuntimeRole _shadowRole = ModbusRuntimeRole.Runtime;
+    private Guid _shadowSessionId;
+    private bool _shadowIsGood;
+    private readonly Dictionary<ModbusRuntimeRole, ReadObservation> _readObservations = [];
+    private readonly Dictionary<ModbusRuntimeRole, Guid> _sourceSessionIds = [];
+    private readonly Dictionary<ModbusRuntimeRole, long> _sourceGenerations = [];
+    private readonly Dictionary<ModbusRuntimeRole, ModbusSnapshot> _acceptedSnapshots = [];
+
+    private sealed record ReadObservation(ModbusSnapshot Source,
+        IReadOnlyDictionary<string, ModbusDataValue> Values, long Generation);
+
+    private sealed record WriteConfirmationContext(ModbusDataPointOptions Point, ModbusRuntimeRole Role,
+        ModbusOptions RuntimeOptions, ModbusEndpointOptions Endpoint, long Generation,
+        long SourceGeneration, long PreviousReadSequence, Guid PreviousSourceSessionId, int TimeoutMs);
 
     /// <summary>
     /// Создает фасад и подписывает его на связанный Modbus runtime.
@@ -110,11 +128,11 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         lock (_sync)
         {
             _currentOptions = nextOptions;
-            ReplaceDataMap(nextOptions, clearValues: true);
+            ReplaceDataMap(nextOptions);
             snapshot = new ModbusDataSnapshot(
                 new Dictionary<string, ModbusDataValue>(StringComparer.OrdinalIgnoreCase),
                 DateTimeOffset.MinValue,
-                _state);
+                _state) { PublicationSequence = ModbusObservationSequence.Next() };
             _currentDataSnapshot = snapshot;
         }
 
@@ -183,7 +201,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             _latestValues.Remove(name);
             var values = new Dictionary<string, ModbusDataValue>(_currentDataSnapshot.Values, StringComparer.OrdinalIgnoreCase);
             values.Remove(name);
-            snapshot = _currentDataSnapshot with { Values = values };
+            snapshot = _currentDataSnapshot with { Values = values, PublicationSequence = ModbusObservationSequence.Next() };
             _currentDataSnapshot = snapshot;
         }
 
@@ -297,6 +315,10 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     {
         ModbusDataPointOptions point;
         object expectedValue = false;
+        long shadowGeneration;
+        Guid shadowSession;
+        WriteConfirmationContext confirmation;
+        ModbusWriteReceipt? receipt = null;
         await _gate.WaitAsync(ct);
 
         try
@@ -306,6 +328,17 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             {
                 if (!TryGetPoint(name, out point, out var pointFailure))
                     return pulse is null ? pointFailure : RejectPulseMapping(pointFailure.ErrorMessage);
+
+                shadowGeneration = _dataGeneration;
+                shadowSession = _shadowSessionId;
+                var sourceRole = RuntimeRole(role);
+                var runtimeOptions = _runtimeService.CurrentOptions;
+                _readObservations.TryGetValue(sourceRole, out var previousRead);
+                confirmation = new(point.Clone(), sourceRole, runtimeOptions,
+                    (sourceRole == ModbusRuntimeRole.Client ? runtimeOptions.Client : runtimeOptions.Server).Clone(),
+                    _dataGeneration, _sourceGenerations.GetValueOrDefault(sourceRole),
+                    previousRead?.Source.GetReadState(point.Area).SuccessfulReadSequence ?? 0,
+                    previousRead?.Source.SourceSessionId ?? Guid.Empty, Math.Max(0, _currentOptions.WriteConfirmationTimeoutMs));
 
                 if (pulse is { } expected)
                 {
@@ -337,7 +370,15 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             var pulseClient = pulse is not null && ShouldWriteThroughClient(role)
                 ? _clientService as ModbusClientService
                 : null;
-            if (point.Area == ModbusDataArea.Coil)
+            var observedWriter = ShouldWriteThroughClient(role)
+                ? _clientService as IModbusObservedWriter
+                : _serverService as IModbusObservedWriter;
+            if (observedWriter is not null)
+            {
+                receipt = await observedWriter.WriteObservedAsync(point.Area, point.Address, coilValue, registers,
+                    pulse is not null, ct);
+            }
+            else if (point.Area == ModbusDataArea.Coil)
             {
                 if (pulseClient is not null)
                 {
@@ -378,9 +419,14 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
                     await _serverService.SetRegistersAsync(point.Address, registers, ct);
                 }
 
+            }
+
+            if (point.Area == ModbusDataArea.HoldingRegister)
+            {
                 lock (_sync)
                 {
-                    for (var index = 0; index < registers.Length; index++)
+                    for (var index = 0; _shadowIsGood && shadowGeneration == _dataGeneration
+                        && shadowSession == _shadowSessionId && _shadowRole == RuntimeRole(role) && index < registers.Length; index++)
                     {
                         _holdingRegisterShadow[point.Address + index] = registers[index];
                     }
@@ -405,7 +451,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         var isPulseSet = point.WriteMode == ModbusWriteMode.Pulse && point.Type == ModbusValueType.Bool && expectedValue is true;
         if (point.IsReadable && !isPulseSet)
         {
-            return await WaitForConfirmationAsync(point, expectedValue, ct);
+            return await WaitForConfirmationAsync(confirmation, receipt, expectedValue, ct);
         }
 
         return ModbusOperationResult.Success();
@@ -516,6 +562,13 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             _logger.LogInformation("Modbus facade {Role} validation passed", role);
             _currentOptions = nextOptions;
             ReplaceDataMap(_currentOptions);
+            ModbusDataSnapshot resetSnapshot;
+            lock (_sync)
+            {
+                resetSnapshot = ModbusDataSnapshot.Empty with { State = _state, PublicationSequence = ModbusObservationSequence.Next() };
+                _currentDataSnapshot = resetSnapshot;
+            }
+            NotifyDataSnapshot(resetSnapshot);
 
             if (role == ModbusRunMode.Client)
             {
@@ -602,6 +655,8 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         }
 
         var activeRole = State.ActiveRole;
+        if (activeRole == ModbusRunMode.None)
+            return;
         if (activeRole == ModbusRunMode.Client && snapshot.Role != ModbusRuntimeRole.Client)
         {
             return;
@@ -612,16 +667,46 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             return;
         }
 
-        // В режиме Both снимок сервера принимается намеренно: так подтверждение записи
-        // видит реальную карту сервера после записи через Modbus TCP клиентом.
+        // Both retains server snapshot visibility; read validity stays with its source role.
 
         List<ModbusDataPointOptions> points;
+        long generation;
+        var coilsState = snapshot.GetReadState(ModbusDataArea.Coil);
+        var registersState = snapshot.GetReadState(ModbusDataArea.HoldingRegister);
         lock (_sync)
         {
-            points = _dataMap.Values.Select(point => point.Clone()).ToList();
-            for (var index = 0; index < snapshot.HoldingRegisters.Count; index++)
+            if (_state.ActiveRole == ModbusRunMode.None
+                || (_state.ActiveRole == ModbusRunMode.Client && snapshot.Role != ModbusRuntimeRole.Client)
+                || (_state.ActiveRole == ModbusRunMode.Server && snapshot.Role != ModbusRuntimeRole.Server))
+                return;
+            if (snapshot.ReadSequence > 0)
             {
-                _holdingRegisterShadow[index] = snapshot.HoldingRegisters[index];
+                if (snapshot.ReadSequence <= _snapshotReadNotBefore
+                    || (_lastReadSequences.TryGetValue(snapshot.Role, out var lastSequence) && snapshot.ReadSequence <= lastSequence))
+                    return;
+                _lastReadSequences[snapshot.Role] = snapshot.ReadSequence;
+            }
+
+            if (_sourceSessionIds.TryGetValue(snapshot.Role, out var previousSession) && previousSession != snapshot.SourceSessionId)
+                _sourceGenerations[snapshot.Role] = _sourceGenerations.GetValueOrDefault(snapshot.Role) + 1;
+            _sourceSessionIds[snapshot.Role] = snapshot.SourceSessionId;
+            _acceptedSnapshots[snapshot.Role] = snapshot;
+
+            generation = _dataGeneration;
+            points = _dataMap.Values.Select(point => point.Clone()).ToList();
+            // Both retains server visibility, but server data must never seed client RMW.
+            if (snapshot.Role == RuntimeRole(WriteRole(ResolveWritableRole())))
+            {
+                _holdingRegisterShadow.Clear();
+                _shadowRole = snapshot.Role;
+                _shadowSessionId = snapshot.SourceSessionId;
+                _shadowIsGood = registersState.IsGood && (registersState.SuccessfulReadSequence == 0
+                    || registersState.SuccessfulReadSequence > _snapshotReadNotBefore);
+                if (_shadowIsGood)
+                {
+                    for (var index = 0; index < snapshot.HoldingRegisters.Count; index++)
+                        _holdingRegisterShadow[index] = snapshot.HoldingRegisters[index];
+                }
             }
         }
 
@@ -636,7 +721,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             if (TryDecodePoint(point, snapshot, out var dataValue, out var failure))
             {
                 cycleValues[dataValue.Name] = dataValue;
-                PublishDataValue(dataValue);
+                PublishDataValue(dataValue, generation, snapshot);
             }
             else
             {
@@ -647,34 +732,39 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             }
         }
 
-        PublishDataSnapshot(cycleValues, snapshot.Timestamp);
+        lock (_sync)
+        {
+            if (generation != _dataGeneration || !IsAcceptedSnapshot(snapshot))
+                return;
+            foreach (var point in points.Where(point => point.IsReadable && !cycleValues.ContainsKey(point.Name)))
+                _latestValues.Remove(point.Name);
+            if (!_readObservations.TryGetValue(snapshot.Role, out var previous)
+                || snapshot.ReadSequence == 0 || snapshot.ReadSequence >= previous.Source.ReadSequence)
+                _readObservations[snapshot.Role] = new(snapshot, cycleValues, generation);
+        }
+        PublishDataSnapshot(cycleValues, snapshot, generation);
     }
 
     /// <summary>
     /// Перестраивает lookup по именам из настроенной карты данных и удаляет устаревшие значения кеша.
     /// </summary>
-    private void ReplaceDataMap(ModbusOptions options, bool clearValues = false)
+    private void ReplaceDataMap(ModbusOptions options)
     {
         lock (_sync)
         {
             _dataMap.Clear();
+            _dataGeneration++;
+            _snapshotReadNotBefore = ModbusObservationSequence.Next();
             _holdingRegisterShadow.Clear();
+            _shadowIsGood = false;
+            _latestValues.Clear();
+            _readObservations.Clear();
+            _sourceSessionIds.Clear();
             foreach (var point in options.DataMap)
             {
                 _dataMap[point.Name] = point.Clone();
             }
 
-            if (clearValues)
-            {
-                _latestValues.Clear();
-                return;
-            }
-
-            var knownNames = new HashSet<string>(_dataMap.Keys, StringComparer.OrdinalIgnoreCase);
-            foreach (var key in _latestValues.Keys.Where(key => !knownNames.Contains(key)).ToArray())
-            {
-                _latestValues.Remove(key);
-            }
         }
     }
 
@@ -716,6 +806,14 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     {
         try
         {
+            var readState = snapshot.GetReadState(point.Area);
+            if (!readState.IsGood || (readState.SuccessfulReadSequence > 0 && readState.SuccessfulReadSequence <= _snapshotReadNotBefore))
+            {
+                dataValue = EmptyValue(point);
+                failure = ModbusOperationResult.Failure("ModbusAreaReadUnavailable",
+                    $"The latest read of {point.Area} for '{point.Name}' is not trustworthy.");
+                return false;
+            }
             object value;
             if (point.Area == ModbusDataArea.Coil)
             {
@@ -765,7 +863,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
                 point.Length,
                 point.Type,
                 value,
-                snapshot.Timestamp);
+                readState.LastSuccessfulReadAt);
             failure = ModbusOperationResult.Success();
             return true;
         }
@@ -860,40 +958,78 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     /// Ждет, пока readable-точка данных опубликует только что записанное значение.
     /// </summary>
     private async Task<ModbusOperationResult> WaitForConfirmationAsync(
-        ModbusDataPointOptions point,
+        WriteConfirmationContext context,
+        ModbusWriteReceipt? receipt,
         object expectedValue,
         CancellationToken ct)
     {
-        var timeoutMs = Math.Max(0, _currentOptions.WriteConfirmationTimeoutMs);
+        var point = context.Point;
+        var timeoutMs = context.TimeoutMs;
         if (timeoutMs == 0)
         {
             return ModbusOperationResult.Success();
         }
 
-        var deadline = DateTimeOffset.UtcNow.AddMilliseconds(timeoutMs);
+        var started = Stopwatch.GetTimestamp();
 
-        while (DateTimeOffset.UtcNow <= deadline)
+        while (Stopwatch.GetElapsedTime(started).TotalMilliseconds <= timeoutMs)
         {
             ct.ThrowIfCancellationRequested();
 
-            ModbusDataValue? currentValue;
             lock (_sync)
             {
-                _latestValues.TryGetValue(point.Name, out currentValue);
+                if (Stopwatch.GetElapsedTime(started).TotalMilliseconds > timeoutMs)
+                    break;
+                var runtimeOptions = _runtimeService.CurrentOptions;
+                var endpoint = context.Role == ModbusRuntimeRole.Client ? runtimeOptions.Client : runtimeOptions.Server;
+                if (_dataGeneration != context.Generation
+                    || _sourceGenerations.GetValueOrDefault(context.Role) != context.SourceGeneration
+                    || !ReferenceEquals(context.RuntimeOptions, runtimeOptions)
+                    || !SameEndpoint(context.Endpoint, endpoint)
+                    || RuntimeRole(WriteRole(ResolveWritableRole())) != context.Role
+                    || !_dataMap.TryGetValue(point.Name, out var activePoint) || !point.HasSameMapping(activePoint)
+                    || (receipt is { } sent && (sent.Role != context.Role
+                        || (context.PreviousSourceSessionId != Guid.Empty && sent.SourceSessionId != context.PreviousSourceSessionId)
+                        || (_sourceSessionIds.TryGetValue(context.Role, out var sourceId) && sourceId != sent.SourceSessionId))))
+                {
+                    return ModbusOperationResult.Failure("ModbusWriteConfirmationContextChanged",
+                        $"The Modbus role, endpoint, session or mapping changed while confirming '{point.Name}'.");
+                }
+
+                // A changed-value event is deliberately unnecessary: every successful read
+                // cycle is observable here, including equal consecutive values.
+                if (receipt is { Sequence: > 0, SourceSessionId: var session } barrier && session != Guid.Empty
+                    && _readObservations.TryGetValue(context.Role, out var observation)
+                    && observation.Generation == context.Generation
+                    && observation.Source.SourceSessionId == session
+                    && observation.Source.ReadSequence > barrier.Sequence)
+                {
+                    var read = observation.Source.GetReadState(point.Area);
+                    if (read.IsGood && read.SuccessfulReadSequence > barrier.Sequence
+                        && read.SuccessfulReadSequence > context.PreviousReadSequence
+                        && observation.Values.TryGetValue(point.Name, out var currentValue)
+                        && ValuesEqual(currentValue.Value, expectedValue))
+                        return ModbusOperationResult.Success();
+                }
             }
 
-            if (currentValue is not null && ValuesEqual(currentValue.Value, expectedValue))
-            {
-                return ModbusOperationResult.Success();
-            }
-
-            await Task.Delay(50, ct);
+            var remaining = timeoutMs - Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            if (remaining > 0)
+                await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(50, remaining)), ct);
         }
 
         return ModbusOperationResult.Failure(
             "ModbusWriteConfirmationTimeout",
             $"Write to Modbus data point '{point.Name}' was not confirmed by the next snapshot.");
     }
+
+    private static bool SameEndpoint(ModbusEndpointOptions left, ModbusEndpointOptions right) =>
+        left.Host == right.Host && left.BindAddress == right.BindAddress && left.Port == right.Port
+        && left.UnitId == right.UnitId && left.Enabled == right.Enabled
+        && left.CoilsEnabled == right.CoilsEnabled && left.HoldingRegistersEnabled == right.HoldingRegistersEnabled
+        && left.CoilStartAddress == right.CoilStartAddress && left.HoldingRegisterStartAddress == right.HoldingRegisterStartAddress
+        && left.CoilCount == right.CoilCount && left.RegisterCount == right.RegisterCount
+        && left.PollIntervalMs == right.PollIntervalMs;
 
     /// <summary>
     /// Определяет, какой низкоуровневый сервис должен принять запись при текущих запущенных ролях.
@@ -922,21 +1058,29 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     private static ModbusRunMode WriteRole(ModbusRunMode role)
         => role == ModbusRunMode.Both ? ModbusRunMode.Client : role;
 
+    private static ModbusRuntimeRole RuntimeRole(ModbusRunMode role) => role switch
+    {
+        ModbusRunMode.Client => ModbusRuntimeRole.Client,
+        ModbusRunMode.Server => ModbusRuntimeRole.Server,
+        _ => ModbusRuntimeRole.Runtime
+    };
+
     /// <summary>
     /// Сохраняет декодированное значение и уведомляет подписчиков только при изменении.
     /// </summary>
-    private void PublishDataValue(ModbusDataValue dataValue)
+    private void PublishDataValue(ModbusDataValue dataValue, long generation, ModbusSnapshot source)
     {
         List<Action<ModbusDataValue>> subscribers = [];
 
         lock (_sync)
         {
-            if (!_dataMap.ContainsKey(dataValue.Name))
+            if (generation != _dataGeneration || !IsAcceptedSnapshot(source) || !_dataMap.ContainsKey(dataValue.Name))
                 return;
 
             if (_latestValues.TryGetValue(dataValue.Name, out var previous)
                 && ValuesEqual(previous.Value, dataValue.Value))
             {
+                _latestValues[dataValue.Name] = dataValue;
                 return;
             }
 
@@ -976,6 +1120,19 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     {
         lock (_sync)
         {
+            if (_state.ActiveRole != state.ActiveRole
+                || (_state.ClientState == ModbusConnectionState.Running && state.ClientState != ModbusConnectionState.Running)
+                || (_state.ServerState == ModbusConnectionState.Running && state.ServerState != ModbusConnectionState.Running))
+            {
+                _dataGeneration++;
+                _snapshotReadNotBefore = ModbusObservationSequence.Next();
+                _latestValues.Clear();
+                _readObservations.Clear();
+                _sourceSessionIds.Clear();
+                _holdingRegisterShadow.Clear();
+                _shadowIsGood = false;
+                _currentDataSnapshot = ModbusDataSnapshot.Empty with { PublicationSequence = ModbusObservationSequence.Next() };
+            }
             _state = state;
             _currentDataSnapshot = _currentDataSnapshot with { State = state };
         }
@@ -985,20 +1142,35 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
 
     private void PublishDataSnapshot(
         IReadOnlyDictionary<string, ModbusDataValue> values,
-        DateTimeOffset timestamp)
+        ModbusSnapshot source,
+        long generation)
     {
         ModbusDataSnapshot snapshot;
         lock (_sync)
         {
+            if (generation != _dataGeneration || !IsAcceptedSnapshot(source))
+                return;
             snapshot = new ModbusDataSnapshot(
                 values.Where(pair => _dataMap.ContainsKey(pair.Key)).ToDictionary(StringComparer.OrdinalIgnoreCase),
-                timestamp,
-                _state);
+                source.Timestamp,
+                _state)
+            {
+                PublicationSequence = ModbusObservationSequence.Next(),
+                SourceRole = source.Role,
+                SourceSessionId = source.SourceSessionId,
+                CoilsReadState = source.GetReadState(ModbusDataArea.Coil),
+                HoldingRegistersReadState = source.GetReadState(ModbusDataArea.HoldingRegister)
+            };
             _currentDataSnapshot = snapshot;
         }
 
         NotifyDataSnapshot(snapshot);
     }
+
+    // Call while holding _sync. Acquisition order is checked on entry; this also
+    // prevents an older callback resuming after a newer snapshot was accepted.
+    private bool IsAcceptedSnapshot(ModbusSnapshot source) =>
+        _acceptedSnapshots.TryGetValue(source.Role, out var accepted) && ReferenceEquals(accepted, source);
 
     private void NotifyDataSnapshot(ModbusDataSnapshot snapshot)
     {

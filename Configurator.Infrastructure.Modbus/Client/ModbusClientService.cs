@@ -17,7 +17,7 @@ namespace Configurator.Infrastructure.Modbus.Client;
 /// <summary>
 /// Modbus TCP клиент: читает карту данных и пишет значения по командам UI.
 /// </summary>
-internal sealed class ModbusClientService : IModbusClientService, IModbusBitPulseProvider
+internal sealed class ModbusClientService : IModbusClientService, IModbusBitPulseProvider, IModbusObservedWriter
 {
     private readonly ILogger<ModbusClientService> _logger;
     private readonly Func<ModbusEndpointOptions, CancellationToken, Task<TcpClient>> _connectTcpClientAsync;
@@ -33,6 +33,7 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
     private string? _lastPollError;
     private ModbusConnectionState _state = ModbusConnectionState.Stopped;
     private ModbusSnapshot _snapshot = ModbusSnapshot.Empty;
+    private Guid _sourceSessionId;
 
     /// <summary>
     /// Создает клиентский сервис.
@@ -131,7 +132,8 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
     internal Task WritePulseCoilAsync(int address, bool value, CancellationToken cancellationToken)
         => WriteCoilAsync(address, value, cancellationToken, pulse: true);
 
-    private async Task WriteCoilAsync(int address, bool value, CancellationToken cancellationToken, bool pulse)
+    private async Task WriteCoilAsync(int address, bool value, CancellationToken cancellationToken, bool pulse,
+        Action<ModbusWriteReceipt>? observe = null)
     {
         if (!_options.CoilsEnabled)
         {
@@ -144,7 +146,7 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
             reader => reader.WriteCoilAsync(_options.CoilStartAddress + address, value),
             $"Клиент записал Coil[{address}]={value}",
             "Coils",
-            cancellationToken, pulse);
+            cancellationToken, pulse, observe);
     }
 
     /// <summary>
@@ -294,7 +296,8 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
     }
 
     private async Task WriteRegisterAsync(
-        int address, ushort value, CancellationToken cancellationToken, bool pulse)
+        int address, ushort value, CancellationToken cancellationToken, bool pulse,
+        Action<ModbusWriteReceipt>? observe = null)
     {
         if (!_options.HoldingRegistersEnabled)
         {
@@ -307,13 +310,17 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
             reader => reader.WriteRegisterAsync(_options.HoldingRegisterStartAddress + address, value),
             $"Клиент записал Register[{address}]={value}",
             "Holding Registers",
-            cancellationToken, pulse);
+            cancellationToken, pulse, observe);
     }
 
     /// <summary>
     /// Записывает последовательность holding-регистров одним Modbus-запросом.
     /// </summary>
-    public async Task WriteRegistersAsync(int startAddress, ushort[] values, CancellationToken cancellationToken = default)
+    public Task WriteRegistersAsync(int startAddress, ushort[] values, CancellationToken cancellationToken = default)
+        => WriteRegistersAsync(startAddress, values, cancellationToken, null);
+
+    private async Task WriteRegistersAsync(int startAddress, ushort[] values, CancellationToken cancellationToken,
+        Action<ModbusWriteReceipt>? observe)
     {
         if (!_options.HoldingRegistersEnabled)
         {
@@ -326,7 +333,22 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
             reader => reader.WriteRegistersAsync(_options.HoldingRegisterStartAddress + startAddress, values),
             $"Клиент записал Registers[{startAddress}..{startAddress + values.Length - 1}]",
             "Holding Registers",
-            cancellationToken);
+            cancellationToken, observe: observe);
+    }
+
+    async Task<ModbusWriteReceipt> IModbusObservedWriter.WriteObservedAsync(
+        ModbusDataArea area, int address, bool coilValue, ushort[] registers,
+        bool pulse, CancellationToken cancellationToken)
+    {
+        ModbusWriteReceipt receipt = default;
+        void Observe(ModbusWriteReceipt value) => receipt = value;
+        if (area == ModbusDataArea.Coil)
+            await WriteCoilAsync(address, coilValue, cancellationToken, pulse, Observe);
+        else if (registers.Length == 1)
+            await WriteRegisterAsync(address, registers[0], cancellationToken, pulse, Observe);
+        else
+            await WriteRegistersAsync(address, registers, cancellationToken, Observe);
+        return receipt;
     }
 
     /// <summary>
@@ -421,6 +443,7 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
             }
 
             _reader = new ModbusClientDataReader(_master, _options.UnitId);
+            _sourceSessionId = Guid.NewGuid();
 
             if (cancellationToken.IsCancellationRequested)
             {
@@ -467,7 +490,8 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
         string successMessage,
         string failureArea,
         CancellationToken cancellationToken,
-        bool pulse = false)
+        bool pulse = false,
+        Action<ModbusWriteReceipt>? observe = null)
     {
         var written = false;
         var reconnect = false;
@@ -491,6 +515,7 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
             var reader = EnsureReader();
             if (pulseDeadline is null)
             {
+                observe?.Invoke(new(ModbusRuntimeRole.Client, _sourceSessionId, ModbusObservationSequence.Next()));
                 await write(reader);
             }
             else
@@ -514,6 +539,7 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
                         try
                         {
                             pulseDeadline.Token.ThrowIfCancellationRequested();
+                            observe?.Invoke(new(ModbusRuntimeRole.Client, _sourceSessionId, ModbusObservationSequence.Next()));
                             await write(reader);
                         }
                         catch (Exception ex) when (pulseDeadline.IsCancellationRequested)
@@ -591,12 +617,15 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
             var reader = EnsureReader();
             // Если одна область недоступна из-за настроек внешнего устройства, сохраняем
             // последнюю успешную область и не роняем клиент, пока SDK сообщает Modbus exception.
+            var readSequence = ModbusObservationSequence.Next();
             var coils = _snapshot.Role == ModbusRuntimeRole.Client
                 ? _snapshot.Coils.ToArray()
                 : Array.Empty<bool>();
             var registers = _snapshot.Role == ModbusRuntimeRole.Client
                 ? _snapshot.HoldingRegisters.ToArray()
                 : Array.Empty<ushort>();
+            var coilsState = _snapshot.CoilsReadState ?? ModbusAreaReadState.Unavailable(_options.CoilsEnabled);
+            var registersState = _snapshot.HoldingRegistersReadState ?? ModbusAreaReadState.Unavailable(_options.HoldingRegistersEnabled);
             var attempted = false;
             var succeeded = false;
             Exception? firstFailure = null;
@@ -608,12 +637,15 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
 
                 try
                 {
+                    var sequence = ModbusObservationSequence.Next();
                     coils = await reader.ReadCoilsAsync(_options.CoilStartAddress, _options.CoilCount);
+                    coilsState = new(true, true, true, DateTimeOffset.Now, sequence);
                     succeeded = true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogWarning(ex, "Ошибка чтения Coils Modbus клиента");
+                    coilsState = coilsState with { Enabled = true, LastAttemptSucceeded = false };
                     firstFailure ??= ex;
                     shortError = BuildAreaError("Coils", ex);
                 }
@@ -621,6 +653,7 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
             else
             {
                 coils = Array.Empty<bool>();
+                coilsState = ModbusAreaReadState.Unavailable(false);
             }
 
             if (_options.HoldingRegistersEnabled && _options.RegisterCount > 0)
@@ -629,14 +662,17 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
 
                 try
                 {
+                    var sequence = ModbusObservationSequence.Next();
                     registers = await reader.ReadHoldingRegistersAsync(
                         _options.HoldingRegisterStartAddress,
                         _options.RegisterCount);
+                    registersState = new(true, true, true, DateTimeOffset.Now, sequence);
                     succeeded = true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogWarning(ex, "Ошибка чтения Holding Registers Modbus клиента");
+                    registersState = registersState with { Enabled = true, LastAttemptSucceeded = false };
                     firstFailure ??= ex;
                     shortError ??= BuildAreaError("Holding Registers", ex);
                 }
@@ -644,6 +680,7 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
             else
             {
                 registers = Array.Empty<ushort>();
+                registersState = ModbusAreaReadState.Unavailable(false);
             }
 
             if (attempted && !succeeded && firstFailure is not null)
@@ -661,6 +698,10 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
             var snapshot = new ModbusSnapshot
             {
                 Role = ModbusRuntimeRole.Client,
+                SourceSessionId = _sourceSessionId,
+                ReadSequence = readSequence,
+                CoilsReadState = coilsState,
+                HoldingRegistersReadState = registersState,
                 Coils = coils,
                 HoldingRegisters = registers,
                 DecodedRegisters = ModbusRegistersCodec.Decode(registers),
@@ -780,6 +821,8 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
 
     private void DisposeConnectionCore()
     {
+        _snapshot = ModbusSnapshot.Empty;
+        _sourceSessionId = Guid.Empty;
         _reader = null;
         _lastPollError = null;
         _master?.Dispose();

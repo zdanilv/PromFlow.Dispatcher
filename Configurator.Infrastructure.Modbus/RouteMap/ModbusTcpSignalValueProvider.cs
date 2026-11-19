@@ -21,6 +21,7 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
     private ModbusDataSnapshot _latestSnapshot;
     private ModbusServiceState _latestState;
     private DateTimeOffset _snapshotNotBefore;
+    private long _lastPublicationSequence;
     private bool _disposed;
 
     public ModbusTcpSignalValueProvider(
@@ -44,6 +45,7 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
             _latestState = modbusService.State;
             _snapshotNotBefore = _latestState.UpdatedAt;
             var cached = snapshotSource.CurrentSnapshot;
+            _lastPublicationSequence = cached.PublicationSequence;
             _latestSnapshot = IsRuntimeRunning(_latestState) && cached.Timestamp > _snapshotNotBefore
                 ? cached
                 : ModbusDataSnapshot.Empty;
@@ -80,6 +82,13 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
             if (_disposed || !IsRuntimeRunning(_latestState) || !IsRuntimeRunning(snapshot.State))
                 return;
 
+            // A notification can be delayed in another subscriber after its commit.
+            // Keep the floor across empty resets and connection invalidation.
+            _lastPublicationSequence = Math.Max(_lastPublicationSequence, _snapshotSource.CurrentSnapshot.PublicationSequence);
+            if (snapshot.PublicationSequence < _lastPublicationSequence)
+                return;
+            _lastPublicationSequence = Math.Max(_lastPublicationSequence, snapshot.PublicationSequence);
+
             // A data-map reset publishes an empty snapshot with the sentinel timestamp.
             if (snapshot.Timestamp != DateTimeOffset.MinValue &&
                 (snapshot.Timestamp <= _snapshotNotBefore || snapshot.Timestamp < _latestSnapshot.Timestamp ||
@@ -100,9 +109,14 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
                 return;
 
             var wasRunning = IsRuntimeRunning(_latestState);
+            var previousState = _latestState;
             _latestState = _modbusService.State;
+            _lastPublicationSequence = Math.Max(_lastPublicationSequence, _snapshotSource.CurrentSnapshot.PublicationSequence);
             // Clear on every loss of connection, even if the clock moved back or Running already followed it.
-            if (!wasRunning || !IsRuntimeRunning(state) || !IsRuntimeRunning(_latestState))
+            if (!wasRunning || !IsRuntimeRunning(state) || !IsRuntimeRunning(_latestState)
+                || previousState.ActiveRole != _latestState.ActiveRole
+                || (previousState.ClientState == ModbusConnectionState.Running && state.ClientState != ModbusConnectionState.Running)
+                || (previousState.ServerState == ModbusConnectionState.Running && state.ServerState != ModbusConnectionState.Running))
             {
                 _snapshotNotBefore = _latestState.UpdatedAt;
                 _latestSnapshot = ModbusDataSnapshot.Empty;
@@ -144,13 +158,17 @@ public sealed class ModbusTcpSignalValueProvider : ISignalValueProvider, IDispos
             }
 
             snapshot.Values.TryGetValue(point.Name, out var dataValue);
+            var readState = point.Area == ModbusDataArea.Coil ? snapshot.CoilsReadState : snapshot.HoldingRegistersReadState;
+            var signalTimestamp = readState?.LastSuccessfulReadAt ?? dataValue?.Timestamp ?? snapshot.Timestamp;
+            var signalIsStale = signalTimestamp == DateTimeOffset.MinValue || signalTimestamp > now
+                || now - signalTimestamp > TimeSpan.FromMilliseconds(_staleAfterMs);
             signals[point.Name] = new SignalValue(
                 point.Name,
                 dataValue?.Value,
                 signalType,
-                dataValue?.Timestamp ?? snapshot.Timestamp,
-                IsQualityGood: isRuntimeRunning && dataValue is not null,
-                IsStale: isStale || dataValue is null);
+                signalTimestamp,
+                IsQualityGood: isRuntimeRunning && dataValue is not null && (readState?.IsGood ?? true),
+                IsStale: signalIsStale || dataValue is null || (readState is { IsGood: false }));
         }
 
         signals[RouteMapSystemSignalIds.ConnectionStatus] = new SignalValue(
