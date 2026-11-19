@@ -3,9 +3,10 @@ using Configurator.Application.Services;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using System.Diagnostics;
 using System.IO;
 using Configurator.Application.Services.Modbus.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Configurator.Infrastructure.Services
 {
@@ -21,6 +22,12 @@ namespace Configurator.Infrastructure.Services
         private readonly string _userSettingsFilePath;
         private readonly IReadOnlyList<string> _legacyUserSettingsFilePaths;
         private readonly SemaphoreSlim _saveGate = new(1, 1);
+        private readonly object _userSettingsGate = new();
+        private byte[]? _invalidUserSettingsBytes;
+        internal ILogger<AppConfigService> Logger { get; set; } = NullLogger<AppConfigService>.Instance;
+
+        // Deterministic failure/cancellation injection immediately before the commit point.
+        internal Action<string, string>? BeforeSettingsReplace { get; set; }
 
         public AppConfigService(IConfiguration configuration)
             : this(
@@ -126,9 +133,7 @@ namespace Configurator.Infrastructure.Services
                 }
 
                 SetSection(root, sectionName, replacement);
-                await File.WriteAllTextAsync(_configFilePath, root.ToJsonString(JsonOptions), ct);
-
-                ReloadConfiguration();
+                await WriteSettingsAtomicallyAsync(root, ct);
             }
             finally
             {
@@ -214,17 +219,35 @@ namespace Configurator.Infrastructure.Services
             try
             {
                 await File.WriteAllTextAsync(temporaryPath, root.ToJsonString(JsonOptions), ct);
+                BeforeSettingsReplace?.Invoke(temporaryPath, _configFilePath);
                 ct.ThrowIfCancellationRequested();
                 File.Move(temporaryPath, _configFilePath, overwrite: true);
                 moved = true;
             }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning(ex, "Failed to save configuration atomically at {Path}", _configFilePath);
+                throw;
+            }
             finally
             {
                 if (!moved)
-                    File.Delete(temporaryPath);
+                    CleanupTemporaryFile(temporaryPath);
             }
 
             ReloadConfiguration();
+        }
+
+        private void CleanupTemporaryFile(string path)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning(ex, "Failed to remove temporary settings file {Path}", path);
+            }
         }
 
         private static bool RemovesObsoleteModeMapping(JsonObject oldModbus, JsonObject newModbus)
@@ -340,8 +363,7 @@ namespace Configurator.Infrastructure.Services
                     SetSection(root, section.Key, replacement);
                 }
 
-                await File.WriteAllTextAsync(_configFilePath, root.ToJsonString(JsonOptions), ct);
-                ReloadConfiguration();
+                await WriteSettingsAtomicallyAsync(root, ct);
             }
             finally
             {
@@ -354,17 +376,60 @@ namespace Configurator.Infrastructure.Services
         /// <summary>
         /// Сохранить пользовательские настройки в отдельный файл.
         /// </summary>
-        public void SaveUserSettings(UserSettings settings)
-        {
-            var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-            var directory = Path.GetDirectoryName(_userSettingsFilePath);
-            if (!string.IsNullOrWhiteSpace(directory))
-                Directory.CreateDirectory(directory);
+        public void SaveUserSettings(UserSettings settings) => SaveUserSettings(settings, legacyRoot: null);
 
-            File.WriteAllText(_userSettingsFilePath, json);
-#if DEBUG
-            Debug.WriteLine($"[AppConfigService] UserSettings сохранены в {_userSettingsFilePath}: {json}");
-#endif
+        private void SaveUserSettings(UserSettings settings, JsonObject? legacyRoot)
+        {
+            lock (_userSettingsGate)
+            {
+                string? temporaryPath = null;
+                try
+                {
+                    ValidateWindowSettings(settings);
+                    JsonObject? previous = null;
+                    try
+                    {
+                        LoadUserSettingsFromFile(_userSettingsFilePath, out previous);
+                        previous ??= legacyRoot;
+                    }
+                    catch (JsonException ex)
+                    {
+                        Logger.LogWarning(ex, "Preserving invalid window settings before replacement: {Path}", _userSettingsFilePath);
+                    }
+
+                    var replacement = (JsonObject)JsonSerializer.SerializeToNode(settings, UserSettingsJsonOptions)!;
+                    if (previous is not null)
+                    {
+                        PreserveMissingProperties(previous, replacement);
+                        if (previous[nameof(UserSettings.Modbus)] is JsonObject oldModbus &&
+                            replacement[nameof(UserSettings.Modbus)] is JsonObject newModbus)
+                            PreserveUnknownModbusFields(oldModbus, newModbus);
+                    }
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_userSettingsFilePath))!);
+                    temporaryPath = _userSettingsFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                    File.WriteAllText(temporaryPath, replacement.ToJsonString(UserSettingsJsonOptions));
+                    if (_invalidUserSettingsBytes is not null)
+                    {
+                        var backup = _userSettingsFilePath + ".corrupt." + Guid.NewGuid().ToString("N") + ".bak";
+                        File.WriteAllBytes(backup, _invalidUserSettingsBytes);
+                        Logger.LogWarning("Invalid window settings preserved at {Path}", backup);
+                        _invalidUserSettingsBytes = null;
+                    }
+                    BeforeSettingsReplace?.Invoke(temporaryPath, _userSettingsFilePath);
+                    File.Move(temporaryPath, _userSettingsFilePath, overwrite: true);
+                }
+                catch (Exception ex) when (IsWindowSettingsFailure(ex))
+                {
+                    Logger.LogWarning(ex, "Failed to save window settings at {Path}", _userSettingsFilePath);
+                    throw;
+                }
+                finally
+                {
+                    if (temporaryPath is not null)
+                        CleanupTemporaryFile(temporaryPath);
+                }
+            }
         }
 
         /// <summary>
@@ -372,43 +437,104 @@ namespace Configurator.Infrastructure.Services
         /// </summary>
         public UserSettings LoadUserSettings()
         {
-            var settings = LoadUserSettingsFromFile(_userSettingsFilePath);
-            if (settings is not null)
+            lock (_userSettingsGate)
             {
-                return settings;
-            }
-
-            foreach (var legacyPath in _legacyUserSettingsFilePaths)
-            {
-                settings = LoadUserSettingsFromFile(legacyPath);
-                if (settings is null)
+                UserSettings? settings;
+                try
                 {
-                    continue;
+                    settings = LoadUserSettingsFromFile(_userSettingsFilePath, out _);
+                    if (settings is not null)
+                        return settings;
+                }
+                catch (Exception ex) when (IsWindowSettingsFailure(ex))
+                {
+                    Logger.LogWarning(ex, "Failed to load window settings at {Path}; using WindowSettings defaults", _userSettingsFilePath);
+                    return GetWindowSettingsDefaults();
                 }
 
-                SaveUserSettings(settings);
-#if DEBUG
-                Debug.WriteLine($"[AppConfigService] UserSettings перенесены из {legacyPath} в {_userSettingsFilePath}.");
-#endif
+                foreach (var legacyPath in _legacyUserSettingsFilePaths)
+                {
+                    JsonObject? legacyRoot;
+                    try
+                    {
+                        settings = LoadUserSettingsFromFile(legacyPath, out legacyRoot);
+                        if (settings is null)
+                            continue;
+                    }
+                    catch (Exception ex) when (IsWindowSettingsFailure(ex))
+                    {
+                        Logger.LogWarning(ex, "Failed to load legacy window settings at {Path}", legacyPath);
+                        continue;
+                    }
+
+                    try
+                    {
+                        SaveUserSettings(settings, legacyRoot);
+                    }
+                    catch (Exception ex) when (IsWindowSettingsFailure(ex))
+                    {
+                        Logger.LogWarning(ex, "Could not migrate window settings from {Path}; using legacy settings for this session", legacyPath);
+                    }
+                    return settings;
+                }
+
+                return GetWindowSettingsDefaults();
+            }
+        }
+
+        private UserSettings GetWindowSettingsDefaults()
+        {
+            var settings = GetSection<UserSettings>("WindowSettings");
+            if (!HasValidWindowSize(settings))
+            {
+                Logger.LogWarning("Invalid WindowSettings default dimensions; using built-in window defaults");
+                return new UserSettings();
+            }
+            return settings;
+        }
+
+        private UserSettings? LoadUserSettingsFromFile(string path, out JsonObject? root)
+        {
+            root = null;
+            byte[] bytes;
+            try { bytes = File.ReadAllBytes(path); }
+            catch (FileNotFoundException) { return null; }
+            catch (DirectoryNotFoundException) { return null; }
+
+            try
+            {
+                // StreamReader keeps the existing BOM-aware text-file contract; retain raw bytes for diagnostics.
+                using var reader = new StreamReader(new MemoryStream(bytes));
+                root = JsonNode.Parse(reader.ReadToEnd(), documentOptions: new JsonDocumentOptions { AllowDuplicateProperties = false }) as JsonObject
+                    ?? throw new JsonException("Window settings must contain a JSON object.");
+                var settings = root.Deserialize<UserSettings>()
+                    ?? throw new JsonException("Window settings must not be null.");
+                ValidateWindowSettings(settings);
                 return settings;
             }
-
-            return GetSection<UserSettings>("WindowSettings"); // пока секция WindowSettings, но можно расширять
-        }
-
-        private static UserSettings? LoadUserSettingsFromFile(string path)
-        {
-            if (!File.Exists(path))
+            catch (JsonException)
             {
-                return null;
+                root = null;
+                if (path == _userSettingsFilePath)
+                    _invalidUserSettingsBytes = bytes;
+                throw;
             }
-
-            var json = File.ReadAllText(path);
-#if DEBUG
-            Debug.WriteLine($"[AppConfigService] UserSettings загружены из {path}: {json}");
-#endif
-            return JsonSerializer.Deserialize<UserSettings>(json);
         }
+
+        private static bool HasValidWindowSize(UserSettings settings) =>
+            double.IsFinite(settings.Width) && settings.Width > 0 &&
+            double.IsFinite(settings.Height) && settings.Height > 0;
+
+        private static void ValidateWindowSettings(UserSettings settings)
+        {
+            if (!HasValidWindowSize(settings))
+                throw new JsonException("Window dimensions must be finite positive numbers.");
+        }
+
+        private static bool IsWindowSettingsFailure(Exception ex) =>
+            ex is IOException or UnauthorizedAccessException or JsonException;
+
+        private static readonly JsonSerializerOptions UserSettingsJsonOptions = new() { WriteIndented = true };
 
         private static IEnumerable<string> GetDefaultLegacyUserSettingsPaths()
         {

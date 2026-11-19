@@ -18,7 +18,7 @@ using Xunit;
 
 namespace Configurator.Infrastructure.Modbus.Tests;
 
-public sealed class AppConfigServiceTests
+public sealed partial class AppConfigServiceTests
 {
     [Fact]
     public async Task RemovingUnusedPointOverridesInstallDefaultsAndKeepsTheRestOfTheProfile()
@@ -166,8 +166,10 @@ public sealed class AppConfigServiceTests
         }
     }
 
-    [Fact]
-    public async Task SaveSectionAsync_BackupsExactLegacyModeCleanupAndPreservesUnknownModbusFields()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SaveSectionAsync_BackupsExactLegacyModeCleanupAndPreservesUnknownModbusFields(bool multiple)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"DesktopTemplate-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -205,7 +207,10 @@ public sealed class AppConfigServiceTests
                 ]
             };
 
-            await service.SaveSectionAsync(ModbusOptions.SectionName, options);
+            if (multiple)
+                await service.SaveSectionsAsync(new Dictionary<string, object> { [ModbusOptions.SectionName] = options });
+            else
+                await service.SaveSectionAsync(ModbusOptions.SectionName, options);
 
             var saved = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
             Assert.True(saved["Unrelated"]!["Value"]!.GetValue<int>() == 42);
@@ -429,9 +434,9 @@ public sealed class AppConfigServiceTests
                 Height = 768,
                 IsFullScreen = true
             };
-            await File.WriteAllTextAsync(
-                legacyPath,
-                JsonSerializer.Serialize(expected, new JsonSerializerOptions { WriteIndented = true }));
+            var legacyJson = JsonSerializer.SerializeToNode(expected)!.AsObject();
+            legacyJson["UnknownWindowOption"] = new JsonObject { ["Keep"] = true };
+            await File.WriteAllTextAsync(legacyPath, legacyJson.ToJsonString());
 
             var configuration = new ConfigurationBuilder().Build();
             var service = new AppConfigService(
@@ -447,6 +452,8 @@ public sealed class AppConfigServiceTests
             Assert.Equal(expected.IsFullScreen, actual.IsFullScreen);
             Assert.True(File.Exists(userSettingsPath));
             Assert.True(File.Exists(legacyPath));
+            Assert.True(JsonNode.Parse(await File.ReadAllTextAsync(userSettingsPath))!["UnknownWindowOption"]!["Keep"]!.GetValue<bool>());
+            Assert.Equal(legacyJson.ToJsonString(), await File.ReadAllTextAsync(legacyPath));
         }
         finally
         {

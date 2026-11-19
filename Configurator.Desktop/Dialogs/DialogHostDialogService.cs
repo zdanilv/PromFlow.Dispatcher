@@ -31,7 +31,7 @@ public sealed class DialogHostDialogService(
     public async Task<bool> ConfirmAsync(string message, CancellationToken ct = default)
     {
         var context = dialogViewFactory.CreateConfirm(message);
-        var result = await ShowWithFallbackAsync(context, fallback: false, ct);
+        var result = await ShowWithFallbackAsync(context, ct);
         return result is true;
     }
 
@@ -39,14 +39,14 @@ public sealed class DialogHostDialogService(
         string title, string message, string confirmText, string cancelText, CancellationToken ct = default)
     {
         var context = dialogViewFactory.CreateConfirm(title, message, confirmText, cancelText);
-        return await ShowWithFallbackAsync(context, fallback: false, ct) is true;
+        return await ShowWithFallbackAsync(context, ct) is true;
     }
 
     /// <inheritdoc />
     public async Task<string?> RequestSecretAsync(string message, CancellationToken ct = default)
     {
         var context = dialogViewFactory.CreateSecretInput(message);
-        return await ShowWithFallbackAsync<string?>(context, fallback: default, ct);
+        return await ShowWithFallbackAsync<string?>(context, ct);
     }
 
     /// <inheritdoc />
@@ -60,7 +60,7 @@ public sealed class DialogHostDialogService(
             ? $"{title}{Environment.NewLine}{Environment.NewLine}{message}"
             : $"{title}{Environment.NewLine}{Environment.NewLine}{message}{Environment.NewLine}{Environment.NewLine}{details}";
         var context = dialogViewFactory.CreateConfirm(text);
-        await ShowWithFallbackAsync(context, fallback: false, ct);
+        await ShowWithFallbackAsync(context, ct);
     }
 
     public async Task<bool> ShowAlarmNotificationAsync(
@@ -74,7 +74,7 @@ public sealed class DialogHostDialogService(
         CancellationToken ct = default)
     {
         var context = dialogViewFactory.CreateAlarmNotification(notification);
-        var result = await ShowWithFallbackAsync(context, fallback: false, ct);
+        var result = await ShowWithFallbackAsync(context, ct);
         return result is true;
     }
 
@@ -85,7 +85,7 @@ public sealed class DialogHostDialogService(
         CancellationToken ct = default)
     {
         var context = dialogViewFactory.CreateModbusSettings(title, sectionName, options);
-        return await ShowWithFallbackAsync<ModbusOptions?>(context, fallback: default, ct);
+        return await ShowWithFallbackAsync<ModbusOptions?>(context, ct);
     }
 
     public async Task<OpcUaConfiguredTag?> EditOpcUaTagAsync(
@@ -95,7 +95,7 @@ public sealed class DialogHostDialogService(
         CancellationToken ct = default)
     {
         var context = dialogViewFactory.CreateOpcUaTagEditor(title, tag, target);
-        return await ShowWithFallbackAsync<OpcUaConfiguredTag?>(context, fallback: default, ct);
+        return await ShowWithFallbackAsync<OpcUaConfiguredTag?>(context, ct);
     }
 
     public async Task<OpcUaTagImportResult?> ImportOpcUaTagsAsync(
@@ -103,12 +103,11 @@ public sealed class DialogHostDialogService(
         CancellationToken ct = default)
     {
         var context = dialogViewFactory.CreateOpcUaTagImport(request);
-        return await ShowWithFallbackAsync<OpcUaTagImportResult?>(context, fallback: default, ct);
+        return await ShowWithFallbackAsync<OpcUaTagImportResult?>(context, ct);
     }
 
     private async Task<TResult?> ShowWithFallbackAsync<TResult>(
         DialogViewContext<TResult> context,
-        TResult? fallback,
         CancellationToken ct)
     {
         try
@@ -121,7 +120,6 @@ public sealed class DialogHostDialogService(
                 $"Dialog host '{context.HostIdentifier}' was not found. Ensure it is present in MainWindow.",
                 ex);
         }
-        return fallback;
     }
 
     private static bool IsMissingHostException(InvalidOperationException ex)

@@ -5,6 +5,8 @@ using Configurator.Infrastructure.Services.Authorization;
 using Configurator.Infrastructure.Services.Autostart;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Configurator.Infrastructure
 {
@@ -35,7 +37,10 @@ namespace Configurator.Infrastructure
                 ApplicationConfigPaths.SharedAppSettingsPath,
                 ApplicationConfigPaths.UserSettingsPath,
                 legacyUserSettingsFilePaths: null,
-                writableConfiguration: writableConfiguration));
+                writableConfiguration: writableConfiguration)
+            {
+                Logger = sp.GetService<ILogger<AppConfigService>>() ?? NullLogger<AppConfigService>.Instance
+            });
             return services;
         }
     }

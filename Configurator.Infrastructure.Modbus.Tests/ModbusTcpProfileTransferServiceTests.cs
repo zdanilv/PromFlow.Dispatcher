@@ -10,12 +10,65 @@ using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Desktop.Workspace.ModbusProfile;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace Configurator.Infrastructure.Modbus.Tests;
 
 public sealed class ModbusTcpProfileTransferServiceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Apply_WithRealConfiguration_CommitsBothSectionsOrNeither(bool fail)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"profile-atomic-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "appsettings.json");
+        const string original = """{"Modbus":{"vendor":42},"ModbusDemo":{"vendor":7},"Other":true}""";
+        try
+        {
+            await File.WriteAllTextAsync(path, original);
+            using var configuration = (ConfigurationRoot)new ConfigurationBuilder()
+                .AddJsonFile(path).Build();
+            var config = new Configurator.Infrastructure.Services.AppConfigService(configuration, path,
+                Path.Combine(directory, "user_settings.json"), []);
+            config.BeforeSettingsReplace = (temporary, _) =>
+            {
+                Assert.Equal(original, File.ReadAllText(path));
+                var prepared = JsonNode.Parse(File.ReadAllText(temporary))!;
+                Assert.Equal(1502, prepared["Modbus"]!["Client"]!["Port"]!.GetValue<int>());
+                Assert.Equal(1502, prepared["ModbusDemo"]!["Client"]!["Port"]!.GetValue<int>());
+                if (fail) throw new IOException("Injected profile commit failure");
+            };
+            var runtime = new RecordingDataMapRuntime();
+            var service = new ModbusTcpProfileTransferService(config,
+                new StaticOptionsMonitor(new ModbusOptions()), new StaticDemoOptionsProvider(CreateRuntimeOptions()),
+                new ModbusDataMapValidator(), new ModbusAlarmMapValidator(), runtime);
+            var profile = ModbusTcpProfile.Create(CreateRuntimeOptions(), new ModbusOptions
+            {
+                DataMap = [new ModbusDataPointOptions { Name = "test", Area = ModbusDataArea.Coil, Type = ModbusValueType.Bool }]
+            });
+            var result = await service.ApplyAsync(profile, applyRangeCorrection: true);
+            Assert.Equal(!fail, result.Succeeded);
+            if (fail)
+            {
+                Assert.Equal(original, await File.ReadAllTextAsync(path));
+                Assert.Contains("Injected profile commit failure", result.ErrorMessage);
+                Assert.Empty(runtime.LastDataMap);
+            }
+            else
+            {
+                var saved = JsonNode.Parse(await File.ReadAllTextAsync(path))!;
+                Assert.Equal(1502, saved["Modbus"]!["Client"]!["Port"]!.GetValue<int>());
+                Assert.Equal(1502, saved["ModbusDemo"]!["Client"]!["Port"]!.GetValue<int>());
+                Assert.True(saved["Other"]!.GetValue<bool>());
+                Assert.Single(runtime.LastDataMap);
+            }
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     [Fact]
     public async Task ExportAndRead_ProfileRoundTrip_ExcludesLegacyDemoDataMap()
     {

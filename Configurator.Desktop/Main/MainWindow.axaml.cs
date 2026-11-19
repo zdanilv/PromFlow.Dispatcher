@@ -5,6 +5,9 @@ using Configurator.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI.Avalonia;
 using System.Diagnostics;
+using System.IO;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace Configurator.Desktop.Main;
 
@@ -48,10 +51,12 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
         this.Closing += OnWindowClosing;
     }
 
-        /// <summary>
-        /// Сохраняет текущие параметры окна в пользовательский конфиг при закрытии.
-        /// </summary>
-        private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    /// <summary>
+    /// Сохраняет текущие параметры окна в пользовательский конфиг при закрытии.
+    /// </summary>
+    private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        try
         {
             var settings = _configService.LoadUserSettings();
             settings.Width = this.Width;
@@ -62,4 +67,10 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
 #endif
             _configService.SaveUserSettings(settings);
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            App.Services.GetService<ILogger<MainWindow>>()?.LogWarning(ex,
+                "Failed to persist window settings while closing; continuing shutdown");
+        }
+    }
 }
