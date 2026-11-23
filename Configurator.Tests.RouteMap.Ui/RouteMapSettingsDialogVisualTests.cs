@@ -46,8 +46,10 @@ using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 using Configurator.Desktop.Workspace;
 using Material.Icons.Avalonia;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using ReactiveUI;
 using Xunit;
 
 namespace Configurator.Tests.RouteMap.Ui;
@@ -531,15 +533,24 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         var headers = tabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString() ?? string.Empty).ToArray();
 
         Assert.True(tabs.IsVisible);
-        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Менеджер тревог", "Modbus TCP"], headers);
+        Assert.Equal(["Route Map", "SignalId ↔ Modbus", "Менеджер тревог", "Modbus TCP", "Настройки приложения"], headers);
 
         window.Close();
     }
 
     [AvaloniaFact]
-    public void Workspace_user_mode_shows_route_map_without_tabs()
+    public async Task Workspace_user_mode_shows_route_map_without_tabs()
     {
-        var view = new WorkspaceView { DataContext = CreateWorkspaceViewModel(isAdminMode: false) };
+        var config = new NullAppConfigService
+        {
+            ReadWindowSettings = () => throw new InvalidOperationException("User mode cannot load the edit form."),
+            WriteWindowSettings = _ => throw new InvalidOperationException("User mode cannot save the edit form.")
+        };
+        var view = new WorkspaceView(config, Options.Create(new ApplicationOptions { WorkMode = ApplicationOptions.UserWorkMode }),
+            NullLogger<WindowStartupSettingsViewModel>.Instance)
+        {
+            DataContext = CreateWorkspaceViewModel(isAdminMode: false)
+        };
         var window = new Window { Width = 1200, Height = 760, Content = view };
         window.Show();
         Dispatcher.UIThread.RunJobs();
@@ -551,8 +562,74 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         Assert.False(tabs.IsVisible);
         Assert.True(routeMapHost.IsVisible);
         Assert.Single(routeMapHost.Children.OfType<RouteMapDashboardView>());
+        var settingsPanel = view.FindControl<StackPanel>("StartupSettingsPanel")!;
+        Assert.False(settingsPanel.IsAttachedToVisualTree());
+        var settings = Assert.IsType<WindowStartupSettingsViewModel>(settingsPanel.DataContext);
+        Assert.False(((System.Windows.Input.ICommand)settings.SaveCommand).CanExecute(null));
+        await settings.SaveCommand.Execute().ToTask();
 
         window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Workspace_admin_can_save_full_screen_after_a_write_failure()
+    {
+        var currentWidth = 1200d;
+        var failSave = true;
+        UserSettings? saved = null;
+        var config = new NullAppConfigService
+        {
+            ReadWindowSettings = () => new UserSettings { Width = currentWidth, IsFullScreen = true },
+            WriteWindowSettings = settings =>
+            {
+                if (failSave)
+                    throw new IOException("Injected write failure.");
+
+                saved = settings;
+            }
+        };
+        using var services = new ServiceCollection()
+            .AddSingleton<ILogger<WindowStartupSettingsViewModel>>(NullLogger<WindowStartupSettingsViewModel>.Instance)
+            .AddSingleton<IAppConfigService>(config)
+            .AddSingleton(Options.Create(new ApplicationOptions()))
+            .AddTransient<IViewFor<WorkspaceViewModel>, WorkspaceView>()
+            .BuildServiceProvider();
+        var view = Assert.IsType<WorkspaceView>(services.GetRequiredService<IViewFor<WorkspaceViewModel>>());
+        view.DataContext = CreateWorkspaceViewModel(isAdminMode: true);
+        var window = new Window { Width = 1200, Height = 760, Content = view };
+        window.Show();
+        try
+        {
+            var tabs = Assert.IsType<Grid>(view.Content).Children.OfType<TabControl>().Single();
+            tabs.SelectedItem = tabs.Items.OfType<TabItem>().Single(tab => Equals(tab.Header, "Настройки приложения"));
+            Dispatcher.UIThread.RunJobs();
+            var panel = view.FindControl<StackPanel>("StartupSettingsPanel")!;
+            Assert.True(panel.IsEffectivelyVisible);
+            var checkBox = panel.Children.OfType<CheckBox>().Single();
+            var save = panel.Children.OfType<Button>().Single(button => Equals(button.Content, "Сохранить"));
+            var message = panel.Children.OfType<TextBlock>().Single();
+            Assert.True(checkBox.IsChecked);
+            checkBox.SetCurrentValue(ToggleButton.IsCheckedProperty, false);
+            Assert.Null(saved);
+
+            Assert.True(save.Command!.CanExecute(null));
+            save.Command.Execute(null);
+            Assert.Equal("Не удалось сохранить настройку полноэкранного запуска.", message.Text);
+            Assert.False(checkBox.IsChecked);
+            Assert.Null(saved);
+
+            currentWidth = 1450;
+            failSave = false;
+            save.Command.Execute(null);
+            Assert.NotNull(saved);
+            Assert.False(saved.IsFullScreen);
+            Assert.Equal(currentWidth, saved.Width);
+            Assert.Equal("Настройка применится при следующем запуске.", message.Text);
+        }
+        finally
+        {
+            window.Close();
+        }
     }
 
     [AvaloniaFact]
@@ -1601,7 +1678,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         Assert.InRange(reset.Bounds.Width, emergency.Bounds.Width - 1, emergency.Bounds.Width + 1);
         Assert.InRange(reset.Bounds.Height, emergency.Bounds.Height - 1, emergency.Bounds.Height + 1);
         Assert.True(reset.Bounds.Right <= emergency.Bounds.Left);
-        Assert.Equal(Color.Parse("#ECEFF1"), Assert.IsType<SolidColorBrush>(reset.Background).Color);
+        Assert.Equal(Color.Parse("#FFE34D"), Assert.IsType<SolidColorBrush>(reset.Background).Color);
         Assert.Equal(Color.Parse("#FF2626"), Assert.IsType<SolidColorBrush>(emergency.Background).Color);
         Assert.False(automatic.IsVisible);
         Assert.False(manual.IsVisible);
@@ -2715,6 +2792,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     private sealed class NullAppConfigService : IAppConfigService
     {
         public Func<ModbusDataPointOptions, bool>? RemovePoint { get; init; }
+        public Func<UserSettings>? ReadWindowSettings { get; init; }
+        public Action<UserSettings>? WriteWindowSettings { get; init; }
         public int RemovalCount { get; private set; }
         public Task<bool> TryRemoveModbusDataPointAsync(ModbusDataPointOptions point, CancellationToken ct = default)
         {
@@ -2725,8 +2804,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         public T GetSection<T>(string sectionName) where T : class, new() => new();
         public string GetValue(string key) => string.Empty;
         public Task SaveSectionAsync<T>(string sectionName, T value, CancellationToken ct = default) => Task.CompletedTask;
-        public void SaveUserSettings(UserSettings settings) { }
-        public UserSettings LoadUserSettings() => new();
+        public void SaveUserSettings(UserSettings settings) => WriteWindowSettings?.Invoke(settings);
+        public UserSettings LoadUserSettings() => ReadWindowSettings?.Invoke() ?? new();
     }
 
     private sealed class NullFilePicker : IRouteMapSettingsFilePicker

@@ -230,6 +230,41 @@ public sealed class TopBarViewTests
     }
 
     [AvaloniaFact]
+    public void TopBar_help_and_reset_show_their_palettes_through_pointer_states()
+    {
+        using var fixture = new TopBarFixture(1366);
+        CheckPointerColors(fixture.Help, "#003CA3", "#0A4DB5", "#002F80", "#FFFFFF");
+        CheckPointerColors(fixture.Reset, "#FFE34D", "#FFF78A", "#D1C300", "#101820");
+
+        fixture.ViewModel.ApplyRuntime(false, true, true, false, true);
+        fixture.Layout();
+        Assert.True(fixture.Reset.IsChecked);
+        AssertColors(fixture.Reset, "#D1C300", "#101820");
+        fixture.Window.MouseMove(fixture.CenterOf(fixture.Reset));
+        AssertColors(fixture.Reset, "#D1C300", "#101820");
+
+        void CheckPointerColors(Button button, string normal, string hover, string pressed, string foreground)
+        {
+            AssertColors(button, normal, foreground);
+            var point = fixture.CenterOf(button);
+            fixture.Window.MouseMove(point);
+            AssertColors(button, hover, foreground);
+            fixture.Window.MouseDown(point, MouseButton.Left);
+            AssertColors(button, pressed, foreground);
+            fixture.Window.MouseUp(point, MouseButton.Left);
+            AssertColors(button, hover, foreground);
+            fixture.Window.MouseMove(new Point(1, 1));
+            AssertColors(button, normal, foreground);
+        }
+
+        static void AssertColors(Button button, string background, string foreground)
+        {
+            Assert.Equal(Color.Parse(background), Background(button));
+            Assert.Equal(Color.Parse(foreground), BrushColor(button, presenter => presenter.Foreground));
+        }
+    }
+
+    [AvaloniaFact]
     public void TopBar_existing_buttons_keep_their_commands()
     {
         using var fixture = new TopBarFixture(1366);

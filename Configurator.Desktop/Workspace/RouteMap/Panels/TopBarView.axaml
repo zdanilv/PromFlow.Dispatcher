@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:main="clr-namespace:Configurator.Desktop.Main"
              xmlns:vm="clr-namespace:Configurator.Desktop.Workspace.RouteMap.ViewModels"
              mc:Ignorable="d"
              d:DesignWidth="1200"
@@ -60,7 +61,7 @@
         </Style>
         <Style Selector="ToggleButton.reset:pressed">
             <Setter Property="Background" Value="#D1C300"/>
-            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Foreground" Value="#101820"/>
         </Style>
         <!-- Fluent sets its checked brush directly on this template part. Keep the
         RouteMap action palette authoritative for the rendered surface. -->
@@ -90,11 +91,11 @@
         </Style>
         <Style Selector="ToggleButton.reset:checked /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#D1C300"/>
-            <Setter Property="Foreground" Value="#4E5A65"/>
+            <Setter Property="Foreground" Value="#101820"/>
         </Style>
         <Style Selector="ToggleButton.reset:pressed /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#D1C300"/>
-            <Setter Property="Foreground" Value="#4E5A65"/>
+            <Setter Property="Foreground" Value="#101820"/>
         </Style>
         <Style Selector="Button.emergency">
             <Setter Property="MinWidth" Value="168"/>
@@ -156,12 +157,26 @@
         <Style Selector="Button.help">
             <Setter Property="MinWidth" Value="112"/>
             <Setter Property="Height" Value="38"/>
-            <Setter Property="Background" Value="#ECEFF1"/>
-            <Setter Property="Foreground" Value="#4E5A65"/>
             <Setter Property="BorderBrush" Value="#CCD3D8"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button#HelpButton">
+            <Setter Property="Background" Value="#003CA3"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="#0A4DB5"/>
+                <Setter Property="Foreground" Value="#FFFFFF"/>
+            </Style>
+            <Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="#002F80"/>
+                <Setter Property="Foreground" Value="#FFFFFF"/>
+            </Style>
+        </Style>
+        <Style Selector="Button#ExitButton">
+            <Setter Property="Background" Value="#ECEFF1"/>
+            <Setter Property="Foreground" Value="#4E5A65"/>
         </Style>
     </UserControl.Styles>
 
@@ -281,11 +296,17 @@
             <StackPanel Grid.Column="2"
                         Margin="16,0"
                         Orientation="Horizontal"
+                        Spacing="10"
                         VerticalAlignment="Center">
                 <Button x:Name="HelpButton"
                         Classes="help"
                         Content="ПОМОЩЬ"
                         Command="{Binding OpenHelpCommand}"/>
+                <Button x:Name="ExitButton"
+                        Classes="help"
+                        Content="ВЫХОД"
+                        IsVisible="{Binding StartedFullScreen, RelativeSource={RelativeSource AncestorType=main:MainWindow}, FallbackValue=False}"
+                        Click="ExitButton_Click"/>
             </StackPanel>
 
         </Grid>

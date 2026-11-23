@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using ReactiveUI.Avalonia;
+using Configurator.Desktop.Main;
 using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Panels;
@@ -28,6 +29,12 @@ public partial class TopBarView : ReactiveUserControl<TopBarViewModel>
             Button_PointerCaptureLost,
             RoutingStrategies.Tunnel | RoutingStrategies.Bubble,
             handledEventsToo: true);
+    }
+
+    private void ExitButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is MainWindow { StartedFullScreen: true } window)
+            window.Close();
     }
 
     private void Button_PointerPressed(object? sender, PointerPressedEventArgs e) =>

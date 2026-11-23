@@ -12,12 +12,13 @@ using Microsoft.Extensions.Logging;
 namespace Configurator.Desktop.Main;
 
 /// <summary>
-/// Главное окно приложения. Применяет и сохраняет настройки окна (размер, полноэкранный режим).
+/// Главное окно приложения. Применяет настройки запуска и сохраняет размеры окна.
 /// </summary>
 public partial class MainWindow : ReactiveWindow<MainViewModel>
 {
     private readonly IAppConfigService _configService;
-    private UserSettings _userSettings;
+
+    public bool StartedFullScreen { get; }
 
     public MainWindow()
     {
@@ -25,7 +26,7 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
 
         // Получаем сервис конфигурации через DI и загружаем пользовательские настройки.
         _configService = Configurator.Desktop.App.Services.GetRequiredService<IAppConfigService>();
-        _userSettings = _configService.LoadUserSettings();
+        var settings = _configService.LoadUserSettings();
 
         // Avalonia определит доступный экран после подключения окна к desktop lifetime.
         // Это работает и на Windows, и на X11/XWayland, где Screens.Primary в конструкторе
@@ -33,26 +34,19 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
 #if DEBUG
-        Debug.WriteLine($"[MainWindow] Загружены UserSettings: Width={_userSettings.Width}, Height={_userSettings.Height}, FullScreen={_userSettings.IsFullScreen}");
+        Debug.WriteLine($"[MainWindow] Загружены UserSettings: Width={settings.Width}, Height={settings.Height}, FullScreen={settings.IsFullScreen}");
 #endif
-        // Сохраняем полноэкранный режим, иначе запускаем окно развёрнутым.
-        if (_userSettings.IsFullScreen)
-        {
-            this.WindowState = WindowState.FullScreen;
-        }
-        else
-        {
-            this.Width = _userSettings.Width;
-            this.Height = _userSettings.Height;
-            this.WindowState = WindowState.Maximized;
-        }
+        Width = settings.Width;
+        Height = settings.Height;
+        StartedFullScreen = settings.IsFullScreen;
+        WindowState = StartedFullScreen ? WindowState.FullScreen : WindowState.Maximized;
 
         // Подписка на событие закрытия окна для сохранения настроек
         this.Closing += OnWindowClosing;
     }
 
     /// <summary>
-    /// Сохраняет текущие параметры окна в пользовательский конфиг при закрытии.
+    /// Сохраняет текущие размеры окна в пользовательский конфиг при закрытии.
     /// </summary>
     private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
@@ -61,7 +55,6 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
             var settings = _configService.LoadUserSettings();
             settings.Width = this.Width;
             settings.Height = this.Height;
-            settings.IsFullScreen = this.WindowState == WindowState.FullScreen;
 #if DEBUG
             Debug.WriteLine($"[MainWindow] Сохраняются UserSettings: Width={settings.Width}, Height={settings.Height}, FullScreen={settings.IsFullScreen}");
 #endif

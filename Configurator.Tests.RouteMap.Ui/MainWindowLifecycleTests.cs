@@ -1,17 +1,26 @@
 using System.Reflection;
 using System.Reactive.Linq;
+using System.Reactive.Threading.Tasks;
 using System.Text.Json;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Main;
+using Configurator.Desktop.Workspace;
+using Configurator.Desktop.Workspace.RouteMap.Panels;
+using Configurator.Desktop.Workspace.RouteMap.ViewModels;
 using DialogHostAvalonia;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Configurator.Tests.RouteMap.Ui;
@@ -49,9 +58,7 @@ public sealed class MainWindowLifecycleTests
         {
             window = new MainWindow();
             // Keep the production subscription order: window settings first, App shutdown second.
-            var method = typeof(Configurator.Desktop.App).GetMethod("OnMainWindowClosing", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            var shutdown = method.CreateDelegate<EventHandler<WindowClosingEventArgs>>(app);
-            window.Closing += shutdown;
+            AttachAppClosingHandler(window, app);
             var closingCalls = 0;
             window.Closing += (_, _) => closingCalls++;
             window.Closed += (_, _) =>
@@ -108,6 +115,61 @@ public sealed class MainWindowLifecycleTests
         }
     }
 
+    [AvaloniaFact]
+    public async Task FullScreen_ExitButton_UsesAppShutdown()
+    {
+        using var styles = new DialogStyles();
+        var settings = new WindowSettingsService { Settings = new UserSettings { IsFullScreen = true } };
+        var sequence = new List<string>();
+        var runtime = new DeferredActiveRuntime(sequence);
+        var signals = new DisposableSignals(sequence);
+        using var services = new ServiceCollection()
+            .AddSingleton<IAppConfigService>(settings)
+            .AddSingleton<IModbusRuntimeService>(runtime)
+            .AddSingleton<ISignalValueProvider>(signals)
+            .BuildServiceProvider();
+        var originalServices = Configurator.Desktop.App.Services;
+        Configurator.Desktop.App.Services = services;
+        MainWindow? window = null;
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            window = new MainWindow();
+            AttachAppClosingHandler(window, new Configurator.Desktop.App());
+            window.Closed += (_, _) => closed.TrySetResult();
+            var exit = ShowWithTopBar(window, isAdminMode: false);
+            Assert.True(exit.IsEffectivelyVisible);
+            Assert.Equal("ВЫХОД", exit.Content);
+            var help = ((TopBarView)window.Content!).FindControl<Button>("HelpButton")!;
+            var exitOrigin = exit.TranslatePoint(default, window)!.Value;
+            var helpOrigin = help.TranslatePoint(default, window)!.Value;
+            Assert.True(exitOrigin.X > helpOrigin.X + help.Bounds.Width);
+
+            var point = exitOrigin + new Vector(exit.Bounds.Width / 2, exit.Bounds.Height / 2);
+            window.MouseMove(point);
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            await runtime.StopEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.True(window.IsVisible);
+            Assert.Equal(new[] { "dispose", "stop" }, sequence);
+
+            runtime.CompleteStop();
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.False(window.IsVisible);
+            Assert.True(settings.Saved!.IsFullScreen);
+        }
+        finally
+        {
+            runtime.CompleteStop();
+            if (window is { IsVisible: true })
+            {
+                window.Close();
+                await closed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            Configurator.Desktop.App.Services = originalServices;
+        }
+    }
+
     [AvaloniaTheory]
     [InlineData(false, 1200, 800)]
     [InlineData(false, 1366, 768)]
@@ -128,11 +190,8 @@ public sealed class MainWindowLifecycleTests
             Assert.Equal(WindowStartupLocation.CenterScreen, window.WindowStartupLocation);
             var expectedState = fullScreen ? WindowState.FullScreen : WindowState.Maximized;
             Assert.Equal(expectedState, window.WindowState);
-            if (!fullScreen)
-            {
-                Assert.Equal(savedWidth, window.Width);
-                Assert.Equal(savedHeight, window.Height);
-            }
+            Assert.Equal(savedWidth, window.Width);
+            Assert.Equal(savedHeight, window.Height);
             window.Show();
             Assert.Equal(expectedState, window.WindowState);
             var width = window.Width;
@@ -143,6 +202,53 @@ public sealed class MainWindowLifecycleTests
             Assert.Equal(fullScreen, settings.Saved.IsFullScreen);
         }
         finally { Configurator.Desktop.App.Services = originalServices; }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false, ApplicationOptions.AdminWorkMode)]
+    [InlineData(true, ApplicationOptions.AdminWorkMode)]
+    [InlineData(false, ApplicationOptions.UserWorkMode)]
+    [InlineData(true, ApplicationOptions.UserWorkMode)]
+    public async Task Window_AppliesSavedChangeOnlyOnNextLaunch(bool fullScreen, string nextWorkMode)
+    {
+        using var styles = new DialogStyles();
+        var settings = new WindowSettingsService { Settings = new UserSettings { IsFullScreen = fullScreen } };
+        var applicationOptions = new ApplicationOptions();
+        var options = Options.Create(applicationOptions);
+        using var services = new ServiceCollection()
+            .AddSingleton<IAppConfigService>(settings)
+            .AddSingleton<IOptions<ApplicationOptions>>(options)
+            .BuildServiceProvider();
+        var originalServices = Configurator.Desktop.App.Services;
+        Configurator.Desktop.App.Services = services;
+        MainWindow? window = null;
+        try
+        {
+            window = new MainWindow();
+            var exit = ShowWithTopBar(window, isAdminMode: true);
+            Assert.Equal(fullScreen, exit.IsEffectivelyVisible);
+            var startup = new WindowStartupSettingsViewModel(
+                settings, options, NullLogger<WindowStartupSettingsViewModel>.Instance);
+            startup.StartFullScreen = !fullScreen;
+            await startup.SaveCommand.Execute().ToTask();
+
+            Assert.Equal(!fullScreen, settings.Saved!.IsFullScreen);
+            Assert.Equal(fullScreen ? WindowState.FullScreen : WindowState.Maximized, window.WindowState);
+            Assert.Equal(fullScreen, exit.IsEffectivelyVisible);
+            window.Close();
+            Assert.Equal(!fullScreen, settings.Saved.IsFullScreen);
+
+            applicationOptions.WorkMode = nextWorkMode;
+            window = new MainWindow();
+            exit = ShowWithTopBar(window, isAdminMode: applicationOptions.IsAdminMode);
+            Assert.Equal(fullScreen ? WindowState.Maximized : WindowState.FullScreen, window.WindowState);
+            Assert.Equal(!fullScreen, exit.IsEffectivelyVisible);
+        }
+        finally
+        {
+            window?.Close();
+            Configurator.Desktop.App.Services = originalServices;
+        }
     }
 
     [AvaloniaFact]
@@ -204,6 +310,26 @@ public sealed class MainWindowLifecycleTests
         }
     }
 
+    private static void AttachAppClosingHandler(MainWindow window, Configurator.Desktop.App app)
+    {
+        var method = typeof(Configurator.Desktop.App).GetMethod("OnMainWindowClosing", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        window.Closing += method.CreateDelegate<EventHandler<WindowClosingEventArgs>>(app);
+    }
+
+    private static Button ShowWithTopBar(MainWindow window, bool isAdminMode)
+    {
+        var topBar = new TopBarView
+        {
+            Height = 64,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            DataContext = new TopBarViewModel(isAdminMode, isSettingsVisible: isAdminMode)
+        };
+        window.Content = topBar;
+        window.Show();
+        window.UpdateLayout();
+        return topBar.FindControl<Button>("ExitButton")!;
+    }
+
     private static Exception CreateFailure(string kind) => kind switch
     {
         "io" => new IOException("injected window settings I/O failure"),
@@ -228,7 +354,14 @@ public sealed class MainWindowLifecycleTests
         public T GetSection<T>(string sectionName) where T : class, new() => new();
         public string GetValue(string key) => string.Empty;
         public Task SaveSectionAsync<T>(string sectionName, T value, CancellationToken ct = default) => Task.CompletedTask;
-        public UserSettings LoadUserSettings() => ReadFailure is { } error ? throw error : Settings;
+        public UserSettings LoadUserSettings()
+        {
+            if (ReadFailure is { } error)
+                throw error;
+
+            var settings = Saved ?? Settings;
+            return new UserSettings { Width = settings.Width, Height = settings.Height, IsFullScreen = settings.IsFullScreen };
+        }
         public void SaveUserSettings(UserSettings settings)
         {
             if (SaveFailure is { } error) throw error;

@@ -3053,7 +3053,7 @@ public sealed class RouteMapConfigurationTests
 
         Assert.False(viewModel.IsAutomaticCommandEnabled);
         Assert.False(viewModel.IsManualCommandEnabled);
-        Assert.Equal(Color.Parse("#ECEFF1"), BrushColor(viewModel.ResetBackground));
+        Assert.Equal(Color.Parse("#FFE34D"), BrushColor(viewModel.ResetBackground));
         Assert.Equal(Color.Parse("#FF2626"), BrushColor(viewModel.EmergencyBackground));
         Assert.Equal(Color.Parse("#101820"), BrushColor(viewModel.EmergencyForeground));
 
@@ -3091,7 +3091,7 @@ public sealed class RouteMapConfigurationTests
 
         viewModel.SetResetPressed(true);
         Assert.Equal(Color.Parse("#D1C300"), BrushColor(viewModel.ResetBackground));
-        Assert.Equal(Color.Parse("#FFFFFF"), BrushColor(viewModel.ResetForeground));
+        Assert.Equal(Color.Parse("#101820"), BrushColor(viewModel.ResetForeground));
 
         viewModel.SetEmergencyHovered(true);
         Assert.Equal(Color.Parse("#FF8A8A"), BrushColor(viewModel.EmergencyBackground));
