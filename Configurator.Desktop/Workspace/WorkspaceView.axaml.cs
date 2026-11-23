@@ -15,8 +15,10 @@ public partial class WorkspaceView : ReactiveUserControl<WorkspaceViewModel>
     public WorkspaceView(
         IAppConfigService configService,
         IOptions<ApplicationOptions> applicationOptions,
-        ILogger<WindowStartupSettingsViewModel> logger) : this()
+        ILogger<WindowStartupSettingsViewModel> logger,
+        HistoryArchiveSettingsViewModel? historySettings = null) : this()
     {
         StartupSettingsPanel.DataContext = new WindowStartupSettingsViewModel(configService, applicationOptions, logger);
+        HistoryArchiveSettingsPanel.DataContext = historySettings;
     }
 }

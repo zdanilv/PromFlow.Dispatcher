@@ -23,6 +23,8 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
     private bool _initialized;
     private bool _disposed;
     private IReadOnlyDictionary<string, SignalValue>? _lastSnapshot;
+    private int _dispatchesInProgress;
+    private TaskCompletionSource? _dispatchesDrained;
 
     // Save and reconnect share one attempt lane, including persistence of its outcome.
     internal SemaphoreSlim EquipmentParameterDispatchGate { get; } = new(1, 1);
@@ -117,7 +119,7 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
             _activeSubscription?.Dispose();
             _activeSubscription = null;
             if (sourceChanged)
-                _observable.Publish(new SnapshotUpdate(generation, null, SourceChanged: true));
+                _observable.Publish(new SnapshotUpdate(generation, null, source, SourceChanged: true));
         }
 
         var subscription = ProviderFor(source).Observe().Subscribe(
@@ -156,6 +158,7 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
         bool requireAvailableModbus = false)
     {
         IEquipmentCommandDispatcher dispatcher;
+        RouteMapSignalSource source;
         lock (_sync)
         {
             if (requireAvailableModbus && _disposed)
@@ -168,22 +171,49 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
                 return false;
             if (requireAvailableModbus && cancellationToken.IsCancellationRequested)
                 return false;
-            dispatcher = DispatcherFor(_currentSource);
+            source = _currentSource;
+            dispatcher = DispatcherFor(source);
+            _dispatchesInProgress++;
         }
 
-        await dispatcher.DispatchAsync(request, cancellationToken);
-        if (_sessionJournal is not null
-            && _configurationManager is not null
-            && _modbusOptions is not null)
+        try
         {
-            _sessionJournal.RecordSignalSent(
-                request,
-                _configurationManager.CurrentDefinition,
-                _modbusOptions.CurrentValue,
-                DateTimeOffset.Now);
-        }
+            await dispatcher.DispatchAsync(request, cancellationToken);
+            if (_sessionJournal is not null && _configurationManager is not null && _modbusOptions is not null)
+            {
+                _sessionJournal.RecordSignalSent(
+                    request,
+                    _configurationManager.CurrentDefinition,
+                    _modbusOptions.CurrentValue,
+                    DateTimeOffset.Now,
+                    source);
+            }
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            lock (_sync)
+            {
+                if (--_dispatchesInProgress == 0)
+                {
+                    _dispatchesDrained?.TrySetResult();
+                    _dispatchesDrained = null;
+                }
+            }
+        }
+    }
+
+    internal Task WaitForPendingDispatchesAsync(CancellationToken ct)
+    {
+        lock (_sync)
+        {
+            if (_dispatchesInProgress == 0)
+                return Task.CompletedTask;
+
+            _dispatchesDrained ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            return _dispatchesDrained.Task.WaitAsync(ct);
+        }
     }
 
     public void Dispose()
@@ -235,12 +265,12 @@ public sealed class RouteMapSignalRuntime : IRouteMapSignalRuntime
             }
 
             _lastSnapshot = snapshot;
-            _observable.Publish(new SnapshotUpdate(generation, snapshot));
+            _observable.Publish(new SnapshotUpdate(generation, snapshot, source));
         }
     }
 
     internal sealed record SnapshotUpdate(long Generation, IReadOnlyDictionary<string, SignalValue>? Signals,
-        bool SourceChanged = false);
+        RouteMapSignalSource Source, bool SourceChanged = false);
 
     private sealed class SignalSnapshotObservable : IObservable<SnapshotUpdate>, IDisposable
     {

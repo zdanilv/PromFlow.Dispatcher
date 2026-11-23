@@ -21,6 +21,12 @@ public static class ApplicationConfigPaths
     public static string LogsDirectory =>
         Path.Combine(SharedConfigDirectory, LogsDirectoryName);
 
+    public static string HistoryDirectory => Path.Combine(SharedConfigDirectory, "history");
+
+    public static string HistoryDatabasePath => Path.Combine(HistoryDirectory, "events.db");
+
+    public static string DefaultHistoryArchiveDirectory => Path.Combine(HistoryDirectory, "archives");
+
     public static string LinuxConfigDirectory =>
         Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") is { Length: > 0 } xdgConfigHome
             ? xdgConfigHome

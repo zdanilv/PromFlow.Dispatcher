@@ -17,6 +17,7 @@ using Avalonia.VisualTree;
 using DialogHostAvalonia;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Dialogs;
+using Configurator.Application.Services.History;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -546,8 +547,10 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             ReadWindowSettings = () => throw new InvalidOperationException("User mode cannot load the edit form."),
             WriteWindowSettings = _ => throw new InvalidOperationException("User mode cannot save the edit form.")
         };
-        var view = new WorkspaceView(config, Options.Create(new ApplicationOptions { WorkMode = ApplicationOptions.UserWorkMode }),
-            NullLogger<WindowStartupSettingsViewModel>.Instance)
+        var options = Options.Create(new ApplicationOptions { WorkMode = ApplicationOptions.UserWorkMode });
+        var archive = new ProbeHistoryArchiveService();
+        using var historySettings = new HistoryArchiveSettingsViewModel(config, archive, options);
+        var view = new WorkspaceView(config, options, NullLogger<WindowStartupSettingsViewModel>.Instance, historySettings)
         {
             DataContext = CreateWorkspaceViewModel(isAdminMode: false)
         };
@@ -567,8 +570,79 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         var settings = Assert.IsType<WindowStartupSettingsViewModel>(settingsPanel.DataContext);
         Assert.False(((System.Windows.Input.ICommand)settings.SaveCommand).CanExecute(null));
         await settings.SaveCommand.Execute().ToTask();
+        Assert.False(view.FindControl<HistoryArchiveSettingsView>("HistoryArchiveSettingsPanel")!.IsAttachedToVisualTree());
+        Assert.False(((System.Windows.Input.ICommand)historySettings.ArchiveNowCommand).CanExecute(null));
+        await historySettings.ArchiveNowCommand.Execute().ToTask();
+        Assert.Equal(0, archive.ArchiveCalls);
 
         window.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task Workspace_admin_edits_history_settings_and_runs_one_manual_archive()
+    {
+        HistoryArchiveOptions? saved = null;
+        var config = new NullAppConfigService
+        {
+            WriteHistoryOptions = options => saved = options
+        };
+        var applicationOptions = Options.Create(new ApplicationOptions());
+        var archive = new ProbeHistoryArchiveService();
+        using var settings = new HistoryArchiveSettingsViewModel(config, archive, applicationOptions);
+        var view = new WorkspaceView(config, applicationOptions, NullLogger<WindowStartupSettingsViewModel>.Instance, settings)
+        {
+            DataContext = CreateWorkspaceViewModel(isAdminMode: true)
+        };
+        var window = new Window { Width = 1200, Height = 760, Content = view };
+        window.Show();
+        try
+        {
+            var tabs = Assert.IsType<Grid>(view.Content).Children.OfType<TabControl>().Single();
+            tabs.SelectedItem = tabs.Items.OfType<TabItem>().Single(tab => Equals(tab.Header, "Настройки приложения"));
+            Dispatcher.UIThread.RunJobs();
+            var panel = view.FindControl<HistoryArchiveSettingsView>("HistoryArchiveSettingsPanel")!;
+            Assert.True(panel.IsEffectivelyVisible);
+            Assert.Contains(view.FindControl<StackPanel>("StartupSettingsPanel")!.Children.OfType<CheckBox>(),
+                box => Equals(box.Content, "Запускать на весь экран"));
+            var labels = panel.GetVisualDescendants().OfType<TextBlock>().Select(text => text.Text).ToArray();
+            Assert.Contains("Папка для архивов", labels);
+            Assert.Contains("Шаблон имени", labels);
+            Assert.Contains("Срок хранения ZIP", labels);
+
+            settings.Directory = "original";
+            await settings.SelectFolderAsync(() => Task.FromResult<string?>(null));
+            Assert.Equal("original", settings.Directory);
+            await settings.SelectFolderAsync(() => Task.FromResult<string?>(Path.GetTempPath()));
+            Assert.Equal(Path.GetTempPath(), settings.Directory);
+
+            settings.FileNameTemplate = "../bad.zip";
+            await settings.SaveCommand.Execute().ToTask();
+            Assert.Contains("Шаблон", settings.ValidationError);
+            Assert.Null(saved);
+            Assert.Equal(HistoryArchiveOptions.DefaultFileNameTemplate, archive.CurrentOptions.FileNameTemplate);
+
+            settings.FileNameTemplate = "Тест_{date}_{seq}.zip";
+            settings.Enabled = false;
+            settings.Interval = settings.Intervals.Single(choice => choice.Value == 60);
+            await settings.SaveCommand.Execute().ToTask();
+            Assert.Equal(saved, archive.CurrentOptions);
+            Assert.Equal(60, saved!.ArchiveIntervalMinutes);
+            Assert.Null(settings.ValidationError);
+            Assert.Contains("000001.zip", settings.FileNameExample);
+
+            var command = settings.ArchiveNowCommand.Execute().ToTask();
+            await archive.ArchiveEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(settings.IsBusy);
+            Assert.False(((System.Windows.Input.ICommand)settings.ArchiveNowCommand).CanExecute(null));
+            await settings.ArchiveNowCommand.Execute().ToTask();
+            Assert.Equal(1, archive.ArchiveCalls);
+            archive.ArchiveCompletion.SetResult(new(ArchiveOutcome.Success, "Тест.zip"));
+            await command;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Contains("Тест.zip", settings.Message);
+            Assert.Equal("Выключена плановая архивация", settings.StateText);
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaFact]
@@ -1042,6 +1116,38 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         Assert.False(history.IsVisible);
 
         window.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task History_panel_batches_background_events_and_virtualizes_the_latest_thousand_rows()
+    {
+        var sink = new CountingHistorySink();
+        var journal = new RouteMapSessionJournal(sink);
+        using var model = new NotificationsPanelViewModel(journal, new NoOpDialogService(), new NoOpBitWriter());
+        var panel = new NotificationsPanelView { DataContext = model };
+        var window = new Window { Width = 1100, Height = 530, Content = panel };
+        var updatedOffUi = false;
+        journal.History.CollectionChanged += (_, _) => updatedOffUi |= !Dispatcher.UIThread.CheckAccess();
+        window.Show();
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            await Task.Run(() =>
+            {
+                for (var index = 0; index < 100_000; index++)
+                    journal.RecordAlarmActivated(new ModbusAlarmOptions { Id = $"alarm.{index}" }, now);
+            });
+            panel.GetVisualDescendants().OfType<TabControl>().Single().SelectedIndex = 1;
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(updatedOffUi);
+            Assert.Equal(100_000, sink.Count);
+            Assert.Equal(1000, model.History.Count);
+            Assert.Equal("alarm.99000", model.History[0].Name);
+            Assert.Equal("alarm.99999", model.History[^1].Name);
+            Assert.InRange(panel.GetVisualDescendants().OfType<Grid>()
+                .Count(grid => grid.Classes.Contains("route-map-history-row")), 1, 100);
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaFact]
@@ -2794,6 +2900,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         public Func<ModbusDataPointOptions, bool>? RemovePoint { get; init; }
         public Func<UserSettings>? ReadWindowSettings { get; init; }
         public Action<UserSettings>? WriteWindowSettings { get; init; }
+        public Action<HistoryArchiveOptions>? WriteHistoryOptions { get; init; }
         public int RemovalCount { get; private set; }
         public Task<bool> TryRemoveModbusDataPointAsync(ModbusDataPointOptions point, CancellationToken ct = default)
         {
@@ -2803,9 +2910,54 @@ public sealed partial class RouteMapSettingsDialogVisualTests
 
         public T GetSection<T>(string sectionName) where T : class, new() => new();
         public string GetValue(string key) => string.Empty;
-        public Task SaveSectionAsync<T>(string sectionName, T value, CancellationToken ct = default) => Task.CompletedTask;
+        public Task SaveSectionAsync<T>(string sectionName, T value, CancellationToken ct = default)
+        {
+            if (sectionName == HistoryArchiveOptions.SectionName && value is HistoryArchiveOptions history)
+                WriteHistoryOptions?.Invoke(history);
+            return Task.CompletedTask;
+        }
         public void SaveUserSettings(UserSettings settings) => WriteWindowSettings?.Invoke(settings);
         public UserSettings LoadUserSettings() => ReadWindowSettings?.Invoke() ?? new();
+    }
+
+    private sealed class CountingHistorySink : IHistoryEventSink
+    {
+        public int Count { get; private set; }
+        public bool TryWrite(HistoryEvent historyEvent)
+        {
+            Count++;
+            return true;
+        }
+    }
+
+    private sealed class ProbeHistoryArchiveService : IHistoryArchiveService
+    {
+        public HistoryArchiveStatus CurrentStatus { get; private set; } = new();
+        public HistoryArchiveOptions CurrentOptions { get; private set; } = new();
+        public event EventHandler<HistoryArchiveStatus>? StatusChanged;
+        public TaskCompletionSource ArchiveEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<ArchiveResult> ArchiveCompletion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int ArchiveCalls { get; private set; }
+        public Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task ValidateOptionsAsync(HistoryArchiveOptions options, CancellationToken ct = default) =>
+            options.FileNameTemplate.Contains('/') ? Task.FromException(new ArgumentException("Шаблон содержит недопустимый символ.")) : Task.CompletedTask;
+
+        public Task ApplyOptionsAsync(HistoryArchiveOptions options, CancellationToken ct = default)
+        {
+            CurrentOptions = options;
+            CurrentStatus = CurrentStatus with { State = options.Enabled ? HistoryArchiveState.Running : HistoryArchiveState.Disabled };
+            StatusChanged?.Invoke(this, CurrentStatus);
+            return Task.CompletedTask;
+        }
+
+        public Task<ArchiveResult> ArchiveNowAsync(CancellationToken ct = default)
+        {
+            ArchiveCalls++;
+            ArchiveEntered.SetResult();
+            return ArchiveCompletion.Task;
+        }
     }
 
     private sealed class NullFilePicker : IRouteMapSettingsFilePicker

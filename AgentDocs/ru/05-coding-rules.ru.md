@@ -59,8 +59,9 @@ RouteMap, Modbus TCP, SignalId mapping и UI.
   отдельным импульсом через bit-writer, без служебных DataMap-точек.
 - Правая панель уведомлений читает те же `Modbus.AlarmMap` события из
   `RouteMapSessionJournal`; не создавайте для операторских тревог служебные `SignalId`.
-- Сессионная вкладка `История` остается in-memory. Будущую выгрузку в БД подключайте
-  через `ISessionJournalExporter`, не из XAML и не из Modbus callback.
+- `RouteMapSessionJournal` передаёт события через `IHistoryEventSink` в ограниченную
+  фоновую очередь SQLite. Наблюдение за снимками выполняет `RouteMapHistoryCollector`.
+  UI отображает последние 1000 событий запуска.
 - В `Менеджер тревог` не смешивайте `Alarm` и `Acknowledgement`: это разные биты.
   `Repeat ms` валиден в `1000..86400000`, `Pulse ms` в `1..60000`; register bit только
   `0..15`, coil bit не задается.

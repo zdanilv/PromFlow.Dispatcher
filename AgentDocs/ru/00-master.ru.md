@@ -8,6 +8,7 @@
 |---|---|---|
 | Слои, Boot, DI, Workspace, admin/user | [01 — архитектура](01-architecture-overview.ru.md) | [Program.cs](../../Configurator.Boot/Program.cs), [WorkspaceViewModelTests](../../Configurator.Tests.Unit/WorkspaceViewModelTests.cs) |
 | Route Map, геометрия, карточки, TopBar, JSON и миграции | [02 — Route Map](02-route-map-guide.ru.md) | [RouteMap](../../Configurator.Desktop/Workspace/RouteMap/), [RouteMapConfigurationTests](../../Configurator.Tests.Unit/RouteMap/RouteMapConfigurationTests.cs); UI-тесты — по карте кода |
+| История Route Map, SQLite и ZIP | [02 — архивация истории](02-route-map-guide.ru.md#архивация-истории) | [Хранилище и архивация](../../Configurator.Infrastructure/Services/History/), [тесты истории](../../Configurator.Tests.Unit/History/) |
 | Modbus TCP, lifecycle, RMW, readback, тревоги и ACK | [03 — Modbus](03-modbus-tcp-guide.ru.md) | [Infrastructure.Modbus](../../Configurator.Infrastructure.Modbus/), [ModbusTcpServiceTests](../../Configurator.Infrastructure.Modbus.Tests/ModbusTcpServiceTests.cs), [ModbusAlarmMonitorTests](../../Configurator.Tests.Unit/ModbusAlarmMonitorTests.cs) |
 | SignalId, роли, привязка к Modbus | [04 — SignalId](04-signal-id-guide.ru.md) | [SignalMapping](../../Configurator.Desktop/Workspace/RouteMap/SignalMapping/), [RouteMapSignalRuntimeAndMappingTests](../../Configurator.Tests.Unit/RouteMap/RouteMapSignalRuntimeAndMappingTests.cs) |
 | Соглашения C#, ReactiveUI, потоки UI, ресурсы и видимость файлов | [05 — правила кода](05-coding-rules.ru.md) | Начальный файл и тест затрагиваемой подсистемы — по [11](11-code-map.ru.md) |
@@ -20,7 +21,7 @@
 
 ## Текущие названия и источники фактов
 
-- Пользовательские вкладки в [WorkspaceView.axaml](../../Configurator.Desktop/Workspace/WorkspaceView.axaml): `Route Map`, `SignalId ↔ Modbus`, `Менеджер тревог`, `Modbus TCP`. В user-режиме показывается только Route Map; скрытие admin-вкладок не выключает настроенный Modbus runtime/монитор тревог.
+- Вкладки в [WorkspaceView.axaml](../../Configurator.Desktop/Workspace/WorkspaceView.axaml) включают `Route Map`, `SignalId ↔ Modbus`, `Менеджер тревог`, `Modbus TCP` и `Настройки приложения`. В режиме `user` видна только Route Map, а настроенный Modbus runtime, монитор тревог и запись истории в SQLite продолжают работать.
 - `ModbusDemo`, `ModbusDemoViewModel`, `ModbusDemo.DataMap` — внутренние идентификаторы, а не текущее название вкладки. Общий TCP runtime использует endpoint/lifecycle из `ModbusDemo`; RouteMap mapping — `Modbus.DataMap`, тревоги — `Modbus.AlarmMap`. Подробности — в [03](03-modbus-tcp-guide.ru.md).
 - Версию Route Map JSON определяет [RouteMapConfigurationDocument.CurrentSchemaVersion](../../Configurator.Desktop/Workspace/RouteMap/Configuration/RouteMapConfigurationDocument.cs), миграции и проверки — [02](02-route-map-guide.ru.md). Отдельное число версии здесь не дублируется.
 - OPC UA-код и тесты существуют, но отдельной OPC UA-вкладки в Workspace нет. Фактическая интеграция и ограничения — в [10](10-opc-ua-guide.ru.md).

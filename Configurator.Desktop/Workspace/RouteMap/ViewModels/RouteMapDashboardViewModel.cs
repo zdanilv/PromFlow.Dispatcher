@@ -31,7 +31,6 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private readonly IEquipmentCommandDispatcher _commandDispatcher;
     private readonly RouteMapConfigurationManager _configurationManager;
     private readonly RouteMapModbusBindingDiagnostics? _bindingDiagnostics;
-    private readonly RouteMapSessionJournal _sessionJournal;
     private readonly IOptionsMonitor<ModbusOptions> _modbusOptions;
     private readonly IEquipmentCardParametersDialogService? _cardParametersDialogService;
     private readonly IEquipmentParameterAutoDispatcher? _parameterAutoDispatcher;
@@ -69,7 +68,6 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         _commandDispatcher = commandDispatcher;
         _configurationManager = configurationManager;
         _bindingDiagnostics = bindingDiagnostics;
-        _sessionJournal = sessionJournal;
         _modbusOptions = modbusOptions;
         _cardParametersDialogService = cardParametersDialogService;
         _parameterAutoDispatcher = parameterAutoDispatcher;
@@ -124,8 +122,6 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             _lastSignalGeneration = signals is not null && runtime is not null ? generation : null;
             // Invalidation updates the UI; only live snapshots drive parameter dispatch on reconnect.
             ApplyRuntime(MapSnapshot(_lastSignals, Definition), isLiveSnapshot: signals is not null);
-            if (signals is not null)
-                _sessionJournal.RecordSignalSnapshot(signals, Definition, _modbusOptions.CurrentValue);
         }
 
         // Settings switch the source on the UI thread. Invalidate the old command gates before returning to input.

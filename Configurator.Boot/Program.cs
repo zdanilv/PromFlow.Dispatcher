@@ -3,6 +3,7 @@ using Configurator.Application;
 using Configurator.Boot.Console;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Dialogs;
+using Configurator.Application.Services.History;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop;
@@ -34,6 +35,7 @@ using Configurator.Infrastructure.Modbus;
 using Configurator.Infrastructure.Modbus.RouteMap;
 using Configurator.Infrastructure.OpcUa;
 using Configurator.Infrastructure.Services;
+using Configurator.Infrastructure.Services.History;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -154,8 +156,15 @@ internal static class Program
                     services.AddSingleton<IRouteMapRuntimeMapper<RouteMapRuntimeState>, RouteMapRuntimeMapper>();
                     services.AddTransient<RouteMapDashboardViewModel>();
                     services.AddTransient<RouteMapSignalMappingViewModel>();
+                    services.AddSingleton(sp => LoadHistoryArchiveOptions(runtimeConfiguration,
+                        sp.GetRequiredService<ILogger<HistoryArchiveService>>()));
+                    services.AddSingleton<SqliteHistoryEventStore>();
+                    services.AddSingleton<IHistoryEventStore>(sp => sp.GetRequiredService<SqliteHistoryEventStore>());
+                    services.AddSingleton<HistoryEventWriter>();
+                    services.AddSingleton<IHistoryEventSink>(sp => sp.GetRequiredService<HistoryEventWriter>());
+                    services.AddSingleton<IHistoryArchiveService, HistoryArchiveService>();
+                    services.AddSingleton<HistoryArchiveSettingsViewModel>();
                     services.AddSingleton<RouteMapSessionJournal>();
-                    services.AddSingleton<ISessionJournalExporter, NoopSessionJournalExporter>();
                     services.AddTransient<NotificationsPanelViewModel>();
                     services.AddTransient<AlarmManagerViewModel>();
                     services.AddTransient<ModbusAlarmMonitor>();
@@ -168,7 +177,7 @@ internal static class Program
                     services.AddSingleton<MockEquipmentCommandDispatcher>();
                     services.AddSingleton<ModbusTcpSignalValueProvider>();
                     services.AddSingleton<ModbusTcpCommandDispatcher>();
-                    services.AddSingleton<IRouteMapSignalRuntime>(sp => new RouteMapSignalRuntime(
+                    services.AddSingleton(sp => new RouteMapSignalRuntime(
                         sp.GetRequiredService<MockSignalProvider>(),
                         sp.GetRequiredService<MockEquipmentCommandDispatcher>(),
                         sp.GetRequiredService<ModbusTcpSignalValueProvider>(),
@@ -177,6 +186,8 @@ internal static class Program
                         sp.GetRequiredService<RouteMapSessionJournal>(),
                         sp.GetRequiredService<RouteMapConfigurationManager>(),
                         sp.GetRequiredService<IOptionsMonitor<ModbusOptions>>()));
+                    services.AddSingleton<IRouteMapSignalRuntime>(sp => sp.GetRequiredService<RouteMapSignalRuntime>());
+                    services.AddSingleton<RouteMapHistoryCollector>();
                     services.AddSingleton<ISignalValueProvider>(sp => sp.GetRequiredService<IRouteMapSignalRuntime>());
                     services.AddSingleton<IEquipmentCommandDispatcher>(sp => sp.GetRequiredService<IRouteMapSignalRuntime>());
                     services.AddTransient<RouteMapModbusBindingDiagnostics>();
@@ -220,6 +231,19 @@ internal static class Program
                     Configurator.Desktop.App.Services = sp!;
                 }
             );
+    }
+
+    private static HistoryArchiveOptions LoadHistoryArchiveOptions(IConfiguration configuration, ILogger<HistoryArchiveService> logger)
+    {
+        try
+        {
+            return configuration.GetSection(HistoryArchiveOptions.SectionName).Get<HistoryArchiveOptions>() ?? new();
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Could not read HistoryArchive settings. Automatic archiving is disabled until settings are saved.");
+            return new HistoryArchiveOptions { Enabled = false };
+        }
     }
 
     private static IConfigurationRoot BuildLaunchConfiguration() =>

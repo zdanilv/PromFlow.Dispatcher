@@ -2,19 +2,13 @@ using System.Reactive.Linq;
 using Configurator.Application.Services;
 using Configurator.Desktop.Dialogs.HelpDialog;
 using Microsoft.Extensions.Logging.Abstractions;
-using ReactiveUI.Builder;
 using Xunit;
 
 namespace Configurator.Tests.Unit.Dialogs;
 
 public sealed class HelpDialogViewModelTests
 {
-    static HelpDialogViewModelTests()
-    {
-        RxAppBuilder.CreateReactiveUIBuilder()
-            .WithCoreServices()
-            .BuildApp();
-    }
+    static HelpDialogViewModelTests() => ReactiveUiTestSetup.EnsureInitialized();
 
     [Fact]
     public async Task Exposes_configured_contacts_and_opens_permitted_link()

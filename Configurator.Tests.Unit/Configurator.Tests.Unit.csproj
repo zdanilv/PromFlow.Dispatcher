@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Configurator.Desktop\Configurator.Desktop.csproj" />
+    <ProjectReference Include="..\Configurator.Infrastructure\Configurator.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

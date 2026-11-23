@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Configurator.Application.Services;
+using Configurator.Application.Services.History;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -130,6 +131,12 @@ namespace Configurator.Infrastructure.Services
                         var backupPath = _configFilePath + ".before-mode-cleanup." + Guid.NewGuid().ToString("N") + ".bak";
                         await File.WriteAllTextAsync(backupPath, originalJson, ct);
                     }
+                }
+
+                if (sectionName == HistoryArchiveOptions.SectionName && value is HistoryArchiveOptions &&
+                    GetProperty(root, sectionName) is JsonObject oldHistory && replacement is JsonObject newHistory)
+                {
+                    PreserveMissingProperties(oldHistory, newHistory);
                 }
 
                 SetSection(root, sectionName, replacement);

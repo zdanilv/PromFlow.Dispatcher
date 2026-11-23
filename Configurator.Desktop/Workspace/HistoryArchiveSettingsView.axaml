@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Configurator.Desktop.Workspace"
+             x:Class="Configurator.Desktop.Workspace.HistoryArchiveSettingsView"
+             x:DataType="vm:HistoryArchiveSettingsViewModel">
+    <StackPanel Spacing="12">
+        <TextBlock Text="Архивирование истории Route Map" FontSize="18" FontWeight="SemiBold"/>
+        <StackPanel IsEnabled="{Binding !IsBusy}" Spacing="8">
+            <CheckBox Content="Включить автоматическую архивацию" IsChecked="{Binding Enabled, Mode=TwoWay}"/>
+            <TextBlock Text="События сохраняются в локальной базе независимо от расписания архивации." TextWrapping="Wrap"/>
+            <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+                <TextBlock Grid.Row="0" Text="Частота создания архива" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding Intervals}"
+                          SelectedItem="{Binding Interval, Mode=TwoWay}" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="1" Text="Папка для архивов" VerticalAlignment="Center"/>
+                <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                    <TextBox Text="{Binding Directory, Mode=TwoWay}" PlaceholderText="Папка по умолчанию"/>
+                    <Button Grid.Column="1" Content="Обзор…" Click="BrowseFolder" Margin="8,0,0,0"/>
+                </Grid>
+
+                <TextBlock Grid.Row="2" Text="Шаблон имени" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding FileNameTemplate, Mode=TwoWay}"/>
+                <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,4,0,8">
+                    <TextBlock Text="{Binding FileNameExample}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{}{date} — дата и время UTC, {seq} — номер архива" TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <TextBlock Grid.Row="4" Text="Срок хранения ZIP" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="4" Grid.Column="1" ItemsSource="{Binding Retentions}"
+                          SelectedItem="{Binding Retention, Mode=TwoWay}" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="5" Text="Хранение записей в БД, суток" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding LocalDatabaseRetentionDays, Mode=TwoWay}"
+                         Width="96" HorizontalAlignment="Left" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="6" Text="Минимум свободного места, МБ" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding MinimumFreeSpaceMb, Mode=TwoWay}"
+                         Width="96" HorizontalAlignment="Left"/>
+            </Grid>
+            <CheckBox Content="Архивировать при закрытии" IsChecked="{Binding ArchiveOnExit, Mode=TwoWay}"/>
+        </StackPanel>
+        <TextBlock Text="{Binding ValidationError}" Foreground="IndianRed" TextWrapping="Wrap"
+                   IsVisible="{Binding !!ValidationError}"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Сохранить настройки" Command="{Binding SaveCommand}"/>
+            <Button Content="Архивировать сейчас" Command="{Binding ArchiveNowCommand}"/>
+        </StackPanel>
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsVisible="{Binding !!Message}"/>
+        <StackPanel Spacing="4">
+            <TextBlock Text="{Binding StateText}" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding LastArchiveText, StringFormat='Последний архив · {0}'}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding Status.LastSuccessfulArchivePath}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding NextArchiveText, StringFormat='Следующая попытка · {0}'}"/>
+            <TextBlock Text="{Binding Status.PendingQueueCount, StringFormat='В очереди · {0:N0}'}"/>
+            <TextBlock Text="{Binding Status.PersistedEventsCount, StringFormat='Записано за сеанс · {0:N0}'}"/>
+            <TextBlock Text="{Binding Status.RejectedEventsCount, StringFormat='Не принято · {0:N0}'}"/>
+            <TextBlock Text="{Binding Status.LastErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap"/>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

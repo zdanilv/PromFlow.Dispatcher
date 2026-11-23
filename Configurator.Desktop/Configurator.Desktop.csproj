@@ -61,6 +61,9 @@
 	  <Folder Include="Properties\" />
 	</ItemGroup>
 	<ItemGroup>
+	  <None Update="Workspace\HistoryArchiveSettingsView.axaml">
+	    <SubType>Designer</SubType>
+	  </None>
 	  <None Update="Workspace\Modbus\ModbusView.axaml">
 	    <SubType>Designer</SubType>
 	  </None>

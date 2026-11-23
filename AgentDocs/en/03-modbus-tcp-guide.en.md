@@ -126,8 +126,9 @@ dialog repeats after `RepeatIntervalMs`.
 After the dialog is shown, the alarm is added to the RouteMap right-panel
 `Уведомления` tab. `Хорошо` clears the unread marker, and the row `X` removes it only
 after `Alarm=false`. `Очистить список` removes only the same inactive notifications and
-does not write acknowledgement. Activation, clear, and `OK` events are written to the
-session `История` tab; this is an in-memory log, not a persisted database.
+does not write acknowledgement. The journal persists activation, clear, and local `OK`
+events to SQLite. The `История` tab shows administrators the latest events from the
+current session.
 
 ### `Менеджер тревог` Table
 

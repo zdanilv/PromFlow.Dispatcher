@@ -206,13 +206,25 @@ click, and its `X` removes the row only when the current alarm bit is already `f
 The bottom `Очистить список` button applies the same rule to all rows, leaving active
 alarms visible.
 
-The `История` tab is an in-memory session journal. It records successful sent SignalId
-commands, first and changed received values from `Modbus.DataMap`, and alarm activation,
-clear, and `OK` events. Direction is shown with arrows: `↓` for received/incoming events
-and `↑` for sent commands and `OK`. `Roles` and `Objects` are rendered as one
+The `История` tab shows administrators the latest 1,000 events from the current session.
+The journal records completed SignalId sends, the first and changed valid values from
+`Modbus.DataMap`, and alarm activation, clear, and local `OK` events. The table uses `↓`
+for received events and `↑` for sent commands and `OK`. `Roles` and `Objects` are rendered as one
 `Роли / объекты` column, matching `SignalId ↔ Modbus`; `Адрес` shows only the zero-based
 offset without the area name. Operator alarms do not become SignalIds and do not move
 into `Modbus.DataMap`.
+
+### History archives
+
+The writer saves incoming events to `history/events.db` in batches of up to 200 events
+per transaction. `Настройки приложения` includes the ZIP schedule, destination, retention,
+and `Архивировать сейчас` for manual runs. The default schedule is once a day. SQLite
+recording continues while the ZIP schedule is disabled.
+
+Each ZIP contains `events.jsonl` and `manifest.json` for a range of committed SQLite IDs.
+The service verifies the SHA-256 digest, event count, and ID range before recording the
+archive in SQLite. See the [storage guide](../ru/09-configuration-file-locations.ru.md)
+for paths, settings, and retention rules.
 
 ## Editor
 

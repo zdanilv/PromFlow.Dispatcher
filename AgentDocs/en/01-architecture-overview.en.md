@@ -56,10 +56,11 @@ alarm/ack/repeat behavior stays shared.
 After a dialog is shown, the alarm appears in the RouteMap right panel `Уведомления`
 tab. `Хорошо` clears the unread marker; the row `X` removes it only after `Alarm=false`.
 `Очистить список` bulk-removes only rows that pass the same close check. The `История`
-tab is an in-memory session log for successful sent SignalIds, first and changed received
-values from `Modbus.DataMap`, and alarm events from `Modbus.AlarmMap`. It expands the
-right panel to the table width, uses arrows for direction, and shows the address as a
-numeric offset without the Modbus area name.
+tab shows administrators the latest 1,000 events from the current session. The journal
+records completed SignalId sends, the first and changed valid values from `Modbus.DataMap`,
+and events from `Modbus.AlarmMap`. A background writer persists events to SQLite in both
+work modes. The table expands the right panel, uses arrows for direction, and shows the
+address as a numeric offset.
 
 ## Read Flow
 
@@ -80,8 +81,9 @@ ModbusDemo endpoint/lifecycle
 
 RouteMap receives `SignalValue` objects keyed by `SignalId`, not raw coils or registers.
 The mapper converts values, quality, and stale state into `RouteMapRuntimeState`.
-`RouteMapDashboardViewModel` separately records snapshots in `RouteMapSessionJournal`
-after dispatching to the UI thread; the journal supplies session history.
+`RouteMapHistoryCollector` subscribes to `RouteMapSignalRuntime` snapshots at application
+startup and sends valid changes to `RouteMapSessionJournal`. The journal queues events
+for the background writer and updates the visible history on the UI thread.
 
 ## Write Flow
 
@@ -119,9 +121,9 @@ display the latest good value.
 - `RouteMapConfigurationManager` owns `CurrentDocument` and `CurrentDefinition`.
 - `RouteMapConfigurationStorage`, `Migrator`, `Validator`, and `Mapper` handle JSON
   loading, migration, validation, and mapping.
-- `RouteMapSessionJournal` owns the in-memory notification and session-history state.
-  `NoopSessionJournalExporter` is called during shutdown as the future database export
-  hook; the database itself is not implemented yet.
+- `RouteMapSessionJournal` creates history events and supplies notifications and history
+  rows to the UI. `HistoryEventWriter` persists events to SQLite. `HistoryArchiveService`
+  exports ID ranges from SQLite to ZIP. `App.axaml.cs` manages startup and shutdown.
 - `EquipmentCardParametersDialogService` owns the modal card-parameter dialog. Parameter
   definitions live in RouteMap, while PLC addresses still live only in `Modbus.DataMap`.
 

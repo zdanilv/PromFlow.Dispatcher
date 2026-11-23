@@ -47,8 +47,9 @@ Follow these rules when changing RouteMap, Modbus TCP, SignalId mapping, or rela
   are written as bit pulses without service DataMap points.
 - The right notification panel consumes the same `Modbus.AlarmMap` events through
   `RouteMapSessionJournal`; do not create service SignalIds for operator alarms.
-- The `История` session tab stays in memory. Future database export should be wired
-  through `ISessionJournalExporter`, not from XAML or Modbus callbacks.
+- `RouteMapSessionJournal` passes events through `IHistoryEventSink` to the bounded
+  SQLite writer queue. `RouteMapHistoryCollector` listens for signal snapshots. The UI
+  shows the latest 1,000 events from the current session.
 - In `Менеджер тревог`, keep `Alarm` and `Acknowledgement` as different bits.
   `Repeat ms` is valid in `1000..86400000`, `Pulse ms` in `1..60000`; register bits are
   only `0..15`, and coil bits are not defined.

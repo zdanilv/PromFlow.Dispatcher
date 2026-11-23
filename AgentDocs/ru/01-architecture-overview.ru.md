@@ -37,7 +37,7 @@ Windows-приложение не создаёт консоль, а в `admin` �
 
 `Configurator.Boot/appsettings.json` содержит `Application.WorkMode`:
 
-- `admin` — Workspace показывает вкладки `Route Map`, `SignalId ↔ Modbus`, `Менеджер тревог`, `Modbus TCP`;
+- `admin` — Workspace показывает вкладки `Route Map`, `SignalId ↔ Modbus`, `Менеджер тревог`, `Modbus TCP` и `Настройки приложения`;
 - `user` — Workspace показывает только `Route Map` на всю рабочую область, без вкладок.
 
 Неверное или отсутствующее значение трактуется как `admin`. Актуальный admin-режим
@@ -74,10 +74,11 @@ Modbus TCP
 После показа диалога тревога появляется во вкладке `Уведомления` правой панели RouteMap.
 `Хорошо` снимает маркер непрочитанного; кнопка `X` удаляет элемент только после
 `Alarm=false`, а `Очистить список` массово удаляет только такие же закрываемые элементы.
-Вкладка `История` хранит только in-memory события текущей сессии: успешно отправленные
-`SignalId`, первые/измененные полученные значения из `Modbus.DataMap` и события тревог
-из `Modbus.AlarmMap`. История расширяет правую панель по ширине таблицы, показывает
-направление стрелками и выводит адрес как числовой offset без названия Modbus area.
+Вкладка `История` показывает администратору последние 1000 событий текущего запуска.
+Журнал включает завершившиеся отправки `SignalId`, первые и изменённые достоверные
+значения из `Modbus.DataMap` и события тревог из `Modbus.AlarmMap`. Фоновый писатель
+сохраняет события в SQLite в обоих режимах. История расширяет правую панель по ширине
+таблицы, показывает направление стрелками и выводит адрес как числовой offset.
 
 ## Поток чтения
 
@@ -98,8 +99,9 @@ ModbusDemo endpoint/lifecycle
 
 RouteMap получает не coils/registers, а `SignalValue` по `SignalId`. Mapper переводит
 значения, quality и stale-состояния в `RouteMapRuntimeState`.
-`RouteMapDashboardViewModel` отдельно записывает snapshots в `RouteMapSessionJournal`
-после перехода на UI thread; журнал питает панель истории.
+`RouteMapHistoryCollector` подписывается на снимки `RouteMapSignalRuntime` при запуске
+приложения и передаёт достоверные изменения в `RouteMapSessionJournal`. Журнал передаёт
+события фоновому писателю и обновляет отображаемые строки на UI-потоке.
 
 ## Поток записи
 
@@ -136,9 +138,9 @@ readback и `StartOffFeedback`/`StopOffFeedback` обновляют UI без о
   RouteMap facade и demo facade.
 - `RouteMapConfigurationManager` — единственный владелец `CurrentDocument` и
   `CurrentDefinition`.
-- `RouteMapSessionJournal` — общий in-memory журнал уведомлений и истории сессии;
-  `NoopSessionJournalExporter` вызывается при закрытии приложения как будущая точка
-  выгрузки в БД, но БД сейчас не реализована.
+- `RouteMapSessionJournal` формирует события и ведёт уведомления и строки истории UI.
+  `HistoryEventWriter` записывает события в SQLite, а `HistoryArchiveService` читает
+  из SQLite диапазоны для ZIP. Запуск и завершение управляются из `App.axaml.cs`.
 - `EquipmentCardParametersDialogService` — desktop-сервис модального диалога параметров
   карточки; описание параметров хранится в RouteMap definition, а PLC-адреса остаются в
   `Modbus.DataMap`.

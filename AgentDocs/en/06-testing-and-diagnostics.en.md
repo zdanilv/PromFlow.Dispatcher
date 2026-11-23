@@ -96,7 +96,8 @@ PLC contract limitation, outside what the UI tests can prove.
 | `История` has no SignalId rows | Missing `Modbus.DataMap` point, bad/stale value, or unchanged value since the last quality snapshot |
 | `История` address looks like `HoldingRegister 3` | That format is obsolete; the current `Адрес` column shows only offset `3` |
 | Right panel does not expand on `История` | `NotificationsPanelView` must not have fixed `Width/MaxWidth=400` |
-| `История` is not exported to DB | Only `NoopSessionJournalExporter` exists; DB schema and connection are not implemented |
+| SQLite event count stops growing | Check the storage status, queue, rejected-event count, `history` directory permissions, and whether a second instance is running |
+| No ZIP is created | Check the schedule, availability of new IDs, free disk space, destination access, and the last error in `Настройки приложения` |
 
 When checking the `Менеджер тревог` table, read the column groups as follows:
 `Alarm area/Offset/Bit` is the input bit that opens the dialog, `OK area/Offset/Bit` is

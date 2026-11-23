@@ -77,6 +77,19 @@ dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restor
 dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.csproj --no-restore
 ```
 
+## История Route Map и ZIP
+
+```powershell
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "FullyQualifiedName~HistoryStorageTests|FullyQualifiedName~HistoryArchiveTests|FullyQualifiedName~HistorySettingsPersistenceTests|FullyQualifiedName~RouteMapSessionJournalTests"
+dotnet test .\Configurator.Tests.RouteMap.Ui\Configurator.Tests.RouteMap.Ui.csproj --no-restore
+dotnet test .\Configurator.Tests.Unit\Configurator.Tests.Unit.csproj --no-restore --filter "Category=HistoryBenchmark" --logger "console;verbosity=detailed"
+```
+
+Первые две команды покрывают запись в SQLite, восстановление ZIP, сохранение настроек,
+режимы интерфейса и предел в 1000 видимых строк. Замер использует временные каталоги и
+синтетические наборы из 10 000, 100 000 и 1 000 000 событий. Для обычного прогона
+решения исключите замер фильтром `Category!=HistoryBenchmark`.
+
 ## Modbus тесты
 
 ```powershell
@@ -196,7 +209,8 @@ loopback. Связь с реальным ПР103 и физические зап�
 | В `Истории` нет SignalId | Точка отсутствует в `Modbus.DataMap`, значение bad/stale или не изменилось с прошлого quality snapshot |
 | В `Истории` адрес выглядит как `HoldingRegister 3` | Формат устарел; актуальная колонка `Адрес` показывает только offset `3` |
 | Правая панель не расширяется на `Истории` | У `NotificationsPanelView` не должно быть фиксированного `Width/MaxWidth=400` |
-| В `Истории` нет выгрузки в БД | Реализован только `NoopSessionJournalExporter`; схема и подключение БД не реализованы |
+| Перестал расти счётчик записанных событий | Проверьте статус хранилища, очередь, число непринятых событий, права на каталог `history` и наличие второго экземпляра |
+| ZIP не создаётся | Проверьте расписание, наличие новых ID, свободное место, доступ к папке и последнюю ошибку в `Настройках приложения` |
 
 При проверке таблицы `Менеджер тревог` читайте группы колонок так: `Alarm area/Offset/Bit`
 это входной бит показа диалога, `OK feedback` включает отдельный бит подтверждения

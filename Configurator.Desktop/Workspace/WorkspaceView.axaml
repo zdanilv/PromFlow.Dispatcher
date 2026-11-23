@@ -49,14 +49,17 @@
                 <modbusDemo:ModbusDemoView DataContext="{Binding ModbusDemo}"/>
             </TabItem>
             <TabItem Header="Настройки приложения">
-                <StackPanel x:Name="StartupSettingsPanel"
-                            x:DataType="vm:WindowStartupSettingsViewModel"
-                            Margin="16" Spacing="12" HorizontalAlignment="Left">
-                    <CheckBox Content="Запускать на весь экран"
-                              IsChecked="{Binding StartFullScreen, Mode=TwoWay}"/>
-                    <Button Content="Сохранить" Command="{Binding SaveCommand}"/>
-                    <TextBlock Text="{Binding SaveMessage}" TextWrapping="Wrap"/>
-                </StackPanel>
+                <ScrollViewer>
+                    <StackPanel Margin="16" Spacing="24" MaxWidth="740" HorizontalAlignment="Left">
+                        <StackPanel x:Name="StartupSettingsPanel" x:DataType="vm:WindowStartupSettingsViewModel" Spacing="12">
+                            <CheckBox Content="Запускать на весь экран"
+                                      IsChecked="{Binding StartFullScreen, Mode=TwoWay}"/>
+                            <Button Content="Сохранить" Command="{Binding SaveCommand}"/>
+                            <TextBlock Text="{Binding SaveMessage}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <vm:HistoryArchiveSettingsView x:Name="HistoryArchiveSettingsPanel"/>
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
 

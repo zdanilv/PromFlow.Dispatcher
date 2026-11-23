@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Configurator.Application.Services.Dialogs;
+using Configurator.Application.Services.History;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
@@ -16,7 +18,19 @@ namespace Configurator.Desktop.Workspace.RouteMap.Services;
 
 public sealed class RouteMapSessionJournal
 {
+    public const int HistoryCapacity = 1000;
+
+    private static readonly Guid SessionId = Guid.NewGuid();
+    private readonly object _historySync = new();
+    private readonly object _displaySync = new();
     private readonly Dictionary<string, object?> _lastSignalValues = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Queue<RouteMapSessionHistoryItem> _pendingHistory = new(HistoryCapacity);
+    private readonly IHistoryEventSink? _sink;
+    private bool _historyUpdateScheduled;
+
+    public RouteMapSessionJournal() { }
+
+    public RouteMapSessionJournal(IHistoryEventSink sink) => _sink = sink;
 
     public ObservableCollection<AlarmNotificationItem> Notifications { get; } = [];
     public ObservableCollection<RouteMapSessionHistoryItem> History { get; } = [];
@@ -25,31 +39,64 @@ public sealed class RouteMapSessionJournal
         SignalWriteRequest request,
         RouteMapDefinition definition,
         ModbusOptions options,
-        DateTimeOffset timestamp)
+        DateTimeOffset timestamp) => RecordSignalSent(request, definition, options, timestamp, null);
+
+    internal void RecordSignalSent(
+        SignalWriteRequest request,
+        RouteMapDefinition definition,
+        ModbusOptions options,
+        DateTimeOffset timestamp,
+        RouteMapSignalSource? source)
     {
         var metadata = CreateMetadata(request.SignalId, definition, options.DataMap);
-        History.Add(new RouteMapSessionHistoryItem(
+        AddHistory(
             timestamp,
             "Отправлено",
             request.SignalId,
             metadata.Roles,
             metadata.Objects,
+            metadata.Area,
             metadata.Address,
             metadata.Bit,
-            FormatValue(request.Value)));
+            request.Value,
+            source?.ToString() ?? "Unknown");
     }
 
     public void RecordSignalSnapshot(
         IReadOnlyDictionary<string, SignalValue> signals,
         RouteMapDefinition definition,
-        ModbusOptions options)
-    {
-        var inventory = RouteMapSignalInventory.Build(definition)
-            .ToDictionary(item => item.SignalId, StringComparer.OrdinalIgnoreCase);
+        ModbusOptions options) => RecordSignalSnapshot(signals, definition, options, null);
 
-        foreach (var point in options.DataMap.Where(point => point.IsReadable))
+    internal void RecordSignalSnapshot(
+        IReadOnlyDictionary<string, SignalValue> signals,
+        RouteMapDefinition definition,
+        ModbusOptions options,
+        RouteMapSignalSource? source)
+    {
+        lock (_historySync)
         {
-            if (IsInternalRuntimeSignal(point.Name)
+            RecordChangedSignals(signals, definition, options, source?.ToString() ?? "Unknown");
+        }
+    }
+
+    internal void ResetSignalSnapshot()
+    {
+        lock (_historySync)
+        {
+            _lastSignalValues.Clear();
+        }
+    }
+
+    private void RecordChangedSignals(
+        IReadOnlyDictionary<string, SignalValue> signals,
+        RouteMapDefinition definition,
+        ModbusOptions options,
+        string source)
+    {
+        Dictionary<string, RouteMapSignalInventoryItem>? inventory = null;
+        foreach (var point in options.DataMap)
+        {
+            if (!point.IsReadable || IsInternalRuntimeSignal(point.Name)
                 || !signals.TryGetValue(point.Name, out var signal)
                 || !signal.IsQualityGood
                 || signal.IsStale)
@@ -64,22 +111,26 @@ public sealed class RouteMapSessionJournal
             }
 
             _lastSignalValues[point.Name] = signal.Value;
+            inventory ??= RouteMapSignalInventory.Build(definition)
+                .ToDictionary(item => item.SignalId, StringComparer.OrdinalIgnoreCase);
             inventory.TryGetValue(point.Name, out var item);
-            History.Add(new RouteMapSessionHistoryItem(
+            AddHistory(
                 signal.Timestamp,
                 "Получено",
                 point.Name,
                 item?.Roles ?? string.Empty,
                 item?.Objects ?? string.Empty,
-                FormatAddress(point.Area, point.Address),
-                FormatBit(point.BitIndex),
-                FormatValue(signal.Value)));
+                point.Area,
+                point.Address,
+                point.BitIndex,
+                signal.Value,
+                source);
         }
     }
 
     public void RecordAlarmActivated(ModbusAlarmOptions alarm, DateTimeOffset timestamp)
     {
-        History.Add(CreateAlarmHistoryItem(timestamp, "Тревога", alarm, FormatValue(true), useAcknowledgementAddress: false));
+        AddAlarmHistory(timestamp, "Тревога", alarm, true, alarm.Alarm);
     }
 
     public void ShowAlarmNotification(
@@ -177,18 +228,21 @@ public sealed class RouteMapSessionJournal
 
     public void RecordAlarmCleared(ModbusAlarmOptions alarm, DateTimeOffset timestamp)
     {
-        if (FindNotification(alarm.Id) is { } item)
+        UpdateNotification(() =>
         {
-            item.IsActive = false;
-        }
+            if (FindNotification(alarm.Id) is { } item)
+            {
+                item.IsActive = false;
+            }
+        });
 
-        History.Add(CreateAlarmHistoryItem(timestamp, "Снято", alarm, FormatValue(false), useAcknowledgementAddress: false));
+        AddAlarmHistory(timestamp, "Снято", alarm, false, alarm.Alarm);
     }
 
     public void RecordAlarmAcknowledged(ModbusAlarmOptions alarm, DateTimeOffset timestamp)
     {
-        MarkAlarmRead(alarm.Id);
-        History.Add(CreateAlarmHistoryItem(timestamp, "OK", alarm, "OK", useAcknowledgementAddress: true));
+        UpdateNotification(() => MarkAlarmRead(alarm.Id));
+        AddAlarmHistory(timestamp, "OK", alarm, "OK", alarm.Acknowledgement);
     }
 
     public void MarkAlarmRead(string alarmId)
@@ -230,7 +284,13 @@ public sealed class RouteMapSessionJournal
         return removed;
     }
 
-    public IReadOnlyList<RouteMapSessionHistoryItem> SnapshotHistory() => History.ToArray();
+    public IReadOnlyList<RouteMapSessionHistoryItem> SnapshotHistory()
+    {
+        lock (_displaySync)
+        {
+            return History.ToArray();
+        }
+    }
 
     private AlarmNotificationItem? FindNotification(string alarmId) =>
         Notifications.FirstOrDefault(item => string.Equals(item.Id, alarmId, StringComparison.OrdinalIgnoreCase));
@@ -246,23 +306,83 @@ public sealed class RouteMapSessionJournal
         Notifications.Move(index, 0);
     }
 
-    private static RouteMapSessionHistoryItem CreateAlarmHistoryItem(
+    private static void UpdateNotification(Action action)
+    {
+        if (global::Avalonia.Application.Current is not null && !Dispatcher.UIThread.CheckAccess())
+            Dispatcher.UIThread.Post(action);
+        else
+            action();
+    }
+
+    private void AddAlarmHistory(
         DateTimeOffset timestamp,
         string eventText,
         ModbusAlarmOptions alarm,
-        string valueText,
-        bool useAcknowledgementAddress)
+        object value,
+        ModbusBitAddressOptions address) => AddHistory(
+            timestamp, eventText, alarm.Id, AlarmKindTitle(alarm.Kind), alarm.Message,
+            address.Area, address.Address, address.BitIndex, value, "Modbus");
+
+    private void AddHistory(
+        DateTimeOffset timestamp,
+        string eventType,
+        string name,
+        string roles,
+        string objects,
+        ModbusDataArea? area,
+        int? address,
+        int? bit,
+        object? value,
+        string source)
     {
-        var address = useAcknowledgementAddress ? alarm.Acknowledgement : alarm.Alarm;
-        return new RouteMapSessionHistoryItem(
-            timestamp,
-            eventText,
-            alarm.Id,
-            AlarmKindTitle(alarm.Kind),
-            alarm.Message,
-            FormatAddress(address.Area, address.Address),
-            FormatBit(address.BitIndex),
-            valueText);
+        var item = new RouteMapSessionHistoryItem(timestamp, eventType, name, roles, objects,
+            FormatNumber(address), FormatNumber(bit), FormatValue(value));
+        lock (_historySync)
+        {
+            _sink?.TryWrite(new HistoryEvent(Guid.NewGuid(), timestamp.ToUniversalTime(), DateTimeOffset.UtcNow,
+                eventType, name, roles, objects, area?.ToString(), address, bit, FormatStoredValue(value), source, SessionId));
+
+            if (global::Avalonia.Application.Current is null ||
+                (_sink is null && !_historyUpdateScheduled && Dispatcher.UIThread.CheckAccess()))
+            {
+                lock (_displaySync)
+                    AppendDisplayItem(item);
+                return;
+            }
+
+            if (_pendingHistory.Count == HistoryCapacity)
+                _pendingHistory.Dequeue();
+            _pendingHistory.Enqueue(item);
+            if (!_historyUpdateScheduled)
+            {
+                _historyUpdateScheduled = true;
+                Dispatcher.UIThread.Post(ApplyPendingHistory, DispatcherPriority.Background);
+            }
+        }
+    }
+
+    private void ApplyPendingHistory()
+    {
+        RouteMapSessionHistoryItem[] pending;
+        lock (_historySync)
+        {
+            pending = _pendingHistory.ToArray();
+            _pendingHistory.Clear();
+            _historyUpdateScheduled = false;
+        }
+
+        lock (_displaySync)
+        {
+            foreach (var item in pending)
+                AppendDisplayItem(item);
+        }
+    }
+
+    private void AppendDisplayItem(RouteMapSessionHistoryItem item)
+    {
+        if (History.Count >= HistoryCapacity)
+            History.RemoveAt(0);
+        History.Add(item);
     }
 
     private static SignalMetadata CreateMetadata(
@@ -277,8 +397,9 @@ public sealed class RouteMapSessionJournal
         return new SignalMetadata(
             inventory?.Roles ?? string.Empty,
             inventory?.Objects ?? string.Empty,
-            point is null ? string.Empty : FormatAddress(point.Area, point.Address),
-            point is null ? string.Empty : FormatBit(point.BitIndex));
+            point?.Area,
+            point?.Address,
+            point?.BitIndex);
     }
 
     private static bool IsInternalRuntimeSignal(string signalId) =>
@@ -287,19 +408,22 @@ public sealed class RouteMapSessionJournal
 
     private static bool ValuesEqual(object? left, object? right) => Equals(left, right);
 
-    private static string FormatAddress(ModbusDataArea area, int address) =>
-        address.ToString(CultureInfo.InvariantCulture);
-
-    private static string FormatBit(int? bitIndex) =>
-        bitIndex.HasValue ? bitIndex.Value.ToString(CultureInfo.InvariantCulture) : string.Empty;
+    private static string FormatNumber(int? number) => number?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
     private static string FormatValue(object? value) =>
         value switch
         {
-            null => string.Empty,
-            bool flag => flag ? "true" : "false",
             DateTime dateTime => dateTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.CurrentCulture),
             DateTimeOffset dateTimeOffset => dateTimeOffset.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.CurrentCulture),
+            _ => FormatStoredValue(value)
+        };
+
+    private static string FormatStoredValue(object? value) => value switch
+        {
+            null => string.Empty,
+            bool flag => flag ? "true" : "false",
+            DateTime dateTime => dateTime.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+            DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
             IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
             _ => value.ToString() ?? string.Empty
         };
@@ -312,7 +436,7 @@ public sealed class RouteMapSessionJournal
         _ => "Сообщение"
     };
 
-    private sealed record SignalMetadata(string Roles, string Objects, string Address, string Bit);
+    private sealed record SignalMetadata(string Roles, string Objects, ModbusDataArea? Area, int? Address, int? Bit);
 }
 
 public sealed class AlarmNotificationItem : ReactiveObject
@@ -512,15 +636,4 @@ public sealed record RouteMapSessionHistoryItem(
         _ => string.Empty
     };
     public string DirectionText => EventText;
-}
-
-public interface ISessionJournalExporter
-{
-    Task ExportAsync(RouteMapSessionJournal journal, CancellationToken cancellationToken = default);
-}
-
-public sealed class NoopSessionJournalExporter : ISessionJournalExporter
-{
-    public Task ExportAsync(RouteMapSessionJournal journal, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
 }
