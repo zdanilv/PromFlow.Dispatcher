@@ -36,7 +36,42 @@ public sealed class ModbusAlarmMapValidator : IModbusAlarmMapValidator
             }
         }
 
+        return ValidateAcknowledgementMappings(options);
+    }
+
+    public static ModbusOperationResult ValidateAcknowledgementMappings(ModbusOptions options)
+    {
+        foreach (var alarm in options.AlarmMap)
+        {
+            if (!alarm.AcknowledgementEnabled)
+                continue;
+
+            var conflict = ValidateAcknowledgementAddress(alarm.Acknowledgement, options.DataMap);
+            if (!conflict.Succeeded)
+                return ModbusOperationResult.Failure(conflict.ErrorCode!,
+                    $"Тревога «{alarm.Id}». {conflict.ErrorMessage}");
+        }
+
         return ModbusOperationResult.Success();
+    }
+
+    public const string AcknowledgementDataMapConflict = "ModbusAlarmAcknowledgementDataMapConflict";
+
+    public static ModbusOperationResult ValidateAcknowledgementAddress(
+        ModbusBitAddressOptions address, IEnumerable<ModbusDataPointOptions> points)
+    {
+        var conflict = points.FirstOrDefault(point =>
+            point.Area == address.Area && address.Address >= point.Address
+            && (long)address.Address < (long)point.Address + point.Length
+            && (address.Area == ModbusDataArea.Coil || point.BitIndex is null || point.BitIndex == address.BitIndex));
+        if (conflict is null)
+            return ModbusOperationResult.Success();
+
+        var coordinate = address.Area == ModbusDataArea.Coil
+            ? $"Coil {address.Address}"
+            : $"HR{address.Address}.{address.BitIndex}";
+        return ModbusOperationResult.Failure(AcknowledgementDataMapConflict,
+            $"Адрес ACK {coordinate} занят точкой SignalId «{conflict.Name}».");
     }
 
     private static ModbusOperationResult ValidateAlarm(

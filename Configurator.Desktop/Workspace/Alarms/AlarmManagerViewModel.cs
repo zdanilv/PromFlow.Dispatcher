@@ -5,6 +5,7 @@ using System.Reactive;
 using Configurator.Application.Services;
 using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
+using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
 using Configurator.Application.Services.Modbus.Validation;
@@ -19,6 +20,7 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
     private readonly IOptionsMonitor<ModbusOptions> _optionsMonitor;
     private readonly IAppConfigService _appConfigService;
     private readonly IModbusAlarmMapValidator _validator;
+    private readonly IModbusDataMapRuntime? _dataMapRuntime;
     private readonly IModbusTcpProfileFilePicker? _profileFilePicker;
     private readonly IModbusTcpProfileTransferService? _profileTransferService;
     private readonly IDialogService? _dialogService;
@@ -38,11 +40,13 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
         IModbusAlarmMapValidator validator,
         IModbusTcpProfileFilePicker? profileFilePicker = null,
         IModbusTcpProfileTransferService? profileTransferService = null,
-        IDialogService? dialogService = null)
+        IDialogService? dialogService = null,
+        IModbusDataMapRuntime? dataMapRuntime = null)
     {
         _optionsMonitor = optionsMonitor;
         _appConfigService = appConfigService;
         _validator = validator;
+        _dataMapRuntime = dataMapRuntime;
         _profileFilePicker = profileFilePicker;
         _profileTransferService = profileTransferService;
         _dialogService = dialogService;
@@ -135,7 +139,16 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
         DetachRows();
     }
 
-    internal async Task SaveAsync(CancellationToken cancellationToken = default)
+    internal Task SaveAsync(CancellationToken cancellationToken = default) =>
+        _dataMapRuntime is null
+            ? SaveCoreAsync(cancellationToken)
+            : _dataMapRuntime.RunDataMapChangeAsync(async () =>
+            {
+                await SaveCoreAsync(cancellationToken);
+                return Unit.Default;
+            }, cancellationToken);
+
+    private async Task SaveCoreAsync(CancellationToken cancellationToken)
     {
         ErrorMessage = null;
         StatusMessage = null;
@@ -418,7 +431,7 @@ public sealed class AlarmManagerViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        var options = CreateValidationOptions(_baseOptions);
+        var options = CreateValidationOptions(_optionsMonitor.CurrentValue);
         options.AlarmMap = [row.ToOptions()];
         var validation = ValidateOptions(options);
         row.SetValidation(validation.Succeeded ? null : OperationMessage(validation));

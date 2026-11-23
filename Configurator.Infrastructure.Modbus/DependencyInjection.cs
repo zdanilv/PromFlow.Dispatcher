@@ -37,8 +37,8 @@ public static class DependencyInjection
         services.AddSingleton<IModbusServerService, ModbusServerService>();
         services.AddSingleton(CreateSharedRuntimeService);
         services.AddSingleton(CreateRouteMapTcpService);
-        services.AddSingleton<IModbusDataMapRuntime>(sp =>
-            (IModbusDataMapRuntime)sp.GetRequiredService<IModbusTcpService>());
+        services.AddSingleton<IModbusTcpService>(sp => sp.GetRequiredService<ModbusTcpService>());
+        services.AddSingleton<IModbusDataMapRuntime>(sp => sp.GetRequiredService<ModbusTcpService>());
         services.AddSingleton<IModbusBitWriter, ModbusBitWriter>();
         services.AddSingleton<IModbusDataSnapshotSource>(sp =>
             new ModbusDataSnapshotSourceAdapter(
@@ -63,7 +63,7 @@ public static class DependencyInjection
             loggerFactory.CreateLogger<ModbusRuntimeService>());
     }
 
-    private static IModbusTcpService CreateRouteMapTcpService(IServiceProvider serviceProvider)
+    private static ModbusTcpService CreateRouteMapTcpService(IServiceProvider serviceProvider)
     {
         var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
         var optionsMonitor = new RouteMapModbusOptionsMonitor(

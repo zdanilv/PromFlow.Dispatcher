@@ -2,9 +2,11 @@ using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Infrastructure.Modbus.Runtime;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Configurator.Infrastructure.Modbus.Tests;
@@ -27,6 +29,80 @@ public sealed class ModbusBitWriterTests
         Assert.Equal(1, selected.Captures);
         Assert.Equal([new(ModbusDataArea.Coil, 2, null, true), new(ModbusDataArea.Coil, 2, null, false)], selected.Writes);
         Assert.Empty((useClient ? server : client).Writes);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PulseAsync_RejectsCollisionInTheActiveOrSavedMapAfterWaiting(bool activeMap)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var runtime = new FakeRuntime(true);
+        var client = new RecordingEndpoint();
+        var server = new RecordingEndpoint();
+        var options = new ModbusOptions();
+        await using var dataMap = new ModbusTcpService(runtime, client, server,
+            new StaticOptionsMonitor(options), new ModbusDataMapValidator(), NullLogger<ModbusTcpService>.Instance);
+        var writer = new ModbusBitWriter(runtime, client, server, NullLogger<ModbusBitWriter>.Instance, dataMap: dataMap);
+        var address = Address(ModbusDataArea.HoldingRegister);
+        var mapChangeEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var change = dataMap.RunDataMapChangeAsync(async () =>
+        {
+            mapChangeEntered.SetResult();
+            await proceed.Task.WaitAsync(deadline.Token);
+            ModbusDataPointOptions[] points =
+            [
+                new() { Name = "telemetry", Area = address.Area, Address = address.Address, Type = ModbusValueType.UInt16 }
+            ];
+            if (activeMap)
+                Assert.True(dataMap.ApplyDataMap(points).Succeeded);
+            else
+                options.DataMap = [.. points];
+            return true;
+        }, deadline.Token);
+        await mapChangeEntered.Task.WaitAsync(deadline.Token);
+
+        var pulse = writer.PulseAsync(address, 1, deadline.Token);
+        Assert.False(pulse.IsCompleted);
+        proceed.SetResult();
+        await change.WaitAsync(deadline.Token);
+
+        AssertFailure(ModbusAlarmMapValidator.AcknowledgementDataMapConflict, await pulse.WaitAsync(deadline.Token));
+        Assert.Equal(0, client.Captures);
+        Assert.Empty(client.Attempts);
+    }
+
+    [Fact]
+    public async Task PulseAsync_ReservesItsAddressUntilReleaseAndCanFinishDuringShutdown()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var hold = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        var runtime = new FakeRuntime(true);
+        var client = new RecordingEndpoint();
+        var server = new RecordingEndpoint();
+        var options = new ModbusOptions();
+        await using var dataMap = new ModbusTcpService(runtime, client, server,
+            new StaticOptionsMonitor(options), new ModbusDataMapValidator(), NullLogger<ModbusTcpService>.Instance);
+        var writer = new ModbusBitWriter(runtime, client, server, NullLogger<ModbusBitWriter>.Instance, dataMap: dataMap);
+        var address = Address(ModbusDataArea.HoldingRegister);
+
+        var pulse = writer.PulseAsync(address, 60_000, hold.Token);
+        Assert.True(Assert.Single(client.Writes).Value);
+        options.DataMap =
+        [
+            new ModbusDataPointOptions { Name = "telemetry", Area = address.Area, Address = address.Address }
+        ];
+        AssertFailure(ModbusAlarmMapValidator.AcknowledgementDataMapConflict, dataMap.ApplyDataMap(options.DataMap));
+        AssertFailure(ModbusAlarmMapValidator.AcknowledgementDataMapConflict,
+            await dataMap.StartClientAsync(options, deadline.Token));
+        await dataMap.DisposeAsync().AsTask().WaitAsync(deadline.Token);
+
+        await hold.CancelAsync();
+        AssertFailure("ModbusBitPulseCancelled", await pulse.WaitAsync(deadline.Token));
+        Assert.Equal([true, false], client.Writes.Select(edge => edge.Value));
+        AssertFailure("ModbusNotRunning", await writer.PulseAsync(address, 1, deadline.Token));
+        Assert.Single(client.Writes, edge => edge.Value);
     }
 
     [Theory]
@@ -304,6 +380,13 @@ public sealed class ModbusBitWriterTests
     {
         Assert.False(result.Succeeded);
         Assert.Equal(errorCode, result.ErrorCode);
+    }
+
+    private sealed class StaticOptionsMonitor(ModbusOptions options) : IOptionsMonitor<ModbusOptions>
+    {
+        public ModbusOptions CurrentValue => options;
+        public ModbusOptions Get(string? name) => options;
+        public IDisposable? OnChange(Action<ModbusOptions, string?> listener) => null;
     }
 
     internal sealed class FakeRuntime(bool? useClient) : IModbusRuntimeService

@@ -435,6 +435,30 @@ public sealed partial class ModbusTcpServiceTests
         Assert.Equal((ushort)9, afterPoll.Value);
     }
 
+    [Fact]
+    public async Task BucketFrequency_ReadsTheRawUnsignedWordAtOffsetTen()
+    {
+        var options = CreateOptions();
+        options.Client.RegisterCount = 13;
+        options.DataMap =
+        [
+            new ModbusDataPointOptions { Name = "equip.bucket.frequency", Address = 10 }
+        ];
+        var runtime = new FakeRuntimeService();
+        await using var service = CreateService(runtime, new NoopClientService(), new NoopServerService(), options);
+        Assert.True((await service.StartClientAsync()).Succeeded);
+        var registers = new ushort[13];
+        registers[9] = 9;
+        registers[10] = 0xF234;
+        registers[11] = 11;
+        runtime.PublishSnapshot(registers);
+
+        var sample = await service.GetAsync<ushort>("equip.bucket.frequency");
+
+        Assert.True(sample.Succeeded, sample.ErrorMessage);
+        Assert.Equal((ushort)0xF234, sample.Value);
+    }
+
     private static ModbusTcpService CreateService(
         IModbusRuntimeService runtime,
         IModbusClientService client,

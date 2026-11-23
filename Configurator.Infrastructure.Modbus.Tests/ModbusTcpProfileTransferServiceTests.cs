@@ -104,6 +104,55 @@ public sealed class ModbusTcpProfileTransferServiceTests
         }
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReadAndApply_RejectsAnEnabledAcknowledgementOnATelemetryBit(bool enabled)
+    {
+        var runtime = CreateRuntimeOptions();
+        var alarm = CreateAlarm();
+        alarm.AcknowledgementEnabled = enabled;
+        alarm.Acknowledgement = new ModbusBitAddressOptions
+        {
+            Area = ModbusDataArea.HoldingRegister, Address = 1, BitIndex = 0
+        };
+        var map = new ModbusOptions
+        {
+            AlarmMap = [alarm],
+            DataMap =
+            [
+                new ModbusDataPointOptions
+                {
+                    Name = "route.node.bsu_1.active", Area = ModbusDataArea.HoldingRegister,
+                    Address = 1, BitIndex = 0, Type = ModbusValueType.Bool
+                }
+            ]
+        };
+        var profile = ModbusTcpProfile.Create(runtime, map);
+        var service = CreateService(runtime, map, out var config, out _);
+        var path = CreateTemporaryPath();
+
+        try
+        {
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(profile, JsonOptions));
+            var preview = await service.ReadAndValidateAsync(path);
+            var applied = await service.ApplyAsync(profile, applyRangeCorrection: false);
+
+            Assert.Equal(!enabled, preview.Succeeded);
+            Assert.Equal(!enabled, applied.Succeeded);
+            Assert.Equal(enabled ? 0 : 1, config.SaveSectionsCallCount);
+            if (enabled)
+            {
+                Assert.Contains("HR1.0", preview.ErrorMessage);
+                Assert.Contains("route.node.bsu_1.active", applied.ErrorMessage);
+            }
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public async Task Export_RefusesProfileContainingLegacyModeSignal()
     {

@@ -290,6 +290,9 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             .ToList();
 
         var validation = ValidateOptions(latest);
+        if (validation.Succeeded)
+            validation = ModbusAlarmMapValidator.ValidateAcknowledgementMappings(latest);
+
         if (!validation.Succeeded)
         {
             ErrorMessage = OperationMessage(validation);

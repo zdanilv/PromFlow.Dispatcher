@@ -73,7 +73,7 @@ public sealed class NotificationsPanelViewModel : ViewModelBase, IDisposable
 
         if (!_disposed)
         {
-            await _journal.CompleteAlarmAcknowledgementAsync(context, _bitWriter);
+            await _journal.CompleteAlarmAcknowledgementAsync(context, _bitWriter, dialogService: _dialogService);
         }
     }
 

@@ -31,6 +31,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     private readonly Dictionary<string, List<Action<ModbusDataValue>>> _subscriptions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, ushort> _holdingRegisterShadow = [];
     private int _disposed;
+    private ModbusBitAddressOptions? _activeAcknowledgement;
     private ModbusOptions _currentOptions;
     private ModbusServiceState _state = ModbusServiceState.Stopped;
     private ModbusDataSnapshot _currentDataSnapshot = ModbusDataSnapshot.Empty;
@@ -127,6 +128,10 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         ModbusDataSnapshot snapshot;
         lock (_sync)
         {
+            var acknowledgement = ValidateAgainstActiveAcknowledgement(nextOptions);
+            if (!acknowledgement.Succeeded)
+                return acknowledgement;
+
             _currentOptions = nextOptions;
             ReplaceDataMap(nextOptions);
             snapshot = new ModbusDataSnapshot(
@@ -145,6 +150,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         await _dataMapChangeGate.WaitAsync(cancellationToken);
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             return await change();
         }
         finally
@@ -152,6 +158,67 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             _dataMapChangeGate.Release();
         }
     }
+
+    internal async Task<ModbusOperationResult> ActivateAcknowledgementAsync(
+        ModbusBitAddressOptions address,
+        Func<Task<ModbusOperationResult>> activate,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await RunDataMapChangeAsync(
+                () => ActivateAcknowledgementCoreAsync(address, activate, cancellationToken), cancellationToken);
+        }
+        catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
+        {
+            return ModbusOperationResult.Failure("ModbusNotRunning", "Modbus is shutting down.");
+        }
+    }
+
+    private async Task<ModbusOperationResult> ActivateAcknowledgementCoreAsync(
+        ModbusBitAddressOptions address,
+        Func<Task<ModbusOperationResult>> activate,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var validation = ModbusAlarmMapValidator.ValidateAcknowledgementAddress(address, _optionsMonitor.CurrentValue.DataMap);
+            if (!validation.Succeeded)
+                return validation;
+
+            lock (_sync)
+            {
+                validation = ModbusAlarmMapValidator.ValidateAcknowledgementAddress(address, _dataMap.Values);
+                if (!validation.Succeeded)
+                    return validation;
+
+                // A map replacement must leave this address available until the falling edge finishes.
+                _activeAcknowledgement = address;
+            }
+
+            return await activate();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    internal void ReleaseAcknowledgementAddress(ModbusBitAddressOptions address)
+    {
+        lock (_sync)
+        {
+            if (ReferenceEquals(_activeAcknowledgement, address))
+                _activeAcknowledgement = null;
+        }
+    }
+
+    // Called with _sync held so a concurrent activation cannot reserve the new mapping.
+    private ModbusOperationResult ValidateAgainstActiveAcknowledgement(ModbusOptions options) =>
+        _activeAcknowledgement is { } address
+            ? ModbusAlarmMapValidator.ValidateAcknowledgementAddress(address, options.DataMap)
+            : ModbusOperationResult.Success();
 
     public Task<ModbusOperationResult> RemovePointWhileStoppedAsync(
         string name,
@@ -531,8 +598,16 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         _runtimeService.StatusChanged -= OnRuntimeStatusChanged;
         _runtimeService.SnapshotChanged -= OnRuntimeSnapshotChanged;
         await StopAsync();
-        _gate.Dispose();
-        _dataMapChangeGate.Dispose();
+        await _dataMapChangeGate.WaitAsync();
+        try
+        {
+            _gate.Dispose();
+        }
+        finally
+        {
+            // Queued callers must acquire the gate to observe _disposed.
+            _dataMapChangeGate.Release();
+        }
     }
 
     /// <summary>
@@ -560,11 +635,15 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             }
 
             _logger.LogInformation("Modbus facade {Role} validation passed", role);
-            _currentOptions = nextOptions;
-            ReplaceDataMap(_currentOptions);
             ModbusDataSnapshot resetSnapshot;
             lock (_sync)
             {
+                var acknowledgement = ValidateAgainstActiveAcknowledgement(nextOptions);
+                if (!acknowledgement.Succeeded)
+                    return acknowledgement;
+
+                _currentOptions = nextOptions;
+                ReplaceDataMap(_currentOptions);
                 resetSnapshot = ModbusDataSnapshot.Empty with { State = _state, PublicationSequence = ModbusObservationSequence.Next() };
                 _currentDataSnapshot = resetSnapshot;
             }

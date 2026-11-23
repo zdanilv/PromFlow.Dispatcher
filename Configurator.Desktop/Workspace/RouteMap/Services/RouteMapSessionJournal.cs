@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Avalonia.Media;
+using Configurator.Application.Services.Dialogs;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 using Configurator.Desktop.Workspace.RouteMap.SignalMapping;
@@ -133,7 +135,8 @@ public sealed class RouteMapSessionJournal
     internal async Task<ModbusOperationResult?> CompleteAlarmAcknowledgementAsync(
         AlarmAcknowledgementContext? context,
         IModbusBitWriter writer,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IDialogService? dialogService = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (context is null || !context.IsCurrent()
@@ -155,7 +158,15 @@ public sealed class RouteMapSessionJournal
         {
             // Invalidation also cancels an ACK waiting in the writer's gate.
             linked.Token.ThrowIfCancellationRequested();
-            return await writer.PulseAsync(alarm.Acknowledgement, alarm.AcknowledgementPulseDurationMs, linked.Token);
+            var result = await writer.PulseAsync(alarm.Acknowledgement, alarm.AcknowledgementPulseDurationMs, linked.Token);
+            if (result.ErrorCode == ModbusAlarmMapValidator.AcknowledgementDataMapConflict
+                && dialogService is not null && context.IsCurrent())
+            {
+                await dialogService.ShowErrorAsync("Подтверждение тревоги",
+                    $"Тревога «{alarm.Id}» подтверждена локально. {result.ErrorMessage}", ct: linked.Token);
+            }
+
+            return result;
         }
         catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested
                                                   && !cancellationToken.IsCancellationRequested)

@@ -70,6 +70,43 @@ public sealed class ModbusAlarmMapValidatorTests
         Assert.Equal("ModbusAlarmAcknowledgementAddressConflict", result.ErrorCode);
     }
 
+    [Theory]
+    [InlineData(ModbusDataArea.Coil, 2, null, 1, true)]
+    [InlineData(ModbusDataArea.HoldingRegister, 2, 3, 1, true)]
+    [InlineData(ModbusDataArea.HoldingRegister, 2, 4, 1, false)]
+    [InlineData(ModbusDataArea.HoldingRegister, 2, null, 1, true)]
+    [InlineData(ModbusDataArea.HoldingRegister, 1, null, 2, true)]
+    [InlineData(ModbusDataArea.HoldingRegister, 0, null, 2, false)]
+    public void Validate_RejectsOnlyOverlappingAcknowledgementMappings(
+        ModbusDataArea area, int offset, int? bit, int length, bool overlaps)
+    {
+        var options = CreateOptions();
+        var alarm = Assert.Single(options.AlarmMap);
+        alarm.Acknowledgement = new ModbusBitAddressOptions
+        {
+            Area = area, Address = 2, BitIndex = area == ModbusDataArea.HoldingRegister ? 3 : null
+        };
+        options.DataMap =
+        [
+            new ModbusDataPointOptions
+            {
+                Name = "route.node.bsu_1.active", Area = area, Address = offset, BitIndex = bit, Length = length
+            }
+        ];
+
+        var result = _validator.Validate(options, ModbusRunMode.None);
+        Assert.Equal(!overlaps, result.Succeeded);
+        if (overlaps)
+        {
+            Assert.Equal(ModbusAlarmMapValidator.AcknowledgementDataMapConflict, result.ErrorCode);
+            Assert.Contains(alarm.Id, result.ErrorMessage);
+            Assert.Contains("route.node.bsu_1.active", result.ErrorMessage);
+        }
+
+        alarm.AcknowledgementEnabled = false;
+        Assert.True(_validator.Validate(options, ModbusRunMode.None).Succeeded);
+    }
+
     [Fact]
     public void Validate_AllowsDisabledAcknowledgementWithUnusedInvalidSettings()
     {

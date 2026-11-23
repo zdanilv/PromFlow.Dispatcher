@@ -219,7 +219,7 @@ public sealed class ModbusAlarmMonitor : IDisposable
                 if (confirmed)
                 {
                     var acknowledgement = await _sessionJournal.CompleteAlarmAcknowledgementAsync(
-                        state.Context, _bitWriter, cancellationToken);
+                        state.Context, _bitWriter, cancellationToken, _dialogService);
                     if (acknowledgement is { Succeeded: false })
                     {
                         _logger.LogWarning(

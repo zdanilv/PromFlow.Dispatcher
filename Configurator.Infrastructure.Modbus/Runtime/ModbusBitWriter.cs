@@ -11,7 +11,8 @@ internal sealed class ModbusBitWriter(
     IModbusClientService client,
     IModbusServerService server,
     ILogger<ModbusBitWriter> logger,
-    TimeSpan? edgeTimeout = null) : IModbusBitWriter
+    TimeSpan? edgeTimeout = null,
+    ModbusTcpService? dataMap = null) : IModbusBitWriter
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly TimeSpan _edgeTimeout = edgeTimeout ?? TimeSpan.FromSeconds(2);
@@ -39,6 +40,92 @@ internal sealed class ModbusBitWriter(
 
         try
         {
+            return await PulseCoreAsync(capturedAddress, pulseDurationMs, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return Cancelled("Acknowledgement was cancelled before activation; no edge was sent.");
+        }
+        finally
+        {
+            dataMap?.ReleaseAcknowledgementAddress(capturedAddress);
+            _gate.Release();
+        }
+    }
+
+    private async Task<ModbusOperationResult> PulseCoreAsync(
+        ModbusBitAddressOptions address, int pulseDurationMs, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        IModbusBitPulseTarget? target = null;
+        Exception? risingFailure = null;
+        var cancelled = false;
+        try
+        {
+            var activation = dataMap is null
+                ? await ActivateAsync()
+                : await dataMap.ActivateAcknowledgementAsync(address, ActivateAsync, cancellationToken);
+            if (!activation.Succeeded)
+                return activation;
+        }
+        catch (ModbusBitPulseNotSentException ex)
+        {
+            return ModbusOperationResult.Failure(
+                cancellationToken.IsCancellationRequested
+                    ? "ModbusBitPulseCancelled" : "ModbusBitPulseRisingEdgeFailed",
+                "Acknowledgement activation failed before the write; no edge was sent.",
+                $"Target: {target?.Description}. Rising edge: {ex.Message}");
+        }
+        catch (Exception ex) when (target is not null)
+        {
+            // A lost reply does not prove that the PLC did not apply true.
+            // Never retry activation; only attempt release on the captured target.
+            risingFailure = ex;
+            cancelled = cancellationToken.IsCancellationRequested;
+        }
+
+        if (risingFailure is null)
+        {
+            try
+            {
+                await Task.Delay(pulseDurationMs, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled = true;
+            }
+        }
+
+        try
+        {
+            // Release has its own deadline, independent of the caller's cancellation.
+            await WriteEdgeAsync(target!, false, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            var details = $"Target: {target!.Description}. Rising edge: "
+                + (risingFailure is null ? "confirmed" : risingFailure.Message)
+                + $". Falling edge: {ex.Message}. ACK bit physical state is unknown.";
+            logger.LogWarning(ex, "Failed to release acknowledgement: {Details}", details);
+            return ModbusOperationResult.Failure(
+                "ModbusBitPulseReleaseFailed",
+                "Acknowledgement release failed; ACK bit physical state is unknown.", details);
+        }
+
+        if (risingFailure is not null)
+        {
+            return ModbusOperationResult.Failure(
+                cancelled ? "ModbusBitPulseCancelled" : "ModbusBitPulseRisingEdgeFailed",
+                "Acknowledgement activation was not confirmed; release was confirmed.",
+                $"Target: {target!.Description}. Rising edge: {risingFailure.Message}. Falling edge: confirmed.");
+        }
+
+        return cancelled
+            ? Cancelled("Acknowledgement was cancelled during the hold; release was confirmed.")
+            : ModbusOperationResult.Success();
+
+        async Task<ModbusOperationResult> ActivateAsync()
+        {
             cancellationToken.ThrowIfCancellationRequested();
             var status = runtime.Status;
             var provider = status.ClientState == ModbusConnectionState.Running
@@ -53,10 +140,9 @@ internal sealed class ModbusBitWriter(
                     "A running Modbus role with a safe acknowledgement transport is required.");
             }
 
-            IModbusBitPulseTarget target;
             try
             {
-                target = provider.CaptureBitPulseTarget(capturedAddress);
+                target = provider.CaptureBitPulseTarget(address);
             }
             catch (Exception ex)
             {
@@ -65,75 +151,8 @@ internal sealed class ModbusBitWriter(
                     "Acknowledgement target is unavailable; no edge was sent.", ex.Message);
             }
 
-            Exception? risingFailure = null;
-            var cancelled = false;
-            try
-            {
-                await WriteEdgeAsync(target, true, cancellationToken);
-            }
-            catch (ModbusBitPulseNotSentException ex)
-            {
-                return ModbusOperationResult.Failure(
-                    cancellationToken.IsCancellationRequested
-                        ? "ModbusBitPulseCancelled" : "ModbusBitPulseRisingEdgeFailed",
-                    "Acknowledgement activation failed before the write; no edge was sent.",
-                    $"Target: {target.Description}. Rising edge: {ex.Message}");
-            }
-            catch (Exception ex)
-            {
-                // A lost reply does not prove that the PLC did not apply true.
-                // Never retry activation; only attempt release on the captured target.
-                risingFailure = ex;
-                cancelled = cancellationToken.IsCancellationRequested;
-            }
-
-            if (risingFailure is null)
-            {
-                try
-                {
-                    await Task.Delay(pulseDurationMs, cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    cancelled = true;
-                }
-            }
-
-            try
-            {
-                // Release has its own deadline, independent of the caller's cancellation.
-                await WriteEdgeAsync(target, false, CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                var details = $"Target: {target.Description}. Rising edge: "
-                    + (risingFailure is null ? "confirmed" : risingFailure.Message)
-                    + $". Falling edge: {ex.Message}. ACK bit physical state is unknown.";
-                logger.LogWarning(ex, "Failed to release acknowledgement: {Details}", details);
-                return ModbusOperationResult.Failure(
-                    "ModbusBitPulseReleaseFailed",
-                    "Acknowledgement release failed; ACK bit physical state is unknown.", details);
-            }
-
-            if (risingFailure is not null)
-            {
-                return ModbusOperationResult.Failure(
-                    cancelled ? "ModbusBitPulseCancelled" : "ModbusBitPulseRisingEdgeFailed",
-                    "Acknowledgement activation was not confirmed; release was confirmed.",
-                    $"Target: {target.Description}. Rising edge: {risingFailure.Message}. Falling edge: confirmed.");
-            }
-
-            return cancelled
-                ? Cancelled("Acknowledgement was cancelled during the hold; release was confirmed.")
-                : ModbusOperationResult.Success();
-        }
-        catch (OperationCanceledException)
-        {
-            return Cancelled("Acknowledgement was cancelled before activation; no edge was sent.");
-        }
-        finally
-        {
-            _gate.Release();
+            await WriteEdgeAsync(target, true, cancellationToken);
+            return ModbusOperationResult.Success();
         }
     }
 

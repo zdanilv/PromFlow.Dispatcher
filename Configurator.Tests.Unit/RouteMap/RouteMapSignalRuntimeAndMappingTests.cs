@@ -1477,6 +1477,50 @@ public sealed class RouteMapSignalRuntimeAndMappingTests
         Assert.Equal(ModbusValueType.Bool, point.Type);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task MappingSave_DoesNotAssignAnEnabledAcknowledgementBit(bool acknowledgementEnabled)
+    {
+        using var scope = new ConfigurationScope();
+        var config = new RecordingAppConfigService();
+        var options = new ModbusOptions
+        {
+            AlarmMap =
+            [
+                new ModbusAlarmOptions
+                {
+                    Id = "gen.fault",
+                    AcknowledgementEnabled = acknowledgementEnabled,
+                    Acknowledgement = new ModbusBitAddressOptions
+                    {
+                        Area = ModbusDataArea.HoldingRegister, Address = 1, BitIndex = 0
+                    }
+                }
+            ]
+        };
+        using var viewModel = new RouteMapSignalMappingViewModel(scope.Manager, new TestOptionsMonitor(options), config,
+            new ModbusDataMapValidator(), new RecordingDataMapRuntime());
+        var row = viewModel.Rows.Single(item => item.SignalId == RouteMapSystemSignalIds.GlobalFault);
+        viewModel.CreateMappingCommand.Execute(row).Subscribe();
+        row.Area = ModbusDataArea.HoldingRegister;
+        row.Address = 1;
+        row.BitIndex = 0;
+
+        await viewModel.SaveAsync();
+
+        if (acknowledgementEnabled)
+        {
+            Assert.Null(config.SavedModbus);
+            Assert.Contains("gen.fault", viewModel.ErrorMessage);
+            Assert.Contains("HR1.0", viewModel.ErrorMessage);
+        }
+        else
+        {
+            Assert.Single(config.SavedModbus!.DataMap);
+        }
+    }
+
     private sealed class ManualSignalProvider : ISignalValueProvider
     {
         private readonly List<IObserver<IReadOnlyDictionary<string, SignalValue>>> _observers = [];
