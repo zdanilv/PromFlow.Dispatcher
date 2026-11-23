@@ -91,6 +91,7 @@ public sealed class RouteMapLegendGlyph : Control
         var center = new Point(14 * scale, 12 * scale);
         var fill = Kind switch
         {
+            RouteMapLegendGlyphKind.ActiveNode => RouteMapPalette.ActiveNodeBrush,
             RouteMapLegendGlyphKind.TargetNode => RouteMapPalette.Brush(palette.Ready),
             RouteMapLegendGlyphKind.LoaderNode => RouteMapPalette.Brush(palette.Warning),
             RouteMapLegendGlyphKind.FaultNode => RouteMapPalette.Brush(palette.Fault),
@@ -130,15 +131,6 @@ public sealed class RouteMapLegendGlyph : Control
                     center,
                     radius + 3 * scale,
                     radius + 3 * scale);
-                break;
-            case RouteMapLegendGlyphKind.ActiveNode:
-                var outlineRadius = radius + (style.ActiveOutlineThickness / 2 + 1) * scale;
-                context.DrawEllipse(
-                    null,
-                    new Pen(RouteMapPalette.Brush(style.ActiveOutlineColor), style.ActiveOutlineThickness * scale),
-                    center,
-                    outlineRadius,
-                    outlineRadius);
                 break;
         }
     }

@@ -1,3 +1,4 @@
+using Avalonia.Media;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -257,14 +258,26 @@ public sealed class RouteMapRuntimeMapperTests
     }
 
     [Theory]
-    [InlineData(RouteObjectState.Idle, true)]
-    [InlineData(RouteObjectState.Fault, false)]
-    [InlineData(RouteObjectState.Offline, false)]
-    [InlineData(RouteObjectState.Disabled, false)]
-    public void Node_active_outline_respects_runtime_priority(RouteObjectState state, bool expected)
+    [InlineData(RouteObjectState.Idle, true, false, false, "#2D56B3")]
+    [InlineData(RouteObjectState.Idle, true, true, false, "#2D56B3")]
+    [InlineData(RouteObjectState.Idle, true, false, true, "#2D56B3")]
+    [InlineData(RouteObjectState.Idle, false, true, false, "#3A9D5D")]
+    [InlineData(RouteObjectState.Idle, false, false, true, "#D99B22")]
+    [InlineData(RouteObjectState.Idle, false, false, false, "#AEB5BA")]
+    [InlineData(RouteObjectState.Fault, true, false, false, "#D95D4E")]
+    [InlineData(RouteObjectState.Offline, true, false, false, "#3F474D")]
+    [InlineData(RouteObjectState.Offline, true, true, false, "#3A9D5D")]
+    [InlineData(RouteObjectState.Disabled, true, true, false, "#353535")]
+    public void Node_fill_respects_signal_activity_roles_and_runtime_priority(
+        RouteObjectState state, bool isActive, bool isTarget, bool isLoader, string expectedColor)
     {
-        var runtime = new RouteObjectRuntimeState("node", state, null, null, true, false, false, IsSignalActive: true);
-        Assert.Equal(expected, RouteMapControl.ShouldDrawActiveOutline(runtime));
+        var node = new RouteNode("node", "", 0, 0, RouteNodeKind.ServicePoint, RouteObjectState.Idle, []);
+        var role = new RouteNodeRoleState(node.Id, isLoader, isTarget);
+        var palette = new RouteMapPaletteSettings { ActiveTrack = "#123456", Disabled = "#353535" };
+
+        var fill = RouteMapControl.BrushForNode(node, state, isActive, role, palette);
+
+        Assert.Equal(Color.Parse(expectedColor), Assert.IsAssignableFrom<ISolidColorBrush>(fill).Color);
     }
 
     [Fact]

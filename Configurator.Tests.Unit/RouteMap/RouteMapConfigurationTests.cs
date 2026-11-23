@@ -509,6 +509,9 @@ public sealed class RouteMapConfigurationTests
         using var scope = new TempConfigurationScope();
         var document = scope.Mapper.CreateSeedDocument();
         document.Segments.Single(x => x.Id == "bsu2_to_bucket").Style.ActiveColor = "#112233";
+        var nodeStyle = document.Nodes.Single(x => x.Id == "bsu_1").Style;
+        nodeStyle.ActiveOutlineColor = "#123ABC";
+        nodeStyle.ActiveOutlineThickness = 5;
 
         await scope.Storage.SaveActiveAsync(document);
         var loaded = await scope.Storage.LoadActiveAsync();
@@ -517,6 +520,10 @@ public sealed class RouteMapConfigurationTests
         Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, loaded.SchemaVersion);
         Assert.Equal(RouteSegmentKind.RoundedElbow90, loaded.Segments.Single(x => x.Id == "bsu2_to_bucket").Kind);
         Assert.Equal("#112233", loaded.Segments.Single(x => x.Id == "bsu2_to_bucket").Style.ActiveColor);
+        var mapped = scope.Mapper.ToDocument(scope.Mapper.ToDefinition(loaded));
+        var mappedStyle = mapped.Nodes.Single(x => x.Id == "bsu_1").Style;
+        Assert.Equal("#123ABC", mappedStyle.ActiveOutlineColor);
+        Assert.Equal(5, mappedStyle.ActiveOutlineThickness);
         Assert.Equal(RouteCommandButtonKind.Momentary, loaded.Cards.Single().StartButtonKind);
         Assert.Equal(RouteCommandButtonKind.Toggle, loaded.Cards.Single().StopButtonKind);
         Assert.Equal(RouteCommandButtonKind.Toggle, loaded.TopBar.Emergency.ButtonKind);

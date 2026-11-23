@@ -374,11 +374,12 @@ public sealed class RouteMapControl : Control
                 continue;
 
             var center = transform.ToViewPoint(node.X, node.Y);
-            var state = GetState(runtimeState, node.Id, node.State);
+            var objectRuntime = runtimeState.Find(node.Id);
+            var state = objectRuntime?.State ?? node.State;
             var palette = (definition.Display ?? new RouteMapDisplaySettings()).Palette;
             var style = node.Style ?? new RouteNodeStyle();
             var radius = RouteMapNodeMetrics.RadiusForNode(node) * transform.NodeScale;
-            var brush = BrushForNode(node, state, GetRoleState(node.Id), palette);
+            var brush = BrushForNode(node, state, objectRuntime?.IsSignalActive == true, GetRoleState(node.Id), palette);
 
             context.DrawEllipse(brush, new Pen(RouteMapPalette.Brush(style.BorderColor), style.BorderThickness * transform.NodeScale), center, radius, radius);
             if (style.InnerRadiusRatio > 0)
@@ -388,19 +389,6 @@ public sealed class RouteMapControl : Control
                     : RouteMapPalette.Brush(style.InnerColor);
                 var innerRadius = radius * style.InnerRadiusRatio;
                 context.DrawEllipse(innerBrush, null, center, innerRadius, innerRadius);
-            }
-
-            var objectRuntime = runtimeState.Find(node.Id);
-            if (ShouldDrawActiveOutline(objectRuntime))
-            {
-                var outlineThickness = style.ActiveOutlineThickness * transform.NodeScale;
-                var outlineRadius = radius + outlineThickness / 2 + 1;
-                context.DrawEllipse(
-                    null,
-                    new Pen(RouteMapPalette.Brush(style.ActiveOutlineColor), outlineThickness),
-                    center,
-                    outlineRadius,
-                    outlineRadius);
             }
         }
     }
@@ -495,11 +483,7 @@ public sealed class RouteMapControl : Control
             IsRuntimeVisible(runtimeState, node.Id) && IsRuntimeEnabled(runtimeState, node.Id))
         {
             var center = transform.ToViewPoint(node.X, node.Y);
-            var style = node.Style ?? new RouteNodeStyle();
-            var activePadding = ShouldDrawActiveOutline(runtimeState.Find(node.Id))
-                ? style.ActiveOutlineThickness + 2
-                : 0;
-            var radius = (RouteMapNodeMetrics.RadiusForNode(node) + activePadding + radiusPadding) * transform.NodeScale;
+            var radius = (RouteMapNodeMetrics.RadiusForNode(node) + radiusPadding) * transform.NodeScale;
             context.DrawEllipse(null, pen, center, radius, radius);
             return;
         }
@@ -516,12 +500,6 @@ public sealed class RouteMapControl : Control
 
         return;
     }
-
-    internal static bool ShouldDrawActiveOutline(RouteObjectRuntimeState? runtimeState) =>
-        runtimeState?.IsSignalActive == true &&
-        runtimeState.State is not RouteObjectState.Offline
-            and not RouteObjectState.Fault
-            and not RouteObjectState.Disabled;
 
     private static void DrawText(DrawingContext context, string text, Point origin, IBrush brush, double fontSize)
     {
@@ -585,14 +563,18 @@ public sealed class RouteMapControl : Control
             : null;
     }
 
-    private static IBrush BrushForNode(
+    internal static IBrush BrushForNode(
         RouteNode node,
-        RouteObjectState runtimeState,
+        RouteObjectState state,
+        bool isSignalActive,
         RouteNodeRoleState? roleState,
         RouteMapPaletteSettings palette)
     {
-        if (runtimeState == RouteObjectState.Disabled)
+        if (state == RouteObjectState.Disabled)
             return RouteMapPalette.Brush(palette.Disabled);
+
+        if (isSignalActive && state is not (RouteObjectState.Fault or RouteObjectState.Offline))
+            return RouteMapPalette.ActiveNodeBrush;
 
         if (roleState?.IsTarget == true)
             return RouteMapPalette.Brush(palette.Ready);
@@ -600,7 +582,7 @@ public sealed class RouteMapControl : Control
         if (roleState?.IsLoader == true)
             return RouteMapPalette.Brush(palette.Warning);
 
-        return RouteMapPalette.BrushForState(runtimeState, palette, (node.Style ?? new RouteNodeStyle()).FillColor);
+        return RouteMapPalette.BrushForState(state, palette, (node.Style ?? new RouteNodeStyle()).FillColor);
     }
 
     private static bool IsRuntimeVisible(RouteMapRuntimeState runtimeState, string objectId)

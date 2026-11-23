@@ -114,6 +114,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
                 new RouteMapConfigurationMapper(RouteMapSeed.Create()),
                 new RouteMapConfigurationValidator(),
                 new RouteMapConfigurationMigrator());
+            var mock = new MockSignalProvider(manager.CurrentDefinition);
+            var signals = new TestSignalProvider(Observable.Return(mock.CreateSnapshot(1)));
             using var adminNotifications = new NotificationsPanelViewModel(
                 new RouteMapSessionJournal(),
                 new NoOpDialogService(),
@@ -121,7 +123,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             using var adminViewModel = CreateRouteMapDashboardViewModel(
                 manager,
                 adminNotifications,
-                ApplicationOptions.AdminWorkMode);
+                ApplicationOptions.AdminWorkMode,
+                signals);
             var adminView = new RouteMapDashboardView { DataContext = adminViewModel };
             var adminWindow = new Window { Width = 1300, Height = 760, Content = adminView };
             adminWindow.Show();
@@ -176,6 +179,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
                 Assert.Equal(30, glyph.Bounds.Height);
             });
             Assert.Equal("Выбран - Объект не выбран", TextOf(selectedObjectText));
+            Assert.True(adminViewModel.RuntimeState.Find("bsu_1")?.IsSignalActive);
+            CaptureDashboard(adminWindow, "active-node-admin");
 
             adminViewModel.SelectedObjectId = "bsu_1";
             Dispatcher.UIThread.RunJobs();
@@ -190,7 +195,8 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             using var userViewModel = CreateRouteMapDashboardViewModel(
                 manager,
                 userNotifications,
-                ApplicationOptions.UserWorkMode);
+                ApplicationOptions.UserWorkMode,
+                signals);
             var userView = new RouteMapDashboardView { DataContext = userViewModel };
             var userWindow = new Window { Width = 1300, Height = 760, Content = userView };
             userWindow.Show();
@@ -201,11 +207,26 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             Assert.False(userViewModel.TopBar.IsSettingsVisible);
             Assert.True(adminViewModel.TopBar.IsSettingsVisible);
             Assert.True(userViewModel.MapEquipmentCards.Single().IsParametersButtonEnabled);
+            Assert.True(userViewModel.RuntimeState.Find("bsu_1")?.IsSignalActive);
+            CaptureDashboard(userWindow, "active-node-user");
             userWindow.Close();
         }
         finally
         {
             Directory.Delete(directory, recursive: true);
+        }
+
+        static void CaptureDashboard(Window window, string name)
+        {
+            if (string.IsNullOrEmpty(HeadlessTestApplication.ScreenshotDirectory))
+                return;
+
+            var activeGlyph = window.GetVisualDescendants().OfType<RouteMapLegendGlyph>()
+                .Single(glyph => glyph.Kind == RouteMapLegendGlyphKind.ActiveNode);
+            activeGlyph.BringIntoView();
+            Dispatcher.UIThread.RunJobs();
+            using var frame = Assert.IsType<WriteableBitmap>(window.CaptureRenderedFrame());
+            RouteMapDeadEndVisualTests.SaveFrame(frame, name);
         }
     }
 
@@ -407,8 +428,6 @@ public sealed partial class RouteMapSettingsDialogVisualTests
 
     [AvaloniaTheory]
     [InlineData(3, "Положение подписи")]
-    [InlineData(3, "Цвет сигнального контура")]
-    [InlineData(3, "Толщина сигнального контура")]
     [InlineData(4, "Зазор от узлов")]
     [InlineData(4, "Края линии")]
     [InlineData(4, "Отрезки")]
@@ -430,9 +449,11 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     [InlineData(2, "Pressed фон")]
     [InlineData(2, "Активный фон")]
     [InlineData(2, "Pressed текст")]
+    [InlineData(3, "Цвет сигнального контура")]
+    [InlineData(3, "Толщина сигнального контура")]
     [InlineData(5, "ПУСК фон")]
     [InlineData(5, "СТОП checked текст")]
-    public void Button_color_properties_are_not_present_in_settings_tabs(int tabIndex, string label)
+    public void Unused_style_properties_are_not_present_in_settings_tabs(int tabIndex, string label)
     {
         using var fixture = new DialogFixture(1320, 780);
         fixture.SelectTab(tabIndex);
@@ -2478,11 +2499,12 @@ public sealed partial class RouteMapSettingsDialogVisualTests
     private static RouteMapDashboardViewModel CreateRouteMapDashboardViewModel(
         RouteMapConfigurationManager manager,
         NotificationsPanelViewModel notificationsPanel,
-        string workMode)
+        string workMode,
+        ISignalValueProvider? signalProvider = null)
     {
         return new RouteMapDashboardViewModel(
             manager,
-            new EmptySignalProvider(),
+            signalProvider ?? new EmptySignalProvider(),
             new RouteMapRuntimeMapper(manager.CurrentDefinition),
             new NoOpCommandDispatcher(),
             new NoOpSettingsDialogService(),

@@ -1,4 +1,5 @@
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using Configurator.Desktop.Workspace.RouteMap.Models;
 
 namespace Configurator.Desktop.Workspace.RouteMap.Controls;
@@ -11,6 +12,7 @@ public static class RouteMapPalette
     public static readonly IBrush MutedTextBrush = new SolidColorBrush(Color.Parse("#77828D"));
     public static readonly IBrush TrackBrush = new SolidColorBrush(Color.Parse("#C9CED0"));
     public static readonly IBrush TrackActiveBrush = new SolidColorBrush(Color.Parse("#2D56B3"));
+    internal static readonly IBrush ActiveNodeBrush = new ImmutableSolidColorBrush(Color.Parse("#2D56B3"));
     public static readonly IBrush ReadyBrush = new SolidColorBrush(Color.Parse("#3A9D5D"));
     public static readonly IBrush RunningBrush = new SolidColorBrush(Color.Parse("#2563EB"));
     public static readonly IBrush WarningBrush = new SolidColorBrush(Color.Parse("#D99B22"));

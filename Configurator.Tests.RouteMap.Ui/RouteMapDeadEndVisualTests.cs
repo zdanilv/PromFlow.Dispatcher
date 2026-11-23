@@ -125,6 +125,78 @@ public sealed class RouteMapDeadEndVisualTests
     public Task Active_fragment_colors_only_its_part_of_the_body() => RunOnUiThread(AssertActiveFragment);
 
     [Fact]
+    public Task Active_node_and_legend_render_blue_fill_without_signal_outline() => RunOnUiThread(() =>
+    {
+        const double dpi = 2;
+        var binding = new SignalBinding(SignalBindingRole.ActiveRoute, "route.node.active", SignalBindingDirection.Read, SignalValueType.Bool);
+        var style = new RouteNodeStyle { InnerRadiusRatio = 0.4, ActiveOutlineColor = "#FF00FF", ActiveOutlineThickness = 4 };
+        var node = new RouteNode("node", "", 50, 50, RouteNodeKind.ServicePoint, RouteObjectState.Idle, [binding], Style: style);
+        var display = new RouteMapDisplaySettings();
+        var definition = new RouteMapDefinition(100, 100, [], [node], [], [], [], [], [], display);
+        var mapper = new RouteMapRuntimeMapper(definition);
+        var signal = new SignalValue(binding.SignalId, true, SignalValueType.Bool, DateTimeOffset.UtcNow, true, false);
+        var signals = new Dictionary<string, SignalValue> { [binding.SignalId] = signal };
+        var map = new RouteMapControl
+        {
+            Definition = definition,
+            RuntimeState = mapper.Map(signals),
+            NodeRoleStates = new Dictionary<string, RouteNodeRoleState> { [node.Id] = new(node.Id, false, true) },
+        };
+        var glyph = new RouteMapLegendGlyph { Definition = definition, Kind = RouteMapLegendGlyphKind.ActiveNode, Width = 40, Height = 30 };
+        var grid = new Grid { RowDefinitions = new RowDefinitions("*,30"), Children = { map, glyph } };
+        Grid.SetRow(glyph, 1);
+        var window = new Window
+        {
+            WindowDecorations = WindowDecorations.None,
+            Width = 160,
+            Height = 160,
+            Background = Brushes.White,
+            Content = grid,
+        };
+        window.Show();
+        try
+        {
+            window.SetRenderScaling(dpi);
+            Dispatcher.UIThread.RunJobs();
+            var transform = map.CreateViewportLayout(definition).Transform;
+            var center = map.TranslatePoint(transform.ToViewPoint(node.X, node.Y), window)!.Value;
+            var radius = style.Radius * transform.NodeScale;
+            var legendCenter = glyph.TranslatePoint(new Point(17.5, 15), window)!.Value;
+            var blue = Color.Parse("#2D56B3");
+            using (var frame = Assert.IsType<WriteableBitmap>(window.CaptureRenderedFrame()))
+            using (var pixels = frame.Lock())
+            {
+                AssertPixel(pixels, dpi, center + new Vector(radius * 0.65, 0), blue);
+                AssertPixel(pixels, dpi, center, Color.Parse(style.InnerColor));
+                AssertPixel(pixels, dpi, center + new Vector(radius, 0), Color.Parse(style.BorderColor));
+                AssertPixel(pixels, dpi, center + new Vector(radius + 3, 0), Color.Parse(display.Palette.Background));
+                AssertPixel(pixels, dpi, legendCenter + new Vector(4, 0), blue);
+                AssertPixel(pixels, dpi, legendCenter, Color.Parse(style.InnerColor));
+                AssertPixel(pixels, dpi, legendCenter + new Vector(10, 0), Colors.White);
+            }
+
+            map.HoveredObjectId = node.Id;
+            map.SelectedObjectId = node.Id;
+            using (var frame = Assert.IsType<WriteableBitmap>(window.CaptureRenderedFrame()))
+            using (var pixels = frame.Lock())
+            {
+                AssertPixel(pixels, dpi, center + new Vector(radius + 3, 0), Color.Parse(display.Palette.Hover));
+                AssertPixel(pixels, dpi, center + new Vector(radius + 6, 0), Color.Parse(display.Palette.Selection));
+            }
+
+            signals[binding.SignalId] = signal with { Value = false };
+            map.RuntimeState = mapper.Map(signals);
+            using var inactiveFrame = Assert.IsType<WriteableBitmap>(window.CaptureRenderedFrame());
+            using var inactivePixels = inactiveFrame.Lock();
+            AssertPixel(inactivePixels, dpi, center + new Vector(radius * 0.65, 0), Color.Parse(display.Palette.Ready));
+        }
+        finally
+        {
+            window.Close();
+        }
+    });
+
+    [Fact]
     public Task Legend_uses_the_first_terminal_style_and_neutral_t_geometry() => RunOnUiThread(() =>
     {
         var seed = RouteMapSeed.Create();
