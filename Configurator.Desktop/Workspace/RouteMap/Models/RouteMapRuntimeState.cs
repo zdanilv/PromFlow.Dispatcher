@@ -17,6 +17,7 @@ public sealed record RouteMapRuntimeState(
     public TopBarCommandRuntimeState UnloadCommand { get; init; }
     public TopBarCommandRuntimeState RotationCommand { get; init; }
     public TopBarCommandRuntimeState LoadCommand { get; init; }
+    public string? FrequencyValueText { get; init; }
 
     public static RouteMapRuntimeState Empty { get; } = new(
         new Dictionary<string, RouteObjectRuntimeState>(),

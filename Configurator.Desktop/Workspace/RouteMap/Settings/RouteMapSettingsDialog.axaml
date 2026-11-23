@@ -75,6 +75,21 @@
                 <TextBlock Classes="label" Text="Зазор карточной колонки"/><TextBox Classes="form" Text="{Binding Draft.Map.CardColumnGap}"/>
                 <TextBlock Classes="label" Text="Длина фрагмента"/><TextBox Classes="form" Text="{Binding Draft.Map.FragmentLength}"/>
                 <TextBlock Classes="label" Text="Размер разрыва"/><TextBox Classes="form" Text="{Binding Draft.Map.FragmentGap}"/>
+                <TextBlock Classes="section" Text="Частота (Hz)"/>
+                <Button x:Name="AddFrequencyBindingButton"
+                        Content="Добавить binding"
+                        Command="{Binding AddFrequencyBindingCommand}"
+                        IsVisible="{Binding FrequencyBinding, Converter={x:Static converters:ObjectConverters.IsNull}}"/>
+                <StackPanel IsVisible="{Binding FrequencyBinding, Converter={x:Static converters:ObjectConverters.IsNotNull}}">
+                  <TextBlock Classes="label" Text="FrequencyFeedback · Read"/>
+                  <TextBlock Classes="label" Text="SignalId"/>
+                  <TextBox x:Name="FrequencySignalId" Classes="form" Text="{Binding FrequencyBinding.SignalId, Mode=TwoWay}"/>
+                  <TextBlock Classes="label" Text="ValueType"/>
+                  <ComboBox x:Name="FrequencyValueType" Classes="form"
+                            ItemsSource="{Binding FrequencyValueTypes}"
+                            SelectedItem="{Binding FrequencyBinding.ValueType, Mode=TwoWay}"/>
+                  <Button x:Name="RemoveFrequencyBindingButton" Content="Удалить binding" Command="{Binding RemoveFrequencyBindingCommand}"/>
+                </StackPanel>
                 <TextBlock Classes="section" Text="Палитра"/>
                 <UniformGrid Columns="2">
                   <StackPanel><TextBlock Classes="label" Text="Фон"/><TextBox Classes="form" Text="{Binding Draft.Map.Palette.Background}"/></StackPanel>

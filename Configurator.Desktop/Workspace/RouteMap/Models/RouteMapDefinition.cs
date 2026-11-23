@@ -114,6 +114,13 @@ public sealed record RouteMapPaletteSettings
 
 public sealed record RouteMapDisplaySettings
 {
+    internal static IReadOnlyList<SignalValueType> FrequencyValueTypes { get; } =
+    [
+        SignalValueType.UInt16, SignalValueType.Word, SignalValueType.Int16,
+        SignalValueType.Int32, SignalValueType.Dword, SignalValueType.Float32,
+    ];
+
+    public SignalBinding? FrequencyBinding { get; init; }
     public double MapPadding { get; init; } = 18;
     public double CardColumnGap { get; init; } = 18;
     public double FragmentLength { get; init; } = 100;

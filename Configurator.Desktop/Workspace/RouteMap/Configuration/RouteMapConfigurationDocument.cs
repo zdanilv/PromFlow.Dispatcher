@@ -57,6 +57,9 @@ public sealed class RouteMapConfigurationDocument
 
 public sealed class RouteMapSettingsConfiguration
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SignalBindingConfiguration? FrequencyBinding { get; set; }
+
     public double LogicalWidth { get; set; } = 1200;
     public double LogicalHeight { get; set; } = 800;
     public double MapPadding { get; set; } = 18;

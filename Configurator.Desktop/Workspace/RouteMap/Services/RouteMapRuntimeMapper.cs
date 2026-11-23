@@ -1,3 +1,4 @@
+using System.Globalization;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Workspace.RouteMap.Models;
@@ -108,7 +109,28 @@ public sealed class RouteMapRuntimeMapper : IRouteMapRuntimeMapper<RouteMapRunti
                 SignalBindingRole.RotationCommand, isAdminCommandConnectionAvailable),
             LoadCommand = MapTopBarCommand(signals, definition.TopBar?.Load,
                 SignalBindingRole.LoadCommand, isAdminCommandConnectionAvailable),
+            FrequencyValueText = isConnectionAvailable ? ReadFrequency(signals, definition.Display?.FrequencyBinding) : null,
         };
+    }
+
+    private static string? ReadFrequency(IReadOnlyDictionary<string, SignalValue> signals, SignalBinding? binding)
+    {
+        if (binding is null || !signals.TryGetValue(binding.SignalId, out var signal) ||
+            !signal.IsQualityGood || signal.IsStale ||
+            !SignalModbusTypeCompatibility.IsCompatible(binding.ValueType, SignalModbusTypeCompatibility.DefaultModbusType(signal.ValueType)))
+            return null;
+
+        IFormattable? number = signal switch
+        {
+            { ValueType: SignalValueType.UInt16 or SignalValueType.Word, Value: ushort value } => value,
+            { ValueType: SignalValueType.Int16, Value: short value } => value,
+            { ValueType: SignalValueType.Int32, Value: int value } => value,
+            { ValueType: SignalValueType.Dword, Value: uint value } => value,
+            { ValueType: SignalValueType.Float32, Value: float value } when float.IsFinite(value) => value,
+            _ => null,
+        };
+
+        return number?.ToString(null, CultureInfo.CurrentCulture);
     }
 
     private static RouteObjectRuntimeState MapObject(

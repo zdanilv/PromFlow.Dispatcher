@@ -30,6 +30,7 @@ public sealed class RouteMapConfigurationMapper
                 CardColumnGap = display.CardColumnGap,
                 FragmentLength = display.FragmentLength,
                 FragmentGap = display.FragmentGap,
+                FrequencyBinding = display.FrequencyBinding is { } frequency ? ToConfiguration(frequency) : null,
                 Palette = ToConfiguration(display.Palette),
             },
             Chains = new ObservableCollection<RouteChainConfiguration>(definition.Chains.Select(chain =>
@@ -98,6 +99,7 @@ public sealed class RouteMapConfigurationMapper
                 CardColumnGap = document.Map.CardColumnGap,
                 FragmentLength = document.Map.FragmentLength,
                 FragmentGap = document.Map.FragmentGap,
+                FrequencyBinding = document.Map.FrequencyBinding is { } frequency ? ToModel(frequency) : null,
                 Palette = ToModel(document.Map.Palette),
             },
             document.PlaceholderRules.Select(ToModel).ToArray(),

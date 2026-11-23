@@ -10,6 +10,20 @@
              d:DesignHeight="860"
              x:Class="Configurator.Desktop.Workspace.RouteMap.RouteMapDashboardView"
              x:DataType="vm:RouteMapDashboardViewModel">
+    <UserControl.Styles>
+        <Style Selector="Border.map-readout">
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#DDE2E6"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="Border.map-readout > TextBlock">
+            <Setter Property="Foreground" Value="#65717D"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+    </UserControl.Styles>
+
     <Grid RowDefinitions="64,*"
            Background="#F2F4F5">
         <panels:TopBarView Grid.Row="0"
@@ -113,19 +127,21 @@
                                 </Grid>
                             </Border>
                         </Grid>
-                        <Border x:Name="SelectedObjectOverlay"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Bottom"
-                                Margin="0,0,335,16"
-                                Padding="10,6"
-                                Background="#FFFFFF"
-                                BorderBrush="#DDE2E6"
-                                BorderThickness="1"
-                                CornerRadius="4">
-                            <TextBlock x:Name="SelectedObjectText"
-                                       Foreground="#65717D"
-                                       FontSize="12"><Run Text="Выбран - "/><Run Text="{Binding SelectedObjectTitle}"/></TextBlock>
-                        </Border>
+                        <StackPanel HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,0,335,16"
+                                    Orientation="Horizontal"
+                                    Spacing="8">
+                            <Border x:Name="FrequencyOverlay"
+                                    Classes="map-readout"
+                                    IsHitTestVisible="False"
+                                    IsVisible="{Binding IsFrequencyIndicatorVisible}">
+                                <TextBlock x:Name="FrequencyText" Text="{Binding FrequencyText}"/>
+                            </Border>
+                            <Border x:Name="SelectedObjectOverlay" Classes="map-readout">
+                                <TextBlock x:Name="SelectedObjectText"><Run Text="Выбран - "/><Run Text="{Binding SelectedObjectTitle}"/></TextBlock>
+                            </Border>
+                        </StackPanel>
                         <Border HorizontalAlignment="Left"
                                 VerticalAlignment="Bottom"
                                 Margin="16"

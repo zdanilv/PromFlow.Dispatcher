@@ -43,6 +43,17 @@ public sealed class RouteMapConfigurationValidator
         ValidateNonNegative(errors, "map", null, nameof(document.Map.CardColumnGap), document.Map.CardColumnGap);
         ValidatePositive(errors, "map", null, nameof(document.Map.FragmentLength), document.Map.FragmentLength);
         ValidateNonNegative(errors, "map", null, nameof(document.Map.FragmentGap), document.Map.FragmentGap);
+        if (document.Map.FrequencyBinding is { } frequency)
+        {
+            if (frequency.Role != SignalBindingRole.FrequencyFeedback)
+                Add(errors, "map", "frequencyBinding", nameof(frequency.Role), "Привязка частоты должна иметь роль FrequencyFeedback.");
+            if (string.IsNullOrWhiteSpace(frequency.SignalId))
+                Add(errors, "map", "frequencyBinding", nameof(frequency.SignalId), "SignalId частоты обязателен.");
+            if (frequency.Direction != SignalBindingDirection.Read)
+                Add(errors, "map", "frequencyBinding", nameof(frequency.Direction), "Привязка частоты должна иметь направление Read.");
+            if (!RouteMapDisplaySettings.FrequencyValueTypes.Contains(frequency.ValueType))
+                Add(errors, "map", "frequencyBinding", nameof(frequency.ValueType), "Привязка частоты должна иметь числовой тип.");
+        }
         ValidatePalette(errors, document.Map.Palette);
         ValidateTopBar(errors, document);
 

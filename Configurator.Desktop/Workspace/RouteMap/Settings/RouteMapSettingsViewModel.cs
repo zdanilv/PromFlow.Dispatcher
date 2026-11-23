@@ -85,6 +85,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         DeletePlaceholderCommand = ReactiveCommand.Create(DeletePlaceholder);
         AddBindingCommand = ReactiveCommand.Create<string>(AddBinding);
         RemoveBindingCommand = ReactiveCommand.Create<SignalBindingConfiguration>(RemoveBinding);
+        AddFrequencyBindingCommand = ReactiveCommand.Create(AddFrequencyBinding);
+        RemoveFrequencyBindingCommand = ReactiveCommand.Create(() => { FrequencyBinding = null; });
         AddStatusCommand = ReactiveCommand.Create(AddStatus);
         RemoveStatusCommand = ReactiveCommand.Create<EquipmentStatusEntryConfiguration>(RemoveStatus);
         AddCardParameterCommand = ReactiveCommand.Create(AddCardParameter);
@@ -97,6 +99,16 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
     public IObservable<bool> Result => _result;
     public RouteMapConfigurationDocument Draft => _draft;
+
+    public SignalBindingConfiguration? FrequencyBinding
+    {
+        get => Draft.Map.FrequencyBinding;
+        private set
+        {
+            Draft.Map.FrequencyBinding = value;
+            this.RaisePropertyChanged();
+        }
+    }
     public string ActiveFilePath => _manager.ActiveFilePath;
     public IReadOnlyList<RouteNodeKind> NodeKinds { get; } = Enum.GetValues<RouteNodeKind>()
         .Where(kind => kind != RouteNodeKind.TerminalAnchor).ToArray();
@@ -178,6 +190,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         [SignalBindingRole.EmergencyCommand, SignalBindingRole.Enabled];
     public IReadOnlyList<SignalBindingDirection> SignalBindingDirections { get; } = Enum.GetValues<SignalBindingDirection>();
     public IReadOnlyList<SignalValueType> SignalValueTypes { get; } = Enum.GetValues<SignalValueType>();
+    public IReadOnlyList<SignalValueType> FrequencyValueTypes => RouteMapDisplaySettings.FrequencyValueTypes;
     public IReadOnlyList<SignalBindingRole> EquipmentParameterRoles { get; } = [SignalBindingRole.EquipmentParameter];
     public IReadOnlyList<RouteMapEditorChoice<EquipmentParameterVisibility>> EquipmentParameterVisibilityChoices { get; } =
     [
@@ -332,6 +345,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> DeletePlaceholderCommand { get; }
     public ReactiveCommand<string, Unit> AddBindingCommand { get; }
     public ReactiveCommand<SignalBindingConfiguration, Unit> RemoveBindingCommand { get; }
+    public ReactiveCommand<Unit, Unit> AddFrequencyBindingCommand { get; }
+    public ReactiveCommand<Unit, Unit> RemoveFrequencyBindingCommand { get; }
     public ReactiveCommand<Unit, Unit> AddStatusCommand { get; }
     public ReactiveCommand<EquipmentStatusEntryConfiguration, Unit> RemoveStatusCommand { get; }
     public ReactiveCommand<Unit, Unit> AddCardParameterCommand { get; }
@@ -703,6 +718,16 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         if (items.Length == 0) return false;
         ErrorMessage = "Удаление заблокировано. Сначала удалите ссылки: " + string.Join(", ", items);
         return true;
+    }
+
+    private void AddFrequencyBinding()
+    {
+        FrequencyBinding ??= new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.FrequencyFeedback,
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.Float32,
+        };
     }
 
     private void AddBinding(string scope)
@@ -1115,6 +1140,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         DetachDraft(_draft);
         _draft = document;
         this.RaisePropertyChanged(nameof(Draft));
+        this.RaisePropertyChanged(nameof(FrequencyBinding));
         AttachDraft(_draft);
         SelectFirstItems();
         RaiseFilteredCollections();

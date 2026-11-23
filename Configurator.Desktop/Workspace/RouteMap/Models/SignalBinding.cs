@@ -33,7 +33,8 @@ public enum SignalBindingRole
     PowerFeedback,
     UnloadCommand,
     RotationCommand,
-    LoadCommand
+    LoadCommand,
+    FrequencyFeedback
 }
 
 public enum SignalBindingDirection

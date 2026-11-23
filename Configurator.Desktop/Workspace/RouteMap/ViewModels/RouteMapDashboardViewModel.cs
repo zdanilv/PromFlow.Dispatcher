@@ -25,6 +25,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         };
 
     private readonly IDisposable _signalSubscription;
+    private readonly IRouteMapSignalRuntime? _signalRuntime;
     private readonly IDisposable _definitionSubscription;
     private readonly IRouteMapRuntimeMapper<RouteMapRuntimeState> _runtimeMapper;
     private readonly IEquipmentCommandDispatcher _commandDispatcher;
@@ -44,6 +45,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     private string? _selectedObjectId;
     private string? _commandErrorMessage;
     private string _connectionStatusText = "Ожидание";
+    private string _frequencyText = "— Hz";
     private bool _wasConnectionAvailable;
     private int _disposed;
 
@@ -63,6 +65,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         IEquipmentParameterAutoDispatcher? parameterAutoDispatcher = null)
     {
         _runtimeMapper = runtimeMapper;
+        _signalRuntime = signalProvider as IRouteMapSignalRuntime;
         _commandDispatcher = commandDispatcher;
         _configurationManager = configurationManager;
         _bindingDiagnostics = bindingDiagnostics;
@@ -139,6 +142,7 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         {
             this.RaiseAndSetIfChanged(ref _definition, value);
             this.RaisePropertyChanged(nameof(SelectedObjectTitle));
+            this.RaisePropertyChanged(nameof(IsFrequencyIndicatorVisible));
         }
     }
     public TopBarViewModel TopBar { get; }
@@ -181,6 +185,14 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
     }
 
     public bool HasCommandError => !string.IsNullOrWhiteSpace(CommandErrorMessage);
+
+    public bool IsFrequencyIndicatorVisible => Definition.Display?.FrequencyBinding is not null;
+
+    public string FrequencyText
+    {
+        get => _frequencyText;
+        private set => this.RaiseAndSetIfChanged(ref _frequencyText, value);
+    }
 
     public string ConnectionStatusText
     {
@@ -278,6 +290,9 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         if (isLiveSnapshot)
             _wasConnectionAvailable = isModbusAvailable;
         RuntimeState = runtimeState;
+        FrequencyText = _signalRuntime?.CurrentSource != RouteMapSignalSource.Mock && runtimeState.FrequencyValueText is { } frequency
+            ? $"{frequency} Hz"
+            : "— Hz";
         if (IsConnectionStatusVisible)
             ConnectionStatusText = runtimeState.ConnectionStatusText;
         TopBar.ApplyRuntime(

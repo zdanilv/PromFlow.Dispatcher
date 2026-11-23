@@ -1,3 +1,4 @@
+using System.Globalization;
 using Avalonia.Media;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Controls;
@@ -9,6 +10,81 @@ namespace Configurator.Tests.Unit.RouteMap;
 
 public sealed class RouteMapRuntimeMapperTests
 {
+    [Fact]
+    public void Map_reads_compatible_frequency_numbers_in_current_culture()
+    {
+        var culture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ru-RU");
+            (SignalValueType ExpectedType, SignalValueType ActualType, object Value, string Text)[] cases =
+            [
+                (SignalValueType.UInt16, SignalValueType.Word, (ushort)0, "0"),
+                (SignalValueType.Word, SignalValueType.UInt16, (ushort)50, "50"),
+                (SignalValueType.Int16, SignalValueType.Int32, -12, "-12"),
+                (SignalValueType.Int32, SignalValueType.Int16, (short)12, "12"),
+                (SignalValueType.Dword, SignalValueType.Dword, uint.MaxValue, "4294967295"),
+                (SignalValueType.Float32, SignalValueType.Float32, 47.5625f, "47,5625"),
+            ];
+
+            foreach (var (expectedType, actualType, value, text) in cases)
+            {
+                var mapper = new RouteMapRuntimeMapper(FrequencyDefinition(expectedType));
+                var signal = new SignalValue("site.frequency", value, actualType, DateTimeOffset.UnixEpoch, true, false);
+
+                Assert.Equal(text, mapper.Map(new Dictionary<string, SignalValue> { [signal.SignalId] = signal }).FrequencyValueText);
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = culture;
+        }
+    }
+
+    [Fact]
+    public void Map_rejects_unavailable_or_invalid_frequency()
+    {
+        var definition = FrequencyDefinition(SignalValueType.Float32);
+        var mapper = new RouteMapRuntimeMapper(definition);
+        var signal = new SignalValue("site.frequency", 40f, SignalValueType.Float32, DateTimeOffset.UnixEpoch, true, false);
+        var signals = new Dictionary<string, SignalValue>();
+        Assert.Null(mapper.Map(signals).FrequencyValueText);
+
+        SignalValue[] invalidSignals =
+        [
+            signal with { IsQualityGood = false },
+            signal with { IsStale = true },
+            signal with { ValueType = SignalValueType.UInt16, Value = (ushort)40 },
+            signal with { Value = "40" },
+            signal with { Value = null },
+            signal with { Value = float.NaN },
+            signal with { Value = float.PositiveInfinity },
+        ];
+        foreach (var invalid in invalidSignals)
+        {
+            signals[signal.SignalId] = invalid;
+            Assert.Null(mapper.Map(signals).FrequencyValueText);
+        }
+
+        signals[signal.SignalId] = signal;
+        Assert.Null(new RouteMapRuntimeMapper(RouteMapSeed.Create()).Map(signals).FrequencyValueText);
+        var connected = RouteMapSystemSignalIds.ConnectionConnected;
+        signals[connected] = new(connected, false, SignalValueType.Bool, DateTimeOffset.UnixEpoch, true, false);
+        Assert.Null(mapper.Map(signals).FrequencyValueText);
+    }
+
+    private static RouteMapDefinition FrequencyDefinition(SignalValueType valueType)
+    {
+        var seed = RouteMapSeed.Create();
+        return seed with
+        {
+            Display = (seed.Display ?? new RouteMapDisplaySettings()) with
+            {
+                FrequencyBinding = new(SignalBindingRole.FrequencyFeedback, "site.frequency", SignalBindingDirection.Read, valueType),
+            },
+        };
+    }
+
     [Fact]
     public void Map_marks_active_route_from_boolean_signal()
     {

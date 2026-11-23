@@ -26,6 +26,65 @@ namespace Configurator.Tests.Unit.RouteMap;
 
 public sealed class RouteMapConfigurationTests
 {
+    [Fact]
+    public async Task Frequency_binding_round_trips_from_existing_configuration_through_save_export_and_import()
+    {
+        using var scope = new TempConfigurationScope();
+        await scope.Storage.SaveActiveAsync(scope.Mapper.CreateSeedDocument());
+        var legacy = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
+        Assert.False(legacy["map"]!.AsObject().ContainsKey("frequencyBinding"));
+        legacy["map"]!["vendorMap"] = "keep";
+        await File.WriteAllTextAsync(scope.Path, legacy.ToJsonString());
+
+        using var manager = scope.CreateManager();
+        Assert.Null(manager.LastLoadError);
+        Assert.Null(manager.CurrentDefinition.Display?.FrequencyBinding);
+        var export = scope.Path + ".export.json";
+        Assert.True((await manager.ExportDraftAsync(export, manager.CreateDraft())).IsSuccess);
+        Assert.True(JsonNode.DeepEquals(legacy, JsonNode.Parse(await File.ReadAllTextAsync(export))));
+
+        var draft = await manager.ImportDraftAsync(export);
+        draft.Map.FrequencyBinding = new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.FrequencyFeedback,
+            SignalId = "site.frequency",
+            Direction = SignalBindingDirection.Read,
+            ValueType = SignalValueType.Float32,
+            ExtensionData = new() { ["vendorBinding"] = JsonSerializer.SerializeToElement(42) },
+        };
+        Assert.True((await manager.SaveAndApplyAsync(draft)).IsSuccess);
+        using var reopened = scope.CreateManager();
+        var expected = new SignalBinding(SignalBindingRole.FrequencyFeedback, "site.frequency", SignalBindingDirection.Read, SignalValueType.Float32);
+        Assert.Equal(expected, reopened.CurrentDefinition.Display?.FrequencyBinding);
+        Assert.Equal(draft.SchemaVersion, reopened.CurrentDocument.SchemaVersion);
+        Assert.Equal(expected.SignalId, scope.Mapper.ToDocument(reopened.CurrentDefinition).Map.FrequencyBinding?.SignalId);
+
+        Assert.True((await reopened.ExportDraftAsync(export, reopened.CreateDraft())).IsSuccess);
+        var imported = await reopened.ImportDraftAsync(export);
+        Assert.Equal(expected, scope.Mapper.ToDefinition(imported).Display?.FrequencyBinding);
+        Assert.Equal("keep", imported.Map.ExtensionData!["vendorMap"].GetString());
+        Assert.Equal(42, imported.Map.FrequencyBinding!.ExtensionData!["vendorBinding"].GetInt32());
+    }
+
+    [Fact]
+    public void Frequency_binding_validation_rejects_invalid_configuration()
+    {
+        using var scope = new TempConfigurationScope();
+        var draft = scope.Mapper.CreateSeedDocument();
+        draft.Map.FrequencyBinding = new SignalBindingConfiguration
+        {
+            Role = SignalBindingRole.Value,
+            SignalId = " ",
+            Direction = SignalBindingDirection.ReadWrite,
+            ValueType = SignalValueType.Bool,
+        };
+
+        var errors = new RouteMapConfigurationValidator().Validate(draft).Errors;
+
+        Assert.Equal(new[] { "Role", "SignalId", "Direction", "ValueType" }, errors.Select(error => error.Property));
+        Assert.All(errors, error => Assert.Equal(("map", "frequencyBinding"), (error.Scope, error.ObjectId)));
+    }
+
     [Theory]
     [InlineData(20)]
     [InlineData(21)]

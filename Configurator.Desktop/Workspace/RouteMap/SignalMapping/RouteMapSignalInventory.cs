@@ -138,6 +138,9 @@ internal static class RouteMapSignalInventory
     private static IEnumerable<(string ObjectName, RouteMapSignalElementCategory Category, SignalBinding Binding, bool PreferPulseWriteMode)> EnumerateBindings(
         RouteMapDefinition definition)
     {
+        if (definition.Display?.FrequencyBinding is { } frequency)
+            yield return ("RouteMap.Частота (Hz)", RouteMapSignalElementCategory.Common, frequency, false);
+
         if (definition.TopBar is { } topBar)
         {
             var buttons = new (RouteTopBarButtonSettings Button, string Name, bool Pulse)[]
