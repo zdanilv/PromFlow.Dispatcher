@@ -69,12 +69,11 @@ internal static class ConsoleVisibilityController
 
         try
         {
-            System.Console.SetOut(new StreamWriter(System.Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
-            System.Console.SetError(new StreamWriter(System.Console.OpenStandardError(), new UTF8Encoding(false)) { AutoFlush = true });
+            System.Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         }
         catch (IOException)
         {
-            // File logging remains available if standard handles cannot be redirected.
+            // File logging remains available if the console encoding cannot be set.
         }
     }
 
