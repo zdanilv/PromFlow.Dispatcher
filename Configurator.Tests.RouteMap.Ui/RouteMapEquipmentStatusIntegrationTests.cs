@@ -467,7 +467,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         using var restarted = fixture.OpenManager();
         var saved = restarted.CurrentDefinition.MapEquipment.Single().Parameters.Single();
         Assert.Equal(("11", false, null), (saved.SavedValue, saved.PendingAutoDispatch, saved.LastDispatchError));
-        Assert.Equal(22, restarted.CurrentDocument.SchemaVersion);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, restarted.CurrentDocument.SchemaVersion);
     }
 
     [AvaloniaFact]

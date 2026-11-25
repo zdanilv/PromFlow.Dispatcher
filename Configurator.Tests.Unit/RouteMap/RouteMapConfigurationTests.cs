@@ -122,9 +122,9 @@ public sealed class RouteMapConfigurationTests
         using var manager = scope.CreateManager();
 
         Assert.Null(manager.LastLoadError);
-        Assert.Equal(22, manager.CurrentDocument.SchemaVersion);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, manager.CurrentDocument.SchemaVersion);
         Assert.Equal(original, await File.ReadAllTextAsync(scope.Path + ".bak"));
-        expected["schemaVersion"] = 22;
+        expected["schemaVersion"] = RouteMapConfigurationDocument.CurrentSchemaVersion;
         topBar["rotation"] = rotation;
         topBar["load"] = load;
         var persisted = await File.ReadAllTextAsync(scope.Path);
@@ -181,8 +181,8 @@ public sealed class RouteMapConfigurationTests
         var document = scope.Storage.Load(scope.Path);
         var migration = new RouteMapConfigurationMigrator().Migrate(document);
 
-        Assert.Equal(version == 21, migration.WasMigrated);
-        Assert.Equal(22, document.SchemaVersion);
+        Assert.True(migration.WasMigrated);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, document.SchemaVersion);
         Assert.Equal("system.command.unload", Assert.Single(document.TopBar.Unload.Bindings).SignalId);
         Assert.Equal("system.command.rotate", Assert.Single(document.TopBar.Rotation.Bindings).SignalId);
         Assert.Equal("Своя загрузка", document.TopBar.Load.Text);
@@ -197,7 +197,7 @@ public sealed class RouteMapConfigurationTests
     }
 
     [Fact]
-    public async Task V22_round_trips_all_custom_commands_through_save_apply_export_and_import()
+    public async Task V23_round_trips_custom_commands_and_feedback_through_save_apply_export_and_import()
     {
         using var source = new TempConfigurationScope();
         using var target = new TempConfigurationScope();
@@ -215,8 +215,15 @@ public sealed class RouteMapConfigurationTests
             bindings.Add(JsonNode.Parse($$"""
                 { "role": "enabled", "signalId": "site.{{section}}.enabled", "direction": "read", "valueType": "bool", "vendorEnabled": true }
                 """));
+            bindings.Add(JsonNode.Parse($$"""
+                { "role": "commandResetFeedback", "signalId": "site.{{section}}.received", "direction": "read", "valueType": "bool", "vendorFeedback": 14 }
+                """));
         }
 
+        var cardBindings = expected["cards"]!.AsArray().Single(node => node!["id"]!.GetValue<string>() == "equip.bucket")!["bindings"]!.AsArray();
+        cardBindings.Add(JsonNode.Parse("""
+            { "role": "commandResetFeedback", "signalId": "site.bucket.received", "direction": "read", "valueType": "bool" }
+            """));
         await File.WriteAllTextAsync(source.Path, expected.ToJsonString());
         using (var editing = source.CreateManager())
         {
@@ -234,7 +241,7 @@ public sealed class RouteMapConfigurationTests
         using (var importing = target.CreateManager())
         {
             var imported = await importing.ImportDraftAsync(exportPath);
-            Assert.Equal(22, imported.SchemaVersion);
+            Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, imported.SchemaVersion);
             Assert.True((await importing.SaveAndApplyAsync(imported)).IsSuccess);
         }
 
@@ -283,7 +290,7 @@ public sealed class RouteMapConfigurationTests
         using var scope = new TempConfigurationScope();
         await scope.Storage.SaveActiveAsync(scope.Mapper.CreateSeedDocument());
         var json = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
-        Assert.Equal(22, json["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, json["schemaVersion"]!.GetValue<int>());
         var topBar = json["topBar"]!;
         foreach (var (section, text, role, signalId) in new[]
                  {
@@ -315,7 +322,7 @@ public sealed class RouteMapConfigurationTests
         var migrator = new RouteMapConfigurationMigrator();
 
         Assert.True(migrator.Migrate(document).WasMigrated);
-        Assert.Equal(22, document.SchemaVersion);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, document.SchemaVersion);
         Assert.Equal("system.command.unload", Assert.Single(document.TopBar.Unload.Bindings).SignalId);
         Assert.Same(rotation, document.TopBar.Rotation);
         Assert.Equal("Свое вращение", rotation.Text);
@@ -1388,7 +1395,7 @@ public sealed class RouteMapConfigurationTests
             await store.DeferDispatchAsync("equip.bucket", signal, "11");
         }
         using var restarted = scope.CreateManager();
-        Assert.Equal(22, restarted.CurrentDocument.SchemaVersion);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, restarted.CurrentDocument.SchemaVersion);
         var saved = restarted.CurrentDefinition.MapEquipment.Single().Parameters.Single(p => p.Binding.SignalId == "equip.bucket.speed");
         Assert.Equal(("12", false, "Current error"), (saved.SavedValue, saved.PendingAutoDispatch, saved.LastDispatchError));
     }
@@ -1476,7 +1483,7 @@ public sealed class RouteMapConfigurationTests
         Assert.Equal("11", parameter.SavedValue);
         Assert.False(parameter.PendingAutoDispatch);
         Assert.False(string.IsNullOrWhiteSpace(parameter.LastDispatchError));
-        Assert.Equal(22, restarted.CurrentDocument.SchemaVersion);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, restarted.CurrentDocument.SchemaVersion);
     }
 
     [Fact]
@@ -2392,7 +2399,7 @@ public sealed class RouteMapConfigurationTests
             "rotation" => (editor.Draft.TopBar.Rotation, editor.RotationBindingRoles),
             _ => (editor.Draft.TopBar.Load, editor.LoadBindingRoles),
         };
-        Assert.Equal(new[] { role, SignalBindingRole.Enabled }, roles);
+        Assert.Equal(new[] { role, SignalBindingRole.Enabled, SignalBindingRole.CommandResetFeedback }, roles);
         var command = Assert.Single(button.Bindings);
         Assert.Equal((role, defaultSignalId, SignalBindingDirection.ReadWrite, SignalValueType.Bool),
             (command.Role, command.SignalId, command.Direction, command.ValueType));
@@ -2683,7 +2690,7 @@ public sealed class RouteMapConfigurationTests
         using var manager = scope.CreateManager();
 
         Assert.Null(manager.LastLoadError);
-        Assert.Equal(22, manager.CurrentDocument.SchemaVersion);
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, manager.CurrentDocument.SchemaVersion);
         var migrated = manager.CurrentDefinition.MapEquipment.Single().Parameters;
         Assert.Equal("equip.bucket.parameter2", migrated[0].Binding.SignalId);
         Assert.Equal(EquipmentParameterVisibility.User, migrated[0].Visibility);
@@ -2693,7 +2700,7 @@ public sealed class RouteMapConfigurationTests
         Assert.Equal(EquipmentParameterVisibility.Admin, migrated[1].Visibility);
         Assert.Equal(original, await File.ReadAllTextAsync(scope.Path + ".bak"));
 
-        expected["schemaVersion"] = 22;
+        expected["schemaVersion"] = RouteMapConfigurationDocument.CurrentSchemaVersion;
         filter["visibility"] = "user";
         var persisted = await File.ReadAllTextAsync(scope.Path);
         Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(persisted)));
@@ -2716,7 +2723,7 @@ public sealed class RouteMapConfigurationTests
 
         await scope.Storage.SaveActiveAsync(document);
         var json = JsonNode.Parse(await File.ReadAllTextAsync(scope.Path))!;
-        Assert.Equal(22, json["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, json["schemaVersion"]!.GetValue<int>());
         var parameters = json["cards"]![0]!["parameters"]!.AsArray();
         Assert.Equal(new[] { "user", "admin" }, parameters.Select(x => x!["visibility"]!.GetValue<string>()));
         var loaded = await scope.Storage.LoadAsync(scope.Path);

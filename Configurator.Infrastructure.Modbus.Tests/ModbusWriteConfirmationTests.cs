@@ -2,6 +2,8 @@ using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Contracts;
 using Configurator.Application.Services.Modbus.Data;
 using Configurator.Application.Services.Modbus.Runtime;
+using Configurator.Application.Services.Signals;
+using Configurator.Infrastructure.Modbus.RouteMap;
 using Configurator.Infrastructure.Modbus.Runtime;
 using Xunit;
 
@@ -251,6 +253,119 @@ public sealed partial class ModbusTcpServiceTests
         Assert.Equal([true, false], f.Client.Writes.Select(w => (bool)w.Value));
     }
 
+    [Theory]
+    [InlineData("high")]
+    [InlineData("bad")]
+    [InlineData("stale")]
+    [InlineData("live-high")]
+    public async Task PriorityCommand_FeedbackMustBeGoodFreshAndLowBeforeActivation(string condition)
+    {
+        await using var f = await ConfirmationFixture.StartAsync(pulse: true, feedbackWait: 500);
+        f.Client.LiveCommandOrResponseHigh = condition == "live-high";
+        f.PublishFeedback(response: condition == "high", good: condition != "bad", stale: condition == "stale");
+
+        var error = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => f.DispatchFeedbackCommandAsync());
+
+        Assert.Contains("достоверное значение 0", error.Message);
+        Assert.Empty(f.Client.Writes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PriorityCommand_TimeoutOrCancellationAttemptsOneIndependentRelease(bool cancel)
+    {
+        await using var f = await ConfirmationFixture.StartAsync(pulse: true, feedbackWait: 250);
+        f.PublishFeedback();
+        using var caller = new CancellationTokenSource();
+        f.Client.AfterSend = () =>
+        {
+            var activated = (bool)f.Client.Writes[^1].Value;
+            f.PublishFeedback(command: activated);
+        };
+        var operation = f.DispatchFeedbackCommandAsync(caller.Token);
+        await f.Client.Written.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        if (cancel)
+        {
+            caller.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<TimeoutException>(() => operation);
+        }
+
+        Assert.Equal([true, false], f.Client.Writes.Select(write => (bool)write.Value));
+    }
+
+    [Fact]
+    public async Task PriorityCommand_NewSessionNeverReceivesReleaseOfPreviousActivation()
+    {
+        await using var f = await ConfirmationFixture.StartAsync(pulse: true, feedbackWait: 1000);
+        f.PublishFeedback();
+        var operation = f.DispatchFeedbackCommandAsync();
+        await f.Client.Written.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        f.PublishFeedback(response: true, session: Guid.NewGuid());
+
+        var error = await Assert.ThrowsAsync<AggregateException>(() => operation);
+        Assert.Contains("неизвестно", error.Message);
+        Assert.Equal(true, Assert.Single(f.Client.Writes).Value);
+    }
+
+    [Fact]
+    public async Task PriorityCommand_UncertainReleaseNeedsNewZerosEvenAfterRemovingFeedbackBinding()
+    {
+        await using var f = await ConfirmationFixture.StartAsync(timeout: 120, pulse: true, feedbackWait: 120);
+        f.PublishFeedback();
+        await Assert.ThrowsAsync<AggregateException>(() => f.DispatchFeedbackCommandAsync());
+        Assert.Equal(2, f.Client.Writes.Count);
+
+        var error = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => f.DispatchFeedbackCommandAsync(withFeedback: false));
+        Assert.Contains("предыдущей команды неизвестно", error.Message);
+        Assert.Equal(2, f.Client.Writes.Count);
+
+        f.PublishFeedback();
+        f.Client.AfterSend = () => f.PublishFeedback(command: (bool)f.Client.Writes[^1].Value);
+        await f.DispatchFeedbackCommandAsync(withFeedback: false);
+        Assert.Equal([true, false, true, false], f.Client.Writes.Select(write => (bool)write.Value));
+    }
+
+    [Fact]
+    public async Task PriorityCommand_FacadeLetsAllQueuedOperatorWritesOvertakeBackground()
+    {
+        await using var f = await ConfirmationFixture.StartAsync(timeout: 0);
+        var names = new[] { "unload", "rotate", "load", "start", "stop" };
+        var points = names.Select((name, index) => new ModbusDataPointOptions
+        {
+            Name = name, Area = ModbusDataArea.HoldingRegister, Address = index, Access = ModbusDataAccess.Write,
+            Type = ModbusValueType.UInt16
+        }).ToArray();
+        f.Options.Client.RegisterCount = f.Options.Server.RegisterCount = 6;
+        var background = points[0].Clone();
+        background.Name = "background";
+        background.Address = 5;
+        f.Options.DataMap = [.. points, background];
+        Assert.True((await f.Service.StartClientAsync(f.Options)).Succeeded);
+        var blocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Client.BeforeSend = async () =>
+        {
+            if (blocked.TrySetResult())
+                await proceed.Task;
+        };
+
+        var active = f.Service.SetAsync("background", (ushort)1);
+        await blocked.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var backgroundWaiter = f.Service.SetAsync("background", (ushort)2);
+        var urgent = points.Select(point => f.Service.SetPriorityAsync(point, (ushort)3, default)).ToArray();
+        proceed.SetResult();
+
+        var results = await Task.WhenAll(urgent.Prepend(active).Append(backgroundWaiter)).WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.All(results, result => Assert.True(result.Succeeded, result.ErrorMessage));
+        Assert.Equal([5, 0, 1, 2, 3, 4, 5], f.Client.Writes.Select(write => write.Address));
+    }
+
     private static ModbusSnapshot CopyRead(ModbusSnapshot source, ModbusAreaReadState coils, ModbusAreaReadState registers) => new()
     {
         Role = source.Role, SourceSessionId = source.SourceSessionId, ReadSequence = source.ReadSequence,
@@ -268,12 +383,20 @@ public sealed partial class ModbusTcpServiceTests
         private bool _server;
         public ConfirmationTransport Writer => _server ? Server : Client;
 
-        public static async Task<ConfirmationFixture> StartAsync(int timeout = 500, bool server = false, bool pulse = false, bool writeOnly = false)
+        public static async Task<ConfirmationFixture> StartAsync(int timeout = 500, bool server = false,
+            bool pulse = false, bool writeOnly = false, int feedbackWait = 0)
         {
             var f = new ConfirmationFixture { _server = server };
             f.Options.WriteConfirmationTimeoutMs = timeout;
             if (pulse) f.Options.DataMap.Single(p => p.Name == "DemoButton").WriteMode = ModbusWriteMode.Pulse;
             if (writeOnly) f.Options.DataMap.Single(p => p.Name == "DemoInput").Access = ModbusDataAccess.Write;
+            if (feedbackWait > 0)
+            {
+                f.Options.DataMap[0].PulseDurationMs = feedbackWait;
+                var feedback = CreateRegisterBit("demo.feedback", 2, 1);
+                feedback.Access = ModbusDataAccess.Read;
+                f.Options.DataMap.Add(feedback);
+            }
             f.Service = CreateService(f.Runtime, f.Client, f.Server, f.Options);
             if (server) await f.Service.StartServerAsync();
             else await f.Service.StartClientAsync();
@@ -292,12 +415,37 @@ public sealed partial class ModbusTcpServiceTests
             Runtime.PublishRawSnapshot(read);
             return read;
         }
+
+        public void PublishFeedback(bool command = false, bool response = false,
+            bool good = true, bool stale = false, Guid? session = null)
+        {
+            var read = Read(session: session);
+            var readAt = stale ? DateTimeOffset.Now.AddSeconds(-10) : DateTimeOffset.Now;
+            Runtime.PublishRawSnapshot(new ModbusSnapshot
+            {
+                Role = read.Role, SourceSessionId = read.SourceSessionId, ReadSequence = read.ReadSequence,
+                Coils = [command], HoldingRegisters = [0, 5, response ? (ushort)2 : (ushort)0], Timestamp = readAt,
+                CoilsReadState = new(true, true, good, readAt, read.CoilsReadState!.SuccessfulReadSequence),
+                HoldingRegistersReadState = new(true, true, good, readAt, read.HoldingRegistersReadState!.SuccessfulReadSequence)
+            });
+        }
+
+        public Task DispatchFeedbackCommandAsync(CancellationToken ct = default, bool withFeedback = true) =>
+            new ModbusTcpCommandDispatcher(Service, new TestOptionsMonitor(Options)).DispatchAsync(
+                new SignalWriteRequest("DemoButton", true, SignalValueType.Bool)
+                {
+                    RequiredWriteMode = ModbusWriteMode.Pulse, IsPriority = true,
+                    ResetFeedbackSignalId = withFeedback ? "demo.feedback" : null,
+                }, ct);
+
         public ValueTask DisposeAsync() => Service.DisposeAsync();
     }
 
     private sealed class ConfirmationTransport(ModbusRuntimeRole role) : IModbusClientService, IModbusServerService, IModbusObservedWriter
     {
+        private readonly ModbusPriorityGate _ioGate = new();
         public Guid SessionId { get; } = Guid.NewGuid();
+        public bool LiveCommandOrResponseHigh { get; set; }
         public ModbusConnectionState State => ModbusConnectionState.Running;
         public ModbusSnapshot Snapshot => ModbusSnapshot.Empty;
         public List<(ModbusDataArea Area, int Address, object Value)> Writes { get; } = [];
@@ -306,14 +454,27 @@ public sealed partial class ModbusTcpServiceTests
         public Action? AfterSend { get; set; }
         public event EventHandler<ModbusStatus>? StatusChanged { add { } remove { } }
         public event EventHandler<ModbusSnapshot>? SnapshotChanged { add { } remove { } }
-        public async Task<ModbusWriteReceipt> WriteObservedAsync(ModbusDataArea area, int address, bool coilValue, ushort[] registers, bool pulse, CancellationToken cancellationToken)
+        public async Task<ModbusWriteReceipt> WriteObservedAsync(ModbusWriteAddress address, ModbusWriteAddress? feedback,
+            bool priority, bool pulse, Action<Guid> validateBeforeRead, Func<ModbusWriteReceipt, bool, ModbusWritePayload> prepare,
+            Action<ModbusWritePayload> committed, CancellationToken cancellationToken)
         {
-            if (BeforeSend is not null) await BeforeSend();
-            var receipt = new ModbusWriteReceipt(role, SessionId, ModbusObservationSequence.Next());
-            Writes.Add((area, address, area == ModbusDataArea.Coil ? coilValue : registers[0]));
-            Written.TrySetResult(receipt);
-            AfterSend?.Invoke();
-            return receipt;
+            await _ioGate.WaitAsync(cancellationToken, priority);
+            try
+            {
+                if (BeforeSend is not null) await BeforeSend();
+                validateBeforeRead(SessionId);
+                var receipt = new ModbusWriteReceipt(role, SessionId, ModbusObservationSequence.Next());
+                var payload = prepare(receipt, LiveCommandOrResponseHigh);
+                Writes.Add((address.Area, address.Offset, address.Area == ModbusDataArea.Coil ? payload.Coil : payload.Registers[0]));
+                committed(payload);
+                Written.TrySetResult(receipt);
+                AfterSend?.Invoke();
+                return receipt;
+            }
+            finally
+            {
+                _ioGate.Release();
+            }
         }
         public Task StartAsync(ModbusEndpointOptions options, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

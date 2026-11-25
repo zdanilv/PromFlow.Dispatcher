@@ -1,6 +1,7 @@
 using Configurator.Application.Services;
 using Configurator.Application.Services.Modbus.Configuration;
 using Configurator.Application.Services.Modbus.Data;
+using Configurator.Application.Services.Modbus.Validation;
 using Configurator.Application.Services.Signals;
 using Configurator.Desktop.Workspace.RouteMap.Configuration;
 using Configurator.Desktop.Dialogs.HelpDialog;
@@ -313,17 +314,19 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private string? GetTopBarCommandMappingError(SignalBinding binding)
+    private string? GetTopBarCommandMappingError(SignalBinding binding, SignalBinding? feedback)
     {
         if (_commandDispatcher is not IRouteMapSignalRuntime { CurrentSource: RouteMapSignalSource.Modbus })
             return null;
 
-        var point = _modbusOptions.CurrentValue.DataMap.FirstOrDefault(
-            point => string.Equals(point.Name, binding.SignalId, StringComparison.OrdinalIgnoreCase));
-        return point is { Access: ModbusDataAccess.ReadWrite, WriteMode: ModbusWriteMode.Pulse }
-            && SignalModbusTypeCompatibility.IsCompatible(binding.ValueType, point.Type)
-                ? null
-                : $"для '{binding.SignalId}' требуется запись ReadWrite/Bool с режимом Pulse в Modbus.DataMap.";
+        var options = _modbusOptions.CurrentValue;
+        var point = options.DataMap.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, binding.SignalId, StringComparison.OrdinalIgnoreCase));
+        if (point is not { Access: ModbusDataAccess.ReadWrite, WriteMode: ModbusWriteMode.Pulse }
+            || !SignalModbusTypeCompatibility.IsCompatible(binding.ValueType, point.Type))
+            return $"Для «{binding.SignalId}» требуется ReadWrite/Bool/Pulse в Modbus.DataMap.";
+
+        return feedback is null ? null : ModbusResetFeedbackValidation.GetError(binding.SignalId, feedback.SignalId, options);
     }
 
     private async Task<bool> TryDispatchTopBarCommandAsync(SignalWriteRequest request, CancellationToken cancellationToken)
@@ -347,7 +350,8 @@ public sealed class RouteMapDashboardViewModel : ViewModelBase, IDisposable
             _commandDispatcher,
             Definition.Display?.Palette,
             _cardParametersDialogService,
-            () => _lastSignals);
+            () => _lastSignals,
+            startMappingError: GetTopBarCommandMappingError);
 
     private async Task DispatchPendingParametersAsync()
     {

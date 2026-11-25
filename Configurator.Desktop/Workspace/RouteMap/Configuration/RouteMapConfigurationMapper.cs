@@ -209,6 +209,8 @@ public sealed class RouteMapConfigurationMapper
         var bindings = new List<SignalBindingConfiguration> { ToConfiguration(button.Binding) };
         if (button.EnabledBinding is not null)
             bindings.Add(ToConfiguration(button.EnabledBinding));
+        if (button.ResetFeedbackBinding is { } feedback)
+            bindings.Add(ToConfiguration(feedback));
         return new ObservableCollection<SignalBindingConfiguration>(bindings);
     }
 
@@ -283,6 +285,9 @@ public sealed class RouteMapConfigurationMapper
                 : offFeedbackEnabled && offFeedbackRole.HasValue && offFeedbackSignalId is not null
                     ? new SignalBinding(offFeedbackRole.Value, offFeedbackSignalId, SignalBindingDirection.Read, Configurator.Application.Services.Signals.SignalValueType.Bool)
                     : null,
+            ResetFeedbackBinding = button.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.CommandResetFeedback) is { } feedback
+                ? ToModel(feedback)
+                : null,
             EnabledBinding = button.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.Enabled) is { } enabled
                 ? ToModel(enabled)
                 : null,

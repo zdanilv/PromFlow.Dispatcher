@@ -172,18 +172,28 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         SignalBindingRole.StartOffFeedback, SignalBindingRole.StopOffFeedback,
         SignalBindingRole.Fault, SignalBindingRole.Enabled,
     ];
-    public IReadOnlyList<SignalBindingRole> CardBindingRoles =>
-        SelectedCard is { } card && !UsesPowerFeedback(card) ? LegacyCardBindingRoles : PowerCardBindingRoles;
+    public IReadOnlyList<SignalBindingRole> CardBindingRoles
+    {
+        get
+        {
+            var roles = SelectedCard is { } card && !UsesPowerFeedback(card) ? LegacyCardBindingRoles : PowerCardBindingRoles;
+            return SelectedCard is { StartButtonKind: RouteCommandButtonKind.Momentary }
+                ? [.. roles, SignalBindingRole.CommandResetFeedback]
+                : roles;
+        }
+    }
+    public bool CanAddStartResetFeedback =>
+        SelectedCard is { CanStart: true, StartButtonKind: RouteCommandButtonKind.Momentary };
     public IReadOnlyList<SignalBindingRole> AutomaticModeBindingRoles { get; } =
         [];
     public IReadOnlyList<SignalBindingRole> ManualModeBindingRoles { get; } =
         [];
     public IReadOnlyList<SignalBindingRole> UnloadBindingRoles { get; } =
-        [SignalBindingRole.UnloadCommand, SignalBindingRole.Enabled];
+        [SignalBindingRole.UnloadCommand, SignalBindingRole.Enabled, SignalBindingRole.CommandResetFeedback];
     public IReadOnlyList<SignalBindingRole> RotationBindingRoles { get; } =
-        [SignalBindingRole.RotationCommand, SignalBindingRole.Enabled];
+        [SignalBindingRole.RotationCommand, SignalBindingRole.Enabled, SignalBindingRole.CommandResetFeedback];
     public IReadOnlyList<SignalBindingRole> LoadBindingRoles { get; } =
-        [SignalBindingRole.LoadCommand, SignalBindingRole.Enabled];
+        [SignalBindingRole.LoadCommand, SignalBindingRole.Enabled, SignalBindingRole.CommandResetFeedback];
     public IReadOnlyList<SignalBindingRole> ResetBindingRoles { get; } =
         [SignalBindingRole.ResetCommand, SignalBindingRole.Enabled];
     public IReadOnlyList<SignalBindingRole> EmergencyBindingRoles { get; } =
@@ -280,6 +290,7 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         {
             this.RaiseAndSetIfChanged(ref _selectedCard, value);
             this.RaisePropertyChanged(nameof(CardBindingRoles));
+            this.RaisePropertyChanged(nameof(CanAddStartResetFeedback));
             ObserveSelectedStatusMapping();
         }
     }
@@ -733,6 +744,10 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
     private void AddBinding(string scope)
     {
         var topBar = Draft.TopBar;
+        var addResetFeedback = scope.EndsWith("-reset-feedback", StringComparison.Ordinal);
+        if (addResetFeedback)
+            scope = scope[..^"-reset-feedback".Length];
+
         (RouteTopBarButtonConfiguration? Button, SignalBindingRole CommandRole) topBarSection = scope switch
         {
             "unload" => (topBar.Unload, SignalBindingRole.UnloadCommand),
@@ -744,7 +759,8 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         };
         if (topBarSection.Button is { } button)
         {
-            if (button.Bindings.Any(x => x?.Role == SignalBindingRole.Enabled))
+            var role = addResetFeedback ? SignalBindingRole.CommandResetFeedback : SignalBindingRole.Enabled;
+            if (button.Bindings.Any(x => x?.Role == role))
                 return;
             var command = button.Bindings.FirstOrDefault(x => x?.Role == topBarSection.CommandRole);
             if (command is null)
@@ -752,11 +768,28 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
 
             button.Bindings.Add(new SignalBindingConfiguration
             {
-                Role = SignalBindingRole.Enabled,
-                SignalId = $"{command.SignalId}.enabled",
+                Role = role,
+                SignalId = addResetFeedback ? $"{command.SignalId}.reset" : $"{command.SignalId}.enabled",
                 Direction = SignalBindingDirection.Read,
                 ValueType = SignalValueType.Bool,
             });
+            return;
+        }
+
+        if (addResetFeedback)
+        {
+            if (scope == "card" && SelectedCard is { CanStart: true, StartButtonKind: RouteCommandButtonKind.Momentary } card
+                && !card.Bindings.Any(binding => binding.Role == SignalBindingRole.CommandResetFeedback)
+                && card.Bindings.FirstOrDefault(binding => binding.Role == SignalBindingRole.StartCommand) is { } start)
+            {
+                card.Bindings.Add(new SignalBindingConfiguration
+                {
+                    Role = SignalBindingRole.CommandResetFeedback,
+                    SignalId = $"{start.SignalId}.reset",
+                    Direction = SignalBindingDirection.Read,
+                    ValueType = SignalValueType.Bool,
+                });
+            }
             return;
         }
 
@@ -1221,7 +1254,10 @@ public sealed class RouteMapSettingsViewModel : ReactiveObject, IDisposable
         {
             EnsureCardBindings(changedCard);
             if (ReferenceEquals(changedCard, SelectedCard))
+            {
                 this.RaisePropertyChanged(nameof(CardBindingRoles));
+                this.RaisePropertyChanged(nameof(CanAddStartResetFeedback));
+            }
         }
         if (e.PropertyName != nameof(RouteMapConfigurationItem.Id) || sender is not RouteMapConfigurationItem item) return;
         var oldId = _knownIds[item];

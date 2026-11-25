@@ -212,6 +212,36 @@ Register-bit writes are serialized read-modify-write operations using the latest
 shadow. The first write is rejected until the raw register snapshot exists. Do not map the
 same bit twice or overlap whole-register values with bit points.
 
+### Priority and PLC feedback
+
+Unload, Rotation, Load, Start, Stop, and Emergency writes take precedence over
+queued background writes and polling in Client, Server, and Both modes.
+Operations already in progress finish first. Each priority level keeps arrival
+order. Command release also has priority. Stop retains `Latched` behavior and
+fresh readback confirmation.
+
+An optional `CommandResetFeedback` for Unload, Rotation, Load, or Start is a
+distinct read-only Bool coil or holding-register bit of length 1. The application
+must have read-only access to the entire holding register containing the response.
+The command and response start at a fresh, good 0.
+
+1. The application writes command 1 once.
+2. The PLC raises and holds response 1 while command remains 1.
+3. The application observes the new response in the same session, writes command 0, and confirms it by fresh readback.
+4. The PLC clears the response to 0 before the command can be armed again.
+
+`PulseDurationMs` bounds each response wait. Allow for PLC cycle and polling
+times. After an acknowledgement timeout the application reports an error and
+attempts to clear the original command within a separate two-second deadline.
+Uncertain cleanup requires a newer, good observation of both bits at 0
+before rearming. A change of mapping, role, or session prevents writing to a
+replacement target. Commands without the binding continue with the timed pulse.
+
+Debug logs report queue wait, transport write, and PLC response changes. In
+Server mode, a successful write is to the local data store. A configured
+handshake adds the PLC's response as an application-level confirmation. The PLC
+remains responsible for physical execution.
+
 ### Connecting to a live PLC
 
 Confirm the physical point for each command with the PLC contract owner. Include

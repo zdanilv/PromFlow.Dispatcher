@@ -131,6 +131,14 @@ addresses fail point or active endpoint range validation. When saving the full m
 `ModbusDataPointAddressConflict` rejects overlapping physical points. The dispatcher
 validates the mapping before writing. [Modbus TCP guide](03-modbus-tcp-guide.en.md)
 
+## PLC response binding
+
+`CommandResetFeedback` is available for Unload, Rotation, Load, and momentary
+Start. The editor suggests `<command SignalId>.reset`. Give each command its
+own response SignalId and configure it in **SignalId ↔ Modbus** as `Read/Bool`
+with length 1. Use the PLC's agreed coil or bit 0–15 in a holding register the
+application only reads. [Handshake and constraints](03-modbus-tcp-guide.en.md#priority-and-plc-feedback).
+
 ## System SignalIds
 
 | SignalId | Type | Meaning |

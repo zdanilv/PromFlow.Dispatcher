@@ -21,6 +21,9 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     private readonly Func<IReadOnlyDictionary<string, SignalValue>?>? _signalSnapshotAccessor;
     private EquipmentCommandCard _card;
     private readonly SignalBinding? _startBinding;
+    private readonly SignalBinding? _resetFeedbackBinding;
+    private readonly Func<SignalBinding, SignalBinding?, string?>? _startMappingError;
+    private string? _startConfigurationError;
     private readonly SignalBinding? _stopBinding;
     private readonly SignalBinding? _uncheckedBinding;
     private readonly SignalBinding? _checkedBinding;
@@ -65,7 +68,8 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         RouteMapPaletteSettings? palette = null,
         IEquipmentCardParametersDialogService? parametersDialogService = null,
         Func<IReadOnlyDictionary<string, SignalValue>?>? signalSnapshotAccessor = null,
-        TimeSpan? stopConfirmationTimeout = null)
+        TimeSpan? stopConfirmationTimeout = null,
+        Func<SignalBinding, SignalBinding?, string?>? startMappingError = null)
     {
         _card = card;
         Id = card.Id;
@@ -90,6 +94,9 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         if (_stopConfirmationTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(stopConfirmationTimeout));
         _startBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.StartCommand);
+        _resetFeedbackBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.CommandResetFeedback);
+        _startMappingError = startMappingError;
+        UpdateStartConfigurationError();
         _stopBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.StopCommand);
         _uncheckedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.UncheckedCommand);
         _checkedBinding = card.Bindings.FirstOrDefault(x => x.Role == SignalBindingRole.CheckedCommand);
@@ -275,9 +282,12 @@ public sealed class EquipmentCardViewModel : ViewModelBase
 
     public bool CanStart
     {
-        get => _canStart && !IsStartBusy;
+        get => _canStart && !IsStartBusy && StartConfigurationError is null;
         set => this.RaiseAndSetIfChanged(ref _canStart, value);
     }
+
+    public string? StartConfigurationError => _startConfigurationError;
+    public bool HasStartConfigurationError => StartConfigurationError is not null;
 
     public bool CanStop
     {
@@ -469,6 +479,7 @@ public sealed class EquipmentCardViewModel : ViewModelBase
     internal void ApplyRuntime(RouteObjectRuntimeState? runtimeState, bool isConnectionAvailable, bool isLiveSnapshot)
     {
         IsConnectionAvailable = isConnectionAvailable;
+        UpdateStartConfigurationError();
         if (runtimeState is null)
         {
             if (_card.StatusMapping is not null)
@@ -581,13 +592,32 @@ public sealed class EquipmentCardViewModel : ViewModelBase
         ReturnPointTitle = SelectedPointTitle(chainNodes, roleStates, x => x.IsLoader);
     }
 
+    private void UpdateStartConfigurationError()
+    {
+        var error = _startBinding is { } start && _resetFeedbackBinding is { } reset
+            ? _startMappingError?.Invoke(start, reset)
+            : null;
+        if (_startConfigurationError != error)
+        {
+            _startConfigurationError = error;
+            this.RaisePropertyChanged(nameof(StartConfigurationError));
+            this.RaisePropertyChanged(nameof(HasStartConfigurationError));
+            this.RaisePropertyChanged(nameof(CanStart));
+        }
+    }
+
     private Task DispatchAsync(SignalBinding? binding, bool value, ModbusWriteMode? requiredWriteMode = null)
     {
         if (binding is null)
             return Task.CompletedTask;
 
         return _commandDispatcher.DispatchAsync(
-            new SignalWriteRequest(binding.SignalId, value, binding.ValueType) { RequiredWriteMode = requiredWriteMode });
+            new SignalWriteRequest(binding.SignalId, value, binding.ValueType)
+            {
+                RequiredWriteMode = requiredWriteMode,
+                IsPriority = binding.Role is SignalBindingRole.StartCommand or SignalBindingRole.StopCommand,
+                ResetFeedbackSignalId = binding.Role == SignalBindingRole.StartCommand ? _resetFeedbackBinding?.SignalId : null,
+            });
     }
 
     private Task OpenParametersAsync()

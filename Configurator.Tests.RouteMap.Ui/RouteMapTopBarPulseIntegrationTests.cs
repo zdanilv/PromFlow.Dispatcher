@@ -61,7 +61,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             using var manager = new RouteMapConfigurationManager(storage, mapper,
                 new RouteMapConfigurationValidator(), new RouteMapConfigurationMigrator());
             Assert.Null(manager.LastLoadError);
-            Assert.Equal(22, manager.CurrentDocument.SchemaVersion);
+            Assert.Equal(RouteMapConfigurationDocument.CurrentSchemaVersion, manager.CurrentDocument.SchemaVersion);
             var inventory = RouteMapSignalInventory.Build(manager.CurrentDefinition);
             foreach (var signalId in signalIds)
             {

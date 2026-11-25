@@ -23,10 +23,11 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     private readonly IOptionsMonitor<ModbusOptions> _optionsMonitor;
     private readonly IModbusDataMapValidator _dataMapValidator;
     private readonly ILogger<ModbusTcpService> _logger;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly ModbusPriorityGate _gate = new();
     private readonly SemaphoreSlim _dataMapChangeGate = new(1, 1);
     private readonly object _sync = new();
     private readonly Dictionary<string, ModbusDataPointOptions> _dataMap = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, UncertainCommand> _uncertainCommands = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ModbusDataValue> _latestValues = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<Action<ModbusDataValue>>> _subscriptions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, ushort> _holdingRegisterShadow = [];
@@ -41,6 +42,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     private ModbusRuntimeRole _shadowRole = ModbusRuntimeRole.Runtime;
     private Guid _shadowSessionId;
     private bool _shadowIsGood;
+    private TaskCompletionSource _observationChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Dictionary<ModbusRuntimeRole, ReadObservation> _readObservations = [];
     private readonly Dictionary<ModbusRuntimeRole, Guid> _sourceSessionIds = [];
     private readonly Dictionary<ModbusRuntimeRole, long> _sourceGenerations = [];
@@ -180,6 +182,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         Func<Task<ModbusOperationResult>> activate,
         CancellationToken cancellationToken)
     {
+        Task<ModbusOperationResult> acknowledgement;
         await _gate.WaitAsync(cancellationToken);
         try
         {
@@ -196,13 +199,14 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
                 // A map replacement must leave this address available until the falling edge finishes.
                 _activeAcknowledgement = address;
             }
-
-            return await activate();
+            acknowledgement = activate();
         }
         finally
         {
             _gate.Release();
         }
+
+        return await acknowledgement.ConfigureAwait(false);
     }
 
     internal void ReleaseAcknowledgementAddress(ModbusBitAddressOptions address)
@@ -365,163 +369,290 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
     public Task<ModbusOperationResult> SetAsync<T>(
         string name,
         T value,
-        CancellationToken ct = default) => SetAsync(name, value, pulse: null, ct);
+        CancellationToken ct = default) => SetAsync(name, value, null, false, false, null, null, ct);
 
     internal const string PulseMappingRejected = "ModbusPulseMappingRejected";
 
-    internal readonly record struct PulseTarget(ModbusRunMode Role, ModbusOptions RuntimeOptions);
+    internal readonly record struct PulseTarget(ModbusRunMode Role, ModbusOptions RuntimeOptions,
+        ModbusEndpointOptions Endpoint, long Generation, long SourceGeneration, Guid Session);
 
-    internal PulseTarget CapturePulseTarget() => new(WriteRole(ResolveWritableRole()), _runtimeService.CurrentOptions);
+    internal readonly record struct ResetFeedback(ModbusDataPointOptions Point, int StaleAfterMs);
+
+    private sealed record UncertainCommand(ModbusDataPointOptions Command, ResetFeedback Feedback,
+        PulseTarget OriginalTarget, long AfterSequence);
+
+    internal PulseTarget CapturePulseTarget()
+    {
+        lock (_sync)
+        {
+            var role = WriteRole(ResolveWritableRole());
+            var source = RuntimeRole(role);
+            var options = _runtimeService.CurrentOptions;
+            return new(role, options, GetEndpoint(options, source).Clone(), _dataGeneration,
+                _sourceGenerations.GetValueOrDefault(source), _sourceSessionIds.GetValueOrDefault(source));
+        }
+    }
+
+    internal Task<ModbusOperationResult> SetPriorityAsync(ModbusDataPointOptions point, object? value, CancellationToken ct) =>
+        SetAsync(point.Name, value, (point, CapturePulseTarget()), true, false, null, null, ct);
 
     internal Task<ModbusOperationResult> SetPulseEdgeAsync(
-        ModbusDataPointOptions point, PulseTarget target, bool value, CancellationToken ct) =>
-        SetAsync(point.Name, value, (point, target), ct);
+        ModbusDataPointOptions point, PulseTarget target, bool value, bool priority,
+        ResetFeedback? feedback, Action<ModbusWriteReceipt>? submitted, CancellationToken ct) =>
+        SetAsync(point.Name, value, (point, target), priority, true, feedback, submitted, ct);
 
     private async Task<ModbusOperationResult> SetAsync<T>(
-        string name, T value, (ModbusDataPointOptions Point, PulseTarget Target)? pulse, CancellationToken ct)
+        string name, T value, (ModbusDataPointOptions Point, PulseTarget Target)? expected,
+        bool priority, bool pulse, ResetFeedback? feedback, Action<ModbusWriteReceipt>? submitted, CancellationToken ct)
     {
-        ModbusDataPointOptions point;
+        var target = expected?.Target ?? CapturePulseTarget();
+        var source = RuntimeRole(target.Role);
+        var queuedAt = Stopwatch.GetTimestamp();
+        WriteConfirmationContext? confirmation = null;
         object expectedValue = false;
-        long shadowGeneration;
-        Guid shadowSession;
-        WriteConfirmationContext confirmation;
-        ModbusWriteReceipt? receipt = null;
-        await _gate.WaitAsync(ct);
+        Task<ModbusWriteReceipt>? pendingWrite = null;
+        ModbusDataPointOptions point = null!;
 
         try
         {
-            var role = WriteRole(ResolveWritableRole());
-            lock (_sync)
+            await _gate.WaitAsync(ct, priority).ConfigureAwait(false);
+            try
             {
-                if (!TryGetPoint(name, out point, out var pointFailure))
-                    return pulse is null ? pointFailure : RejectPulseMapping(pointFailure.ErrorMessage);
+                ct.ThrowIfCancellationRequested();
+                if (!TryGetPoint(name, out point, out var failure))
+                    return expected is null ? failure : RejectPulseMapping(failure.ErrorMessage);
+                if (!point.IsWritable)
+                    return ModbusOperationResult.Failure("ModbusDataPointNotWritable", $"Modbus data point '{name}' is not writable.");
+                if (target.Role == ModbusRunMode.None)
+                    return ModbusOperationResult.Failure("ModbusNotRunning", "Modbus client or server must be running before writing data.");
 
-                shadowGeneration = _dataGeneration;
-                shadowSession = _shadowSessionId;
-                var sourceRole = RuntimeRole(role);
-                var runtimeOptions = _runtimeService.CurrentOptions;
-                _readObservations.TryGetValue(sourceRole, out var previousRead);
-                confirmation = new(point.Clone(), sourceRole, runtimeOptions,
-                    (sourceRole == ModbusRuntimeRole.Client ? runtimeOptions.Client : runtimeOptions.Server).Clone(),
-                    _dataGeneration, _sourceGenerations.GetValueOrDefault(sourceRole),
-                    previousRead?.Source.GetReadState(point.Area).SuccessfulReadSequence ?? 0,
-                    previousRead?.Source.SourceSessionId ?? Guid.Empty, Math.Max(0, _currentOptions.WriteConfirmationTimeoutMs));
-
-                if (pulse is { } expected)
+                var writer = ShouldWriteThroughClient(target.Role)
+                    ? _clientService as IModbusObservedWriter
+                    : _serverService as IModbusObservedWriter;
+                if (writer is not null)
                 {
-                    var validation = ValidatePulseMapping(point, expected.Point, expected.Target, role);
-                    if (!validation.Succeeded)
-                        return validation;
-                }
-            }
-
-            if (!point.IsWritable)
-            {
-                return ModbusOperationResult.Failure(
-                    "ModbusDataPointNotWritable",
-                    $"Modbus data point '{point.Name}' is not writable.");
-            }
-
-            if (!TryBuildWritePayload(point, value, out var coilValue, out var registers, out expectedValue, out var payloadFailure))
-            {
-                return payloadFailure;
-            }
-
-            if (role == ModbusRunMode.None)
-            {
-                return ModbusOperationResult.Failure(
-                    "ModbusNotRunning",
-                    "Modbus client or server must be running before writing data.");
-            }
-
-            var pulseClient = pulse is not null && ShouldWriteThroughClient(role)
-                ? _clientService as ModbusClientService
-                : null;
-            var observedWriter = ShouldWriteThroughClient(role)
-                ? _clientService as IModbusObservedWriter
-                : _serverService as IModbusObservedWriter;
-            if (observedWriter is not null)
-            {
-                receipt = await observedWriter.WriteObservedAsync(point.Area, point.Address, coilValue, registers,
-                    pulse is not null, ct);
-            }
-            else if (point.Area == ModbusDataArea.Coil)
-            {
-                if (pulseClient is not null)
-                {
-                    await pulseClient.WritePulseCoilAsync(point.Address, coilValue, ct);
-                }
-                else if (ShouldWriteThroughClient(role))
-                {
-                    await _clientService.WriteCoilAsync(point.Address, coilValue, ct);
+                    // Enqueue while admitting the write, but await transport and readback after
+                    // releasing the facade. An urgent write can overtake a queued normal write.
+                    ModbusWriteAddress? response = feedback is { } reset && value is true
+                        ? new(reset.Point.Area, reset.Point.Address, reset.Point.BitIndex)
+                        : null;
+                    pendingWrite = writer.WriteObservedAsync(new(point.Area, point.Address, point.BitIndex), response,
+                        priority, pulse, ValidateBeforeRead, Prepare, Commit, ct);
                 }
                 else
                 {
-                    await _serverService.SetCoilAsync(point.Address, coilValue, ct);
-                }
-            }
-            else
-            {
-                if (registers.Length == 1)
-                {
-                    if (pulseClient is not null)
+                    var payload = Prepare(new(source, target.Session, 0), alreadyHigh: false);
+                    if (ShouldWriteThroughClient(target.Role))
                     {
-                        await pulseClient.WritePulseRegisterAsync(point.Address, registers[0], ct);
+                        if (point.Area == ModbusDataArea.Coil)
+                            await _clientService.WriteCoilAsync(point.Address, payload.Coil, ct).ConfigureAwait(false);
+                        else if (payload.Registers.Length == 1)
+                            await _clientService.WriteRegisterAsync(point.Address, payload.Registers[0], ct).ConfigureAwait(false);
+                        else
+                            await _clientService.WriteRegistersAsync(point.Address, payload.Registers, ct).ConfigureAwait(false);
                     }
-                    else if (ShouldWriteThroughClient(role))
-                    {
-                        await _clientService.WriteRegisterAsync(point.Address, registers[0], ct);
-                    }
+                    else if (point.Area == ModbusDataArea.Coil)
+                        await _serverService.SetCoilAsync(point.Address, payload.Coil, ct).ConfigureAwait(false);
+                    else if (payload.Registers.Length == 1)
+                        await _serverService.SetRegisterAsync(point.Address, payload.Registers[0], ct).ConfigureAwait(false);
                     else
-                    {
-                        await _serverService.SetRegisterAsync(point.Address, registers[0], ct);
-                    }
-                }
-                else if (ShouldWriteThroughClient(role))
-                {
-                    await _clientService.WriteRegistersAsync(point.Address, registers, ct);
-                }
-                else
-                {
-                    await _serverService.SetRegistersAsync(point.Address, registers, ct);
-                }
+                        await _serverService.SetRegistersAsync(point.Address, payload.Registers, ct).ConfigureAwait(false);
 
+                    Commit(payload);
+                }
             }
-
-            if (point.Area == ModbusDataArea.HoldingRegister)
+            finally
             {
-                lock (_sync)
-                {
-                    for (var index = 0; _shadowIsGood && shadowGeneration == _dataGeneration
-                        && shadowSession == _shadowSessionId && _shadowRole == RuntimeRole(role) && index < registers.Length; index++)
-                    {
-                        _holdingRegisterShadow[point.Address + index] = registers[index];
-                    }
-                }
+                _gate.Release();
             }
+
+            ModbusWriteReceipt? receipt = pendingWrite is null ? null : await pendingWrite.ConfigureAwait(false);
+            if (point.IsReadable && !(point.WriteMode == ModbusWriteMode.Pulse && expectedValue is true))
+                return await WaitForConfirmationAsync(confirmation!, receipt, expectedValue, ct).ConfigureAwait(false);
+            return ModbusOperationResult.Success();
+        }
+        catch (ModbusWriteNotSubmittedException ex)
+        {
+            return expected is null && ex.ErrorCode is { } code
+                ? ModbusOperationResult.Failure(code, ex.Message)
+                : RejectPulseMapping(ex.Message);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Failed to write Modbus data point {DataPoint}", name);
-            return ModbusOperationResult.Failure(
-                "ModbusWriteFailed",
-                $"Failed to write Modbus data point '{name}'.",
-                ex.Message);
-        }
-        finally
-        {
-            _gate.Release();
+            return ModbusOperationResult.Failure("ModbusWriteFailed", $"Failed to write Modbus data point '{name}'.", ex.Message);
         }
 
-        // A PLC may clear a pulse before the next poll. Transport acceptance is enough
-        // to schedule its reset; it does not confirm physical execution by the PLC.
-        var isPulseSet = point.WriteMode == ModbusWriteMode.Pulse && point.Type == ModbusValueType.Bool && expectedValue is true;
-        if (point.IsReadable && !isPulseSet)
+        void ValidateBeforeRead(Guid session)
         {
-            return await WaitForConfirmationAsync(confirmation, receipt, expectedValue, ct);
+            if (priority)
+                _logger.LogDebug("Modbus command {SignalId} waited {QueueMs:F1} ms for transport", name,
+                    Stopwatch.GetElapsedTime(queuedAt).TotalMilliseconds);
+            lock (_sync)
+            {
+                ValidateActiveTarget(session);
+                if (point.Type == ModbusValueType.Bool && point.BitIndex.HasValue
+                    && !_holdingRegisterShadow.ContainsKey(point.Address))
+                    throw new ModbusWriteNotSubmittedException(
+                        $"Holding register {point.Address} has no snapshot for bit write '{point.Name}'.",
+                        "ModbusRegisterShadowUnavailable");
+            }
         }
 
-        return ModbusOperationResult.Success();
+        void ValidateActiveTarget(Guid session)
+        {
+            if (!_dataMap.TryGetValue(name, out var active) || !point.HasSameMapping(active)
+                || (expected is { } captured && !point.HasSameMapping(captured.Point)))
+                throw new ModbusWriteNotSubmittedException($"Active mapping for Modbus signal '{name}' differs from Modbus.DataMap.");
+            if (!IsTargetCurrent(target) || (target.Session != Guid.Empty && target.Session != session))
+                throw new ModbusWriteNotSubmittedException($"The Modbus role, endpoint or session changed before writing '{name}'.");
+        }
+
+        ModbusWritePayload Prepare(ModbusWriteReceipt receipt, bool alreadyHigh)
+        {
+            ct.ThrowIfCancellationRequested();
+            lock (_sync)
+            {
+                ValidateActiveTarget(receipt.SourceSessionId);
+
+                if (pulse)
+                {
+                    var validation = ValidatePulseMapping(point, expected!.Value.Point, target, target.Role);
+                    if (!validation.Succeeded)
+                        throw new ModbusWriteNotSubmittedException(validation.ErrorMessage!);
+                }
+
+                if (value is true && _uncertainCommands.TryGetValue(name, out var uncertain))
+                {
+                    var staleAfter = uncertain.Feedback.StaleAfterMs;
+                    if (target.Role != uncertain.OriginalTarget.Role
+                        || !SameEndpoint(target.Endpoint, uncertain.OriginalTarget.Endpoint)
+                        || ReadFreshBool(target, uncertain.Command, staleAfter) is not { Value: false } oldCommand
+                        || ReadFreshBool(target, uncertain.Feedback.Point, staleAfter) is not { Value: false } oldResponse
+                        || oldCommand.Sequence <= uncertain.AfterSequence || oldResponse.Sequence <= uncertain.AfterSequence)
+                        throw new ModbusWriteNotSubmittedException("Состояние предыдущей команды неизвестно. Нужны свежие нули команды и ответа ПЛК.");
+                    _uncertainCommands.Remove(name);
+                }
+
+                if (feedback is { } reset && value is true)
+                {
+                    var feedbackProblem = ModbusResetFeedbackValidation.GetError(point.Name, reset.Point.Name, _currentOptions);
+                    if (feedbackProblem is not null)
+                        throw new ModbusWriteNotSubmittedException(feedbackProblem);
+                    if (!_dataMap.TryGetValue(reset.Point.Name, out var activeFeedback) || !reset.Point.HasSameMapping(activeFeedback))
+                        throw new ModbusWriteNotSubmittedException("Привязка ответа ПЛК изменилась перед отправкой команды.");
+
+                    if (receipt.SourceSessionId == Guid.Empty || receipt.Sequence <= 0 || alreadyHigh ||
+                        ReadFreshBool(target, reset.Point, reset.StaleAfterMs) is not { Value: false } ||
+                        ReadFreshBool(target, point, reset.StaleAfterMs) is not { Value: false })
+                        throw new ModbusWriteNotSubmittedException("Команда и ответ ПЛК должны иметь свежее достоверное значение 0 перед отправкой.");
+                }
+
+                if (!TryBuildWritePayload(point, value, out var coil, out var registers, out expectedValue, out var failure))
+                    throw new ModbusWriteNotSubmittedException(failure.ErrorMessage!, failure.ErrorCode);
+
+                _readObservations.TryGetValue(source, out var previousRead);
+                var timeout = Math.Max(0, _currentOptions.WriteConfirmationTimeoutMs);
+                if (feedback is not null && value is false && timeout == 0)
+                    timeout = 2000;
+                confirmation = new(point, source, target.RuntimeOptions, target.Endpoint, target.Generation,
+                    target.SourceGeneration, previousRead?.Source.GetReadState(point.Area).SuccessfulReadSequence ?? 0,
+                    previousRead?.Source.SourceSessionId ?? Guid.Empty, timeout);
+                submitted?.Invoke(receipt);
+                return new(coil, registers, point.BitIndex, expectedValue is true);
+            }
+        }
+
+        void Commit(ModbusWritePayload payload)
+        {
+            if (priority)
+                _logger.LogDebug("Modbus command {SignalId} wrote value {Value} after {ElapsedMs:F1} ms",
+                    name, value, Stopwatch.GetElapsedTime(queuedAt).TotalMilliseconds);
+            lock (_sync)
+            {
+                for (var index = 0; _shadowIsGood && IsTargetCurrent(target)
+                    && _shadowRole == source && index < payload.Registers.Length; index++)
+                    _holdingRegisterShadow[point.Address + index] = payload.Registers[index];
+            }
+        }
+    }
+
+    internal void MarkCommandUncertain(ModbusDataPointOptions command, ResetFeedback feedback, PulseTarget originalTarget)
+    {
+        lock (_sync)
+            _uncertainCommands[command.Name] = new(command.Clone(), feedback, originalTarget, ModbusObservationSequence.Next());
+    }
+
+    private bool IsTargetCurrent(PulseTarget target)
+    {
+        var source = RuntimeRole(target.Role);
+        var options = _runtimeService.CurrentOptions;
+        return target.Role != ModbusRunMode.None && target.Role == WriteRole(ResolveWritableRole())
+            && ReferenceEquals(options, target.RuntimeOptions) && SameEndpoint(GetEndpoint(options, source), target.Endpoint)
+            && target.Generation == _dataGeneration
+            && target.SourceGeneration == _sourceGenerations.GetValueOrDefault(source)
+            && (target.Session == Guid.Empty || target.Session == _sourceSessionIds.GetValueOrDefault(source));
+    }
+
+    private static ModbusEndpointOptions GetEndpoint(ModbusOptions options, ModbusRuntimeRole role) =>
+        role == ModbusRuntimeRole.Client ? options.Client : options.Server;
+
+    private (bool Value, long Sequence)? ReadFreshBool(PulseTarget target, ModbusDataPointOptions point, int staleAfterMs)
+    {
+        var source = RuntimeRole(target.Role);
+        if (!_readObservations.TryGetValue(source, out var read) || read.Generation != target.Generation
+            || read.Source.SourceSessionId != target.Session)
+            return null;
+
+        var area = read.Source.GetReadState(point.Area);
+        var age = DateTimeOffset.UtcNow - area.LastSuccessfulReadAt;
+        if (!area.IsGood || area.SuccessfulReadSequence <= 0 || age < TimeSpan.Zero
+            || age.TotalMilliseconds > staleAfterMs
+            || !TryDecodePoint(point, read.Source, out var data, out _) || data.Value is not bool value)
+            return null;
+
+        return (value, area.SuccessfulReadSequence);
+    }
+
+    internal async Task WaitForResetFeedbackAsync(PulseTarget target, ResetFeedback feedback, bool expected,
+        long afterSequence, int timeoutMs, CancellationToken cancellationToken)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeoutMs);
+        try
+        {
+            while (true)
+            {
+                deadline.Token.ThrowIfCancellationRequested();
+                Task updated;
+                lock (_sync)
+                {
+                    if (!IsTargetCurrent(target) || !_dataMap.TryGetValue(feedback.Point.Name, out var active)
+                        || !active.HasSameMapping(feedback.Point))
+                        throw new InvalidOperationException("Карта или сессия Modbus изменилась при ожидании ответа ПЛК.");
+                    if (ReadFreshBool(target, feedback.Point, feedback.StaleAfterMs) is { } read
+                        && read.Sequence > afterSequence && read.Value == expected)
+                    {
+                        _logger.LogDebug("PLC response {SignalId} became {Value}", feedback.Point.Name, expected);
+                        return;
+                    }
+
+                    updated = _observationChanged.Task;
+                }
+
+                await updated.WaitAsync(deadline.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException(expected ? "ПЛК не подтвердил приём команды." : "ПЛК не снял ответ после сброса команды.");
+        }
+    }
+
+    private void NotifyObservationChanged()
+    {
+        _observationChanged.TrySetResult();
+        _observationChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     private ModbusOperationResult ValidatePulseMapping(
@@ -601,7 +732,6 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         await _dataMapChangeGate.WaitAsync();
         try
         {
-            _gate.Dispose();
         }
         finally
         {
@@ -820,6 +950,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
             if (!_readObservations.TryGetValue(snapshot.Role, out var previous)
                 || snapshot.ReadSequence == 0 || snapshot.ReadSequence >= previous.Source.ReadSequence)
                 _readObservations[snapshot.Role] = new(snapshot, cycleValues, generation);
+            NotifyObservationChanged();
         }
         PublishDataSnapshot(cycleValues, snapshot, generation);
     }
@@ -833,6 +964,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
         {
             _dataMap.Clear();
             _dataGeneration++;
+            NotifyObservationChanged();
             _snapshotReadNotBefore = ModbusObservationSequence.Next();
             _holdingRegisterShadow.Clear();
             _shadowIsGood = false;
@@ -1211,6 +1343,7 @@ internal sealed class ModbusTcpService : IModbusTcpService, IModbusDataSnapshotS
                 _holdingRegisterShadow.Clear();
                 _shadowIsGood = false;
                 _currentDataSnapshot = ModbusDataSnapshot.Empty with { PublicationSequence = ModbusObservationSequence.Next() };
+                NotifyObservationChanged();
             }
             _state = state;
             _currentDataSnapshot = _currentDataSnapshot with { State = state };

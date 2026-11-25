@@ -19,7 +19,7 @@ public sealed class TopBarViewModel : ViewModelBase
     private readonly Action<string>? _commandErrorHandler;
     private readonly Action? _commandSuccessHandler;
     private readonly bool _isAdminMode;
-    private readonly Func<SignalBinding, string?>? _getMappingError;
+    private readonly Func<SignalBinding, SignalBinding?, string?>? _getMappingError;
     private readonly Func<SignalWriteRequest, CancellationToken, Task<bool>>? _tryDispatchAdminCommand;
     private readonly AdminCommandState _unload = new(SignalBindingRole.UnloadCommand);
     private readonly AdminCommandState _rotation = new(SignalBindingRole.RotationCommand);
@@ -66,7 +66,7 @@ public sealed class TopBarViewModel : ViewModelBase
         IHelpDialogService? helpDialogService = null,
         Action<string>? commandErrorHandler = null,
         Action? commandSuccessHandler = null,
-        Func<SignalBinding, string?>? getMappingError = null,
+        Func<SignalBinding, SignalBinding?, string?>? getMappingError = null,
         Func<SignalWriteRequest, CancellationToken, Task<bool>>? tryDispatchAdminCommand = null)
     {
         _commandDispatcher = commandDispatcher;
@@ -372,7 +372,7 @@ public sealed class TopBarViewModel : ViewModelBase
             if (!command.Runtime.CanExecute || !ReferenceEquals(command.Settings, settings) || cancellationToken.IsCancellationRequested)
                 return;
 
-            var mappingError = _getMappingError?.Invoke(binding);
+            var mappingError = _getMappingError?.Invoke(binding, settings.ResetFeedbackBinding);
             if (mappingError is not null)
             {
                 if (command.MappingError != mappingError)
@@ -387,6 +387,8 @@ public sealed class TopBarViewModel : ViewModelBase
             var request = new SignalWriteRequest(binding.SignalId, true, binding.ValueType)
             {
                 RequiredWriteMode = ModbusWriteMode.Pulse,
+                IsPriority = true,
+                ResetFeedbackSignalId = settings.ResetFeedbackBinding?.SignalId,
             };
             if (_tryDispatchAdminCommand is null)
                 await _commandDispatcher.DispatchAsync(request, cancellationToken);
@@ -423,7 +425,8 @@ public sealed class TopBarViewModel : ViewModelBase
 
     private void ApplyAdminCommandSettings(AdminCommandState command, RouteTopBarButtonSettings? settings)
     {
-        if (command.Settings?.Binding != settings?.Binding || command.Settings?.EnabledBinding != settings?.EnabledBinding)
+        if (command.Settings?.Binding != settings?.Binding || command.Settings?.EnabledBinding != settings?.EnabledBinding
+            || command.Settings?.ResetFeedbackBinding != settings?.ResetFeedbackBinding)
             command.Runtime = default;
 
         command.Settings = settings;
@@ -441,7 +444,7 @@ public sealed class TopBarViewModel : ViewModelBase
 
     private string? GetAdminCommandMappingError(AdminCommandState command) =>
         _isAdminMode && command.Settings?.GetMomentaryCommandBinding(command.Role) is { } binding
-            ? _getMappingError?.Invoke(binding)
+            ? _getMappingError?.Invoke(binding, command.Settings.ResetFeedbackBinding)
             : null;
 
     private void RaiseAdminCommandRuntimeProperties()
@@ -507,6 +510,7 @@ public sealed class TopBarViewModel : ViewModelBase
         return _commandDispatcher.DispatchAsync(new SignalWriteRequest(binding.SignalId, value, binding.ValueType)
         {
             RequiredWriteMode = requiredWriteMode,
+            IsPriority = binding.Role == SignalBindingRole.EmergencyCommand,
         });
     }
 

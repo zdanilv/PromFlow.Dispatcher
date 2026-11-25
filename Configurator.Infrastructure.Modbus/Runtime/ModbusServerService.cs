@@ -17,7 +17,7 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
 {
     private readonly ILogger<ModbusServerService> _logger;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
-    private readonly SemaphoreSlim _ioGate = new(1, 1);
+    private readonly ModbusPriorityGate _ioGate = new();
     private CancellationTokenSource? _loopCancellation;
     private Task? _loopTask;
     private ModbusServer? _server;
@@ -26,6 +26,11 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
     private ModbusConnectionState _state = ModbusConnectionState.Stopped;
     private ModbusSnapshot _snapshot = ModbusSnapshot.Empty;
     private Guid _sourceSessionId;
+
+    private static bool ReadObservedBit(DataStore store, ModbusWriteAddress address) =>
+        address.Area == ModbusDataArea.Coil
+            ? store.CoilDiscretes[address.Offset + 1]
+            : (store.HoldingRegisters[address.Offset + 1] & (1 << address.BitIndex!.Value)) != 0;
 
     /// <summary>
     /// Создает серверный сервис.
@@ -334,18 +339,80 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
     }
 
     async Task<ModbusWriteReceipt> IModbusObservedWriter.WriteObservedAsync(
-        ModbusDataArea area, int address, bool coilValue, ushort[] registers,
-        bool pulse, CancellationToken cancellationToken)
+        ModbusWriteAddress target, ModbusWriteAddress? feedback, bool priority, bool pulse,
+        Action<Guid> validateBeforeRead, Func<ModbusWriteReceipt, bool, ModbusWritePayload> prepare,
+        Action<ModbusWritePayload> committed, CancellationToken cancellationToken)
     {
-        ModbusWriteReceipt receipt = default;
-        void Observe(ModbusWriteReceipt value) => receipt = value;
-        if (area == ModbusDataArea.Coil)
-            await SetCoilAsync(address, coilValue, cancellationToken, Observe);
-        else if (registers.Length == 1)
-            await SetRegisterAsync(address, registers[0], cancellationToken, Observe);
-        else
-            await SetRegistersAsync(address, registers, cancellationToken, Observe);
-        return receipt;
+        await _ioGate.WaitAsync(cancellationToken, priority).ConfigureAwait(false);
+        try
+        {
+            await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+            validateBeforeRead(_sourceSessionId);
+            var dataStore = EnsureServer().DataStore!;
+            var receipt = new ModbusWriteReceipt(ModbusRuntimeRole.Server, _sourceSessionId, ModbusObservationSequence.Next());
+            var syncTaken = false;
+            var writeLockTaken = false;
+            ModbusWritePayload payload;
+            try
+            {
+                while (!syncTaken)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    Monitor.TryEnter(dataStore.SyncRoot, 25, ref syncTaken);
+                }
+
+                while (!writeLockTaken)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    writeLockTaken = dataStore.Lock.TryEnterWriteLock(25);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                var alreadyHigh = feedback is { } response &&
+                    (ReadObservedBit(dataStore, target) || ReadObservedBit(dataStore, response));
+                payload = prepare(receipt, alreadyHigh);
+                var (area, address, _) = target;
+                if (area == ModbusDataArea.Coil)
+                {
+                    ValidateAddress(address, _options.CoilCount, "Coil");
+                    dataStore.CoilDiscretes[address + 1] = payload.Coil;
+                }
+                else
+                {
+                    ValidateRange(address, payload.Registers.Length, _options.RegisterCount, "Register");
+                    if (payload.BitIndex is { } bitIndex)
+                    {
+                        var current = dataStore.HoldingRegisters[address + 1];
+                        var mask = 1 << bitIndex;
+                        payload.Registers[0] = (ushort)(payload.BitValue ? current | mask : current & ~mask);
+                    }
+
+                    for (var index = 0; index < payload.Registers.Length; index++)
+                        dataStore.HoldingRegisters[address + index + 1] = payload.Registers[index];
+                }
+            }
+            finally
+            {
+                if (writeLockTaken)
+                    dataStore.Lock.ExitWriteLock();
+                if (syncTaken)
+                    Monitor.Exit(dataStore.SyncRoot);
+            }
+
+            committed(payload);
+            var message = target.Area == ModbusDataArea.Coil
+                ? $"Сервер установил Coil[{target.Offset}]={payload.Coil}"
+                : payload.Registers.Length == 1
+                    ? $"Сервер установил Register[{target.Offset}]={payload.Registers[0]}"
+                    : $"Сервер установил Registers[{target.Offset}..{target.Offset + payload.Registers.Length - 1}]";
+            PublishStatus(ModbusConnectionState.Running, message);
+            PublishSnapshotCore();
+            return receipt;
+        }
+        finally
+        {
+            _ioGate.Release();
+        }
     }
 
     /// <summary>
@@ -355,7 +422,6 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
     {
         await StopAsync();
         _lifecycleGate.Dispose();
-        _ioGate.Dispose();
     }
 
     private async Task PublishSnapshotsAsync(CancellationToken cancellationToken)
@@ -384,49 +450,54 @@ internal sealed class ModbusServerService : IModbusServerService, IModbusBitPuls
 
         try
         {
-            var server = EnsureServer();
-            var dataStore = server.DataStore
-                ?? throw new InvalidOperationException("Карта данных сервера не инициализирована.");
-            var coils = new bool[_options.CoilCount];
-            var registers = new ushort[_options.RegisterCount];
-            var coilsSequence = ModbusObservationSequence.Next();
-
-            for (var address = 0; address < coils.Length; address++)
-            {
-                coils[address] = dataStore.CoilDiscretes[address + 1];
-            }
-
-            for (var address = 0; address < registers.Length; address++)
-            {
-                registers[address] = dataStore.HoldingRegisters[address + 1];
-            }
-
-            var readAt = DateTimeOffset.Now;
-
-            var snapshot = new ModbusSnapshot
-            {
-                Role = ModbusRuntimeRole.Server,
-                SourceSessionId = _sourceSessionId,
-                ReadSequence = coilsSequence,
-                CoilsReadState = coils.Length > 0
-                    ? new(true, true, true, readAt, coilsSequence)
-                    : ModbusAreaReadState.Unavailable(false),
-                HoldingRegistersReadState = registers.Length > 0
-                    ? new(true, true, true, readAt, coilsSequence)
-                    : ModbusAreaReadState.Unavailable(false),
-                Coils = coils,
-                HoldingRegisters = registers,
-                DecodedRegisters = ModbusRegistersCodec.Decode(registers),
-                Timestamp = readAt
-            };
-
-            _snapshot = snapshot;
-            SnapshotChanged?.Invoke(this, snapshot);
+            PublishSnapshotCore();
         }
         finally
         {
             _ioGate.Release();
         }
+    }
+
+    private void PublishSnapshotCore()
+    {
+        var server = EnsureServer();
+        var dataStore = server.DataStore
+            ?? throw new InvalidOperationException("Карта данных сервера не инициализирована.");
+        var coils = new bool[_options.CoilCount];
+        var registers = new ushort[_options.RegisterCount];
+        var coilsSequence = ModbusObservationSequence.Next();
+
+        for (var address = 0; address < coils.Length; address++)
+        {
+            coils[address] = dataStore.CoilDiscretes[address + 1];
+        }
+
+        for (var address = 0; address < registers.Length; address++)
+        {
+            registers[address] = dataStore.HoldingRegisters[address + 1];
+        }
+
+        var readAt = DateTimeOffset.Now;
+
+        var snapshot = new ModbusSnapshot
+        {
+            Role = ModbusRuntimeRole.Server,
+            SourceSessionId = _sourceSessionId,
+            ReadSequence = coilsSequence,
+            CoilsReadState = coils.Length > 0
+                ? new(true, true, true, readAt, coilsSequence)
+                : ModbusAreaReadState.Unavailable(false),
+            HoldingRegistersReadState = registers.Length > 0
+                ? new(true, true, true, readAt, coilsSequence)
+                : ModbusAreaReadState.Unavailable(false),
+            Coils = coils,
+            HoldingRegisters = registers,
+            DecodedRegisters = ModbusRegistersCodec.Decode(registers),
+            Timestamp = readAt
+        };
+
+        _snapshot = snapshot;
+        SnapshotChanged?.Invoke(this, snapshot);
     }
 
     private async Task StopCoreAsync()

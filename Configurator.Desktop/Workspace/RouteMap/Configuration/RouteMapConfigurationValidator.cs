@@ -239,6 +239,9 @@ public sealed class RouteMapConfigurationValidator
                 cardAllowedRoles.Add(SignalBindingRole.UncheckedCommand);
                 cardAllowedRoles.Add(SignalBindingRole.CheckedCommand);
             }
+            if (card.StartButtonKind == RouteCommandButtonKind.Momentary &&
+                card.Bindings.Any(binding => binding.Role == SignalBindingRole.StartCommand))
+                cardAllowedRoles.Add(SignalBindingRole.CommandResetFeedback);
             ValidateBindings(errors, "card", card.Id, card.Bindings, cardAllowedRoles);
             ValidateCardStatusMapping(errors, card);
             ValidateCardParameters(errors, card);
@@ -427,7 +430,7 @@ public sealed class RouteMapConfigurationValidator
                 if (binding.ValueType != Configurator.Application.Services.Signals.SignalValueType.Bool)
                     Add(errors, scope, objectId, nameof(SignalBindingConfiguration.ValueType), $"Binding {binding.Role} must use Bool value type.");
             }
-            if (binding.Role is SignalBindingRole.Enabled or SignalBindingRole.PowerFeedback)
+            if (binding.Role is SignalBindingRole.Enabled or SignalBindingRole.PowerFeedback or SignalBindingRole.CommandResetFeedback)
             {
                 if (binding.Direction != SignalBindingDirection.Read)
                     Add(errors, scope, objectId, nameof(SignalBindingConfiguration.Direction), $"Binding {binding.Role} должен иметь направление Read.");
@@ -470,7 +473,7 @@ public sealed class RouteMapConfigurationValidator
             ("load", topBar.Load, SignalBindingRole.LoadCommand),
         };
         foreach (var (id, button, role) in commandSections)
-            ValidateTopBarButton(errors, id, button, role, offFeedbackRole: null, requireOffFeedback: false);
+            ValidateTopBarButton(errors, id, button, role, offFeedbackRole: SignalBindingRole.CommandResetFeedback, requireOffFeedback: false);
 
         var commandBindings = commandSections.SelectMany(section => (section.Button?.Bindings ?? [])
             .Where(binding => binding is not null && binding.Role == section.Role)
@@ -505,6 +508,22 @@ public sealed class RouteMapConfigurationValidator
             foreach (var id in sections)
                 Add(errors, "topBar", id, nameof(SignalBindingConfiguration.SignalId),
                     $"SignalId '{group.Key}' зарезервирован для другой команды или используется другой привязкой с записью.");
+        }
+
+        writableSignalIds.UnionWith(commandBindings.Select(command => command.Binding.SignalId));
+        var resetFeedback = commandSections.SelectMany(section => (section.Button?.Bindings ?? [])
+                .Select(binding => (Scope: "topBar", section.Id, Binding: binding)))
+            .Concat(document.Cards.SelectMany(card => card.Bindings.Select(binding => (Scope: "card", card.Id, Binding: binding))))
+            .Where(item => item.Binding?.Role == SignalBindingRole.CommandResetFeedback)
+            .GroupBy(item => item.Binding.SignalId, StringComparer.OrdinalIgnoreCase);
+        foreach (var group in resetFeedback)
+        {
+            if (group.Count() == 1 && !writableSignalIds.Contains(group.Key))
+                continue;
+
+            foreach (var item in group)
+                Add(errors, item.Scope, item.Id, nameof(SignalBindingConfiguration.SignalId),
+                    $"Ответ ПЛК '{group.Key}' должен иметь отдельный SignalId для каждой команды.");
         }
     }
 

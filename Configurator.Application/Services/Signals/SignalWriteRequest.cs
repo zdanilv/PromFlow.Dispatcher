@@ -8,4 +8,6 @@ public sealed record SignalWriteRequest(
     SignalValueType ValueType)
 {
     public ModbusWriteMode? RequiredWriteMode { get; init; }
+    public bool IsPriority { get; init; }
+    public string? ResetFeedbackSignalId { get; init; }
 }

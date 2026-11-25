@@ -281,6 +281,8 @@
 							  IsEnabled="{Binding CanStop}"/>
 			</Grid>
 			<StackPanel Grid.Row="4" Grid.ColumnSpan="3">
+				<TextBlock Text="{Binding StartConfigurationError}" IsVisible="{Binding HasStartConfigurationError}"
+				           TextWrapping="Wrap" Foreground="#D10000"/>
 				<TextBlock Text="ПУСК: выполняется" FontSize="12" IsVisible="{Binding IsStartBusy}"/>
 				<TextBlock Text="СТОП: ожидание подтверждения" FontSize="12" IsVisible="{Binding IsStopPending}"/>
 				<TextBlock x:Name="CommandErrorText" Text="{Binding CommandErrorMessage}" Foreground="#D10000"

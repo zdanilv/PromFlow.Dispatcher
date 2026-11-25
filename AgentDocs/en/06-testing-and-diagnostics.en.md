@@ -43,6 +43,7 @@ commands to a real PLC.
 |---|---|---|
 | Power Good false/true; Bad/Stale/offline; input/snapshot | Red/green/neutral PowerStandby; zero writes | `RouteMapRuntimeMapperTests`, `EquipmentCardViewModelTests`, UI |
 | Start click/double click/timeout/cancellation | One bounded `true→false` Pulse; Stop unchanged; error visible | Unit, `RouteMapModbusAdapterTests`, loopback |
+| Command priority and PLC feedback | Priority FIFO before queued polling or writes, early release, timeout and no replay in Client/Server/Both | `ModbusPriorityCommandTests.cs`, `ModbusWriteConfirmationTests.cs`, Route Map settings UI |
 | Stop checked/unchecked/external readback | Stop-only Latched true/false; readback causes no write | Unit and loopback |
 | user/admin TopBar and settings | Auto/Manual hidden with no reserved gap; Reset/Emergency available | `RouteMapSettingsDialogVisualTests` |
 | v16 and older JSON, repeated migration/save | schema v17, historical fields inert, other settings preserved | `RouteMapConfigurationTests` |

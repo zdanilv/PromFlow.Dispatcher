@@ -23,7 +23,7 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
     private readonly Func<ModbusEndpointOptions, CancellationToken, Task<TcpClient>> _connectTcpClientAsync;
     private readonly TimeSpan? _connectTimeoutOverride;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
-    private readonly SemaphoreSlim _ioGate = new(1, 1);
+    private readonly ModbusPriorityGate _ioGate = new();
     private CancellationTokenSource? _loopCancellation;
     private Task? _loopTask;
     private TcpClient? _socket;
@@ -337,18 +337,71 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
     }
 
     async Task<ModbusWriteReceipt> IModbusObservedWriter.WriteObservedAsync(
-        ModbusDataArea area, int address, bool coilValue, ushort[] registers,
-        bool pulse, CancellationToken cancellationToken)
+        ModbusWriteAddress address, ModbusWriteAddress? feedback, bool priority, bool pulse,
+        Action<Guid> validateBeforeRead, Func<ModbusWriteReceipt, bool, ModbusWritePayload> prepare,
+        Action<ModbusWritePayload> committed, CancellationToken cancellationToken)
     {
         ModbusWriteReceipt receipt = default;
-        void Observe(ModbusWriteReceipt value) => receipt = value;
-        if (area == ModbusDataArea.Coil)
-            await WriteCoilAsync(address, coilValue, cancellationToken, pulse, Observe);
-        else if (registers.Length == 1)
-            await WriteRegisterAsync(address, registers[0], cancellationToken, pulse, Observe);
-        else
-            await WriteRegistersAsync(address, registers, cancellationToken, Observe);
+        ModbusWritePayload payload = default;
+        ushort? liveWord = null;
+        var alreadyHigh = false;
+        var (area, offset, bitIndex) = address;
+        await ExecuteWriteAsync(async reader =>
+        {
+            if (area == ModbusDataArea.Coil)
+                await reader.WriteCoilAsync(_options.CoilStartAddress + offset, payload.Coil).ConfigureAwait(false);
+            else if (payload.Registers.Length == 1)
+                await reader.WriteRegisterAsync(_options.HoldingRegisterStartAddress + offset, payload.Registers[0]).ConfigureAwait(false);
+            else
+                await reader.WriteRegistersAsync(_options.HoldingRegisterStartAddress + offset, payload.Registers).ConfigureAwait(false);
+            committed(payload);
+        }, $"Клиент записал {area}[{offset}]", area.ToString(), cancellationToken,
+            pulse: pulse || priority, observe: value =>
+            {
+                payload = prepare(value, alreadyHigh);
+                if (area == ModbusDataArea.HoldingRegister)
+                    ValidateRange(offset, payload.Registers.Length, _options.RegisterCount, "Register");
+                if (liveWord is { } word && bitIndex is { } bit)
+                {
+                    var mask = 1 << bit;
+                    payload.Registers[0] = (ushort)(payload.BitValue ? word | mask : word & ~mask);
+                }
+                receipt = value;
+            }, priority: priority, refreshAfterWrite: !pulse, beforeSubmit: async reader =>
+            {
+                validateBeforeRead(_sourceSessionId);
+                ValidateObservedAddress(address);
+                if (bitIndex is not null)
+                    liveWord = (await reader.ReadHoldingRegistersAsync(_options.HoldingRegisterStartAddress + offset, 1)
+                        .ConfigureAwait(false))[0];
+                if (feedback is { } response)
+                {
+                    ValidateObservedAddress(response);
+                    var commandHigh = bitIndex is { } commandBit
+                        ? (liveWord!.Value & (1 << commandBit)) != 0
+                        : await ReadObservedBitAsync(reader, address).ConfigureAwait(false);
+                    alreadyHigh = commandHigh || await ReadObservedBitAsync(reader, response).ConfigureAwait(false);
+                }
+            }).ConfigureAwait(false);
         return receipt;
+    }
+
+    private void ValidateObservedAddress(ModbusWriteAddress address)
+    {
+        var enabled = address.Area == ModbusDataArea.Coil ? _options.CoilsEnabled : _options.HoldingRegistersEnabled;
+        var count = address.Area == ModbusDataArea.Coil ? _options.CoilCount : _options.RegisterCount;
+        if (!enabled || address.Offset < 0 || address.Offset >= count)
+            throw new ModbusWriteNotSubmittedException($"Modbus client address {address.Area}[{address.Offset}] is unavailable.");
+    }
+
+    private async Task<bool> ReadObservedBitAsync(ModbusClientDataReader reader, ModbusWriteAddress address)
+    {
+        if (address.Area == ModbusDataArea.Coil)
+            return (await reader.ReadCoilsAsync(_options.CoilStartAddress + address.Offset, 1).ConfigureAwait(false))[0];
+
+        var word = (await reader.ReadHoldingRegistersAsync(_options.HoldingRegisterStartAddress + address.Offset, 1)
+            .ConfigureAwait(false))[0];
+        return (word & (1 << address.BitIndex!.Value)) != 0;
     }
 
     /// <summary>
@@ -358,7 +411,6 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
     {
         await StopAsync();
         _lifecycleGate.Dispose();
-        _ioGate.Dispose();
     }
 
     private async Task ConnectAndPollAsync(CancellationToken cancellationToken)
@@ -491,7 +543,8 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
         string failureArea,
         CancellationToken cancellationToken,
         bool pulse = false,
-        Action<ModbusWriteReceipt>? observe = null)
+        Action<ModbusWriteReceipt>? observe = null, bool priority = false, bool? refreshAfterWrite = null,
+        Func<ModbusClientDataReader, Task>? beforeSubmit = null)
     {
         var written = false;
         var reconnect = false;
@@ -503,11 +556,17 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
         // Запись и polling используют один master, поэтому проходят через общий I/O gate.
         try
         {
-            await _ioGate.WaitAsync(pulseDeadline?.Token ?? cancellationToken);
+            await _ioGate.WaitAsync(pulseDeadline?.Token ?? cancellationToken, priority).ConfigureAwait(false);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && pulse)
         {
             throw new TimeoutException("Timed out waiting for the Modbus client to send a pulse edge.", ex);
+        }
+
+        if ((pulseDeadline?.Token ?? cancellationToken).IsCancellationRequested)
+        {
+            _ioGate.Release();
+            throw new ModbusWriteNotSubmittedException("Modbus write cancelled before transport submission.");
         }
 
         try
@@ -515,8 +574,11 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
             var reader = EnsureReader();
             if (pulseDeadline is null)
             {
+                if (beforeSubmit is not null)
+                    await beforeSubmit(reader).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
                 observe?.Invoke(new(ModbusRuntimeRole.Client, _sourceSessionId, ModbusObservationSequence.Next()));
-                await write(reader);
+                await write(reader).ConfigureAwait(false);
             }
             else
             {
@@ -538,9 +600,11 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
                     {
                         try
                         {
+                            if (beforeSubmit is not null)
+                                await beforeSubmit(reader).ConfigureAwait(false);
                             pulseDeadline.Token.ThrowIfCancellationRequested();
                             observe?.Invoke(new(ModbusRuntimeRole.Client, _sourceSessionId, ModbusObservationSequence.Next()));
-                            await write(reader);
+                            await write(reader).ConfigureAwait(false);
                         }
                         catch (Exception ex) when (pulseDeadline.IsCancellationRequested)
                         {
@@ -560,6 +624,10 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
             }
             written = true;
             PublishStatus(ModbusConnectionState.Running, successMessage);
+        }
+        catch (ModbusWriteNotSubmittedException)
+        {
+            throw;
         }
         catch (OperationCanceledException) when (pulse)
         {
@@ -602,7 +670,7 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
 
         // Pulse edges leave snapshots to the normal polling loop. In particular, starting
         // the hold interval must not wait for an unrelated read after the rising edge.
-        if (written && !pulse)
+        if (written && (refreshAfterWrite ?? !pulse))
         {
             await ReadAndPublishAsync(cancellationToken);
         }
@@ -773,7 +841,7 @@ internal sealed class ModbusClientService : IModbusClientService, IModbusBitPuls
         {
             await ResetConnectionAsync(CancellationToken.None);
         }
-        else if (_ioGate.Wait(0))
+        else if (_ioGate.TryEnter())
         {
             try
             {

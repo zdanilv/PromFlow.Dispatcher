@@ -29,7 +29,8 @@ internal sealed record RouteMapSignalInventoryItem(
     int? PreferredBitIndex = null,
     bool RequiresLatchedWriteMode = false,
     bool RequiresPulseWriteMode = false,
-    bool RequiresExplicitPulseMapping = false);
+    bool RequiresExplicitPulseMapping = false,
+    bool IsResetFeedback = false);
 
 internal static class RouteMapSignalInventory
 {
@@ -92,7 +93,8 @@ internal static class RouteMapSignalInventory
                     RequiresLatchedWriteMode: requiresLatchedWriteMode,
                     RequiresPulseWriteMode: requiresPulseWriteMode,
                     RequiresExplicitPulseMapping: group.Any(item => item.Category == RouteMapSignalElementCategory.TopBar
-                        && item.Binding.Role is SignalBindingRole.UnloadCommand or SignalBindingRole.RotationCommand or SignalBindingRole.LoadCommand));
+                        && item.Binding.Role is SignalBindingRole.UnloadCommand or SignalBindingRole.RotationCommand or SignalBindingRole.LoadCommand),
+                    IsResetFeedback: group.Any(item => item.Binding.Role == SignalBindingRole.CommandResetFeedback));
             })
             .OrderBy(item => item.SignalId, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -156,6 +158,8 @@ internal static class RouteMapSignalInventory
                 yield return ($"TopBar.{name}", RouteMapSignalElementCategory.TopBar, button.Binding, pulse);
                 if (button.EnabledBinding is { } enabled)
                     yield return ($"TopBar.{name}", RouteMapSignalElementCategory.TopBar, enabled, false);
+                if (button.ResetFeedbackBinding is { } feedback)
+                    yield return ($"TopBar.{name}", RouteMapSignalElementCategory.TopBar, feedback, false);
             }
         }
 

@@ -1865,7 +1865,7 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             var text = border.GetVisualDescendants().OfType<TextBox>().Single(input => input.Classes.Contains("form"));
             text.SetCurrentValue(TextBox.TextProperty, $"Настройка {section}");
             var editor = border.GetVisualDescendants().OfType<SignalBindingsEditor>().Single();
-            Assert.Equal(new[] { role, SignalBindingRole.Enabled }, editor.AllowedRoles.Cast<SignalBindingRole>());
+            Assert.Equal(new[] { role, SignalBindingRole.Enabled, SignalBindingRole.CommandResetFeedback }, editor.AllowedRoles.Cast<SignalBindingRole>());
             Grid BindingRow(SignalBindingRole bindingRole) => editor.GetVisualDescendants().OfType<Grid>()
                 .Single(row => row.Classes.Contains("signal-binding-row") &&
                     row.DataContext is SignalBindingConfiguration binding && binding.Role == bindingRole);
@@ -1889,6 +1889,19 @@ public sealed partial class RouteMapSettingsDialogVisualTests
             Assert.Equal($"site.permissive.{section}",
                 Assert.Single(button.Bindings, binding => binding.Role == SignalBindingRole.Enabled).SignalId);
 
+            var addReset = border.GetVisualDescendants().OfType<Button>()
+                .Single(item => Equals(item.CommandParameter, $"{section}-reset-feedback"));
+            addReset.Command!.Execute(addReset.CommandParameter);
+            Dispatcher.UIThread.RunJobs();
+            var resetRow = BindingRow(SignalBindingRole.CommandResetFeedback);
+            var resetId = resetRow.Children.OfType<TextBox>().Single();
+            Assert.Equal($"{commandId}.reset", resetId.Text);
+            resetId.SetCurrentValue(TextBox.TextProperty, $"site.reset.{section}");
+            var reset = Assert.Single(button.Bindings, binding => binding.Role == SignalBindingRole.CommandResetFeedback);
+            Assert.Equal(($"site.reset.{section}", SignalBindingDirection.Read, SignalValueType.Bool),
+                (reset.SignalId, reset.Direction, reset.ValueType));
+            var removeReset = resetRow.Children.OfType<Button>().Single();
+            removeReset.Command!.Execute(removeReset.CommandParameter);
             var remove = enabledRow.Children.OfType<Button>().Single();
             remove.Command!.Execute(remove.CommandParameter);
             Assert.Equal(role, Assert.Single(button.Bindings).Role);
@@ -1906,6 +1919,34 @@ public sealed partial class RouteMapSettingsDialogVisualTests
         using var reopened = new RouteMapSettingsViewModel(fixture.Manager, storage, new NullFilePicker());
         Assert.Equal("ВЫГРУЗКА", reopened.Draft.TopBar.Unload.Text);
         Assert.Equal("system.command.unload", Assert.Single(reopened.Draft.TopBar.Unload.Bindings).SignalId);
+    }
+
+    [AvaloniaFact]
+    public void Equipment_settings_add_edit_and_remove_start_response()
+    {
+        using var fixture = new DialogFixture(1320, 780);
+        fixture.SelectTab(5);
+        var card = fixture.ViewModel.Draft.Cards.Single(item => item.Id == "equip.bucket");
+        fixture.ViewModel.SelectedCard = card;
+        Dispatcher.UIThread.RunJobs();
+
+        var add = fixture.Dialog.GetVisualDescendants().OfType<Button>()
+            .Single(item => Equals(item.CommandParameter, "card-reset-feedback"));
+        Assert.True(add.IsVisible);
+        add.Command!.Execute(add.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        var response = Assert.Single(card.Bindings, item => item.Role == SignalBindingRole.CommandResetFeedback);
+        var row = fixture.Dialog.GetVisualDescendants().OfType<Grid>()
+            .Single(grid => grid.Classes.Contains("signal-binding-row") && ReferenceEquals(grid.DataContext, response));
+        var id = Assert.Single(row.Children.OfType<TextBox>());
+        Assert.Equal("equip.bucket.start.reset", id.Text);
+        id.SetCurrentValue(TextBox.TextProperty, "site.bucket.response");
+        Assert.Equal(("site.bucket.response", SignalBindingDirection.Read, SignalValueType.Bool),
+            (response.SignalId, response.Direction, response.ValueType));
+
+        var remove = Assert.Single(row.Children.OfType<Button>());
+        remove.Command!.Execute(remove.CommandParameter);
+        Assert.DoesNotContain(card.Bindings, item => item.Role == SignalBindingRole.CommandResetFeedback);
     }
 
     [AvaloniaFact]

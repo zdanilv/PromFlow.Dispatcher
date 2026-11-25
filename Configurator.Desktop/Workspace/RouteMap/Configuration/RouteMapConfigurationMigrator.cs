@@ -146,6 +146,13 @@ public sealed class RouteMapConfigurationMigrator
                     document.SchemaVersion = 22;
                     wasMigrated = true;
                     break;
+                case 22:
+                    // Reset feedback is opt-in. Preserve existing command behavior and extension data.
+                    document.TopBar ??= RouteTopBarConfiguration.CreateDefault();
+                    document.TopBar.EnsureCommandSections();
+                    document.SchemaVersion = 23;
+                    wasMigrated = true;
+                    break;
                 default:
                     throw new InvalidDataException($"Неизвестный шаг миграции RouteMap schemaVersion={document.SchemaVersion}.");
             }

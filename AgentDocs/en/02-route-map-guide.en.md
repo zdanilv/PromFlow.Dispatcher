@@ -26,11 +26,11 @@ admin mode is preserved for the next user-mode launch.
 
 ## Definition And Schema
 
-The current user profile uses schema version `22`.
+The current user profile uses schema version `23`.
 
 ```json
 {
-  "schemaVersion": 22,
+  "schemaVersion": 23,
   "map": {},
   "topBar": {},
   "chains": [],
@@ -56,6 +56,13 @@ is absent. It preserves explicit valid visibility values, existing setpoints, an
 additional JSON fields. The manager backs up the active profile before saving the
 migrated file atomically. Explicit invalid visibility values cause a load or validation
 error.
+
+The `v22 → v23` migration preserves existing bindings and unknown JSON fields.
+Administrators can add, rename, or remove `CommandResetFeedback` in settings for Unload,
+Rotation, Load, and momentary Start. Configure the address in **SignalId ↔ Modbus**.
+Commands without the binding keep their timed pulse. With feedback configured, the
+button stays busy until the controller handshake finishes.
+[Handshake and timeout](03-modbus-tcp-guide.en.md#priority-and-plc-feedback).
 
 The `v21 → v22` migration adds defaults for missing or null `topBar.unload`,
 `rotation`, and `load` sections. It preserves configured commands, `reset`,

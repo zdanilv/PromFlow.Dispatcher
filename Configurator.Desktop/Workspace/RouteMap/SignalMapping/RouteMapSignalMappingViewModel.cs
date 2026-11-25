@@ -289,6 +289,16 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
             .Concat(Rows.Where(row => row.IsMapped && !row.IsSystem).Select(row => row.ToOptions()))
             .ToList();
 
+        foreach (var row in Rows.Where(row => row.IsResetFeedback && row.IsMapped))
+        {
+            var feedbackError = ModbusResetFeedbackValidation.GetError(row.Objects, row.SignalId, latest);
+            if (feedbackError is not null)
+            {
+                ErrorMessage = feedbackError;
+                return false;
+            }
+        }
+
         var validation = ValidateOptions(latest);
         if (validation.Succeeded)
             validation = ModbusAlarmMapValidator.ValidateAcknowledgementMappings(latest);
@@ -611,7 +621,13 @@ public sealed class RouteMapSignalMappingViewModel : ViewModelBase, IDisposable
         }
 
         var singlePointOptions = new ModbusOptions { DataMap = [row.ToOptions()] };
-        var validation = row.RequiresExplicitPulseMapping
+        if (row.IsResetFeedback && ModbusResetFeedbackValidation.GetError(row.Objects, row.SignalId, singlePointOptions) is { } error)
+        {
+            row.SetValidation(error);
+            return;
+        }
+
+        var validation = row.RequiresExplicitPulseMapping || row.IsResetFeedback
             ? ValidateOptions(singlePointOptions)
             : _validator.Validate(singlePointOptions, ModbusRunMode.None);
         row.SetValidation(validation.Succeeded ? null : OperationMessage(validation));
@@ -778,6 +794,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         RequiresLatchedWriteMode = inventory.RequiresLatchedWriteMode;
         RequiresPulseWriteMode = inventory.RequiresPulseWriteMode;
         RequiresExplicitPulseMapping = inventory.RequiresExplicitPulseMapping;
+        IsResetFeedback = inventory.IsResetFeedback;
         AvailableValueTypes = SignalModbusTypeCompatibility.CompatibleModbusTypes(ExpectedType);
         _isMapped = isMapped;
         ApplyPoint(point);
@@ -797,6 +814,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     public bool RequiresLatchedWriteMode { get; }
     public bool RequiresPulseWriteMode { get; }
     internal bool RequiresExplicitPulseMapping { get; }
+    internal bool IsResetFeedback { get; }
     public IReadOnlyList<ModbusValueType> AvailableValueTypes { get; }
 
     public bool IsMapped { get => _isMapped; set { this.RaiseAndSetIfChanged(ref _isMapped, value); RaiseStatus(); } }
@@ -899,7 +917,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
     public void ResetToDefaults() => ApplyPoint(CreateDefaultPoint(new RouteMapSignalInventoryItem(
         SignalId, ExpectedType, RequiredAccess, Roles, Objects, HasTypeConflict, Category, IsSystem,
         PreferPulseWriteMode, PreferHoldingRegisterBit, PreferredBitIndex, RequiresLatchedWriteMode, RequiresPulseWriteMode,
-        RequiresExplicitPulseMapping)));
+        RequiresExplicitPulseMapping, IsResetFeedback)));
 
     public ModbusDataPointOptions ToOptions() => new()
     {
@@ -945,7 +963,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         {
             Name = item.SignalId,
             Area = area,
-            Address = item.RequiresExplicitPulseMapping ? -1 : 0,
+            Address = item.RequiresExplicitPulseMapping || item.IsResetFeedback ? -1 : 0,
             Length = length,
             Access = item.RequiredAccess,
             Type = type,
@@ -965,7 +983,7 @@ public sealed class RouteMapSignalMappingRow : ReactiveObject
         SetBitIndex(point.BitIndex);
         this.RaiseAndSetIfChanged(ref _writeMode, point.WriteMode, nameof(WriteMode));
         this.RaiseAndSetIfChanged(ref _pulseDurationMs, point.PulseDurationMs, nameof(PulseDurationMs));
-        if (!RequiresExplicitPulseMapping)
+        if (!RequiresExplicitPulseMapping && !IsResetFeedback)
             NormalizePointShape();
         RaiseStatus();
     }

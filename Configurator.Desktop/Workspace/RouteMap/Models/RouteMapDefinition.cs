@@ -149,6 +149,7 @@ public sealed record RouteTopBarButtonSettings
     public bool OffFeedbackEnabled { get; init; }
     public SignalBinding? OffFeedbackBinding { get; init; }
     public SignalBinding? EnabledBinding { get; init; }
+    public SignalBinding? ResetFeedbackBinding { get; init; }
     public SignalBinding Binding { get; init; } = new(
         SignalBindingRole.AutomaticModeCommand,
         "system.mode.automatic",
